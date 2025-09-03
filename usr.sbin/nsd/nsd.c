@@ -1,7 +1,7 @@
 /*
  * nsd.c -- nsd(8)
  *
- * Copyright (c) 2001-2006, NLnet Labs. All rights reserved.
+ * Copyright (c) 2001-2024, NLnet Labs. All rights reserved.
  *
  * See LICENSE for the license.
  *
@@ -53,9 +53,11 @@
 #include "tsig.h"
 #include "remote.h"
 #include "xfrd-disk.h"
+#include "ipc.h"
 #ifdef USE_DNSTAP
 #include "dnstap/dnstap_collector.h"
 #endif
+#include "util/proxy_protocol.h"
 
 /* The server handler... */
 struct nsd nsd;
@@ -83,7 +85,6 @@ usage (void)
 #ifndef NDEBUG
 		"  -F facilities        Specify the debug facilities.\n"
 #endif /* NDEBUG */
-		"  -f database          Specify the database to load.\n"
 		"  -h                   Print this help information.\n"
 		, CONFIGFILE);
 	fprintf(stderr,
@@ -144,7 +145,7 @@ version(void)
 		);
 #endif
 	fprintf(stderr,
-		"Copyright (C) 2001-2020 NLnet Labs.  This is free software.\n"
+		"Copyright (C) 2001-2024 NLnet Labs.  This is free software.\n"
 		"There is NO warranty; not even for MERCHANTABILITY or FITNESS\n"
 		"FOR A PARTICULAR PURPOSE.\n");
 	exit(0);
@@ -658,7 +659,9 @@ readpid(const char *file)
 	}
 
 	if (((l = read(fd, pidbuf, sizeof(pidbuf)))) == -1) {
+		int errno_bak = errno;
 		close(fd);
+		errno = errno_bak;
 		return -1;
 	}
 
@@ -723,27 +726,32 @@ writepid(struct nsd *nsd)
 	}
 	close(fd);
 
-	if (chown(nsd->pidfile, nsd->uid, nsd->gid) == -1) {
-		log_msg(LOG_ERR, "cannot chown %u.%u %s: %s",
-			(unsigned) nsd->uid, (unsigned) nsd->gid,
-			nsd->pidfile, strerror(errno));
-		return -1;
-	}
-
 	return 0;
 }
 
 void
-unlinkpid(const char* file)
+unlinkpid(const char* file, const char* username)
 {
 	int fd = -1;
 
 	if (file && file[0]) {
 		/* truncate pidfile */
-		fd = open(file, O_WRONLY | O_TRUNC, 0644);
+		fd = open(file, O_WRONLY | O_TRUNC
+#ifdef O_NOFOLLOW
+			| O_NOFOLLOW
+#endif
+			, 0644);
 		if (fd == -1) {
 			/* Truncate the pid file.  */
-			log_msg(LOG_ERR, "can not truncate the pid file %s: %s", file, strerror(errno));
+			/* If there is a username configured, we assume that
+			 * due to privilege drops, NSD cannot truncate or
+			 * unlink the pid file. NSD does not chown the file
+			 * because that creates a privilege escape. */
+			if(username && username[0]) {
+				VERBOSITY(5, (LOG_INFO, "can not truncate the pid file %s: %s", file, strerror(errno)));
+			} else {
+				log_msg(LOG_ERR, "can not truncate the pid file %s: %s", file, strerror(errno));
+			}
 		} else {
 			close(fd);
 		}
@@ -753,9 +761,15 @@ unlinkpid(const char* file)
 			/* this unlink may not work if the pidfile is located
 			 * outside of the chroot/workdir or we no longer
 			 * have permissions */
-			VERBOSITY(3, (LOG_WARNING,
-				"failed to unlink pidfile %s: %s",
-				file, strerror(errno)));
+			if(username && username[0]) {
+				VERBOSITY(5, (LOG_INFO,
+					"failed to unlink pidfile %s: %s",
+					file, strerror(errno)));
+			} else {
+				VERBOSITY(3, (LOG_WARNING,
+					"failed to unlink pidfile %s: %s",
+					file, strerror(errno)));
+			}
 		}
 	}
 }
@@ -832,16 +846,20 @@ bind8_stats (struct nsd *nsd)
 	char buf[MAXSYSLOGMSGLEN];
 	char *msg, *t;
 	int i, len;
+	struct nsdst st;
 
 	/* Current time... */
 	time_t now;
-	if(!nsd->st.period)
+	if(!nsd->st_period)
 		return;
 	time(&now);
 
+	memcpy(&st, nsd->st, sizeof(st));
+	stats_subtract(&st, &nsd->stat_proc);
+
 	/* NSTATS */
 	t = msg = buf + snprintf(buf, MAXSYSLOGMSGLEN, "NSTATS %lld %lu",
-				 (long long) now, (unsigned long) nsd->st.boot);
+				 (long long) now, (unsigned long) st.boot);
 	for (i = 0; i <= 255; i++) {
 		/* How much space left? */
 		if ((len = buf + MAXSYSLOGMSGLEN - t) < 32) {
@@ -850,8 +868,8 @@ bind8_stats (struct nsd *nsd)
 			len = buf + MAXSYSLOGMSGLEN - t;
 		}
 
-		if (nsd->st.qtype[i] != 0) {
-			t += snprintf(t, len, " %s=%lu", rrtype_to_string(i), nsd->st.qtype[i]);
+		if (st.qtype[i] != 0) {
+			t += snprintf(t, len, " %s=%lu", rrtype_to_string(i), st.qtype[i]);
 		}
 	}
 	if (t > msg)
@@ -860,65 +878,31 @@ bind8_stats (struct nsd *nsd)
 	/* XSTATS */
 	/* Only print it if we're in the main daemon or have anything to report... */
 	if (nsd->server_kind == NSD_SERVER_MAIN
-	    || nsd->st.dropped || nsd->st.raxfr || nsd->st.rixfr || (nsd->st.qudp + nsd->st.qudp6 - nsd->st.dropped)
-	    || nsd->st.txerr || nsd->st.opcode[OPCODE_QUERY] || nsd->st.opcode[OPCODE_IQUERY]
-	    || nsd->st.wrongzone || nsd->st.ctcp + nsd->st.ctcp6 || nsd->st.rcode[RCODE_SERVFAIL]
-	    || nsd->st.rcode[RCODE_FORMAT] || nsd->st.nona || nsd->st.rcode[RCODE_NXDOMAIN]
-	    || nsd->st.opcode[OPCODE_UPDATE]) {
+	    || st.dropped || st.raxfr || st.rixfr || (st.qudp + st.qudp6 - st.dropped)
+	    || st.txerr || st.opcode[OPCODE_QUERY] || st.opcode[OPCODE_IQUERY]
+	    || st.wrongzone || st.ctcp + st.ctcp6 || st.rcode[RCODE_SERVFAIL]
+	    || st.rcode[RCODE_FORMAT] || st.nona || st.rcode[RCODE_NXDOMAIN]
+	    || st.opcode[OPCODE_UPDATE]) {
 
 		log_msg(LOG_INFO, "XSTATS %lld %lu"
 			" RR=%lu RNXD=%lu RFwdR=%lu RDupR=%lu RFail=%lu RFErr=%lu RErr=%lu RAXFR=%lu RIXFR=%lu"
 			" RLame=%lu ROpts=%lu SSysQ=%lu SAns=%lu SFwdQ=%lu SDupQ=%lu SErr=%lu RQ=%lu"
 			" RIQ=%lu RFwdQ=%lu RDupQ=%lu RTCP=%lu SFwdR=%lu SFail=%lu SFErr=%lu SNaAns=%lu"
 			" SNXD=%lu RUQ=%lu RURQ=%lu RUXFR=%lu RUUpd=%lu",
-			(long long) now, (unsigned long) nsd->st.boot,
-			nsd->st.dropped, (unsigned long)0, (unsigned long)0, (unsigned long)0, (unsigned long)0,
-			(unsigned long)0, (unsigned long)0, nsd->st.raxfr, nsd->st.rixfr, (unsigned long)0, (unsigned long)0,
-			(unsigned long)0, nsd->st.qudp + nsd->st.qudp6 - nsd->st.dropped, (unsigned long)0,
-			(unsigned long)0, nsd->st.txerr,
-			nsd->st.opcode[OPCODE_QUERY], nsd->st.opcode[OPCODE_IQUERY], nsd->st.wrongzone,
-			(unsigned long)0, nsd->st.ctcp + nsd->st.ctcp6,
-			(unsigned long)0, nsd->st.rcode[RCODE_SERVFAIL], nsd->st.rcode[RCODE_FORMAT],
-			nsd->st.nona, nsd->st.rcode[RCODE_NXDOMAIN],
-			(unsigned long)0, (unsigned long)0, (unsigned long)0, nsd->st.opcode[OPCODE_UPDATE]);
+			(long long) now, (unsigned long) st.boot,
+			st.dropped, (unsigned long)0, (unsigned long)0, (unsigned long)0, (unsigned long)0,
+			(unsigned long)0, (unsigned long)0, st.raxfr, st.rixfr, (unsigned long)0, (unsigned long)0,
+			(unsigned long)0, st.qudp + st.qudp6 - st.dropped, (unsigned long)0,
+			(unsigned long)0, st.txerr,
+			st.opcode[OPCODE_QUERY], st.opcode[OPCODE_IQUERY], st.wrongzone,
+			(unsigned long)0, st.ctcp + st.ctcp6,
+			(unsigned long)0, st.rcode[RCODE_SERVFAIL], st.rcode[RCODE_FORMAT],
+			st.nona, st.rcode[RCODE_NXDOMAIN],
+			(unsigned long)0, (unsigned long)0, (unsigned long)0, st.opcode[OPCODE_UPDATE]);
 	}
 
 }
 #endif /* BIND8_STATS */
-
-static
-int cookie_secret_file_read(nsd_type* nsd) {
-	char secret[NSD_COOKIE_SECRET_SIZE * 2 + 2/*'\n' and '\0'*/];
-	char const* file = nsd->options->cookie_secret_file;
-	FILE* f;
-	int corrupt = 0;
-	size_t count;
-
-	assert( nsd->options->cookie_secret_file != NULL );
-	f = fopen(file, "r");
-	/* a non-existing cookie file is not an error */
-	if( f == NULL ) { return errno != EPERM; }
-	/* cookie secret file exists and is readable */
-	nsd->cookie_count = 0;
-	for( count = 0; count < NSD_COOKIE_HISTORY_SIZE; count++ ) {
-		size_t secret_len = 0;
-		ssize_t decoded_len = 0;
-		if( fgets(secret, sizeof(secret), f) == NULL ) { break; }
-		secret_len = strlen(secret);
-		if( secret_len == 0 ) { break; }
-		assert( secret_len <= sizeof(secret) );
-		secret_len = secret[secret_len - 1] == '\n' ? secret_len - 1 : secret_len;
-		if( secret_len != NSD_COOKIE_SECRET_SIZE * 2 ) { corrupt++; break; }
-		/* needed for `hex_pton`; stripping potential `\n` */
-		secret[secret_len] = '\0';
-		decoded_len = hex_pton(secret, nsd->cookie_secrets[count].cookie_secret,
-		                       NSD_COOKIE_SECRET_SIZE);
-		if( decoded_len != NSD_COOKIE_SECRET_SIZE ) { corrupt++; break; }
-		nsd->cookie_count++;
-	}
-	fclose(f);
-	return corrupt == 0;
-}
 
 extern char *optarg;
 extern int optind;
@@ -950,7 +934,6 @@ main(int argc, char *argv[])
 	/* Initialize the server handler... */
 	memset(&nsd, 0, sizeof(struct nsd));
 	nsd.region      = region_create(xalloc, free);
-	nsd.dbfile	= 0;
 	nsd.pidfile	= 0;
 	nsd.server_kind = NSD_SERVER_MAIN;
 	memset(&hints, 0, sizeof(hints));
@@ -962,14 +945,16 @@ main(int argc, char *argv[])
 	nsd.chrootdir	= 0;
 	nsd.nsid 	= NULL;
 	nsd.nsid_len 	= 0;
+	nsd.do_answer_cookie = 0;
 	nsd.cookie_count = 0;
+	nsd.cookie_secrets_source = COOKIE_SECRETS_NONE;
+	nsd.cookie_secrets_filename = NULL;
 
 	nsd.child_count = 0;
 	nsd.maximum_tcp_count = 0;
 	nsd.current_tcp_count = 0;
 	nsd.file_rotation_ok = 0;
 
-	nsd.do_answer_cookie = 1;
 
 	/* Set up our default identity to gethostname(2) */
 	if (gethostname(hostname, MAXHOSTNAMELEN) == 0) {
@@ -1018,7 +1003,6 @@ main(int argc, char *argv[])
 			nsd.debug = 1;
 			break;
 		case 'f':
-			nsd.dbfile = optarg;
 			break;
 		case 'h':
 			usage();
@@ -1077,7 +1061,7 @@ main(int argc, char *argv[])
 			break;
 		case 's':
 #ifdef BIND8_STATS
-			nsd.st.period = atoi(optarg);
+			nsd.st_period = atoi(optarg);
 #else /* !BIND8_STATS */
 			error("BIND 8 statistics not enabled.");
 #endif /* BIND8_STATS */
@@ -1128,9 +1112,10 @@ main(int argc, char *argv[])
 	}
 	if(!tsig_init(nsd.region))
 		error("init tsig failed");
+	pp_init(&write_uint16, &write_uint32);
 
 	/* Read options */
-	if(!parse_options_file(nsd.options, configfile, NULL, NULL)) {
+	if(!parse_options_file(nsd.options, configfile, NULL, NULL, NULL)) {
 		error("could not read config: %s\n", configfile);
 	}
 	if(!parse_zone_list_file(nsd.options)) {
@@ -1152,13 +1137,6 @@ main(int argc, char *argv[])
 		verbosity = nsd_debug_level;
 #endif /* NDEBUG */
 	if(nsd.options->debug_mode) nsd.debug=1;
-	if(!nsd.dbfile)
-	{
-		if(nsd.options->database)
-			nsd.dbfile = nsd.options->database;
-		else
-			nsd.dbfile = DBFILE;
-	}
 	if(!nsd.pidfile)
 	{
 		if(nsd.options->pidfile)
@@ -1197,6 +1175,7 @@ main(int argc, char *argv[])
 	nsd.ipv6_edns_size = nsd.options->ipv6_edns_size;
 #ifdef HAVE_SSL
 	nsd.tls_ctx = NULL;
+	nsd.tls_auth_ctx = NULL;
 #endif
 
 	if(udp_port == 0)
@@ -1215,8 +1194,8 @@ main(int argc, char *argv[])
 		verify_port = VERIFY_PORT;
 	}
 #ifdef BIND8_STATS
-	if(nsd.st.period == 0) {
-		nsd.st.period = nsd.options->statistics;
+	if(nsd.st_period == 0) {
+		nsd.st_period = nsd.options->statistics;
 	}
 #endif /* BIND8_STATS */
 #ifdef HAVE_CHROOT
@@ -1252,35 +1231,7 @@ main(int argc, char *argv[])
 #endif /* IPV6 MTU) */
 #endif /* defined(INET6) */
 
-	nsd.do_answer_cookie = nsd.options->answer_cookie;
-	if (nsd.cookie_count > 0)
-		; /* pass */
-
-	else if (nsd.options->cookie_secret) {
-		ssize_t len = hex_pton(nsd.options->cookie_secret,
-			nsd.cookie_secrets[0].cookie_secret, NSD_COOKIE_SECRET_SIZE);
-		if (len != NSD_COOKIE_SECRET_SIZE ) {
-			error("A cookie secret must be a "
-			      "128 bit hex string");
-		}
-		nsd.cookie_count = 1;
-	} else {
-		size_t j;
-		size_t const cookie_secret_len = NSD_COOKIE_SECRET_SIZE;
-		/* Calculate a new random secret */
-		srandom(getpid() ^ time(NULL));
-
-		for( j = 0; j < NSD_COOKIE_HISTORY_SIZE; j++) {
-#if defined(HAVE_SSL)
-			if (!RAND_status()
-			    || !RAND_bytes(nsd.cookie_secrets[j].cookie_secret, cookie_secret_len))
-#endif
-			for (i = 0; i < cookie_secret_len; i++)
-				nsd.cookie_secrets[j].cookie_secret[i] = random_generate(256);
-		}
-		// XXX: all we have is a random cookie, still pretend we have one
-		nsd.cookie_count = 1;
-	}
+	reconfig_cookies(&nsd, nsd.options);
 
 	if (nsd.nsid_len == 0 && nsd.options->nsid) {
 		if (strlen(nsd.options->nsid) % 2 != 0) {
@@ -1463,9 +1414,6 @@ main(int argc, char *argv[])
 		} else if (!file_inside_chroot(nsd.pidfile, nsd.chrootdir)) {
 			error("pidfile %s is not relative to %s: chroot not possible",
 				nsd.pidfile, nsd.chrootdir);
-		} else if (!file_inside_chroot(nsd.dbfile, nsd.chrootdir)) {
-			error("database %s is not relative to %s: chroot not possible",
-				nsd.dbfile, nsd.chrootdir);
 		} else if (!file_inside_chroot(nsd.options->xfrdfile, nsd.chrootdir)) {
 			error("xfrdfile %s is not relative to %s: chroot not possible",
 				nsd.options->xfrdfile, nsd.chrootdir);
@@ -1492,7 +1440,14 @@ main(int argc, char *argv[])
 	log_msg(LOG_NOTICE, "%s starting (%s)", argv0, PACKAGE_STRING);
 
 	/* Do we have a running nsd? */
-	if(nsd.pidfile && nsd.pidfile[0]) {
+	/* When there is a username configured, we assume that due to
+	 * privilege drops, the pidfile could not be removed by NSD and
+	 * as such could be lingering around. We could not remove it,
+	 * and also not chown it as that creates privilege escape problems.
+	 * The init system could remove the pidfile after use for us, but
+	 * it is not sure if it is configured to do so. */
+	if(nsd.pidfile && nsd.pidfile[0] &&
+		!(nsd.username && nsd.username[0])) {
 		if ((oldpid = readpid(nsd.pidfile)) == -1) {
 			if (errno != ENOENT) {
 				log_msg(LOG_ERR, "can't read pidfile %s: %s",
@@ -1556,23 +1511,28 @@ main(int argc, char *argv[])
 	if(nsd.options->control_enable || (nsd.options->tls_service_key && nsd.options->tls_service_key[0])) {
 		perform_openssl_init();
 	}
+#endif /* HAVE_SSL */
 	if(nsd.options->control_enable) {
 		/* read ssl keys while superuser and outside chroot */
 		if(!(nsd.rc = daemon_remote_create(nsd.options)))
 			error("could not perform remote control setup");
 	}
+#if defined(HAVE_SSL)
 	if(nsd.options->tls_service_key && nsd.options->tls_service_key[0]
 	   && nsd.options->tls_service_pem && nsd.options->tls_service_pem[0]) {
+		/* normal tls port with no client authentication */
 		if(!(nsd.tls_ctx = server_tls_ctx_create(&nsd, NULL,
-			nsd.options->tls_service_ocsp)))
+		     nsd.options->tls_service_ocsp)))
 			error("could not set up tls SSL_CTX");
+		/* tls-auth port with required client authentication */
+		if(nsd.options->tls_auth_port) {
+			if(!(nsd.tls_auth_ctx = server_tls_ctx_create(&nsd,
+			     (char*)nsd.options->tls_cert_bundle,
+			     nsd.options->tls_service_ocsp)))
+				error("could not set up tls SSL_CTX");
+		}
 	}
 #endif /* HAVE_SSL */
-
-	if(nsd.options->cookie_secret_file && nsd.options->cookie_secret_file[0]
-	   && !cookie_secret_file_read(&nsd) ) {
-		log_msg(LOG_ERR, "cookie secret file corrupt or not readable");
-	}
 
 	/* Unless we're debugging, fork... */
 	if (!nsd.debug) {
@@ -1641,8 +1601,6 @@ main(int argc, char *argv[])
 		}
 		if (nsd.pidfile && nsd.pidfile[0] == '/')
 			nsd.pidfile += l;
-		if (nsd.dbfile[0] == '/')
-			nsd.dbfile += l;
 		if (nsd.options->xfrdfile[0] == '/')
 			nsd.options->xfrdfile += l;
 		if (nsd.options->zonelistfile[0] == '/')
@@ -1728,6 +1686,9 @@ main(int argc, char *argv[])
 	options_zonestatnames_create(nsd.options);
 	server_zonestat_alloc(&nsd);
 #endif /* USE_ZONE_STATS */
+#ifdef BIND8_STATS
+	server_stat_alloc(&nsd);
+#endif /* BIND8_STATS */
 	if(nsd.server_kind == NSD_SERVER_MAIN) {
 		server_prepare_xfrd(&nsd);
 		/* xfrd forks this before reading database, so it does not get
@@ -1743,7 +1704,7 @@ main(int argc, char *argv[])
 #endif /* USE_DNSTAP */
 	}
 	if (server_prepare(&nsd) != 0) {
-		unlinkpid(nsd.pidfile);
+		unlinkpid(nsd.pidfile, nsd.username);
 		error("server preparation failed, %s could "
 			"not be started", argv0);
 	}

@@ -16,7 +16,6 @@
 #include "namedb.h"
 #include "nsd.h"
 #include "answer.h"
-#include "udbzone.h"
 #include "options.h"
 
 #define NSEC3_RDATA_BITMAP 5
@@ -283,60 +282,12 @@ db_find_nsec3param(struct namedb* db, struct zone* z, struct rr* avoid_rr,
 	return NULL;
 }
 
-static struct rr*
-udb_zone_find_nsec3param(struct namedb* db, udb_base* udb, udb_ptr* uz,
-	struct zone* z, int checkchain)
-{
-	udb_ptr urr;
-	unsigned i;
-	rrset_type* rrset = domain_find_rrset(z->apex, z, TYPE_NSEC3PARAM);
-	if(!rrset) /* no NSEC3PARAM in mem */
-		return NULL;
-	udb_ptr_new(&urr, udb, &ZONE(uz)->nsec3param);
-	if(!urr.data || RR(&urr)->len < 5) {
-		/* no NSEC3PARAM in udb */
-		udb_ptr_unlink(&urr, udb);
-		return NULL;
-	}
-	/* find matching NSEC3PARAM RR in memory */
-	for(i=0; i<rrset->rr_count; i++) {
-		/* if this RR matches the udb RR then we are done */
-		rdata_atom_type* rd = rrset->rrs[i].rdatas;
-		if(rrset->rrs[i].rdata_count < 4) continue;
-		if(RR(&urr)->wire[0] == rdata_atom_data(rd[0])[0] && /*alg*/
-		   RR(&urr)->wire[1] == rdata_atom_data(rd[1])[0] && /*flg*/
-		   RR(&urr)->wire[2] == rdata_atom_data(rd[2])[0] && /*iter*/
-		   RR(&urr)->wire[3] == rdata_atom_data(rd[2])[1] &&
-		   RR(&urr)->wire[4] == rdata_atom_data(rd[3])[0] && /*slen*/
-		   RR(&urr)->len >= 5 + RR(&urr)->wire[4] &&
-		   memcmp(RR(&urr)->wire+5, rdata_atom_data(rd[3])+1,
-			rdata_atom_data(rd[3])[0]) == 0) {
-			udb_ptr_unlink(&urr, udb);
-			if(checkchain) {
-				z->nsec3_param = &rrset->rrs[i];
-				if(!check_apex_soa(db, z, 1))
-					return db_find_nsec3param(db, z,
-						NULL, checkchain);
-			}
-			return &rrset->rrs[i];
-		}
-	}
-	udb_ptr_unlink(&urr, udb);
-	return NULL;
-}
-
 void
-nsec3_find_zone_param(struct namedb* db, struct zone* zone, udb_ptr* z,
+nsec3_find_zone_param(struct namedb* db, struct zone* zone,
 	struct rr* avoid_rr, int checkchain)
 {
-	/* get nsec3param RR from udb */
-	if(db->udb)
-		zone->nsec3_param = udb_zone_find_nsec3param(db, db->udb,
-			z, zone, checkchain);
-	/* no db, get from memory, avoid using the rr that is going to be
-	 * deleted, avoid_rr */
-	else	zone->nsec3_param = db_find_nsec3param(db, zone, avoid_rr,
-			checkchain);
+	/* avoid using the rr that is going to be deleted, avoid_rr */
+	zone->nsec3_param = db_find_nsec3param(db, zone, avoid_rr, checkchain);
 }
 
 /* check params ok for one RR */
@@ -526,7 +477,22 @@ nsec3_tree_dszone(namedb_type* db, domain_type* d)
 	/* the DStree does not contain nodes with d==z->apex */
 	if(d->is_apex)
 		d = d->parent;
-	return nsec3_tree_zone(db, d);
+	while (d) {
+		if (d->is_apex) {
+			zone_type *zone = NULL;
+			for (rrset_type *rrset = d->rrsets; rrset; rrset = rrset->next)
+				if (rrset_rrtype(rrset) == TYPE_SOA ||
+				    rrset_rrtype(rrset) == TYPE_DNSKEY ||
+				    rrset_rrtype(rrset) == TYPE_NSEC3PARAM)
+					zone = rrset->zone;
+			if (!zone)
+				zone = namedb_find_zone(db, domain_dname(d));
+			if (zone && zone->dshashtree)
+				return zone;
+		}
+		d = d->parent;
+	}
+	return NULL;
 }
 
 int
@@ -609,9 +575,7 @@ nsec3_precompile_domain_ds(struct namedb* db, struct domain* domain,
 	/* lookup in tree cover ptr (or exact) */
 	exact = nsec3_find_cover(zone, domain->nsec3->ds_parent_hash->hash,
 		sizeof(domain->nsec3->ds_parent_hash->hash), &result);
-	if(exact)
-		domain->nsec3->nsec3_ds_parent_is_exact = 1;
-	else 	domain->nsec3->nsec3_ds_parent_is_exact = 0;
+	domain->nsec3->nsec3_ds_parent_is_exact = exact != 0;
 	domain->nsec3->nsec3_ds_parent_cover = result;
 	/* add into tree */
 	zone_add_domain_in_hash_tree(db->region, &zone->dshashtree,
@@ -686,30 +650,17 @@ nsec3_precompile_newparam(namedb_type* db, zone_type* zone)
 void
 prehash_zone_complete(struct namedb* db, struct zone* zone)
 {
-	udb_ptr udbz;
-
 	/* robust clear it */
 	nsec3_clear_precompile(db, zone);
 	/* find zone settings */
 
 	assert(db && zone);
-	udbz.data = 0;
-	if(db->udb) {
-		if(!udb_zone_search(db->udb, &udbz, dname_name(domain_dname(
-			zone->apex)), domain_dname(zone->apex)->name_size)) {
-			udb_ptr_init(&udbz, db->udb); /* zero the ptr */
-		}
-	}
-	nsec3_find_zone_param(db, zone, &udbz, NULL, 1);
+	nsec3_find_zone_param(db, zone, NULL, 1);
 	if(!zone->nsec3_param || !check_apex_soa(db, zone, 0)) {
 		zone->nsec3_param = NULL;
 		zone->nsec3_last = NULL;
-		if(udbz.data)
-			udb_ptr_unlink(&udbz, db->udb);
 		return;
 	}
-	if(udbz.data)
-		udb_ptr_unlink(&udbz, db->udb);
 	nsec3_precompile_newparam(db, zone);
 }
 

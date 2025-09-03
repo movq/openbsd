@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef	_NSD_H_
-#define	_NSD_H_
+#ifndef	NSD_H
+#define	NSD_H
 
 #include <signal.h>
 #include <net/if.h>
@@ -42,13 +42,6 @@ struct dt_collector;
 #define	NSD_REAP_CHILDREN 4
 #define	NSD_QUIT 5
 /*
- * PASS_TO_XFRD is followed by the u16(len in network order) and
- * then network packet contents.  packet is a notify(acl checked), or
- * xfr reply from a master(acl checked).
- * followed by u32(acl number that matched from notify/xfr acl).
- */
-#define NSD_PASS_TO_XFRD 6
-/*
  * RELOAD_REQ is sent when parent receives a SIGHUP and tells
  * xfrd that it wants to initiate a reload (and thus task swap).
  */
@@ -63,12 +56,6 @@ struct dt_collector;
  * channel content during reload
  */
 #define NSD_QUIT_SYNC 9
-/*
- * QUIT_WITH_STATS is sent during a reload when BIND8_STATS is defined,
- * from parent to children.  The stats are transferred too from child to
- * parent with this commandvalue, when the child is exiting.
- */
-#define NSD_QUIT_WITH_STATS 10
 /*
  * QUIT_CHILD is sent at exit, to make sure the child has exited so that
  * port53 is free when all of nsd's processes have exited at shutdown time
@@ -99,11 +86,11 @@ typedef	unsigned long stc_type;
 
 #define	LASTELEM(arr)	(sizeof(arr) / sizeof(arr[0]) - 1)
 
-#define	STATUP(nsd, stc) nsd->st.stc++
-/* #define	STATUP2(nsd, stc, i)  ((i) <= (LASTELEM(nsd->st.stc) - 1)) ? nsd->st.stc[(i)]++ : \
-				nsd->st.stc[LASTELEM(nsd->st.stc)]++ */
+#define	STATUP(nsd, stc) nsd->st->stc++
+/* #define	STATUP2(nsd, stc, i)  ((i) <= (LASTELEM(nsd->st->stc) - 1)) ? nsd->st->stc[(i)]++ : \
+				nsd->st.stc[LASTELEM(nsd->st->stc)]++ */
 
-#define	STATUP2(nsd, stc, i) nsd->st.stc[(i) <= (LASTELEM(nsd->st.stc) - 1) ? i : LASTELEM(nsd->st.stc)]++
+#define	STATUP2(nsd, stc, i) nsd->st->stc[(i) <= (LASTELEM(nsd->st->stc) - 1) ? i : LASTELEM(nsd->st->stc)]++
 #else	/* BIND8_STATS */
 
 #define	STATUP(nsd, stc) /* Nothing */
@@ -125,6 +112,23 @@ typedef	unsigned long stc_type;
 #define	ZTATUP(nsd, zone, stc) /* Nothing */
 #define	ZTATUP2(nsd, zone, stc, i) /* Nothing */
 #endif /* USE_ZONE_STATS */
+
+#ifdef	BIND8_STATS
+/* Data structure to keep track of statistics */
+struct nsdst {
+	time_t	boot;
+	stc_type qtype[257];	/* Counters per qtype */
+	stc_type qclass[4];	/* Class IN or Class CH or other */
+	stc_type qudp, qudp6;	/* Number of queries udp and udp6 */
+	stc_type ctcp, ctcp6;	/* Number of tcp and tcp6 connections */
+	stc_type ctls, ctls6;	/* Number of tls and tls6 connections */
+	stc_type rcode[17], opcode[6]; /* Rcodes & opcodes */
+	/* Dropped, truncated, queries for nonconfigured zone, tx errors */
+	stc_type dropped, truncated, wrongzone, txerr, rxerr;
+	stc_type edns, ednserr, raxfr, nona, rixfr;
+	uint64_t db_disk, db_mem;
+};
+#endif /* BIND8_STATS */
 
 #define NSD_SOCKET_IS_OPTIONAL (1<<0)
 #define NSD_BIND_DEVICE (1<<1)
@@ -195,11 +199,20 @@ struct nsd_child
 #define NSD_COOKIE_HISTORY_SIZE 2
 #define NSD_COOKIE_SECRET_SIZE 16
 
-typedef struct cookie_secret cookie_secret_type;
 struct cookie_secret {
 	/** cookie secret */
 	uint8_t cookie_secret[NSD_COOKIE_SECRET_SIZE];
 };
+typedef struct cookie_secret cookie_secret_type;
+typedef cookie_secret_type cookie_secrets_type[NSD_COOKIE_HISTORY_SIZE];
+
+enum cookie_secrets_source {
+	COOKIE_SECRETS_NONE        = 0,
+	COOKIE_SECRETS_GENERATED   = 1,
+	COOKIE_SECRETS_FROM_FILE   = 2,
+	COOKIE_SECRETS_FROM_CONFIG = 3
+};
+typedef enum cookie_secrets_source cookie_secrets_source_type;
 
 /* NSD configuration and run-time variables */
 typedef struct nsd nsd_type;
@@ -244,7 +257,6 @@ struct	nsd
 	struct daemon_remote* rc;
 
 	/* Configuration */
-	const char		*dbfile;
 	const char		*pidfile;
 	const char		*log_filename;
 	const char		*username;
@@ -300,21 +312,10 @@ struct	nsd
 	size_t ipv6_edns_size;
 
 #ifdef	BIND8_STATS
-
-	struct nsdst {
-		time_t	boot;
-		int	period;		/* Produce statistics dump every st_period seconds */
-		stc_type qtype[257];	/* Counters per qtype */
-		stc_type qclass[4];	/* Class IN or Class CH or other */
-		stc_type qudp, qudp6;	/* Number of queries udp and udp6 */
-		stc_type ctcp, ctcp6;	/* Number of tcp and tcp6 connections */
-		stc_type ctls, ctls6;	/* Number of tls and tls6 connections */
-		stc_type rcode[17], opcode[6]; /* Rcodes & opcodes */
-		/* Dropped, truncated, queries for nonconfigured zone, tx errors */
-		stc_type dropped, truncated, wrongzone, txerr, rxerr;
-		stc_type edns, ednserr, raxfr, nona, rixfr;
-		uint64_t db_disk, db_mem;
-	} st;
+	/* statistics for this server */
+	struct nsdst* st;
+	/* Produce statistics dump every st_period seconds */
+	int st_period;
 	/* per zone stats, each an array per zone-stat-idx, stats per zone is
 	 * add of [0][zoneidx] and [1][zoneidx]. */
 	struct nsdst* zonestat[2];
@@ -327,6 +328,20 @@ struct	nsd
 	size_t zonestatsize[2], zonestatdesired, zonestatsizenow;
 	/* current zonestat array to use */
 	struct nsdst* zonestatnow;
+	/* filenames for stat file mappings */
+	char* statfname;
+	/* fd for stat mapping (otherwise mmaps cannot be shared between
+	 * processes and resized) */
+	int statfd;
+	/* statistics array, of size child_count*2, twice for old and new
+	 * server processes. */
+	struct nsdst* stat_map;
+	/* statistics array of size child_count, twice */
+	struct nsdst* stats_per_child[2];
+	/* current stats_per_child array that is in use for the child set */
+	int stat_current;
+	/* start value for per process statistics printout, to clear it */
+	struct nsdst stat_proc;
 #endif /* BIND8_STATS */
 #ifdef USE_DNSTAP
 	/* the dnstap collector process info */
@@ -341,26 +356,43 @@ struct	nsd
 	 * simultaneous with new serve childs. */
 	int *dt_collector_fd_swap;
 #endif /* USE_DNSTAP */
+	/* the pipes from the serve processes to xfrd, for passing through
+	 * NOTIFY messages, arrays of size child_count * 2.
+	 * Kept open for (re-)forks. */
+	int *serve2xfrd_fd_send, *serve2xfrd_fd_recv;
+	/* the pipes from the serve processes to the xfrd. Initially
+	 * these point halfway into serve2xfrd_fd_send, but during reload
+	 * the pointer is swapped with serve2xfrd_fd_send so that only one
+	 * serve child will write to the same fd simultaneously. */
+	int *serve2xfrd_fd_swap;
 	/* ratelimit for errors, time value */
 	time_t err_limit_time;
 	/* ratelimit for errors, packet count */
 	unsigned int err_limit_count;
 
-	/** do answer with server cookie when request contained cookie option */
+	/* do answer with server cookie when request contained cookie option */
 	int do_answer_cookie;
 
-	/** how many cookies are there in the cookies array */
+	/* how many cookies are there in the cookies array */
 	size_t cookie_count;
 
 	/* keep track of the last `NSD_COOKIE_HISTORY_SIZE`
 	 * cookies as per rfc requirement .*/
-	cookie_secret_type cookie_secrets[NSD_COOKIE_HISTORY_SIZE];
+	cookie_secrets_type cookie_secrets;
+
+	/* From where came the configured cookies */
+	cookie_secrets_source_type cookie_secrets_source;
+
+	/* The cookie secrets filename when they came from file; when
+	 * cookie_secrets_source == COOKIE_SECRETS_FROM_FILE */
+	char* cookie_secrets_filename;
 
 	struct nsd_options* options;
 
 #ifdef HAVE_SSL
 	/* TLS specific configuration */
 	SSL_CTX *tls_ctx;
+	SSL_CTX *tls_auth_ctx;
 #endif
 };
 
@@ -369,7 +401,7 @@ extern struct nsd nsd;
 /* nsd.c */
 pid_t readpid(const char *file);
 int writepid(struct nsd *nsd);
-void unlinkpid(const char* file);
+void unlinkpid(const char* file, const char* username);
 void sig_handler(int sig);
 void bind8_stats(struct nsd *nsd);
 
@@ -394,6 +426,10 @@ void server_zonestat_alloc(struct nsd* nsd);
 /* remap the mmaps for zonestat isx, to bytesize sz.  Caller has to set
  * the zonestatsize */
 void zonestat_remap(struct nsd* nsd, int idx, size_t sz);
+/* allocate stat structures */
+void server_stat_alloc(struct nsd* nsd);
+/* free stat mmap file, unlinks it */
+void server_stat_free(struct nsd* nsd);
 /* allocate and init xfrd variables */
 void server_prepare_xfrd(struct nsd *nsd);
 /* start xfrdaemon (again) */
@@ -407,4 +443,4 @@ void perform_openssl_init(void);
 #endif
 ssize_t block_read(struct nsd* nsd, int s, void* p, ssize_t sz, int timeout);
 
-#endif	/* _NSD_H_ */
+#endif	/* NSD_H */

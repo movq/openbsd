@@ -70,6 +70,7 @@ edns_init_record(edns_record_type *edns)
 	edns->opt_reserved_space = 0;
 	edns->dnssec_ok = 0;
 	edns->nsid = 0;
+	edns->zoneversion = 0;
 	edns->cookie_status = COOKIE_NOT_PRESENT;
 	edns->cookie_len = 0;
 	edns->ede = -1; /* -1 means no Extended DNS Error */
@@ -115,6 +116,11 @@ edns_handle_option(uint16_t optcode, uint16_t optlen, buffer_type* packet,
 		} else {
 			buffer_skip(packet, optlen);
 		}
+		break;
+	case ZONEVERSION_CODE:
+		edns->zoneversion = 1;
+		if(optlen > 0)
+			return 0;
 		break;
 	default:
 		buffer_skip(packet, optlen);
@@ -270,15 +276,15 @@ void cookie_verify(query_type *q, struct nsd* nsd, uint32_t *now_p) {
 	memcpy(hash2verify, q->edns.cookie + 16, 8);
 
 #ifdef INET6
-	if(q->addr.ss_family == AF_INET6) {
-		memcpy(q->edns.cookie + 16, &((struct sockaddr_in6 *)&q->addr)->sin6_addr, 16);
+	if(q->client_addr.ss_family == AF_INET6) {
+		memcpy(q->edns.cookie + 16, &((struct sockaddr_in6 *)&q->client_addr)->sin6_addr, 16);
 		verify_size = 32;
 	} else {
-		memcpy(q->edns.cookie + 16, &((struct sockaddr_in *)&q->addr)->sin_addr, 4);
+		memcpy(q->edns.cookie + 16, &((struct sockaddr_in *)&q->client_addr)->sin_addr, 4);
 		verify_size = 20;
 	}
 #else
-	memcpy( q->edns.cookie + 16, &q->addr.sin_addr, 4);
+	memcpy( q->edns.cookie + 16, &q->client_addr.sin_addr, 4);
 	verify_size = 20;
 #endif
 
@@ -323,17 +329,17 @@ void cookie_create(query_type *q, struct nsd* nsd, uint32_t *now_p)
 	q->edns.cookie[14] = (now_uint32 & 0x0000FF00) >>  8;
 	q->edns.cookie[15] =  now_uint32 & 0x000000FF;
 #ifdef INET6
-	if (q->addr.ss_family == AF_INET6) {
+	if (q->client_addr.ss_family == AF_INET6) {
 		memcpy( q->edns.cookie + 16
-		      , &((struct sockaddr_in6 *)&q->addr)->sin6_addr, 16);
+		      , &((struct sockaddr_in6 *)&q->client_addr)->sin6_addr, 16);
 		siphash(q->edns.cookie, 32, nsd->cookie_secrets[0].cookie_secret, hash, 8);
 	} else {
 		memcpy( q->edns.cookie + 16
-		      , &((struct sockaddr_in *)&q->addr)->sin_addr, 4);
+		      , &((struct sockaddr_in *)&q->client_addr)->sin_addr, 4);
 		siphash(q->edns.cookie, 20, nsd->cookie_secrets[0].cookie_secret, hash, 8);
 	}
 #else
-	memcpy( q->edns.cookie + 16, &q->addr.sin_addr, 4);
+	memcpy( q->edns.cookie + 16, &q->client_addr.sin_addr, 4);
 	siphash(q->edns.cookie, 20, nsd->cookie_secrets[0].cookie_secret, hash, 8);
 #endif
 	memcpy(q->edns.cookie + 16, hash, 8);

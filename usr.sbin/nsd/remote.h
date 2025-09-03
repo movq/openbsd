@@ -93,12 +93,6 @@ int daemon_remote_open_ports(struct daemon_remote* rc,
 void daemon_remote_attach(struct daemon_remote* rc, struct xfrd_state* xfrd);
 
 /**
- * Process statistic results and send them
- * @param rc: state.
- */
-void daemon_remote_process_stats(struct daemon_remote* rc);
-
-/**
  * Create and bind local listening socket
  * @param path: path to the socket.
  * @param noproto: on error, this is set true if cause is that local sockets
@@ -106,5 +100,7 @@ void daemon_remote_process_stats(struct daemon_remote* rc);
  * @return: the socket. -1 on error.
  */
 int create_local_accept_sock(const char* path, int* noproto);
+
+void xfrd_reload_config(struct xfrd_state *xfrd);
 
 #endif /* DAEMON_REMOTE_H */

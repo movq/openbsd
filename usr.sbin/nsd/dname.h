@@ -7,14 +7,15 @@
  *
  */
 
-#ifndef _DNAME_H_
-#define _DNAME_H_
+#ifndef DNAME_H
+#define DNAME_H
 
 #include <assert.h>
 #include <stdio.h>
 
 #include "buffer.h"
 #include "region-allocator.h"
+#include "dns.h" /* for MAXDOMAINLEN */
 
 #if defined(NAMEDB_UPPERCASE) || defined(USE_NAMEDB_UPPERCASE)
 #define DNAME_NORMALIZE        toupper
@@ -180,8 +181,9 @@ dname_label(const dname_type *dname, uint8_t label)
  * RIGHT.  The comparison is case sensitive.
  *
  * Pre: left != NULL && right != NULL
+ * left and right are dname_type*.
  */
-int dname_compare(const dname_type *left, const dname_type *right);
+int dname_compare(const void *left, const void *right);
 
 
 /*
@@ -346,6 +348,19 @@ label_next(const uint8_t *label)
 const char *dname_to_string(const dname_type *dname,
 			    const dname_type *origin);
 
+/*
+ * Convert DNAME to its string representation.  The result if written
+ * to the provided buffer buf, which must be at least 5 times
+ * MAXDOMAINNAMELEN.
+ *
+ * If ORIGIN is provided and DNAME is a subdomain of ORIGIN the dname
+ * will be represented relative to ORIGIN.
+ *
+ * Pre: dname != NULL
+ */
+const char *dname_to_string_buf(const dname_type *dname,
+                                const dname_type *origin,
+                                char buf[MAXDOMAINLEN * 5]);
 
 /*
  * Create a dname containing the single label specified by STR
@@ -381,4 +396,11 @@ char* wirelabel2str(const uint8_t* label);
 /** check if two uncompressed dnames of the same total length are equal */
 int dname_equal_nocase(uint8_t* a, uint8_t* b, uint16_t len);
 
-#endif /* _DNAME_H_ */
+/* Test is the name is a subdomain of the other name. Equal names return true.
+ * Subdomain d of d2 returns true, otherwise false. The names are in
+ * wireformat, uncompressed. Does not perform canonicalization, it is case
+ * sensitive. */
+int is_dname_subdomain_of_case(const uint8_t* d, unsigned int len,
+	const uint8_t* d2, unsigned int len2);
+
+#endif /* DNAME_H */

@@ -59,12 +59,16 @@ void delete_zone_rrs(namedb_type* db, zone_type* zone);
 int delete_RR(namedb_type* db, const dname_type* dname,
 	uint16_t type, uint16_t klass,
 	buffer_type* packet, size_t rdatalen, zone_type *zone,
-	region_type* temp_region, struct udb_ptr* udbz, int* softfail);
+	region_type* temp_region, int* softfail);
 /* add an RR */
 int add_RR(namedb_type* db, const dname_type* dname,
 	uint16_t type, uint16_t klass, uint32_t ttl,
 	buffer_type* packet, size_t rdatalen, zone_type *zone,
-	struct udb_ptr* udbz, int* softfail);
+	int* softfail);
+
+/* apply the xfr file identified by xfrfilenr to zone */
+int apply_ixfr_for_zone(struct nsd* nsd, zone_type* zone, FILE* in,
+        struct nsd_options* opt, udb_base* taskudb, uint32_t xfrfilenr);
 
 enum soainfo_hint {
 	soainfo_ok,
@@ -90,8 +94,6 @@ struct task_list_d {
 		task_write_zonefiles,
 		/** set verbosity */
 		task_set_verbosity,
-		/** statistic info */
-		task_stat_info,
 		/** add a zone */
 		task_add_zone,
 		/** delete zone */
@@ -108,12 +110,8 @@ struct task_list_d {
 		task_opt_change,
 		/** zonestat increment */
 		task_zonestat_inc,
-		/** add a new cookie secret */
-		task_add_cookie_secret,
-		/** drop the oldest cookie secret */
-		task_drop_cookie_secret,
-		/** make staging cookie secret active */
-		task_activate_cookie_secret,
+		/** cookies */
+		task_cookies,
 	} task_type;
 	uint32_t size; /* size of this struct */
 
@@ -134,8 +132,6 @@ void task_clear(udb_base* udb);
 void task_new_soainfo(udb_base* udb, udb_ptr* last, struct zone* z, enum soainfo_hint hint);
 void task_new_expire(udb_base* udb, udb_ptr* last,
 	const struct dname* z, int expired);
-void* task_new_stat_info(udb_base* udb, udb_ptr* last, struct nsdst* stat,
-	size_t child_count);
 void task_new_check_zonefiles(udb_base* udb, udb_ptr* last,
 	const dname_type* zone);
 void task_new_write_zonefiles(udb_base* udb, udb_ptr* last,
@@ -151,11 +147,11 @@ void task_new_add_pattern(udb_base* udb, udb_ptr* last,
 void task_new_del_pattern(udb_base* udb, udb_ptr* last, const char* name);
 void task_new_opt_change(udb_base* udb, udb_ptr* last, struct nsd_options* opt);
 void task_new_zonestat_inc(udb_base* udb, udb_ptr* last, unsigned sz);
-void task_new_add_cookie_secret(udb_base* udb, udb_ptr* last, const char* secret);
-void task_new_drop_cookie_secret(udb_base* udb, udb_ptr* last);
-void task_new_activate_cookie_secret(udb_base* udb, udb_ptr* last);
+void task_new_cookies(udb_base* udb, udb_ptr* last, int answer_cookie,
+		size_t cookie_count, void* cookie_secrets);
 int task_new_apply_xfr(udb_base* udb, udb_ptr* last, const dname_type* zone,
 	uint32_t old_serial, uint32_t new_serial, uint64_t filenumber);
+void task_process_apply_xfr(struct nsd* nsd, udb_base* udb, udb_ptr *task);
 void task_process_in_reload(struct nsd* nsd, udb_base* udb, udb_ptr *last_task,
 	udb_ptr* task);
 void task_process_expire(namedb_type* db, struct task_list_d* task);
