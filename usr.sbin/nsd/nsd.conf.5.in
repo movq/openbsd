@@ -30,6 +30,7 @@ server:
 	username: @user@
 	zonelistfile: @zonelistfile@
 	logfile: @logfile@
+	pidfile: @pidfile@
 	xfrdfile: @xfrdfile@
 .sp
 zone:
@@ -289,7 +290,8 @@ Preferred EDNS buffer size for IPv4.  Default 1232.
 Preferred EDNS buffer size for IPv6.  Default 1232.
 .TP
 .B pidfile:\fR <filename>
-Use the pid file instead of the platform specific default.
+Use the pid file instead of the platform specific default,
+usually "\fI@pidfile@\fR".
 Same as command-line option
 .BR \-P .
 With "" there is no pidfile, for some startup management setups,
@@ -413,7 +415,7 @@ Extra data is only added for referrals, when it is really necessary.
 This is different from the \-\-enable-minimal-responses configure time option,
 that reduces packets, but exactly to the fragmentation length, the nsd.conf
 option reduces packets as small as possible.
-The default is yes.
+The default is no.
 .TP
 .B confine\-to\-zone:\fR <yes or no>
 If set to yes, additional information will not be added to the response if the
@@ -425,7 +427,7 @@ Refuse queries of type ANY.  This is useful to stop query floods trying
 to get large responses.  Note that rrl ratelimiting also has type ANY as
 a ratelimiting type.  It sends truncation in response to UDP type ANY queries,
 and it allows TCP type ANY queries like normal.
-The default is yes.
+The default is no.
 With the option turned off, NSD behaves according to RFC 8482 4.1. It minimizes
 the response with one RRset. Popular and not large types, like A, AAAA and
 MX are preferred, and large types, like DNSKEY and RRSIG are picked with a
@@ -486,7 +488,7 @@ With the value 0 the rate is unlimited.
 .TP
 .B answer\-cookie:\fR <yes or no>
 Enable to answer to requests containing DNS Cookies as specified in RFC7873.
-Default is yes.
+Default is no.
 .sp
 DNS Cookies increase transaction security and provide limited protection 
 against denial-off-service amplification attacks. Server cookies will be
