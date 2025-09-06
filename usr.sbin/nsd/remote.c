@@ -2289,7 +2289,7 @@ do_update_tsig(RES* ssl, xfrd_state_type* xfrd, char* arg)
 		memset(arg2, 0xdd, strlen(arg2));
 		return;
 	}
-	if(__b64_pton(arg2, data, sizeof(data)) == -1) {
+	if(b64_pton(arg2, data, sizeof(data)) == -1) {
 		(void)ssl_printf(ssl, "error: the secret: %s is not in b64 format\n", arg2);
 		memset(data, 0xdd, sizeof(data)); /* wipe secret */
 		memset(arg2, 0xdd, strlen(arg2));
@@ -2347,7 +2347,7 @@ do_add_tsig(RES* ssl, xfrd_state_type* xfrd, char* arg)
 		memset(arg2, 0xdd, strlen(arg2));
 		return;
 	}
-	if(__b64_pton(arg2, data, sizeof(data)) == -1) {
+	if(b64_pton(arg2, data, sizeof(data)) == -1) {
 		(void)ssl_printf(ssl, "error: the secret: %s is not in b64 format\n", arg2);
 		memset(data, 0xdd, sizeof(data)); /* wipe secret */
 		memset(arg2, 0xdd, strlen(arg2));

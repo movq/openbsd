@@ -469,7 +469,7 @@ rdata_base64_to_string(buffer_type *output, rdata_atom_type rdata,
 		return 1;
 	}
 	buffer_reserve(output, size * 2 + 1);
-	length = __b64_ntop(rdata_atom_data(rdata), size,
+	length = b64_ntop(rdata_atom_data(rdata), size,
 			  (char *) buffer_current(output), size * 2);
 	if (length > 0) {
 		buffer_skip(output, length);
@@ -806,7 +806,7 @@ rdata_svcparam_ech_to_string(buffer_type *output, uint16_t val_len,
 	buffer_write_u8(output, '=');
 
 	buffer_reserve(output, val_len * 2 + 1);
-	length = __b64_ntop((uint8_t*) data, val_len,
+	length = b64_ntop((uint8_t*) data, val_len,
 			  (char *) buffer_current(output), val_len * 2);
 	if (length > 0) {
 		buffer_skip(output, length);
@@ -961,7 +961,7 @@ rdata_hip_to_string(buffer_type *output, rdata_atom_type rdata,
 	hex_to_string(output, rdata_atom_data(rdata) + 4, hit_length);
 	buffer_printf(output, " ");
 	buffer_reserve(output, pk_length * 2 + 1);
-	length = __b64_ntop(rdata_atom_data(rdata) + 4 + hit_length, pk_length,
+	length = b64_ntop(rdata_atom_data(rdata) + 4 + hit_length, pk_length,
 			  (char *) buffer_current(output), pk_length * 2);
 	if (length > 0) {
 		buffer_skip(output, length);
