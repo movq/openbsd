@@ -1,9 +1,9 @@
-.TH "NSD" "8" "dec 12, 2024" "NLnet Labs" "NSD 4.11.0"
+.TH "NSD" "8" "Sep  3, 2025" "NLnet Labs" "NSD 4.13.0"
 .\" Copyright (c) 2001\-2024, NLnet Labs. All rights reserved.
 .\" See LICENSE for the license.
 .SH "NAME"
 .B nsd
-\- Name Server Daemon (NSD) version 4.11.0.
+\- Name Server Daemon (NSD) version 4.13.0.
 .SH "SYNOPSIS"
 .B nsd
 .RB [ \-4 ] 
@@ -145,8 +145,7 @@ default is 100.
 .B \-P\fI pidfile
 Use the specified
 .I pidfile
-instead of the platform specific default, which is mostly
-.IR @pidfile@ .
+instead of the platform specific default.
 If a 
 .B zonesdir: 
 is specified in the config file, this path can be relative to that 
@@ -207,9 +206,6 @@ SIGUSR1
 .br
 Dump BIND8\-style statistics into the log. Ignored otherwise.
 .SH "FILES"
-.TP
-@pidfile@
-the process id of the name server.
 .TP
 @nsdconfigfile@
 default
