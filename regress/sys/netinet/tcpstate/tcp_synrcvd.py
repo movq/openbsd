@@ -28,7 +28,7 @@ class Sniff1(threading.Thread):
 ip=IP(src=FAKE_NET_ADDR, dst=REMOTE_ADDR)
 tport=os.getpid() & 0xffff
 
-print("Start sniffer for SYN packet from peer");
+print("Start sniffer for SYN packet from peer.");
 sniffer = Sniff1(timeout=10)
 sniffer.filter = \
     "ip and src %s and dst %s and tcp port %u " \
@@ -37,18 +37,18 @@ sniffer.filter = \
 sniffer.start()
 time.sleep(1)
 
-print("Connect netcat")
-nc=os.popen("ssh %s nc -4Nn -s %s %s %u" % (REMOTE_SSH, ip.dst, ip.src, tport),
-    mode='w')
+print("Connect from remote client.")
+os.popen("ssh %s perl %s/client.pl %s %s %u" % \
+    (REMOTE_SSH, CURDIR, ip.dst, ip.src, tport), mode='w')
 
 print("Wait for SYN.")
 sniffer.join(timeout=10)
 syn=sniffer.packet
 if syn is None:
-	print("ERROR: No SYN received from netcat client.")
+	print("ERROR: No SYN received from remote client.")
 	exit(1)
 
-print("Start sniffer for SYN+ACK packet from peer");
+print("Start sniffer for SYN+ACK packet from peer.");
 sniffer = Sniff1(count=2, timeout=10)
 sniffer.filter = \
     "ip and src %s and dst %s and tcp port %u " \
@@ -66,11 +66,11 @@ print("Wait for SYN+ACK and its retransmit.")
 sniffer.join(timeout=10)
 synack=sniffer.packet
 if synack is None:
-	print("ERROR: No SYN+ACK from netcat client received.")
+	print("ERROR: No SYN+ACK from remote client received.")
 	exit(1)
 if synack.seq != syn.seq or synack.ack != 2:
 	print("ERROR: expecting seq %d ack %d, got seq %d ack %d " \
-	    "in SYN+ACK" % \
+	    "in SYN+ACK." % \
 	    (syn.seq, 2, synack.seq, synack.ack))
 	exit(1)
 
@@ -95,22 +95,22 @@ with os.popen("ssh "+REMOTE_SSH+" netstat -vnp tcp") as netstat:
 				print(line)
 				log.write(line)
 
-print("Send reset to cleanup the connection")
+print("Send reset to cleanup the connection.")
 new_rst=TCP(sport=synack.dport, dport=synack.sport, flags='RA',
     seq=ack.seq, ack=ack.ack)
 send(ip/new_rst)
 
-print("Check retransmit of SYN+ACK");
+print("Check retransmit of SYN+ACK.");
 rxmit_synack = sniffer.captured[1]
 if rxmit_synack is None:
-	print("ERROR: No SYN+ACK retransmitted from netcat client.")
+	print("ERROR: No SYN+ACK retransmitted from remote client.")
 if rxmit_synack.ack != 2:
-	print("ERROR: expecting ack %d, got ack %d in rxmit SYN+ACK" % \
+	print("ERROR: expecting ack %d, got ack %d in rxmit SYN+ACK." % \
 	    (2, rxmit_synack.ack))
 	exit(1)
 if rxmit_synack.seq != syn.seq or rxmit_synack.ack != 2:
 	print("ERROR: expecting seq %d ack %d, got seq %d ack %d " \
-	    "in SYN+ACK" % \
+	    "in SYN+ACK." % \
 	    (syn.seq, 2, rxmit_synack.seq, rxmit_synack.ack))
 	exit(1)
 
