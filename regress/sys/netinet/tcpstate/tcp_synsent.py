@@ -1,5 +1,5 @@
 #!/usr/local/bin/python3
-# transfer peer into SYN_SENT state an check retransmit of SYN
+# transfer peer into SYN_SENT state and check retransmit of SYN
 
 import os
 import threading
@@ -75,6 +75,7 @@ print("Check retransmit of SYN.");
 rxmit_syn = sniffer.captured[1]
 if rxmit_syn is None:
 	print("ERROR: No SYN retransmitted from netstat client.")
+	exit(1)
 if rxmit_syn.seq != syn.seq or rxmit_syn.ack != syn.ack:
 	print("ERROR: expecting seq %d ack %d, got seq %d ack %d " \
 	    "in rxmit SYN." % \
