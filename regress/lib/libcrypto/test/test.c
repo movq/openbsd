@@ -1,4 +1,4 @@
-/*	$OpenBSD: test.c,v 1.6 2025/10/07 15:41:19 tb Exp $ */
+/*	$OpenBSD: test.c,v 1.4 2025/05/31 11:36:48 tb Exp $ */
 /*
  * Copyright (c) 2025 Joshua Sing <joshua@joshuasing.dev>
  *
