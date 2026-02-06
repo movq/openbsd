@@ -13,7 +13,7 @@
    Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
    Copyright (c) 2016      Eric Rahm <erahm@mozilla.com>
-   Copyright (c) 2016-2025 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2016      Gaurav <g.gupta@samsung.com>
    Copyright (c) 2016      Thomas Beutlich <tc@tbeu.de>
    Copyright (c) 2016      Gustavo Grieco <gustavo.grieco@imag.fr>
@@ -1737,6 +1737,7 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
   XML_ExternalEntityRefHandler oldExternalEntityRefHandler;
   XML_SkippedEntityHandler oldSkippedEntityHandler;
   XML_UnknownEncodingHandler oldUnknownEncodingHandler;
+  void *oldUnknownEncodingHandlerData;
   XML_ElementDeclHandler oldElementDeclHandler;
   XML_AttlistDeclHandler oldAttlistDeclHandler;
   XML_EntityDeclHandler oldEntityDeclHandler;
@@ -1782,6 +1783,7 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
   oldExternalEntityRefHandler = parser->m_externalEntityRefHandler;
   oldSkippedEntityHandler = parser->m_skippedEntityHandler;
   oldUnknownEncodingHandler = parser->m_unknownEncodingHandler;
+  oldUnknownEncodingHandlerData = parser->m_unknownEncodingHandlerData;
   oldElementDeclHandler = parser->m_elementDeclHandler;
   oldAttlistDeclHandler = parser->m_attlistDeclHandler;
   oldEntityDeclHandler = parser->m_entityDeclHandler;
@@ -1842,6 +1844,7 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
   parser->m_externalEntityRefHandler = oldExternalEntityRefHandler;
   parser->m_skippedEntityHandler = oldSkippedEntityHandler;
   parser->m_unknownEncodingHandler = oldUnknownEncodingHandler;
+  parser->m_unknownEncodingHandlerData = oldUnknownEncodingHandlerData;
   parser->m_elementDeclHandler = oldElementDeclHandler;
   parser->m_attlistDeclHandler = oldAttlistDeclHandler;
   parser->m_entityDeclHandler = oldEntityDeclHandler;
@@ -3443,7 +3446,6 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
         const char *fromPtr = tag->rawName;
         toPtr = (XML_Char *)tag->buf;
         for (;;) {
-          int bufSize;
           int convLen;
           const enum XML_Convert_Result convert_res
               = XmlConvert(enc, &fromPtr, rawNameEnd, (ICHAR **)&toPtr,
@@ -3454,7 +3456,9 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
             tag->name.strLen = convLen;
             break;
           }
-          bufSize = (int)(tag->bufEnd - tag->buf) << 1;
+          if (SIZE_MAX / 2 < (size_t)(tag->bufEnd - tag->buf))
+            return XML_ERROR_NO_MEMORY;
+          const size_t bufSize = (size_t)(tag->bufEnd - tag->buf) * 2;
           {
             char *temp = REALLOC(parser, tag->buf, bufSize);
             if (temp == NULL)
@@ -5872,14 +5876,17 @@ doProlog(XML_Parser parser, const ENCODING *enc, const char *s, const char *end,
              * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
             if (parser->m_groupSize > (size_t)(-1) / sizeof(int)) {
+              parser->m_groupSize /= 2;
               return XML_ERROR_NO_MEMORY;
             }
 #endif
 
             int *const new_scaff_index = REALLOC(
                 parser, dtd->scaffIndex, parser->m_groupSize * sizeof(int));
-            if (new_scaff_index == NULL)
+            if (new_scaff_index == NULL) {
+              parser->m_groupSize /= 2;
               return XML_ERROR_NO_MEMORY;
+            }
             dtd->scaffIndex = new_scaff_index;
           }
         } else {
