@@ -1,4 +1,4 @@
-/*	$Id: keyproc.c,v 1.18 2022/08/28 18:30:29 tb Exp $ */
+/*	$Id: keyproc.c,v 1.19 2026/02/21 19:20:41 sthen Exp $ */
 /*
  * Copyright (c) 2016 Kristaps Dzonsons <kristaps@bsd.lv>
  *
@@ -84,7 +84,6 @@ keyproc(int netsock, const char *keyfile, const char **alts, size_t altsz,
 	void		*pp;
 	EVP_PKEY	*pkey = NULL;
 	X509_REQ	*x = NULL;
-	X509_NAME	*name = NULL;
 	int		 len, rc = 0, cc, nid, newkey = 0;
 	mode_t		 prev;
 	STACK_OF(X509_EXTENSION) *exts = NULL;
@@ -152,20 +151,6 @@ keyproc(int netsock, const char *keyfile, const char **alts, size_t altsz,
 		goto out;
 	} else if (!X509_REQ_set_pubkey(x, pkey)) {
 		warnx("X509_REQ_set_pubkey");
-		goto out;
-	}
-
-	/* Now specify the common name that we'll request. */
-
-	if ((name = X509_NAME_new()) == NULL) {
-		warnx("X509_NAME_new");
-		goto out;
-	} else if (!X509_NAME_add_entry_by_txt(name, "CN",
-		MBSTRING_ASC, (u_char *)alts[0], -1, -1, 0)) {
-		warnx("X509_NAME_add_entry_by_txt: CN=%s", alts[0]);
-		goto out;
-	} else if (!X509_REQ_set_subject_name(x, name)) {
-		warnx("X509_req_set_issuer_name");
 		goto out;
 	}
 
@@ -267,7 +252,6 @@ out:
 	free(sans);
 	free(san);
 	X509_REQ_free(x);
-	X509_NAME_free(name);
 	EVP_PKEY_free(pkey);
 	ERR_print_errors_fp(stderr);
 	ERR_free_strings();
