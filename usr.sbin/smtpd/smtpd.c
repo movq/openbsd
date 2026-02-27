@@ -1,4 +1,4 @@
-/*	$OpenBSD: smtpd.c,v 1.354 2024/11/21 13:22:21 claudio Exp $	*/
+/*	$OpenBSD: smtpd.c,v 1.354.4.1 2026/02/27 20:32:48 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2008 Gilles Chehade <gilles@poolp.org>
@@ -1069,7 +1069,7 @@ smtpd(void) {
 
 	purge_task();
 
-	if (pledge("stdio rpath wpath cpath fattr tmppath "
+	if (pledge("stdio rpath wpath cpath fattr "
 	    "getpw sendfd proc exec id inet chown unix", NULL) == -1)
 		fatal("pledge");
 
