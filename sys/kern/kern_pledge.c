@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_pledge.c,v 1.323.4.3 2026/03/03 14:59:24 bluhm Exp $	*/
+/*	$OpenBSD: kern_pledge.c,v 1.323.4.4 2026/03/13 13:11:48 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2015 Nicholas Marriott <nicm@openbsd.org>
@@ -747,7 +747,7 @@ pledge_recvfd(struct proc *p, struct file *fp)
 		if (vp->v_type != VDIR)
 			return (0);
 	}
-	return pledge_fail(p, EINVAL, PLEDGE_RECVFD);
+	return (EPERM);
 }
 
 /*
