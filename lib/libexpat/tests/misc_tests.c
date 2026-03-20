@@ -678,6 +678,35 @@ START_TEST(test_misc_expected_event_ptr_issue_980) {
 }
 END_TEST
 
+START_TEST(test_misc_no_infinite_loop_issue_1161) {
+  XML_Parser parser = XML_ParserCreate(NULL);
+
+  const char *text = "<!DOCTYPE d SYSTEM 'secondary.txt'>";
+
+  struct ExtOption options[] = {
+      {XCS("secondary.txt"),
+       "<!ENTITY % p SYSTEM 'tertiary.txt'><!ENTITY g '%p;'>"},
+      {XCS("tertiary.txt"), "<?xml version='1.0'?><a"},
+      {NULL, NULL},
+  };
+
+  XML_SetUserData(parser, options);
+  XML_SetParamEntityParsing(parser, XML_PARAM_ENTITY_PARSING_ALWAYS);
+  XML_SetExternalEntityRefHandler(parser, external_entity_optioner);
+
+  assert_true(_XML_Parse_SINGLE_BYTES(parser, text, (int)strlen(text), XML_TRUE)
+              == XML_STATUS_ERROR);
+
+#if defined(XML_DTD)
+  assert_true(XML_GetErrorCode(parser) == XML_ERROR_EXTERNAL_ENTITY_HANDLING);
+#else
+  assert_true(XML_GetErrorCode(parser) == XML_ERROR_NO_ELEMENTS);
+#endif
+
+  XML_ParserFree(parser);
+}
+END_TEST
+
 void
 make_miscellaneous_test_case(Suite *s) {
   TCase *tc_misc = tcase_create("miscellaneous tests");
@@ -706,4 +735,5 @@ make_miscellaneous_test_case(Suite *s) {
   tcase_add_test(tc_misc, test_misc_stopparser_rejects_unstarted_parser);
   tcase_add_test__if_xml_ge(tc_misc, test_renter_loop_finite_content);
   tcase_add_test(tc_misc, test_misc_expected_event_ptr_issue_980);
+  tcase_add_test(tc_misc, test_misc_no_infinite_loop_issue_1161);
 }
