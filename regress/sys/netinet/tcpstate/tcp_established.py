@@ -63,7 +63,7 @@ if data_ack.seq != synack.seq+1 or data_ack.ack != 2+paylen:
 	    (synack.seq+1, 2+paylen, data_ack.seq, data_ack.ack))
 	exit(1)
 
-print("Send ACK for echo packet, but with one squence less.");
+print("Send ACK for echo packet, but with one sequence less.");
 echo_ack=TCP(sport=synack.dport, dport=synack.sport, flags='A',
     seq=2+paylen, ack=data_ack.seq+paylen-1, window=(2**16)-1)
 echo=sr1(ip/echo_ack, timeout=5);
