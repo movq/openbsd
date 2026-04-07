@@ -1,4 +1,4 @@
-/* $OpenBSD: i8253.c,v 1.45 2025/12/02 02:31:10 dv Exp $ */
+/* $OpenBSD: i8253.c,v 1.46 2026/04/07 03:21:10 bcook Exp $ */
 /*
  * Copyright (c) 2016 Mike Larkin <mlarkin@openbsd.org>
  *
@@ -262,12 +262,14 @@ vcpu_exit_i8253(struct vm_run_params *vrp)
 					    ticks % i8253_channel[sel].start;
 				} else
 					i8253_channel[sel].olatch = 0;
+				i8253_channel[sel].last_r = 1;
 				goto ret;
 			} else if (rw != TIMER_16BIT) {
 				log_warnx("%s: i8253 PIT: unsupported counter "
 				    "%d rw mode 0x%x selected", __func__,
 				    sel, (rw & TIMER_16BIT));
 			}
+			i8253_channel[sel].last_w = 0;
 			i8253_channel[sel].mode = (out_data & 0xe) >> 1;
 
 			goto ret;
@@ -292,6 +294,9 @@ vcpu_exit_i8253(struct vm_run_params *vrp)
 
 				if (i8253_channel[sel].start == 0)
 					i8253_channel[sel].start = 0xffff;
+
+				clock_gettime(CLOCK_MONOTONIC,
+				    &i8253_channel[sel].ts);
 
 				DPRINTF("%s: channel %d reset, mode=%d, "
 				    "start=%d\n", __func__,
