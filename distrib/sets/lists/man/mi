@@ -2069,6 +2069,7 @@
 ./usr/share/man/man4/riscv64/smtcomphy.4
 ./usr/share/man/man4/riscv64/smtgpio.4
 ./usr/share/man/man4/riscv64/smtiic.4
+./usr/share/man/man4/riscv64/smtpmic.4
 ./usr/share/man/man4/riscv64/stfclock.4
 ./usr/share/man/man4/riscv64/stfpcie.4
 ./usr/share/man/man4/riscv64/stfpciephy.4
