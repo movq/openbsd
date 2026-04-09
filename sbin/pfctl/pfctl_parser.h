@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfctl_parser.h,v 1.123 2026/02/03 10:25:28 sashan Exp $ */
+/*	$OpenBSD: pfctl_parser.h,v 1.124 2026/04/09 06:10:38 dlg Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -73,7 +73,8 @@ struct pfr_buffer;	/* forward definition */
 
 struct pfctl_statelim {
 	struct pfioc_statelim		ioc;
-	RBT_ENTRY(pfctl_statelim)	entry;
+	RBT_ENTRY(pfctl_statelim)	id_entry;
+	RBT_ENTRY(pfctl_statelim)	nm_entry;
 };
 
 RBT_HEAD(pfctl_statelim_ids, pfctl_statelim);
@@ -81,7 +82,8 @@ RBT_HEAD(pfctl_statelim_nms, pfctl_statelim);
 
 struct pfctl_sourcelim {
 	struct pfioc_sourcelim		ioc;
-	RBT_ENTRY(pfctl_sourcelim)	entry;
+	RBT_ENTRY(pfctl_sourcelim)	id_entry;
+	RBT_ENTRY(pfctl_sourcelim)	nm_entry;
 };
 
 RBT_HEAD(pfctl_sourcelim_ids, pfctl_sourcelim);

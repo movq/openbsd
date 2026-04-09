@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfctl.c,v 1.401 2026/03/13 11:13:38 sashan Exp $ */
+/*	$OpenBSD: pfctl.c,v 1.402 2026/04/09 06:10:38 dlg Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -135,13 +135,13 @@ int	pfctl_call_cleartables(int, int, struct pfr_anchoritem *);
 int	pfctl_call_clearanchors(int, int, struct pfr_anchoritem *);
 int	pfctl_call_showtables(int, int, struct pfr_anchoritem *);
 
-RBT_PROTOTYPE(pfctl_statelim_ids, pfctl_statelim, entry,
+RBT_PROTOTYPE(pfctl_statelim_ids, pfctl_statelim, id_entry,
     pfctl_statelim_id_cmp);
-RBT_PROTOTYPE(pfctl_statelim_nms, pfctl_statelim, entry,
+RBT_PROTOTYPE(pfctl_statelim_nms, pfctl_statelim, nm_entry,
     pfctl_statelim_nm_cmp);
-RBT_PROTOTYPE(pfctl_sourcelim_ids, pfctl_sourcelim, entry,
+RBT_PROTOTYPE(pfctl_sourcelim_ids, pfctl_sourcelim, id_entry,
     pfctl_sourcelim_id_cmp);
-RBT_PROTOTYPE(pfctl_sourcelim_nms, pfctl_sourcelim, entry,
+RBT_PROTOTYPE(pfctl_sourcelim_nms, pfctl_sourcelim, nm_entry,
     pfctl_sourcelim_nm_cmp);
 
 enum showopt_id {
@@ -3557,7 +3557,8 @@ pfctl_statelim_id_cmp(const struct pfctl_statelim *a,
 	return (0);
 }
 
-RBT_GENERATE(pfctl_statelim_ids, pfctl_statelim, entry, pfctl_statelim_id_cmp);
+RBT_GENERATE(pfctl_statelim_ids, pfctl_statelim, id_entry,
+    pfctl_statelim_id_cmp);
 
 static inline int
 pfctl_statelim_nm_cmp(const struct pfctl_statelim *a,
@@ -3566,7 +3567,8 @@ pfctl_statelim_nm_cmp(const struct pfctl_statelim *a,
 	return (strcmp(a->ioc.name, b->ioc.name));
 }
 
-RBT_GENERATE(pfctl_statelim_nms, pfctl_statelim, entry, pfctl_statelim_nm_cmp);
+RBT_GENERATE(pfctl_statelim_nms, pfctl_statelim, nm_entry,
+    pfctl_statelim_nm_cmp);
 
 int
 pfctl_add_statelim(struct pfctl *pf, struct pfctl_statelim *stlim)
@@ -3623,7 +3625,7 @@ pfctl_sourcelim_id_cmp(const struct pfctl_sourcelim *a,
 	return (0);
 }
 
-RBT_GENERATE(pfctl_sourcelim_ids, pfctl_sourcelim, entry,
+RBT_GENERATE(pfctl_sourcelim_ids, pfctl_sourcelim, id_entry,
     pfctl_sourcelim_id_cmp);
 
 static inline int
@@ -3633,7 +3635,7 @@ pfctl_sourcelim_nm_cmp(const struct pfctl_sourcelim *a,
 	return (strcmp(a->ioc.name, b->ioc.name));
 }
 
-RBT_GENERATE(pfctl_sourcelim_nms, pfctl_sourcelim, entry,
+RBT_GENERATE(pfctl_sourcelim_nms, pfctl_sourcelim, nm_entry,
     pfctl_sourcelim_nm_cmp);
 
 int
@@ -3642,8 +3644,9 @@ pfctl_add_sourcelim(struct pfctl *pf, struct pfctl_sourcelim *srlim)
 	struct pfctl_sourcelim *osrlim;
 
 	osrlim = RBT_INSERT(pfctl_sourcelim_ids, &pf->sourcelim_ids, srlim);
-	if (osrlim != NULL)
+	if (osrlim != NULL) {
 		return (-1);
+	}
 
 	osrlim = RBT_INSERT(pfctl_sourcelim_nms, &pf->sourcelim_nms, srlim);
 	if (osrlim != NULL) {
