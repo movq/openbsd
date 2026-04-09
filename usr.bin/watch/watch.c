@@ -1,4 +1,4 @@
-/*	$OpenBSD: watch.c,v 1.37 2025/07/09 21:23:28 job Exp $ */
+/*	$OpenBSD: watch.c,v 1.38 2026/04/09 17:29:04 job Exp $ */
 /*
  * Copyright (c) 2025 Job Snijders <job@openbsd.org>
  * Copyright (c) 2000, 2001 Internet Initiative Japan Inc.
@@ -446,7 +446,9 @@ start_child()
 	struct child *child;
 	int fds[2];
 
-	child = calloc(1, sizeof(*child));
+	if ((child = calloc(1, sizeof(*child))) == NULL)
+		err(1, "calloc");
+
 	child->bufsiz = sizeof(child->buf);
 
 	if (pipe(fds) == -1)
@@ -910,6 +912,7 @@ quit(void)
 	refresh();
 	endwin();
 	free(cmdv);
+	free(cmdstr);
 	exit(0);
 }
 
