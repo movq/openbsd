@@ -1,4 +1,4 @@
-/*	$OpenBSD: watch.c,v 1.38 2026/04/09 17:29:04 job Exp $ */
+/*	$OpenBSD: watch.c,v 1.39 2026/04/09 18:41:41 job Exp $ */
 /*
  * Copyright (c) 2025 Job Snijders <job@openbsd.org>
  * Copyright (c) 2000, 2001 Internet Initiative Japan Inc.
@@ -911,8 +911,6 @@ quit(void)
 	erase();
 	refresh();
 	endwin();
-	free(cmdv);
-	free(cmdstr);
 	exit(0);
 }
 
