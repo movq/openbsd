@@ -1,4 +1,4 @@
-.\" $OpenBSD: unveil.2,v 1.23 2026/03/16 19:54:27 deraadt Exp $
+.\" $OpenBSD: unveil.2,v 1.24 2026/04/11 17:04:55 deraadt Exp $
 .\"
 .\" Copyright (c) 2018 Bob Beck <beck@openbsd.org>
 .\"
@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: March 16 2026 $
+.Dd $Mdocdate: April 11 2026 $
 .Dt UNVEIL 2
 .Os
 .Sh NAME
@@ -43,7 +43,7 @@ The
 system call remains capable of traversing to any
 .Fa path
 in the filesystem, so additional calls can set permissions at any
-other points in the filesystem hierarchy.
+point in the filesystem hierarchy.
 .Pp
 After establishing a collection of
 .Fa path
