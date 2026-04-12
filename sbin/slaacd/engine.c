@@ -1,4 +1,4 @@
-/*	$OpenBSD: engine.c,v 1.99 2024/11/21 13:35:20 claudio Exp $	*/
+/*	$OpenBSD: engine.c,v 1.100 2026/04/12 23:57:31 deraadt Exp $	*/
 
 /*
  * Copyright (c) 2017 Florian Obser <florian@openbsd.org>
@@ -1474,6 +1474,8 @@ parse_ra(struct slaacd_iface *iface, struct imsg_ra *ra)
 		struct in6_addr *in6;
 		int i;
 
+		if (nd_opt_hdr->nd_opt_len == 0)
+			goto err;
 		len -= sizeof(struct nd_opt_hdr);
 		p += sizeof(struct nd_opt_hdr);
 
@@ -1760,6 +1762,8 @@ debug_log_ra(struct imsg_ra *ra)
 		struct in6_addr *in6;
 		int i;
 
+		if (nd_opt_hdr->nd_opt_len == 0)
+			return;
 		len -= sizeof(struct nd_opt_hdr);
 		p += sizeof(struct nd_opt_hdr);
 		if (nd_opt_hdr->nd_opt_len * 8 - 2 > len) {
