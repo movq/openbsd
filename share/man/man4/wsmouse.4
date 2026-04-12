@@ -1,4 +1,4 @@
-.\" $OpenBSD: wsmouse.4,v 1.25 2025/08/16 11:28:25 matthieu Exp $
+.\" $OpenBSD: wsmouse.4,v 1.26 2026/04/12 12:35:06 jsg Exp $
 .\" $NetBSD: wsmouse.4,v 1.3 1999/12/06 14:52:08 augustss Exp $
 .\"
 .\" Copyright (c) 2018 Ulf Brosziewski <bru@openbsd.org>
@@ -26,7 +26,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: August 16 2025 $
+.Dd $Mdocdate: April 12 2026 $
 .Dt WSMOUSE 4
 .Os
 .Sh NAME
@@ -203,7 +203,7 @@ struct wsmouse_parameters {
 The number of parameters to read or write must be specified in
 .Va nparams .
 For each parameter, when
-.Dv WSMOUSEIO_GETPARAMS 
+.Dv WSMOUSEIO_GETPARAMS
 is used, a key must be specified.
 When
 .Dv WSMOUSEIO_SETPARAMS
