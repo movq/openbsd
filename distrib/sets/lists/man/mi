@@ -1762,6 +1762,7 @@
 ./usr/share/man/man4/isagpio.4
 ./usr/share/man/man4/isapnp.4
 ./usr/share/man/man4/islrtc.4
+./usr/share/man/man4/ispi.4
 ./usr/share/man/man4/it.4
 ./usr/share/man/man4/itherm.4
 ./usr/share/man/man4/iwi.4
@@ -2067,8 +2068,10 @@
 ./usr/share/man/man4/riscv64/sgmsi.4
 ./usr/share/man/man4/riscv64/smtclock.4
 ./usr/share/man/man4/riscv64/smtcomphy.4
+./usr/share/man/man4/riscv64/smte.4
 ./usr/share/man/man4/riscv64/smtgpio.4
 ./usr/share/man/man4/riscv64/smtiic.4
+./usr/share/man/man4/riscv64/smtpinctrl.4
 ./usr/share/man/man4/riscv64/smtpmic.4
 ./usr/share/man/man4/riscv64/stfclock.4
 ./usr/share/man/man4/riscv64/stfpcie.4
