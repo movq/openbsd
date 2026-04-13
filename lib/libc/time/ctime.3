@@ -1,7 +1,7 @@
-.\"	$OpenBSD: ctime.3,v 1.50 2025/11/20 10:58:11 tb Exp $
+.\"	$OpenBSD: ctime.3,v 1.51 2026/04/13 16:01:54 tb Exp $
 .\"
 .\"
-.Dd $Mdocdate: November 20 2025 $
+.Dd $Mdocdate: April 13 2026 $
 .Dt CTIME 3
 .Os
 .Sh NAME
@@ -278,9 +278,12 @@ The functions
 and
 .Fn gmtime_r
 return NULL on error.
-The function
+The functions
 .Fn mktime
-returns \-1 on error.
+and
+.Fn timegm
+return \-1 on error,
+which is ambiguous because \-1 is a legitimate conversion result.
 .Sh FILES
 .Bl -tag -width "/usr/share/zoneinfo/posixrules" -compact
 .It Pa /usr/share/zoneinfo
