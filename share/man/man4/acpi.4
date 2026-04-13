@@ -1,4 +1,4 @@
-.\"	$OpenBSD: acpi.4,v 1.79 2025/10/18 10:42:42 jsg Exp $
+.\"	$OpenBSD: acpi.4,v 1.80 2026/04/13 01:09:07 jsg Exp $
 .\"
 .\" Copyright (c) 2006 Alexander Yurchenko <grange@openbsd.org>
 .\"
@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: October 18 2025 $
+.Dd $Mdocdate: April 13 2026 $
 .Dt ACPI 4
 .Os
 .Sh NAME
@@ -130,10 +130,14 @@ Intel Gemini Lake GPIO controller
 i.MX onboard I2C controller
 .It Xr intelpmc 4
 Intel power management controller
+.It Xr inthid 4
+Intel HID event and 5-button array devices
 .It Xr iosf 4
 Intel OnChip System Fabric device
 .It Xr ipmi 4
 Intelligent Platform Management Interface driver
+.It Xr ispi 4
+Intel LPSS SPI controller
 .It Xr pchgpio 4
 Intel PCH GPIO controller
 .It Xr pckbc 4
