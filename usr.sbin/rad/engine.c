@@ -1,4 +1,4 @@
-/*	$OpenBSD: engine.c,v 1.28 2024/11/21 13:38:15 claudio Exp $	*/
+/*	$OpenBSD: engine.c,v 1.28.4.1 2026/04/13 15:50:39 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2018 Florian Obser <florian@openbsd.org>
@@ -533,6 +533,8 @@ parse_rs(struct imsg_ra_rs *rs)
 	while ((size_t)len >= sizeof(struct nd_opt_hdr)) {
 		struct nd_opt_hdr *nd_opt_hdr = (struct nd_opt_hdr *)p;
 
+		if (nd_opt_hdr->nd_opt_len == 0)
+			return;
 		len -= sizeof(struct nd_opt_hdr);
 		p += sizeof(struct nd_opt_hdr);
 
