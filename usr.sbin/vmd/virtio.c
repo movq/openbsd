@@ -1,4 +1,4 @@
-/*	$OpenBSD: virtio.c,v 1.135 2026/02/22 22:54:54 dv Exp $	*/
+/*	$OpenBSD: virtio.c,v 1.136 2026/04/14 14:15:10 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -1463,9 +1463,10 @@ virtio_dev_launch(struct vmd_vm *vm, struct virtio_dev *dev)
 	int sync_fds[2], async_fds[2], ret = 0;
 	size_t i, sz = 0;
 	struct viodev_msg msg;
-	struct virtio_dev *dev_entry;
+	struct virtio_dev *dev_entry, dev_copy;
 	struct imsg imsg;
 	struct imsgev *iev = &dev->sync_iev;
+	struct vmd_vm vm_copy;
 
 	switch (dev->dev_type) {
 	case VMD_DEVTYPE_NET:
@@ -1520,8 +1521,12 @@ virtio_dev_launch(struct vmd_vm *vm, struct virtio_dev *dev)
 		/* 1. Send over our configured device. */
 		log_debug("%s: sending '%c' type device struct", __func__,
 			dev->dev_type);
-		sz = atomicio(vwrite, sync_fds[0], dev, sizeof(*dev));
-		if (sz != sizeof(*dev)) {
+		memcpy(&dev_copy, dev, sizeof(dev_copy));
+		bzero(&dev_copy.async_iev, sizeof(dev_copy.async_iev));
+		bzero(&dev_copy.sync_iev, sizeof(dev_copy.sync_iev));
+		bzero(&dev_copy.dev_next, sizeof(dev_copy.dev_next));
+		sz = atomicio(vwrite, sync_fds[0], &dev_copy, sizeof(dev_copy));
+		if (sz != sizeof(dev_copy)) {
 			log_warnx("%s: failed to send device", __func__);
 			ret = EIO;
 			goto err;
@@ -1537,8 +1542,19 @@ virtio_dev_launch(struct vmd_vm *vm, struct virtio_dev *dev)
 		/* 2. Send over details on the VM (including memory fds). */
 		log_debug("%s: sending vm message for '%s'", __func__,
 			vm->vm_params.vmc_name);
-		sz = atomicio(vwrite, sync_fds[0], vm, sizeof(*vm));
-		if (sz != sizeof(*vm)) {
+		memcpy(&vm_copy, vm, sizeof(vm_copy));
+		vm_copy.vm_kernel_path = NULL;
+		bzero(&vm_copy.vm_entry, sizeof(vm_copy.vm_entry));
+		bzero(&vm_copy.vm_iev, sizeof(vm_copy.vm_iev));
+		for (i = 0; i < nitems(vm_copy.vm_ifs); i++) {
+			vm_copy.vm_ifs[i].vif_name = NULL;
+			vm_copy.vm_ifs[i].vif_switch = NULL;
+			vm_copy.vm_ifs[i].vif_group = NULL;
+			bzero(&vm_copy.vm_ifs[i].vif_entry,
+			    sizeof(vm_copy.vm_ifs[i].vif_entry));
+		}
+		sz = atomicio(vwrite, sync_fds[0], &vm_copy, sizeof(vm_copy));
+		if (sz != sizeof(vm_copy)) {
 			log_warnx("%s: failed to send vm details", __func__);
 			ret = EIO;
 			goto err;
