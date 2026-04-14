@@ -1,4 +1,4 @@
-/*	$OpenBSD: parse.y,v 1.73 2026/01/14 03:09:05 dv Exp $	*/
+/*	$OpenBSD: parse.y,v 1.74 2026/04/14 21:41:19 dv Exp $	*/
 
 /*
  * Copyright (c) 2007-2016 Reyk Floeter <reyk@openbsd.org>
@@ -88,8 +88,8 @@ int		 symset(const char *, const char *, int);
 char		*symget(const char *);
 
 ssize_t		 parse_size(char *, int64_t);
-int		 parse_disk(char *, int);
-unsigned int	 parse_format(const char *);
+int		 parse_disk(char *, enum vm_disk_fmt);
+enum vm_disk_fmt parse_format(const char *);
 
 static struct vmop_create_params vmc;
 static struct vmd_switch	*vsw;
@@ -104,6 +104,7 @@ extern const char		*vmd_descsw[];
 typedef struct {
 	union {
 		uint8_t		 lladdr[ETHER_ADDR_LEN];
+		enum vm_disk_fmt disk_format;
 		int64_t		 number;
 		char		*string;
 		struct {
@@ -128,7 +129,7 @@ typedef struct {
 %type	<v.lladdr>	lladdr
 %type	<v.number>	bootdevice
 %type	<v.number>	disable
-%type	<v.number>	image_format
+%type	<v.disk_format>	image_format
 %type	<v.number>	local
 %type	<v.number>	locked
 %type	<v.number>	updown
@@ -642,10 +643,10 @@ agentxopts	: /* none */
 		;
 
 image_format	: /* none 	*/	{
-			$$ = 0;
+			$$ = VMDF_AUTO;
 		}
 	     	| FORMAT string		{
-			if (($$ = parse_format($2)) == 0) {
+			if (($$ = parse_format($2)) == VMDF_INVALID) {
 				yyerror("unrecognized disk format %s", $2);
 				free($2);
 				YYERROR;
@@ -1355,11 +1356,9 @@ parse_size(char *word, int64_t val)
 }
 
 int
-parse_disk(char *word, int type)
+parse_disk(char *word, enum vm_disk_fmt type)
 {
-	char	 buf[BUFSIZ], path[PATH_MAX];
-	int	 fd;
-	ssize_t	 len;
+	char	 path[PATH_MAX];
 
 	if (vmc.vmc_ndisks >= VM_MAX_DISKS_PER_VM) {
 		log_warnx("too many disks");
@@ -1369,23 +1368,6 @@ parse_disk(char *word, int type)
 	if (realpath(word, path) == NULL) {
 		log_warn("disk %s", word);
 		return (-1);
-	}
-
-	if (!type) {
-		/* Use raw as the default format */
-		type = VMDF_RAW;
-
-		/* Try to derive the format from the file signature */
-		if ((fd = open(path, O_RDONLY)) != -1) {
-			len = read(fd, buf, sizeof(buf));
-			close(fd);
-			if (len >= (ssize_t)strlen(VM_MAGIC_QCOW) &&
-			    strncmp(buf, VM_MAGIC_QCOW,
-			    strlen(VM_MAGIC_QCOW)) == 0) {
-				/* The qcow version will be checked later */
-				type = VMDF_QCOW2;
-			}
-		}
 	}
 
 	if (strlcpy(vmc.vmc_disks[vmc.vmc_ndisks], path,
@@ -1401,14 +1383,14 @@ parse_disk(char *word, int type)
 	return (0);
 }
 
-unsigned int
+enum vm_disk_fmt
 parse_format(const char *word)
 {
 	if (strcasecmp(word, "raw") == 0)
 		return (VMDF_RAW);
 	else if (strcasecmp(word, "qcow2") == 0)
 		return (VMDF_QCOW2);
-	return (0);
+	return (VMDF_INVALID);
 }
 
 /*

@@ -1,4 +1,4 @@
-/*	$OpenBSD: virtio.h,v 1.61 2026/02/22 22:54:54 dv Exp $	*/
+/*	$OpenBSD: virtio.h,v 1.62 2026/04/14 21:41:19 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -396,6 +396,7 @@ uint32_t virtio_io_cfg(struct virtio_dev *, int, uint8_t, uint32_t, uint8_t);
 void virtio_update_qs(struct virtio_dev *);
 void virtio_update_qa(struct virtio_dev *);
 
+enum vm_disk_fmt virtio_get_disktype(int);
 ssize_t virtio_qcow2_get_base(int, char *, size_t, const char *);
 int virtio_qcow2_create(const char *, const char *, uint64_t);
 int virtio_qcow2_init(struct virtio_backing *, off_t *, int*, size_t);

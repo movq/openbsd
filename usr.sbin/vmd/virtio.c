@@ -1,4 +1,4 @@
-/*	$OpenBSD: virtio.c,v 1.136 2026/04/14 14:15:10 dv Exp $	*/
+/*	$OpenBSD: virtio.c,v 1.137 2026/04/14 21:41:19 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -941,17 +941,18 @@ vmmci_io(int dir, uint16_t reg, uint32_t *data, uint8_t *intr,
 	return (0);
 }
 
-int
-virtio_get_base(int fd, char *path, size_t npath, int type, const char *dpath)
+enum vm_disk_fmt
+virtio_get_disktype(int fd)
 {
-	switch (type) {
-	case VMDF_RAW:
-		return 0;
-	case VMDF_QCOW2:
-		return virtio_qcow2_get_base(fd, path, npath, dpath);
-	}
-	log_warnx("%s: invalid disk format", __func__);
-	return -1;
+	char	 buf[sizeof(VM_MAGIC_QCOW) - 1];
+	ssize_t	 len;
+
+	len = pread(fd, buf, sizeof(buf), 0);
+	if (len >= (ssize_t)sizeof(buf) &&
+	    memcmp(buf, VM_MAGIC_QCOW, sizeof(buf)) == 0)
+		return (VMDF_QCOW2);
+
+	return (VMDF_RAW);
 }
 
 static void
