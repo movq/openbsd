@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmd.c,v 1.172 2026/02/22 22:54:54 dv Exp $	*/
+/*	$OpenBSD: vmd.c,v 1.173 2026/04/14 14:15:10 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Reyk Floeter <reyk@openbsd.org>
@@ -41,7 +41,6 @@
 #include <dev/vmm/vmm.h>
 
 #include "proc.h"
-#include "atomicio.h"
 #include "vmd.h"
 
 __dead void usage(void);

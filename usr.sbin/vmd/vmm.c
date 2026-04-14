@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmm.c,v 1.136 2026/03/14 11:25:40 dv Exp $	*/
+/*	$OpenBSD: vmm.c,v 1.137 2026/04/14 14:15:10 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -598,7 +598,7 @@ opentap(char *ifname)
 int
 vmm_start_vm(struct imsg *imsg, uint32_t *id, pid_t *pid)
 {
-	struct vmd_vm		*vm;
+	struct vmd_vm		*vm, vm_copy;
 	char			*nargv[10], num[32], vmm_fd[32], psp_fd[32];
 	int			 ret = EINVAL;
 	int			 fds[2];
@@ -635,8 +635,19 @@ vmm_start_vm(struct imsg *imsg, uint32_t *id, pid_t *pid)
 		close_fd(fds[1]);
 
 		/* Send the details over the pipe to the child. */
-		sz = atomicio(vwrite, fds[0], vm, sizeof(*vm));
-		if (sz != sizeof(*vm)) {
+		memcpy(&vm_copy, vm, sizeof(vm_copy));
+		vm_copy.vm_kernel_path = NULL;
+		bzero(&vm_copy.vm_entry, sizeof(vm_copy.vm_entry));
+		bzero(&vm_copy.vm_iev, sizeof(vm_copy.vm_iev));
+		for (i = 0; i < nitems(vm_copy.vm_ifs); i++) {
+			vm_copy.vm_ifs[i].vif_name = NULL;
+			vm_copy.vm_ifs[i].vif_switch = NULL;
+			vm_copy.vm_ifs[i].vif_group = NULL;
+			bzero(&vm_copy.vm_ifs[i].vif_entry,
+			    sizeof(vm_copy.vm_ifs[i].vif_entry));
+		}
+		sz = atomicio(vwrite, fds[0], &vm_copy, sizeof(vm_copy));
+		if (sz != sizeof(vm_copy)) {
 			log_warnx("%s: failed to send config for vm '%s'",
 			    __func__, vm->vm_params.vmc_name);
 			ret = EIO;
