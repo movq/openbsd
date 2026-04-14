@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmd.h,v 1.145 2026/02/22 22:54:54 dv Exp $	*/
+/*	$OpenBSD: vmd.h,v 1.146 2026/04/14 21:41:19 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -207,6 +207,13 @@ struct vmop_owner {
 	int64_t			 gid;
 };
 
+enum vm_disk_fmt {
+	VMDF_INVALID = 0,
+	VMDF_AUTO,
+	VMDF_RAW,
+	VMDF_QCOW2,
+};
+
 struct vmop_create_params {
 	/* vm identifying information */
 	uint32_t		 vmc_id;
@@ -248,10 +255,8 @@ struct vmop_create_params {
 	/* Emulated disk and cdrom drives */
 	size_t			 vmc_ndisks;
 	char			 vmc_disks[VM_MAX_DISKS_PER_VM][PATH_MAX];
-	unsigned int		 vmc_disktypes[VM_MAX_DISKS_PER_VM];
+	enum vm_disk_fmt	 vmc_disktypes[VM_MAX_DISKS_PER_VM];
 	unsigned int		 vmc_diskbases[VM_MAX_DISKS_PER_VM];
-#define VMDF_RAW		0x01
-#define VMDF_QCOW2		0x02
 	char			 vmc_cdrom[PATH_MAX];
 
 	/* Emulated network devices */
@@ -580,9 +585,6 @@ int	 parse_config(const char *);
 int	 cmdline_symset(char *);
 int	 parse_prefix4(const char *, struct local_prefix *, const char **);
 int	 parse_prefix6(const char *, struct local_prefix *, const char **);
-
-/* virtio.c */
-int	 virtio_get_base(int, char *, size_t, int, const char *);
 
 /* vionet.c */
 __dead void vionet_main(int, int);

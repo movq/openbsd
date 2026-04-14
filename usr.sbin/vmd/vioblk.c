@@ -1,4 +1,4 @@
-/*	$OpenBSD: vioblk.c,v 1.27 2026/01/14 03:09:05 dv Exp $	*/
+/*	$OpenBSD: vioblk.c,v 1.28 2026/04/14 21:41:19 dv Exp $	*/
 
 /*
  * Copyright (c) 2023 Dave Voutila <dv@openbsd.org>
@@ -36,7 +36,7 @@
 extern struct vmd_vm *current_vm;
 struct iovec io_v[VIRTIO_QUEUE_SIZE_MAX];
 
-static const char *disk_type(int);
+static const char *disk_type(enum vm_disk_fmt);
 static uint32_t vioblk_read(struct virtio_dev *, struct viodev_msg *, int *);
 static int vioblk_write(struct virtio_dev *, struct viodev_msg *);
 static uint32_t vioblk_dev_read(struct virtio_dev *, struct viodev_msg *);
@@ -49,11 +49,13 @@ static void dev_dispatch_vm(int, short, void *);
 static void handle_sync_io(int, short, void *);
 
 static const char *
-disk_type(int type)
+disk_type(enum vm_disk_fmt type)
 {
 	switch (type) {
+	case VMDF_AUTO: return "auto";
 	case VMDF_RAW: return "raw";
 	case VMDF_QCOW2: return "qcow2";
+	case VMDF_INVALID: return "invalid";
 	}
 	return "unknown";
 }
@@ -67,7 +69,8 @@ vioblk_main(int fd, int fd_vmm)
 	struct vmd_vm		 vm;
 	ssize_t			 sz;
 	off_t			 szp = 0;
-	int			 i, ret, type;
+	enum vm_disk_fmt	 type;
+	int			 i, ret;
 
 	/*
 	 * stdio - needed for read/write to disk fds and channels to the vm.
