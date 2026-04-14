@@ -1,4 +1,4 @@
-/*	$OpenBSD: privsep.c,v 1.59 2025/11/14 21:47:31 dlg Exp $	*/
+/*	$OpenBSD: privsep.c,v 1.60 2026/04/14 18:19:50 canacar Exp $	*/
 
 /*
  * Copyright (c) 2003 Can Erkin Acar
@@ -585,6 +585,7 @@ impl_localtime(int fd)
 {
 	struct tm *lt, *gt;
 	time_t t;
+	const char *zone = NULL;
 
 	logmsg(LOG_DEBUG, "[priv]: msg PRIV_LOCALTIME received");
 
@@ -594,16 +595,19 @@ impl_localtime(int fd)
 	 * same local buffer */
 	if ((lt = localtime(&t)) == NULL)
 		errx(1, "localtime()");
+	zone = lt->tm_zone;
+	lt->tm_zone = NULL;
 	must_write(fd, lt, sizeof(*lt));
 
 	if ((gt = gmtime(&t)) == NULL)
 		errx(1, "gmtime()");
+	gt->tm_zone = NULL;
 	must_write(fd, gt, sizeof(*gt));
 
-	if (lt->tm_zone == NULL)
+	if (zone == NULL)
 		write_zero(fd);
 	else
-		write_string(fd, lt->tm_zone);
+		write_string(fd, zone);
 }
 
 static void
@@ -756,12 +760,11 @@ priv_localtime(const time_t *t)
 	must_read(priv_fd, &lt, sizeof(lt));
 	must_read(priv_fd, &gt0, sizeof(gt0));
 
+	if (lt.tm_zone != NULL || gt0.tm_zone != NULL)
+		errx(1, "%s: pointer leak from privileged portion", __func__);
 	if (read_string(priv_fd, zone, sizeof(zone), __func__))
 		lt.tm_zone = zone;
-	else
-		lt.tm_zone = NULL;
 
-	gt0.tm_zone = NULL;
 	gt = &gt0;
 
 	return &lt;
