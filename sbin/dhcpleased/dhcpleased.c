@@ -1,4 +1,4 @@
-/*	$OpenBSD: dhcpleased.c,v 1.41 2025/04/26 17:58:02 florian Exp $	*/
+/*	$OpenBSD: dhcpleased.c,v 1.42 2026/04/15 16:50:32 florian Exp $	*/
 
 /*
  * Copyright (c) 2017, 2021 Florian Obser <florian@openbsd.org>
@@ -761,16 +761,28 @@ int
 main_imsg_send_config(struct dhcpleased_conf *xconf)
 {
 	struct iface_conf	*iface_conf;
+	struct imsg_iface_conf	 imsg_iface_conf;
 
 	main_imsg_compose_frontend(IMSG_RECONF_CONF, -1, NULL, 0);
 	main_imsg_compose_engine(IMSG_RECONF_CONF, -1, NULL, 0);
 
 	/* Send the interface list to the frontend & engine. */
 	SIMPLEQ_FOREACH(iface_conf, &xconf->iface_list, entry) {
-		main_imsg_compose_frontend(IMSG_RECONF_IFACE, -1, iface_conf,
-		    sizeof(*iface_conf));
-		main_imsg_compose_engine(IMSG_RECONF_IFACE, -1, iface_conf,
-		    sizeof(*iface_conf));
+		memset(&imsg_iface_conf, 0, sizeof(imsg_iface_conf));
+		memcpy(imsg_iface_conf.name, iface_conf->name,
+		    sizeof(imsg_iface_conf.name));
+		imsg_iface_conf.ignore = iface_conf->ignore;
+		memcpy(imsg_iface_conf.ignore_servers,
+		    iface_conf->ignore_servers,
+		    sizeof(imsg_iface_conf.ignore_servers));
+		imsg_iface_conf.ignore_servers_len =
+		    iface_conf->ignore_servers_len;
+		imsg_iface_conf.prefer_ipv6 = iface_conf->prefer_ipv6;
+
+		main_imsg_compose_frontend(IMSG_RECONF_IFACE, -1,
+		    &imsg_iface_conf, sizeof(imsg_iface_conf));
+		main_imsg_compose_engine(IMSG_RECONF_IFACE, -1,
+		    &imsg_iface_conf, sizeof(imsg_iface_conf));
 		if (iface_conf->vc_id_len) {
 			main_imsg_compose_frontend(IMSG_RECONF_VC_ID, -1,
 			    iface_conf->vc_id, iface_conf->vc_id_len);
