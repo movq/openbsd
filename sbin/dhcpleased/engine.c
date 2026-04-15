@@ -1,4 +1,4 @@
-/*	$OpenBSD: engine.c,v 1.60 2025/10/05 07:25:16 florian Exp $	*/
+/*	$OpenBSD: engine.c,v 1.61 2026/04/15 16:50:32 florian Exp $	*/
 
 /*
  * Copyright (c) 2017, 2021 Florian Obser <florian@openbsd.org>
@@ -402,6 +402,7 @@ engine_dispatch_main(int fd, short event, void *bula)
 #ifndef SMALL
 	static struct dhcpleased_conf	*nconf;
 	static struct iface_conf	*iface_conf;
+	struct imsg_iface_conf		 imsg_iface_conf;
 #endif /* SMALL */
 	struct imsg			 imsg;
 	struct imsgev			*iev = bula;
@@ -486,19 +487,29 @@ engine_dispatch_main(int fd, short event, void *bula)
 			SIMPLEQ_INIT(&nconf->iface_list);
 			break;
 		case IMSG_RECONF_IFACE:
-			if ((iface_conf = malloc(sizeof(struct iface_conf)))
+			if ((iface_conf = calloc(1, sizeof(struct iface_conf)))
 			    == NULL)
 				fatal(NULL);
 
-			if (imsg_get_data(&imsg, iface_conf,
-			    sizeof(struct iface_conf)) == -1)
+			if (imsg_get_data(&imsg, &imsg_iface_conf,
+			    sizeof(imsg_iface_conf)) == -1)
 				fatalx("%s: invalid %s", __func__, i2s(type));
 
-			iface_conf->vc_id = NULL;
-			iface_conf->vc_id_len = 0;
-			iface_conf->c_id = NULL;
-			iface_conf->c_id_len = 0;
-			iface_conf->h_name = NULL;
+			if (imsg_iface_conf.ignore_servers_len > MAX_SERVERS)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+
+			if (strlcpy(iface_conf->name, imsg_iface_conf.name,
+			    sizeof(iface_conf->name)) >=
+			    sizeof(iface_conf->name))
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			iface_conf->ignore = imsg_iface_conf.ignore;
+			memcpy(iface_conf->ignore_servers,
+			    imsg_iface_conf.ignore_servers,
+			    sizeof(iface_conf->ignore_servers));
+			iface_conf->ignore_servers_len =
+			    imsg_iface_conf.ignore_servers_len;
+			iface_conf->prefer_ipv6 = imsg_iface_conf.prefer_ipv6;
+
 			SIMPLEQ_INSERT_TAIL(&nconf->iface_list,
 			    iface_conf, entry);
 			break;

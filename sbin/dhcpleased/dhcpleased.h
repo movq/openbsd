@@ -1,4 +1,4 @@
-/*	$OpenBSD: dhcpleased.h,v 1.18 2025/09/18 11:37:01 florian Exp $	*/
+/*	$OpenBSD: dhcpleased.h,v 1.19 2026/04/15 16:50:32 florian Exp $	*/
 
 /*
  * Copyright (c) 2017, 2021 Florian Obser <florian@openbsd.org>
@@ -266,6 +266,15 @@ struct dhcpleased_conf {
 };
 
 #endif	/* SMALL */
+
+/* keep in sync with iface_conf */
+struct imsg_iface_conf {
+	char				 name[IF_NAMESIZE];
+	int				 ignore;
+	struct in_addr			 ignore_servers[MAX_SERVERS];
+	int				 ignore_servers_len;
+	int				 prefer_ipv6;
+};
 
 struct imsg_ifinfo {
 	uint32_t		if_index;
