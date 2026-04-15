@@ -1,7 +1,7 @@
-.\"	$OpenBSD: ctime.3,v 1.51 2026/04/13 16:01:54 tb Exp $
+.\"	$OpenBSD: ctime.3,v 1.52 2026/04/15 00:20:28 job Exp $
 .\"
 .\"
-.Dd $Mdocdate: April 13 2026 $
+.Dd $Mdocdate: April 15 2026 $
 .Dt CTIME 3
 .Os
 .Sh NAME
@@ -283,7 +283,7 @@ The functions
 and
 .Fn timegm
 return \-1 on error,
-which is ambiguous because \-1 is a legitimate conversion result.
+which is ambiguous because \-1 also is a legitimate conversion result.
 .Sh FILES
 .Bl -tag -width "/usr/share/zoneinfo/posixrules" -compact
 .It Pa /usr/share/zoneinfo
@@ -393,6 +393,22 @@ restricted to years in the range 1900 through 2099.
 To avoid this portability mess, new programs should use
 .Fn strftime
 instead.
+.Pp
+A workaround for the ambiguous return value of
+.Fn mktime
+is to use
+.Fa tm_wday
+as a sentinel.
+If
+.Fa tm_wday
+did not change from \-1, an error has occurred.
+.Bd -literal -offset indent
+struct tm tm;
+\&...
+tm.tm_wday = -1;
+if (mktime(&tm) == -1 && tm.tm_wday == -1)
+	goto error;
+.Ed
 .Pp
 The default system time zone may be set by running
 .Dq Li zic -l timezone
