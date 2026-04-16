@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmctl.c,v 1.97 2026/04/01 00:51:50 dv Exp $	*/
+/*	$OpenBSD: vmctl.c,v 1.98 2026/04/16 21:34:47 dv Exp $	*/
 
 /*
  * Copyright (c) 2014 Mike Larkin <mlarkin@openbsd.org>
@@ -72,8 +72,8 @@ struct imsgbuf *ibuf;
  */
 int
 vm_start(uint32_t start_id, const char *name, size_t memsize, int nnics,
-    char **nics, int ndisks, char **disks, int *disktypes, char *kernel,
-    char *iso, char *instance, unsigned int bootdevice)
+    char **nics, int ndisks, char **disks, enum vm_disk_fmt *disktypes,
+    char *kernel, char *iso, char *instance, unsigned int bootdevice)
 {
 	struct vmop_create_params vmc;
 	struct stat sb;

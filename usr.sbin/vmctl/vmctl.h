@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmctl.h,v 1.44 2026/04/01 00:51:50 dv Exp $	*/
+/*	$OpenBSD: vmctl.h,v 1.45 2026/04/16 21:34:47 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Reyk Floeter <reyk@openbsd.org>
@@ -52,7 +52,7 @@ struct parse_result {
 	int			 nnets;
 	size_t			 ndisks;
 	char			**disks;
-	int			*disktypes;
+	enum vm_disk_fmt	*disktypes;
 	int			 verbose;
 	char			*instance;
 	unsigned int		 flags;
@@ -77,7 +77,7 @@ int	 parse_ifs(struct parse_result *, char *, int);
 int	 parse_network(struct parse_result *, char *);
 void	 parse_size(struct parse_result *, char *, const char *);
 int	 parse_disktype(const char *, const char **);
-int	 parse_disk(struct parse_result *, char *, int);
+int	 parse_disk(struct parse_result *, char *, enum vm_disk_fmt);
 int	 parse_vmid(struct parse_result *, char *, int);
 int	 parse_instance(struct parse_result *, char *);
 void	 parse_free(struct parse_result *);
@@ -97,7 +97,7 @@ int	 open_imagefile(int, const char *, int,
 	    struct virtio_backing *, off_t *);
 int	 create_imagefile(int, const char *, const char *, uint64_t, const char **);
 int	 vm_start(uint32_t, const char *, size_t, int, char **, int,
-	    char **, int *, char *, char *, char *, unsigned int);
+	    char **, enum vm_disk_fmt *, char *, char *, char *, unsigned int);
 int	 vm_start_complete(struct imsg *, int *, int);
 void	 terminate_vm(uint32_t, const char *, unsigned int);
 int	 terminate_vm_complete(struct imsg *, int *, unsigned int);

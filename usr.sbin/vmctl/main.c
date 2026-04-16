@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.88 2026/04/01 00:51:50 dv Exp $	*/
+/*	$OpenBSD: main.c,v 1.89 2026/04/16 21:34:47 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Reyk Floeter <reyk@openbsd.org>
@@ -468,11 +468,11 @@ parse_disktype(const char *s, const char **ret)
 }
 
 int
-parse_disk(struct parse_result *res, char *word, int type)
+parse_disk(struct parse_result *res, char *word, enum vm_disk_fmt type)
 {
-	char		**disks;
-	int		*disktypes;
-	char		*s;
+	char			**disks;
+	enum vm_disk_fmt	*disktypes;
+	char			*s;
 
 	if ((disks = reallocarray(res->disks, res->ndisks + 1,
 	    sizeof(char *))) == NULL) {
