@@ -1,4 +1,4 @@
-/*	$OpenBSD: ipcs.c,v 1.27 2019/06/28 13:35:01 deraadt Exp $	*/
+/*	$OpenBSD: ipcs.c,v 1.28 2026/04/16 07:03:15 dgl Exp $	*/
 /*	$NetBSD: ipcs.c,v 1.25 2000/06/16 03:58:20 simonb Exp $	*/
 
 /*-
@@ -630,7 +630,7 @@ sem_sysctl(void)
 		for (i = 0; i < semsi->seminfo.semmni; i++) {
 			struct semid_ds *semaptr = &semsi->semids[i];
 
-			if (semaptr->sem_base != NULL)
+			if (semaptr->sem_ctime != 0)
 				show_seminfo(semaptr->sem_otime,
 				    semaptr->sem_ctime,
 				    IXSEQ_TO_IPCID(i, semaptr->sem_perm),
