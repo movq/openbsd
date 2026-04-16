@@ -1,4 +1,4 @@
-/*	$OpenBSD: patterns.c,v 1.19 2025/05/20 10:30:41 tobhe Exp $	*/
+/*	$OpenBSD: patterns.c,v 1.20 2026/04/16 15:21:12 kettenis Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996 Christopher G. Demetriou.  All rights reserved.
@@ -126,6 +126,7 @@ main(void)
 	printf("%s\n", "qwz");
 	printf("%s\n", "radeondrm");
 	print_devices("radeondrm", radeon_devices, nitems(radeon_devices));
+	printf("%s\n", "riscv64-spacemit-dtb ^smtgpio0");
 	printf("%s\n", "rsu");
 	printf("%s\n", "uath");
 	printf("%s\n", "upgt");
