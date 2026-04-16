@@ -1,4 +1,4 @@
-/*	$OpenBSD: smtpd.h,v 1.693 2026/04/04 19:18:37 martijn Exp $	*/
+/*	$OpenBSD: smtpd.h,v 1.694 2026/04/16 19:37:42 op Exp $	*/
 
 /*
  * Copyright (c) 2008 Gilles Chehade <gilles@poolp.org>
@@ -55,7 +55,7 @@
 #define SMTPD_QUEUE_EXPIRY	 (4 * 24 * 60 * 60)
 #define SMTPD_SOCKET		 "/var/run/smtpd.sock"
 #define	SMTPD_NAME		 "OpenSMTPD"
-#define	SMTPD_VERSION		 "7.8.0"
+#define	SMTPD_VERSION		 "7.9.0"
 #define SMTPD_SESSION_TIMEOUT	 300
 #define SMTPD_BACKLOG		 5
 
