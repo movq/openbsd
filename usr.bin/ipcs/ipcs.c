@@ -1,4 +1,4 @@
-/*	$OpenBSD: ipcs.c,v 1.28 2026/04/16 07:03:15 dgl Exp $	*/
+/*	$OpenBSD: ipcs.c,v 1.29 2026/04/17 02:01:29 dgl Exp $	*/
 /*	$NetBSD: ipcs.c,v 1.25 2000/06/16 03:58:20 simonb Exp $	*/
 
 /*-
@@ -558,7 +558,7 @@ shm_sysctl(void)
 		show_shminfo_hdr();
 		for (i = 0; i < shmsi->shminfo.shmmni; i++) {
 			struct shmid_ds *shmptr = &shmsi->shmids[i];
-			if (shmptr->shm_internal)
+			if (shmptr->shm_cpid)
 				show_shminfo(shmptr->shm_atime,
 				    shmptr->shm_dtime,
 				    shmptr->shm_ctime,
