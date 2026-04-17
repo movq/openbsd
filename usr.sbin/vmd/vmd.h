@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmd.h,v 1.146 2026/04/14 21:41:19 dv Exp $	*/
+/*	$OpenBSD: vmd.h,v 1.147 2026/04/17 21:08:42 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -432,7 +432,6 @@ enum pipe_msg_type {
 	VIRTIO_THREAD_START,
 	VIRTIO_THREAD_PAUSE,
 	VIRTIO_THREAD_STOP,
-	VIRTIO_THREAD_ACK,
 	VMMCI_SET_TIMEOUT_SHORT,
 	VMMCI_SET_TIMEOUT_LONG,
 };

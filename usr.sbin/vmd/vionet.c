@@ -1,4 +1,4 @@
-/*	$OpenBSD: vionet.c,v 1.29 2026/01/14 03:09:05 dv Exp $	*/
+/*	$OpenBSD: vionet.c,v 1.30 2026/04/17 21:08:42 dv Exp $	*/
 
 /*
  * Copyright (c) 2023 Dave Voutila <dv@openbsd.org>
@@ -102,7 +102,6 @@ int pipe_inject[2];
 struct iovec iov_rx[VIRTIO_QUEUE_SIZE_MAX];
 struct iovec iov_tx[VIRTIO_QUEUE_SIZE_MAX];
 pthread_rwlock_t lock = NULL;		/* Guards device config state. */
-int resetting = 0;	/* Transient reset state used to coordinate reset. */
 int rx_enabled = 0;	/* 1: we expect to read the tap, 0: wait for notify. */
 
 __dead void
@@ -598,12 +597,15 @@ static void
 vionet_rx_event(int fd, short event, void *arg)
 {
 	struct virtio_dev	*dev = (struct virtio_dev *)arg;
-	int			 ret = 0;
+	struct vionet_dev	*vionet = (struct vionet_dev *)&dev->vionet;
+	int			 raise_irq = 0, ret = 0;
+	uint32_t		 generation = 0;
 
 	if (!(event & EV_READ))
 		fatalx("%s: invalid event type", __func__);
 
 	pthread_rwlock_rdlock(&lock);
+	generation = vionet->reset_generation;
 	ret = vionet_rx(dev, fd);
 	pthread_rwlock_unlock(&lock);
 
@@ -613,18 +615,22 @@ vionet_rx_event(int fd, short event, void *arg)
 	}
 
 	pthread_rwlock_wrlock(&lock);
-	if (ret == 1) {
-		/* Notify the driver. */
-		dev->isr |= 1;
-	} else {
-		/* Need a reset. Something went wrong. */
-		log_warnx("%s: requesting device reset", __func__);
-		dev->status |= DEVICE_NEEDS_RESET;
-		dev->isr |= VIRTIO_CONFIG_ISR_CONFIG_CHANGE;
+	if (generation == vionet->reset_generation) {
+		if (ret == 1) {
+			/* Notify the driver. */
+			dev->isr |= 1;
+		} else {
+			/* Need a reset. Something went wrong. */
+			log_warnx("%s: requesting device reset", __func__);
+			dev->status |= DEVICE_NEEDS_RESET;
+			dev->isr |= VIRTIO_CONFIG_ISR_CONFIG_CHANGE;
+		}
+		raise_irq = 1;
 	}
 	pthread_rwlock_unlock(&lock);
 
-	vm_pipe_send(&pipe_main, VIRTIO_RAISE_IRQ);
+	if (raise_irq)
+		vm_pipe_send(&pipe_main, VIRTIO_RAISE_IRQ);
 }
 
 static void
@@ -1066,10 +1072,11 @@ static void
 vionet_cfg_write(struct virtio_dev *dev, struct viodev_msg *msg)
 {
 	struct virtio_pci_common_cfg *pci_cfg = &dev->pci_cfg;
+	struct vionet_dev *vionet = (struct vionet_dev *)&dev->vionet;
 	uint32_t data = msg->data;
 	uint16_t reg = msg->reg & 0xFF;
 	uint8_t sz = msg->io_sz;
-	int i, pause_devices = 0;
+	int pausing = 0;
 
 	DPRINTF("%s: write reg=%d data=0x%x", __func__, msg->reg, data);
 
@@ -1129,25 +1136,24 @@ vionet_cfg_write(struct virtio_dev *dev, struct viodev_msg *msg)
 		}
 		dev->status = data;
 		if (dev->status == 0) {
-			/* Reset device and virtqueues (if any). */
+			/* vionet has special handling being multi-threaded. */
+			pausing = 1;
+			vionet->reset_generation++;
+
+			/*
+			 * Don't allow zero. It's a special case in
+			 * read_pipe_tx().
+			 */
+			if (vionet->reset_generation == 0)
+				vionet->reset_generation = 1;
+
+			/* Reset device and virtqueues. */
 			dev->driver_feature = 0;
 			dev->isr = 0;
-
-			pci_cfg->queue_select = 0;
+			pci_cfg->queue_select = 0;	/* Technically RXQ. */
 			virtio_update_qs(dev);
-
-			if (dev->num_queues > 0) {
-				/*
-				 * Reset virtqueues to initial state and
-				 * set to disabled status. Clear PCI
-				 * configuration registers.
-				 */
-				for (i = 0; i < dev->num_queues; i++)
-					virtio_vq_init(dev, i);
-			}
-
-			resetting = 2;		/* Wait on two acks: rx & tx */
-			pause_devices = 1;
+			virtio_vq_init(dev, RXQ);
+			virtio_vq_init(dev, TXQ);
 		}
 		DPRINTF("%s: dev %u status [%s%s%s%s%s%s]", __func__,
 		    dev->pci_id,
@@ -1255,7 +1261,8 @@ vionet_cfg_write(struct virtio_dev *dev, struct viodev_msg *msg)
 	}
 	pthread_rwlock_unlock(&lock);
 
-	if (pause_devices) {
+	if (pausing) {
+		/* Pause tx and rx processing. */
 		rx_enabled = 0;
 		vionet_deassert_pic_irq(dev);
 		vm_pipe_send(&pipe_rx, VIRTIO_THREAD_PAUSE);
@@ -1425,7 +1432,6 @@ read_pipe_rx(int fd, short event, void *arg)
 	case VIRTIO_THREAD_PAUSE:
 		event_del(&ev_tap);
 		event_del(&ev_inject);
-		vm_pipe_send(&pipe_main, VIRTIO_THREAD_ACK);
 		break;
 	case VIRTIO_THREAD_STOP:
 		event_del(&ev_tap);
@@ -1444,8 +1450,10 @@ static void
 read_pipe_tx(int fd, short event, void *arg)
 {
 	struct virtio_dev	*dev = (struct virtio_dev*)arg;
+	struct vionet_dev	*vionet = (struct vionet_dev*)&dev->vionet;
 	enum pipe_msg_type	 msg;
-	int			 ret = 0;
+	int			 raise_irq = 0, ret = 0;
+	uint32_t		 generation = 0;
 
 	if (!(event & EV_READ))
 		fatalx("%s: invalid event type", __func__);
@@ -1455,6 +1463,7 @@ read_pipe_tx(int fd, short event, void *arg)
 	switch (msg) {
 	case VIRTIO_NOTIFY:
 		pthread_rwlock_rdlock(&lock);
+		generation = vionet->reset_generation;
 		ret = vionet_tx(dev);
 		pthread_rwlock_unlock(&lock);
 		break;
@@ -1462,11 +1471,7 @@ read_pipe_tx(int fd, short event, void *arg)
 		/* Ignore Start messages. */
 		break;
 	case VIRTIO_THREAD_PAUSE:
-		/*
-		 * Nothing to do when pausing on the tx side, but ACK so main
-		 * thread knows we're not transmitting.
-		 */
-		vm_pipe_send(&pipe_main, VIRTIO_THREAD_ACK);
+		/* Nothing to do when pausing on the tx side. */
 		break;
 	case VIRTIO_THREAD_STOP:
 		event_base_loopexit(ev_base_tx, NULL);
@@ -1481,18 +1486,22 @@ read_pipe_tx(int fd, short event, void *arg)
 	}
 
 	pthread_rwlock_wrlock(&lock);
-	if (ret == 1) {
-		/* Notify the driver. */
-		dev->isr |= 1;
-	} else {
-		/* Need a reset. Something went wrong. */
-		log_warnx("%s: requesting device reset", __func__);
-		dev->status |= DEVICE_NEEDS_RESET;
-		dev->isr |= VIRTIO_CONFIG_ISR_CONFIG_CHANGE;
+	if (generation == vionet->reset_generation) {
+		if (ret == 1) {
+			/* Notify the driver. */
+			dev->isr |= 1;
+		} else {
+			/* Need a reset. Something went wrong. */
+			log_warnx("%s: requesting device reset", __func__);
+			dev->status |= DEVICE_NEEDS_RESET;
+			dev->isr |= VIRTIO_CONFIG_ISR_CONFIG_CHANGE;
+		}
+		raise_irq = 1;
 	}
 	pthread_rwlock_unlock(&lock);
 
-	vm_pipe_send(&pipe_main, VIRTIO_RAISE_IRQ);
+	if (raise_irq)
+		vm_pipe_send(&pipe_main, VIRTIO_RAISE_IRQ);
 }
 
 /*
@@ -1502,7 +1511,6 @@ static void
 read_pipe_main(int fd, short event, void *arg)
 {
 	struct virtio_dev	*dev = (struct virtio_dev*)arg;
-	struct vionet_dev	*vionet = &dev->vionet;
 	enum pipe_msg_type	 msg;
 
 	if (!(event & EV_READ))
@@ -1512,23 +1520,6 @@ read_pipe_main(int fd, short event, void *arg)
 	switch (msg) {
 	case VIRTIO_RAISE_IRQ:
 		vionet_assert_pic_irq(dev);
-		break;
-	case VIRTIO_THREAD_ACK:
-		resetting--;
-		if (resetting == 0) {
-			log_debug("%s: resetting virtio network device %d",
-			    __func__, vionet->idx);
-			pthread_rwlock_wrlock(&lock);
-			dev->status = 0;
-			dev->cfg.guest_feature = 0;
-			dev->cfg.queue_pfn = 0;
-			dev->cfg.queue_select = 0;
-			dev->cfg.queue_notify = 0;
-			dev->isr = 0;
-			virtio_vq_init(dev, TXQ);
-			virtio_vq_init(dev, RXQ);
-			pthread_rwlock_unlock(&lock);
-		}
 		break;
 	default:
 		fatalx("%s: invalid channel msg: %d", __func__, msg);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: virtio.h,v 1.62 2026/04/14 21:41:19 dv Exp $	*/
+/*	$OpenBSD: virtio.h,v 1.63 2026/04/17 21:08:42 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -287,6 +287,7 @@ struct vionet_dev {
 	int local;
 	int pxeboot;
 	struct local_prefix local_prefix;
+	uint32_t reset_generation;
 
 	unsigned int idx;
 };
