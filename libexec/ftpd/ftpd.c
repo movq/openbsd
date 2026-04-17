@@ -1,4 +1,4 @@
-/*	$OpenBSD: ftpd.c,v 1.235 2025/05/08 15:22:49 deraadt Exp $	*/
+/*	$OpenBSD: ftpd.c,v 1.236 2026/04/17 20:17:53 millert Exp $	*/
 /*	$NetBSD: ftpd.c,v 1.15 1995/06/03 22:46:47 mycroft Exp $	*/
 
 /*
@@ -1558,11 +1558,12 @@ send_data(FILE *instr, FILE *outstr, off_t blksize, off_t filesize, int isreg)
 					munmap(buf, fsize);
 					goto got_oob;
 				}
-				len -= cnt;
-				bp += cnt;
-				if (cnt > 0)
+				if (cnt > 0) {
+					len -= cnt;
+					bp += cnt;
 					byte_count += cnt;
-			} while(cnt > 0 && len > 0);
+				}
+			} while (cnt > 0 && len > 0);
 
 			transflag = 0;
 			munmap(buf, fsize);
