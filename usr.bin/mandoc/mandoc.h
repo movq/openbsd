@@ -1,4 +1,4 @@
-/* $OpenBSD: mandoc.h,v 1.225 2025/01/05 18:03:51 schwarze Exp $ */
+/* $OpenBSD: mandoc.h,v 1.226 2026/04/17 15:30:27 schwarze Exp $ */
 /*
  * Copyright (c) 2012-2022, 2025 Ingo Schwarze <schwarze@openbsd.org>
  * Copyright (c) 2010, 2011, 2014 Kristaps Dzonsons <kristaps@bsd.lv>
@@ -285,8 +285,10 @@ enum	mandocerr {
 	MANDOCERR_GZDOPEN,
 	MANDOCERR_MKSTEMP,
 	MANDOCERR_OPEN,
+	MANDOCERR_PATH,
 	MANDOCERR_PLEDGE,
 	MANDOCERR_READ,
+	MANDOCERR_UNVEIL,
 	MANDOCERR_WAIT,
 	MANDOCERR_WRITE,
 

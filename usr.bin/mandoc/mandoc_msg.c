@@ -1,4 +1,4 @@
-/* $OpenBSD: mandoc_msg.c,v 1.19 2025/01/05 18:03:51 schwarze Exp $ */
+/* $OpenBSD: mandoc_msg.c,v 1.20 2026/04/17 15:30:27 schwarze Exp $ */
 /*
  * Copyright (c) 2014-2022, 2025 Ingo Schwarze <schwarze@openbsd.org>
  * Copyright (c) 2010, 2011 Kristaps Dzonsons <kristaps@bsd.lv>
@@ -281,8 +281,10 @@ static	const char *const type_message[MANDOCERR_MAX] = {
 	"gzdopen",
 	"mkstemp",
 	"open",
+	"PATH",
 	"pledge",
 	"read",
+	"unveil",
 	"wait",
 	"write",
 };
