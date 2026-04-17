@@ -1,4 +1,4 @@
-/* $OpenBSD: main.c,v 1.269 2026/04/17 17:27:35 schwarze Exp $ */
+/* $OpenBSD: main.c,v 1.270 2026/04/17 17:30:50 schwarze Exp $ */
 /*
  * Copyright (c) 2010-2012, 2014-2021, 2025, 2026
  *               Ingo Schwarze <schwarze@openbsd.org>
@@ -1242,7 +1242,7 @@ unveil_pager(struct outstate *outst)
 	const char	*cp, *pager;
 	char		*cmd, *dir, *path;
 	size_t		 len;
-	int		 \;
+	int		 i;
 
 	pager = getenv("MANPAGER");
 	if (pager == NULL || *pager == '\0')
