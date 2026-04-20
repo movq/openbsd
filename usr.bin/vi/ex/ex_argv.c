@@ -1,4 +1,4 @@
-/*	$OpenBSD: ex_argv.c,v 1.21 2025/08/02 20:14:58 millert Exp $	*/
+/*	$OpenBSD: ex_argv.c,v 1.22 2026/04/20 10:30:02 tb Exp $	*/
 
 /*-
  * Copyright (c) 1993, 1994
@@ -498,7 +498,7 @@ argv_lexp(SCR *sp, EXCMD *excp, char *path)
 		dname = ".";
 		dlen = 0;
 		name = path;
-	} else { 
+	} else {
 		if (p == path) {
 			dname = "/";
 			dlen = 1;
@@ -546,7 +546,7 @@ argv_lexp(SCR *sp, EXCMD *excp, char *path)
 		/*
 		 * If we didn't find a match, complain that the expansion
 		 * failed.  We can't know for certain that's the error, but
-		 * it's a good guess, and it matches historic practice. 
+		 * it's a good guess, and it matches historic practice.
 		 */
 		msgq(sp, M_ERR, "Shell expansion failed");
 		return (1);
