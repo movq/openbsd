@@ -1,4 +1,4 @@
-/*	$OpenBSD: ex_global.c,v 1.18 2026/04/20 08:44:48 tb Exp $	*/
+/*	$OpenBSD: ex_global.c,v 1.19 2026/04/20 10:30:02 tb Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994
@@ -267,7 +267,7 @@ ex_g_insdel(SCR *sp, lnop_t op, recno_t lno)
 			/* If range less than the line, ignore it. */
 			if (rp->stop < lno)
 				continue;
-			
+
 			/*
 			 * If range greater than the line, decrement or
 			 * increment the range.

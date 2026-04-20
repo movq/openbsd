@@ -1,4 +1,4 @@
-/*	$OpenBSD: vs_split.c,v 1.17 2026/04/20 08:44:48 tb Exp $	*/
+/*	$OpenBSD: vs_split.c,v 1.18 2026/04/20 10:30:02 tb Exp $	*/
 
 /*-
  * Copyright (c) 1993, 1994
@@ -234,7 +234,7 @@ vs_discard(SCR *sp, SCR **spp)
 		*spp = sp;
 	if (sp == NULL)
 		return (0);
-		
+
 	/*
 	 * Make no effort to clean up the discarded screen's information.  If
 	 * it's not exiting, we'll do the work when the user redisplays it.

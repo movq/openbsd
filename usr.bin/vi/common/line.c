@@ -1,4 +1,4 @@
-/*	$OpenBSD: line.c,v 1.17 2025/07/30 22:19:13 millert Exp $	*/
+/*	$OpenBSD: line.c,v 1.18 2026/04/20 10:30:02 tb Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994
@@ -143,7 +143,7 @@ nocache:
 	key.data = &lno;
 	key.size = sizeof(lno);
 	switch (ep->db->get(ep->db, &key, &data, 0)) {
-        case -1:
+	case -1:
 		goto err2;
 	case 1:
 err1:		if (LF_ISSET(DBG_FATAL))
@@ -190,7 +190,7 @@ db_delete(SCR *sp, recno_t lno)
 		ex_emsg(sp, NULL, EXM_NOFILEYET);
 		return (1);
 	}
-		
+
 	/* Update marks, @ and global commands. */
 	if (mark_insdel(sp, LINE_DELETE, lno))
 		return (1);
@@ -245,7 +245,7 @@ db_append(SCR *sp, int update, recno_t lno, char *p, size_t len)
 		ex_emsg(sp, NULL, EXM_NOFILEYET);
 		return (1);
 	}
-		
+
 	/* Update file. */
 	key.data = &lno;
 	key.size = sizeof(lno);
@@ -313,7 +313,7 @@ db_insert(SCR *sp, recno_t lno, char *p, size_t len)
 		ex_emsg(sp, NULL, EXM_NOFILEYET);
 		return (1);
 	}
-		
+
 	/* Update file. */
 	key.data = &lno;
 	key.size = sizeof(lno);
@@ -372,7 +372,7 @@ db_set(SCR *sp, recno_t lno, char *p, size_t len)
 		ex_emsg(sp, NULL, EXM_NOFILEYET);
 		return (1);
 	}
-		
+
 	/* Log before change. */
 	log_line(sp, lno, LOG_LINE_RESET_B);
 
@@ -422,7 +422,7 @@ db_exist(SCR *sp, recno_t lno)
 
 	if (lno == OOBLNO)
 		return (0);
-		
+
 	/*
 	 * Check the last-line number cache.  Adjust the cached line
 	 * number for the lines used by the text input buffers.
@@ -454,7 +454,7 @@ db_last(SCR *sp, recno_t *lnop)
 		ex_emsg(sp, NULL, EXM_NOFILEYET);
 		return (1);
 	}
-		
+
 	/*
 	 * Check the last-line number cache.  Adjust the cached line
 	 * number for the lines used by the text input buffers.
@@ -471,11 +471,11 @@ db_last(SCR *sp, recno_t *lnop)
 	key.size = sizeof(lno);
 
 	switch (ep->db->seq(ep->db, &key, &data, R_LAST)) {
-        case -1:
+	case -1:
 		msgq(sp, M_SYSERR, "unable to get last line");
 		*lnop = 0;
 		return (1);
-        case 1:
+	case 1:
 		*lnop = 0;
 		return (0);
 	default:
