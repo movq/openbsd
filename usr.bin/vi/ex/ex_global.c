@@ -1,4 +1,4 @@
-/*	$OpenBSD: ex_global.c,v 1.17 2016/05/27 09:18:12 martijn Exp $	*/
+/*	$OpenBSD: ex_global.c,v 1.18 2026/04/20 08:44:48 tb Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994
@@ -67,7 +67,6 @@ ex_g_setup(SCR *sp, EXCMD *cmdp, enum which cmd)
 	RANGE *rp;
 	busy_t btype;
 	recno_t start, end;
-	regex_t *re;
 	regmatch_t match[1];
 	size_t len;
 	int cnt, delim, eval;
@@ -146,7 +145,6 @@ usage:		ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
 		 */
 		sp->searchdir = FORWARD;
 	}
-	re = &sp->re_c;
 
 	/* The global commands always set the previous context mark. */
 	abs_mark.lno = sp->lno;

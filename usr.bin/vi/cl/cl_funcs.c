@@ -1,4 +1,4 @@
-/*	$OpenBSD: cl_funcs.c,v 1.23 2022/12/26 19:16:03 jmc Exp $	*/
+/*	$OpenBSD: cl_funcs.c,v 1.24 2026/04/20 08:44:48 tb Exp $	*/
 
 /*-
  * Copyright (c) 1993, 1994
@@ -429,10 +429,6 @@ cl_move(SCR *sp, size_t lno, size_t cno)
 int
 cl_refresh(SCR *sp, int repaint)
 {
-	CL_PRIVATE *clp;
-
-	clp = CLP(sp);
-
 	/*
 	 * If we received a killer signal, we're done, there's no point
 	 * in refreshing the screen.
