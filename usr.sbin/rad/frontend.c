@@ -1,4 +1,4 @@
-/*	$OpenBSD: frontend.c,v 1.57 2025/09/15 09:01:56 florian Exp $	*/
+/*	$OpenBSD: frontend.c,v 1.58 2026/04/21 17:24:40 kn Exp $	*/
 
 /*
  * Copyright (c) 2018 Florian Obser <florian@openbsd.org>
@@ -1352,7 +1352,7 @@ build_packet(struct ra_iface *ra_iface)
 			*p++ = '\0'; /* last dot */
 		}
 		/* zero pad */
-		while (((uintptr_t)p) % 8 != 0)
+		while (((ptrdiff_t)(p - buf)) % 8 != 0)
 			*p++ = '\0';
 	}
 
