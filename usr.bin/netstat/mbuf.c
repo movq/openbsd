@@ -1,4 +1,4 @@
-/*	$OpenBSD: mbuf.c,v 1.47 2025/06/22 11:34:40 bluhm Exp $	*/
+/*	$OpenBSD: mbuf.c,v 1.48 2026/04/22 21:58:53 dlg Exp $	*/
 /*	$NetBSD: mbuf.c,v 1.9 1996/05/07 02:55:03 thorpej Exp $	*/
 
 /*
@@ -57,7 +57,7 @@ char	*mclnames[] = {
 	"mcl2k2",
 	"mcl4k",
 	"mcl8k",
-	"mcl9k",
+	"mcl9k128",
 	"mcl12k",
 	"mcl16k",
 	"mcl64k"
