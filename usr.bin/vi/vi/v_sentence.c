@@ -1,4 +1,4 @@
-/*	$OpenBSD: v_sentence.c,v 1.10 2026/04/25 17:58:56 millert Exp $	*/
+/*	$OpenBSD: v_sentence.c,v 1.11 2026/04/25 19:30:59 millert Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994
@@ -152,7 +152,8 @@ v_sentencef(SCR *sp, VICMD *vp)
 	}
 
 	/* EOF is a movement sink, but it's an error not to have moved. */
-	if (vp->m_start.lno == cs.cs_lno && vp->m_start.cno == cs.cs_cno) {
+	if (vp->m_start.lno == cs.cs_lno && vp->m_start.cno == cs.cs_cno &&
+	    !ISMOTION(vp)) {
 		v_eof(sp, NULL);
 		return (1);
 	}
