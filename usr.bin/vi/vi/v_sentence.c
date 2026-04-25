@@ -1,4 +1,4 @@
-/*	$OpenBSD: v_sentence.c,v 1.9 2026/04/25 17:51:11 millert Exp $	*/
+/*	$OpenBSD: v_sentence.c,v 1.10 2026/04/25 17:58:56 millert Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994
@@ -66,18 +66,27 @@ v_sentencef(SCR *sp, VICMD *vp)
 
 	/*
 	 * !!!
-	 * If in white-space, the next start of sentence counts as one.
-	 * This may not handle "  .  " correctly, but it's real unclear
-	 * what correctly means in that case.
+	 * If in white-space, check if we are at a sentence boundary.
+	 * If so, the next start of sentence counts as one.
 	 */
 	if (cs.cs_flags == CS_EMP || (cs.cs_flags == 0 && isblank(cs.cs_ch))) {
-		if (cs_fblank(sp, &cs))
-			return (1);
-		if (--cnt == 0) {
-			if (vp->m_start.lno != cs.cs_lno ||
-			    vp->m_start.cno != cs.cs_cno)
+		VCS tmp = cs;
+
+		/* If we aren't in an empty line, find last non-blank. */
+		if (tmp.cs_flags != CS_EMP) {
+			if (cs_bblank(sp, &tmp))
+				return (1);
+		}
+
+		/* Check if the previous non-blank char started a sentence. */
+		if (tmp.cs_flags == CS_EMP || (tmp.cs_flags == 0 &&
+		    (tmp.cs_ch == '.' || tmp.cs_ch == '?' ||
+		    tmp.cs_ch == '!'))) {
+			/* Empty line or space after a period, jump ahead. */
+			if (cs_fblank(sp, &cs))
+				return (1);
+			if (--cnt == 0)
 				goto okret;
-			return (1);
 		}
 	}
 
