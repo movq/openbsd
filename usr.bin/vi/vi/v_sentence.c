@@ -1,4 +1,4 @@
-/*	$OpenBSD: v_sentence.c,v 1.8 2022/12/26 19:16:04 jmc Exp $	*/
+/*	$OpenBSD: v_sentence.c,v 1.9 2026/04/25 17:51:11 millert Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994
@@ -289,7 +289,7 @@ ret:			slno = cs.cs_lno;
 			 * we can end up where we started.  Fix it.
 			 */
 			if (vp->m_start.lno != cs.cs_lno ||
-			    vp->m_start.cno != cs.cs_cno)
+			    vp->m_start.cno > cs.cs_cno)
 				goto okret;
 
 			/*
