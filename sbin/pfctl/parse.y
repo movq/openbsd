@@ -1,4 +1,4 @@
-/*	$OpenBSD: parse.y,v 1.724 2026/01/15 09:23:37 sashan Exp $	*/
+/*	$OpenBSD: parse.y,v 1.725 2026/04/29 08:18:55 renaud Exp $	*/
 
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
@@ -2587,8 +2587,8 @@ filter_opt	: USER uids {
 			    sizeof(filter_opts.nat.pool_opts));
 			filter_opts.rdr.af = $2;
 			filter_opts.rdr.rdr = $7;
-			memcpy(&filter_opts.nat.pool_opts, &$8,
-			    sizeof(filter_opts.nat.pool_opts));
+			memcpy(&filter_opts.rdr.pool_opts, &$8,
+			    sizeof(filter_opts.rdr.pool_opts));
 			filter_opts.marker |= FOM_AFTO;
 		}
 		| RDRTO redirpool pool_opts {
