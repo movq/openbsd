@@ -604,7 +604,7 @@ static ELEMENT_TYPE *getElementType(XML_Parser parser, const ENCODING *enc,
 
 static XML_Char *copyString(const XML_Char *s, XML_Parser parser);
 
-static unsigned long generate_hash_secret_salt(XML_Parser parser);
+static struct sipkey generate_hash_secret_salt(void);
 static XML_Bool startParsing(XML_Parser parser);
 
 static XML_Parser parserCreate(const XML_Char *encodingName,
@@ -777,7 +777,8 @@ struct XML_ParserStruct {
   XML_Bool m_useForeignDTD;
   enum XML_ParamEntityParsing m_paramEntityParsing;
 #endif
-  unsigned long m_hash_secret_salt;
+  struct sipkey m_hash_secret_salt_128;
+  XML_Bool m_hash_secret_salt_set;
 #if XML_GE == 1
   ACCOUNTING m_accounting;
   MALLOC_TRACKER m_alloc_tracker;
@@ -1192,67 +1193,63 @@ gather_time_entropy(void) {
 
 #endif /* ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM) */
 
-static unsigned long
-ENTROPY_DEBUG(const char *label, unsigned long entropy) {
+static struct sipkey
+ENTROPY_DEBUG(const char *label, struct sipkey entropy_128) {
   if (getDebugLevel("EXPAT_ENTROPY_DEBUG", 0) >= 1u) {
-    fprintf(stderr, "expat: Entropy: %s --> 0x%0*lx (%lu bytes)\n", label,
-            (int)sizeof(entropy) * 2, entropy, (unsigned long)sizeof(entropy));
+    fprintf(stderr,
+            "expat: Entropy: %s --> [0x" EXPAT_FMT_LLX(
+                "016") ", 0x" EXPAT_FMT_LLX("016") "] (16 bytes)\n",
+            label, (unsigned long long)entropy_128.k[0],
+            (unsigned long long)entropy_128.k[1]);
   }
-  return entropy;
+  return entropy_128;
 }
 
-static unsigned long
-generate_hash_secret_salt(XML_Parser parser) {
-  unsigned long entropy;
-  (void)parser;
+static struct sipkey
+generate_hash_secret_salt(void) {
+  struct sipkey entropy;
 
   /* "Failproof" high quality providers: */
 #if defined(HAVE_ARC4RANDOM_BUF)
   arc4random_buf(&entropy, sizeof(entropy));
   return ENTROPY_DEBUG("arc4random_buf", entropy);
 #elif defined(HAVE_ARC4RANDOM)
-  writeRandomBytes_arc4random((void *)&entropy, sizeof(entropy));
+  writeRandomBytes_arc4random(&entropy, sizeof(entropy));
   return ENTROPY_DEBUG("arc4random", entropy);
 #else
   /* Try high quality providers first .. */
 #  ifdef _WIN32
-  if (writeRandomBytes_rand_s((void *)&entropy, sizeof(entropy))) {
+  if (writeRandomBytes_rand_s(&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("rand_s", entropy);
   }
 #  elif defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
-  if (writeRandomBytes_getrandom_nonblock((void *)&entropy, sizeof(entropy))) {
+  if (writeRandomBytes_getrandom_nonblock(&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("getrandom", entropy);
   }
 #  endif
 #  if ! defined(_WIN32) && defined(XML_DEV_URANDOM)
-  if (writeRandomBytes_dev_urandom((void *)&entropy, sizeof(entropy))) {
+  if (writeRandomBytes_dev_urandom(&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("/dev/urandom", entropy);
   }
 #  endif /* ! defined(_WIN32) && defined(XML_DEV_URANDOM) */
   /* .. and self-made low quality for backup: */
 
-  entropy = gather_time_entropy();
+  entropy.k[0] = 0;
+  entropy.k[1] = gather_time_entropy();
 #  if ! defined(__wasi__)
   /* Process ID is 0 bits entropy if attacker has local access */
-  entropy ^= getpid();
+  entropy.k[1] ^= getpid();
 #  endif
 
   /* Factors are 2^31-1 and 2^61-1 (Mersenne primes M31 and M61) */
   if (sizeof(unsigned long) == 4) {
-    return ENTROPY_DEBUG("fallback(4)", entropy * 2147483647);
+    entropy.k[1] *= 2147483647;
+    return ENTROPY_DEBUG("fallback(4)", entropy);
   } else {
-    return ENTROPY_DEBUG("fallback(8)",
-                         entropy * (unsigned long)2305843009213693951ULL);
+    entropy.k[1] *= 2305843009213693951ULL;
+    return ENTROPY_DEBUG("fallback(8)", entropy);
   }
 #endif
-}
-
-static unsigned long
-get_hash_secret_salt(XML_Parser parser) {
-  const XML_Parser rootParser = getRootParserOf(parser, NULL);
-  assert(! rootParser->m_parentParser);
-
-  return rootParser->m_hash_secret_salt;
 }
 
 static enum XML_Error
@@ -1323,8 +1320,10 @@ callProcessor(XML_Parser parser, const char *start, const char *end,
 static XML_Bool /* only valid for root parser */
 startParsing(XML_Parser parser) {
   /* hash functions must be initialized before setContext() is called */
-  if (parser->m_hash_secret_salt == 0)
-    parser->m_hash_secret_salt = generate_hash_secret_salt(parser);
+  if (parser->m_hash_secret_salt_set != XML_TRUE) {
+    parser->m_hash_secret_salt_128 = generate_hash_secret_salt();
+    parser->m_hash_secret_salt_set = XML_TRUE;
+  }
   if (parser->m_ns) {
     /* implicit context only set for root parser, since child
        parsers (i.e. external entity parsers) will inherit it
@@ -1612,7 +1611,9 @@ parserInit(XML_Parser parser, const XML_Char *encodingName) {
   parser->m_useForeignDTD = XML_FALSE;
   parser->m_paramEntityParsing = XML_PARAM_ENTITY_PARSING_NEVER;
 #endif
-  parser->m_hash_secret_salt = 0;
+  parser->m_hash_secret_salt_128.k[0] = 0;
+  parser->m_hash_secret_salt_128.k[1] = 0;
+  parser->m_hash_secret_salt_set = XML_FALSE;
 
 #if XML_GE == 1
   memset(&parser->m_accounting, 0, sizeof(ACCOUNTING));
@@ -1779,7 +1780,8 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
      from hash tables associated with either parser without us having
      to worry which hash secrets each table has.
   */
-  unsigned long oldhash_secret_salt;
+  struct sipkey oldhash_secret_salt_128;
+  XML_Bool oldhash_secret_salt_set;
   XML_Bool oldReparseDeferralEnabled;
 
   /* Validate the oldParser parameter before we pull everything out of it */
@@ -1825,7 +1827,8 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
      from hash tables associated with either parser without us having
      to worry which hash secrets each table has.
   */
-  oldhash_secret_salt = parser->m_hash_secret_salt;
+  oldhash_secret_salt_128 = parser->m_hash_secret_salt_128;
+  oldhash_secret_salt_set = parser->m_hash_secret_salt_set;
   oldReparseDeferralEnabled = parser->m_reparseDeferralEnabled;
 
 #ifdef XML_DTD
@@ -1880,7 +1883,8 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
     parser->m_externalEntityRefHandlerArg = oldExternalEntityRefHandlerArg;
   parser->m_defaultExpandInternalEntities = oldDefaultExpandInternalEntities;
   parser->m_ns_triplets = oldns_triplets;
-  parser->m_hash_secret_salt = oldhash_secret_salt;
+  parser->m_hash_secret_salt_128 = oldhash_secret_salt_128;
+  parser->m_hash_secret_salt_set = oldhash_secret_salt_set;
   parser->m_reparseDeferralEnabled = oldReparseDeferralEnabled;
   parser->m_parentParser = oldParser;
 #ifdef XML_DTD
@@ -2335,7 +2339,19 @@ XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt) {
   /* block after XML_Parse()/XML_ParseBuffer() has been called */
   if (parserBusy(rootParser))
     return 0;
-  rootParser->m_hash_secret_salt = hash_salt;
+
+  rootParser->m_hash_secret_salt_128.k[0] = 0;
+  rootParser->m_hash_secret_salt_128.k[1] = hash_salt;
+
+  if (hash_salt != 0) { // to remain backwards compatible
+    rootParser->m_hash_secret_salt_set = XML_TRUE;
+
+    if (sizeof(unsigned long) == 4)
+      ENTROPY_DEBUG("explicit(4)", rootParser->m_hash_secret_salt_128);
+    else
+      ENTROPY_DEBUG("explicit(8)", rootParser->m_hash_secret_salt_128);
+  }
+
   return 1;
 }
 
@@ -7842,8 +7858,10 @@ keylen(KEY s) {
 
 static void
 copy_salt_to_sipkey(XML_Parser parser, struct sipkey *key) {
-  key->k[0] = 0;
-  key->k[1] = get_hash_secret_salt(parser);
+  const XML_Parser rootParser = getRootParserOf(parser, NULL);
+  assert(! rootParser->m_parentParser);
+
+  *key = rootParser->m_hash_secret_salt_128;
 }
 
 static unsigned long FASTCALL
