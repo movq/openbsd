@@ -1,4 +1,4 @@
-/* $OpenBSD: file.c,v 1.19 2026/04/23 12:36:15 nicm Exp $ */
+/* $OpenBSD: file.c,v 1.18 2026/02/27 08:23:02 nicm Exp $ */
 
 /*
  * Copyright (c) 2019 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -807,7 +807,7 @@ file_read_cancel(struct client_files *files, struct imsg *imsg)
 }
 
 /* Handle a write ready message (server). */
-int
+void
 file_write_ready(struct client_files *files, struct imsg *imsg)
 {
 	struct msg_write_ready	*msg = imsg->data;
@@ -815,20 +815,19 @@ file_write_ready(struct client_files *files, struct imsg *imsg)
 	struct client_file	 find, *cf;
 
 	if (msglen != sizeof *msg)
-		return (-1);
+		fatalx("bad MSG_WRITE_READY size");
 	find.stream = msg->stream;
 	if ((cf = RB_FIND(client_files, files, &find)) == NULL)
-		return (0);
+		return;
 	if (msg->error != 0) {
 		cf->error = msg->error;
 		file_fire_done(cf);
 	} else
 		file_push(cf);
-	return (0);
 }
 
 /* Handle read data message (server). */
-int
+void
 file_read_data(struct client_files *files, struct imsg *imsg)
 {
 	struct msg_read_data	*msg = imsg->data;
@@ -838,10 +837,10 @@ file_read_data(struct client_files *files, struct imsg *imsg)
 	size_t			 bsize = msglen - sizeof *msg;
 
 	if (msglen < sizeof *msg)
-		return (-1);
+		fatalx("bad MSG_READ_DATA size");
 	find.stream = msg->stream;
 	if ((cf = RB_FIND(client_files, files, &find)) == NULL)
-		return (0);
+		return;
 
 	log_debug("file %d read %zu bytes", cf->stream, bsize);
 	if (cf->error == 0 && !cf->closed) {
@@ -851,11 +850,10 @@ file_read_data(struct client_files *files, struct imsg *imsg)
 		} else
 			file_fire_read(cf);
 	}
-	return (0);
 }
 
 /* Handle a read done message (server). */
-int
+void
 file_read_done(struct client_files *files, struct imsg *imsg)
 {
 	struct msg_read_done	*msg = imsg->data;
@@ -863,13 +861,12 @@ file_read_done(struct client_files *files, struct imsg *imsg)
 	struct client_file	 find, *cf;
 
 	if (msglen != sizeof *msg)
-		return (-1);
+		fatalx("bad MSG_READ_DONE size");
 	find.stream = msg->stream;
 	if ((cf = RB_FIND(client_files, files, &find)) == NULL)
-		return (0);
+		return;
 
 	log_debug("file %d read done", cf->stream);
 	cf->error = msg->error;
 	file_fire_done(cf);
-	return (0);
 }

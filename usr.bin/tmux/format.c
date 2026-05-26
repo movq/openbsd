@@ -1,4 +1,4 @@
-/* $OpenBSD: format.c,v 1.363 2026/05/03 14:55:43 nicm Exp $ */
+/* $OpenBSD: format.c,v 1.359 2026/04/14 11:25:41 nicm Exp $ */
 
 /*
  * Copyright (c) 2011 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -120,9 +120,6 @@ format_job_cmp(struct format_job *fj1, struct format_job *fj2)
 /* Limit on recursion. */
 #define FORMAT_LOOP_LIMIT 100
 
-/* Limit on time taken (milliseconds). */
-#define FORMAT_TIME_LIMIT 100
-
 /* Format expand flags. */
 #define FORMAT_EXPAND_TIME 0x1
 #define FORMAT_EXPAND_NOJOBS 0x2
@@ -172,11 +169,9 @@ RB_GENERATE_STATIC(format_entry_tree, format_entry, entry, format_entry_cmp);
 struct format_expand_state {
 	struct format_tree	*ft;
 	u_int			 loop;
-	uint64_t		 start_time;
-	int			 flags;
-
 	time_t			 time;
 	struct tm		 tm;
+	int			 flags;
 };
 
 /* Format modifier. */
@@ -297,7 +292,6 @@ format_copy_state(struct format_expand_state *to,
 	to->time = from->time;
 	memcpy(&to->tm, &from->tm, sizeof to->tm);
 	to->flags = from->flags|flags;
-	to->start_time = from->start_time;
 }
 
 /* Format job update callback. */
@@ -2296,7 +2290,7 @@ format_cb_pane_pipe_pid(struct format_tree *ft)
 static void *
 format_cb_pane_pb_progress(struct format_tree *ft)
 {
-	char	*value = NULL;
+	char    *value = NULL;
 
 	if (ft->wp != NULL)
 		xasprintf(&value, "%d", ft->wp->base.progress_bar.progress);
@@ -4225,20 +4219,6 @@ format_choose(struct format_expand_state *es, const char *s, char **left,
 	return (0);
 }
 
-/* Check format has not taken too lon. */
-static int
-format_check_time(struct format_expand_state *es)
-{
-	uint64_t t = get_timer();
-
-	if (t - es->start_time < FORMAT_TIME_LIMIT)
-		return (1);
-	t -= es->start_time;
-
-	format_log(es, "reached time limit (%llu)", (unsigned long long)t);
-	return (0);
-}
-
 /* Is this true? */
 int
 format_true(const char *s)
@@ -5249,7 +5229,7 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 			value = format_search(search, wp, new);
 		}
 		free(new);
-	} else if (modifiers & FORMAT_REPEAT) {
+    } else if (modifiers & FORMAT_REPEAT) {
 		/* Repeat multiple times. */
 		if (format_choose(es, copy, &left, &right, 1) != 0) {
 			format_log(es, "repeat syntax error: %s", copy);
@@ -5261,12 +5241,6 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 		else {
 			value = xstrdup("");
 			for (i = 0; i < nrep; i++) {
-				if (!format_check_time(es)) {
-					free(right);
-					free(left);
-					free(value);
-					goto fail;
-				}
 				xasprintf(&new, "%s%s", value, left);
 				free(value);
 				value = new;
@@ -5274,7 +5248,7 @@ format_replace(struct format_expand_state *es, const char *key, size_t keylen,
 		}
 		free(right);
 		free(left);
-	} else if (modifiers & FORMAT_NOT) {
+    } else if (modifiers & FORMAT_NOT) {
 		value = format_bool_op_1(es, copy, 1);
 	} else if (modifiers & FORMAT_NOT_NOT) {
 		value = format_bool_op_1(es, copy, 0);
@@ -5541,7 +5515,7 @@ format_expand1(struct format_expand_state *es, const char *fmt)
 	int			 ch, brackets;
 	char			 expanded[8192];
 
-	if (fmt == NULL || *fmt == '\0' || !format_check_time(es))
+	if (fmt == NULL || *fmt == '\0')
 		return (xstrdup(""));
 
 	if (es->loop == FORMAT_LOOP_LIMIT) {
@@ -5709,7 +5683,6 @@ format_expand_time(struct format_tree *ft, const char *fmt)
 	memset(&es, 0, sizeof es);
 	es.ft = ft;
 	es.flags = FORMAT_EXPAND_TIME;
-	es.start_time = get_timer();
 	return (format_expand1(&es, fmt));
 }
 
@@ -5722,7 +5695,6 @@ format_expand(struct format_tree *ft, const char *fmt)
 	memset(&es, 0, sizeof es);
 	es.ft = ft;
 	es.flags = 0;
-	es.start_time = get_timer();
 	return (format_expand1(&es, fmt));
 }
 

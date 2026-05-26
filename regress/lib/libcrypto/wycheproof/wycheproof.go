@@ -1,4 +1,4 @@
-/* $OpenBSD: wycheproof.go,v 1.204 2026/05/04 19:15:45 tb Exp $ */
+/* $OpenBSD: wycheproof.go,v 1.201 2026/01/22 09:08:56 tb Exp $ */
 /*
  * Copyright (c) 2018,2023 Joel Sing <jsing@openbsd.org>
  * Copyright (c) 2018,2019,2022-2025 Theo Buehler <tb@openbsd.org>
@@ -2393,7 +2393,7 @@ func runMLKEMTestGroup(rank C.int, wt *wycheproofTestMLKEM) bool {
 	if C.MLKEM_private_key_from_seed(privKey, (*C.uchar)(unsafe.Pointer(&seed[0])), C.size_t(seedLen)) != 1 {
 		if wt.Result != "invalid" {
 			fmt.Printf("%s - MLKEM_private_key_from_seed failed\n", wt)
-			return false
+			return false;
 		}
 		return true
 	}
@@ -2453,7 +2453,7 @@ func runMLKEMEncapsTestGroup(rank C.int, wt *wycheproofTestMLKEM) bool {
 	if C.MLKEM_parse_public_key(pubKey, (*C.uchar)(unsafe.Pointer(&ek[0])), (C.size_t)(ekLen)) != 1 {
 		if wt.Result != "invalid" {
 			fmt.Printf("FAIL: %s: MLKEM_parse_public_key failed !!!\n", wt)
-			return false
+			return false;
 		}
 		return true
 	}
@@ -2544,9 +2544,9 @@ func runMLKEMKeyGenTest(rank C.int, wt *wycheproofTestMLKEM) bool {
 
 	dK, _ := mustDecodeHexString(wt.Dk, "dK")
 	eK, _ := mustDecodeHexString(wt.Ek, "eK")
-
+	
 	if (bytes.Equal(dK, gotDk) && bytes.Equal(eK, gotEk)) != (wt.Result != "invalid") {
-		fmt.Printf("FAIL: %s - encoded keys differ", wt)
+		fmt.Printf("FAIL: %s - encoded keys differ", wt);
 		return false
 	}
 
@@ -3079,8 +3079,6 @@ func testGroupFromTestVector(wtv *wycheproofTestVectorsV1) (wycheproofTestGroupR
 		return nil, Skip
 	case "ASCON128", "ASCON128A", "ASCON80PQ":
 		return nil, Skip
-	case "BLS":
-		return nil, Skip
 	case "CAMELLIA-CBC-PKCS5", "CAMELLIA-CCM", "CAMELLIA-CMAC", "CAMELLIA-WRAP":
 		return nil, Skip
 	case "CHACHA20-POLY1305", "XCHACHA20-POLY1305":
@@ -3192,7 +3190,7 @@ func runTestVectors(path string) bool {
 			return wtg.run(wtv.Algorithm, variant)
 		})
 	}
-	for range wtv.TestGroups {
+	for _ = range wtv.TestGroups {
 		result := <-testc.resultCh
 		if !result {
 			success = false

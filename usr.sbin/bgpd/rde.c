@@ -1,4 +1,4 @@
-/*	$OpenBSD: rde.c,v 1.695 2026/04/28 14:06:44 claudio Exp $ */
+/*	$OpenBSD: rde.c,v 1.691 2026/03/19 12:44:23 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -73,11 +73,11 @@ void		 rde_dump_mrt_new(struct mrt *, pid_t, int);
 
 static void	 rde_commit_pftable(void);
 void		 rde_reload_done(void);
-static void	 rde_softreconfig_in(struct rib_entry *, void *);
 static void	 rde_softreconfig_in_done(void *, uint8_t);
-static void	 rde_softreconfig_out(struct rib_entry *, void *);
 static void	 rde_softreconfig_out_done(void *, uint8_t);
 static void	 rde_softreconfig_done(void);
+static void	 rde_softreconfig_out(struct rib_entry *, void *);
+static void	 rde_softreconfig_in(struct rib_entry *, void *);
 static void	 rde_softreconfig_sync_reeval(struct rib_entry *, void *);
 static void	 rde_softreconfig_sync_fib(struct rib_entry *, void *);
 static void	 rde_softreconfig_sync_done(void *, uint8_t);
@@ -121,7 +121,7 @@ static struct rde_aspa		*rde_aspa, *aspa_new;
 static uint8_t			 rde_aspa_generation;
 
 volatile sig_atomic_t	 rde_quit = 0;
-struct filter_head	*rules, *rules_tmp;
+struct filter_head	*out_rules, *out_rules_tmp;
 struct rde_memstats	 rdemem;
 int			 softreconfig;
 static int		 rde_eval_all;
@@ -208,16 +208,16 @@ rde_main(int debug, int verbose)
 	imsgbuf_allow_fdpass(ibuf_main);
 
 	/* initialize the RIB structures */
-	if ((rules = calloc(1, sizeof(struct filter_head))) == NULL)
+	if ((out_rules = calloc(1, sizeof(struct filter_head))) == NULL)
 		fatal(NULL);
-	TAILQ_INIT(rules);
+	TAILQ_INIT(out_rules);
 
 	pt_init();
 	attr_init();
 	path_init();
 	adjout_init();
 	communities_init();
-	peer_init(rules);
+	peer_init(out_rules);
 
 	/* make sure the default RIBs are setup */
 	rib_new("Adj-RIB-In", 0, F_RIB_NOFIB | F_RIB_NOEVALUATE);
@@ -492,7 +492,7 @@ rde_dispatch_imsg_session(struct imsgbuf *imsgbuf)
 		case IMSG_SESSION_ADD:
 			if (imsg_get_data(&imsg, &pconf, sizeof(pconf)) == -1)
 				fatalx("incorrect size of session request");
-			peer = peer_add(peerid, &pconf, rules);
+			peer = peer_add(peerid, &pconf, out_rules);
 			/* make sure rde_eval_all is on if needed. */
 			if (peer->conf.flags & PEERFLAG_EVALUATE_ALL)
 				rde_eval_all = 1;
@@ -1093,10 +1093,10 @@ rde_dispatch_imsg_parent(struct imsgbuf *imsgbuf)
 			if (imsg_recv_config(&imsg, nconf) == -1)
 				fatal("imsg_recv_config");
 
-			rules_tmp = calloc(1, sizeof(struct filter_head));
-			if (rules_tmp == NULL)
+			out_rules_tmp = calloc(1, sizeof(struct filter_head));
+			if (out_rules_tmp == NULL)
 				fatal(NULL);
-			TAILQ_INIT(rules_tmp);
+			TAILQ_INIT(out_rules_tmp);
 
 			for (rid = 0; rid < rib_size; rid++) {
 				if ((rib = rib_byid(rid)) == NULL)
@@ -1181,7 +1181,7 @@ rde_dispatch_imsg_parent(struct imsgbuf *imsgbuf)
 				}
 				TAILQ_INSERT_TAIL(nr, r, entry);
 			} else {
-				TAILQ_INSERT_TAIL(rules_tmp, r, entry);
+				TAILQ_INSERT_TAIL(out_rules_tmp, r, entry);
 			}
 			break;
 		case IMSG_RECONF_PREFIX_SET:
@@ -1980,7 +1980,7 @@ rde_update_update(struct rde_peer *peer, uint32_t path_id,
     struct filterstate *in, struct bgpd_addr *prefix, uint8_t prefixlen)
 {
 	struct filterstate	 state;
-	enum filter_action	 action;
+	enum filter_actions	 action;
 	uint32_t		 path_id_tx;
 	uint16_t		 i;
 	uint8_t			 roa_state, aspa_state;
@@ -3912,9 +3912,9 @@ rde_reload_done(void)
 	rde_eval_all = 0;
 
 	/* Make the new outbound filter rules the active one. */
-	filterlist_free(rules);
-	rules = rules_tmp;
-	rules_tmp = NULL;
+	filterlist_free(out_rules);
+	out_rules = out_rules_tmp;
+	out_rules_tmp = NULL;
 
 	/* check if filter changed */
 	RB_FOREACH(peer, peer_tree, &peertable) {
@@ -4003,10 +4003,11 @@ rde_reload_done(void)
 				fatal("%s: prefix_dump_new", __func__);
 			log_peer_info(&peer->conf, "flushing Adj-RIB-Out");
 			softreconfig++;	/* account for the running flush */
+			continue;
 		}
 
 		/* reapply outbound filters for this peer */
-		rf = peer_apply_out_filter(peer, rules);
+		rf = peer_apply_out_filter(peer, out_rules);
 
 		if (rf != peer->out_rules) {
 			char *p = log_fmt_peer(&peer->conf);
@@ -4106,6 +4107,122 @@ rde_reload_done(void)
 }
 
 static void
+rde_softreconfig_in_done(void *arg, uint8_t dummy)
+{
+	struct rde_peer	*peer;
+	uint16_t	 i;
+
+	softreconfig--;
+	/* one guy done but other dumps are still running */
+	if (softreconfig > 0)
+		return;
+
+	if (arg == NULL)
+		log_info("softreconfig in done");
+
+	/* now do the Adj-RIB-Out sync and a possible FIB sync */
+	softreconfig = 0;
+	for (i = 0; i < rib_size; i++) {
+		struct rib *rib = rib_byid(i);
+		if (rib == NULL)
+			continue;
+		rib->state = RECONF_NONE;
+		if (rib->fibstate == RECONF_RELOAD) {
+			if (rib_dump_new(i, AID_UNSPEC, RDE_RUNNER_ROUNDS,
+			    rib, rde_softreconfig_sync_fib,
+			    rde_softreconfig_sync_done, NULL) == -1)
+				fatal("%s: rib_dump_new", __func__);
+			softreconfig++;
+			log_info("starting fib sync for rib %s",
+			    rib->name);
+		} else if (rib->fibstate == RECONF_REINIT) {
+			if (rib_dump_new(i, AID_UNSPEC, RDE_RUNNER_ROUNDS,
+			    rib, rde_softreconfig_sync_reeval,
+			    rde_softreconfig_sync_done, NULL) == -1)
+				fatal("%s: rib_dump_new", __func__);
+			softreconfig++;
+			log_info("starting re-evaluation of rib %s",
+			    rib->name);
+		}
+	}
+
+	RB_FOREACH(peer, peer_tree, &peertable) {
+		uint8_t aid;
+
+		if (peer->reconf_out) {
+			if (peer->export_type == EXPORT_NONE) {
+				/* nothing to do here */
+				peer->reconf_out = 0;
+			} else if (peer->export_type == EXPORT_DEFAULT_ROUTE) {
+				/* just resend the default route */
+				for (aid = AID_MIN; aid < AID_MAX; aid++) {
+					if (peer->capa.mp[aid])
+						up_generate_default(peer, aid);
+				}
+				peer->reconf_out = 0;
+			} else
+				rib_byid(peer->loc_rib_id)->state =
+				    RECONF_RELOAD;
+		} else if (peer->reconf_rib) {
+			/* dump the full table to neighbors that changed rib */
+			for (aid = AID_MIN; aid < AID_MAX; aid++) {
+				if (peer->capa.mp[aid])
+					peer_dump(peer, aid);
+			}
+		}
+	}
+
+	for (i = 0; i < rib_size; i++) {
+		struct rib *rib = rib_byid(i);
+		if (rib == NULL)
+			continue;
+		if (rib->state == RECONF_RELOAD) {
+			if (rib_dump_new(i, AID_UNSPEC, RDE_RUNNER_ROUNDS,
+			    rib, rde_softreconfig_out,
+			    rde_softreconfig_out_done, NULL) == -1)
+				fatal("%s: rib_dump_new", __func__);
+			softreconfig++;
+			log_info("starting softreconfig out for rib %s",
+			    rib->name);
+		}
+	}
+
+	/* if nothing to do move to last stage */
+	if (softreconfig == 0)
+		rde_softreconfig_done();
+}
+
+static void
+rde_softreconfig_out_done(void *arg, uint8_t aid)
+{
+	struct rib	*rib = arg;
+
+	/* this RIB dump is done */
+	log_info("softreconfig out done for %s", rib->name);
+
+	/* check if other dumps are still running */
+	if (--softreconfig == 0)
+		rde_softreconfig_done();
+}
+
+static void
+rde_softreconfig_done(void)
+{
+	uint16_t	i;
+
+	for (i = 0; i < rib_size; i++) {
+		struct rib *rib = rib_byid(i);
+		if (rib == NULL)
+			continue;
+		rib->state = RECONF_NONE;
+	}
+
+	log_info("RDE soft reconfiguration done");
+	imsg_compose(ibuf_main, IMSG_RECONF_DONE, 0, 0,
+	    -1, NULL, 0);
+}
+
+static void
 rde_softreconfig_in(struct rib_entry *re, void *bula)
 {
 	struct filterstate	 state;
@@ -4114,7 +4231,7 @@ rde_softreconfig_in(struct rib_entry *re, void *bula)
 	struct pt_entry		*pt;
 	struct rde_peer		*peer;
 	struct rde_aspath	*asp;
-	enum filter_action	 action;
+	enum filter_actions	 action;
 	struct bgpd_addr	 prefix;
 	uint16_t		 i;
 	uint8_t			 aspa_vstate;
@@ -4170,92 +4287,6 @@ rde_softreconfig_in(struct rib_entry *re, void *bula)
 }
 
 static void
-rde_softreconfig_in_done(void *arg, uint8_t dummy)
-{
-	struct rde_peer	*peer;
-	uint16_t	 i;
-
-	softreconfig--;
-	/* one guy done but other dumps are still running */
-	if (softreconfig > 0)
-		return;
-
-	if (arg == NULL)
-		log_info("softreconfig in done");
-
-	/* now do the Adj-RIB-Out sync and a possible FIB sync */
-	softreconfig = 0;
-	for (i = 0; i < rib_size; i++) {
-		struct rib *rib = rib_byid(i);
-		if (rib == NULL)
-			continue;
-		rib->state = RECONF_NONE;
-		if (rib->fibstate == RECONF_RELOAD) {
-			if (rib_dump_new(i, AID_UNSPEC, RDE_RUNNER_ROUNDS,
-			    rib, rde_softreconfig_sync_fib,
-			    rde_softreconfig_sync_done, NULL) == -1)
-				fatal("%s: rib_dump_new", __func__);
-			softreconfig++;
-			log_info("starting fib sync for rib %s",
-			    rib->name);
-		} else if (rib->fibstate == RECONF_REINIT) {
-			if (rib_dump_new(i, AID_UNSPEC, RDE_RUNNER_ROUNDS,
-			    rib, rde_softreconfig_sync_reeval,
-			    rde_softreconfig_sync_done, NULL) == -1)
-				fatal("%s: rib_dump_new", __func__);
-			softreconfig++;
-			log_info("starting re-evaluation of rib %s",
-			    rib->name);
-		}
-	}
-
-	RB_FOREACH(peer, peer_tree, &peertable) {
-		uint8_t aid;
-
-		if (peer->reconf_rib) {
-			/* dump the full table to neighbors that changed rib */
-			for (aid = AID_MIN; aid < AID_MAX; aid++) {
-				if (peer->capa.mp[aid])
-					peer_dump(peer, aid);
-			}
-		} else if (peer->reconf_out) {
-			if (peer->export_type == EXPORT_NONE) {
-				/* nothing to do here */
-				peer->reconf_out = 0;
-			} else if (peer->export_type == EXPORT_DEFAULT_ROUTE) {
-				/* just resend the default route */
-				for (aid = AID_MIN; aid < AID_MAX; aid++) {
-					if (peer->capa.mp[aid])
-						up_generate_default(peer, aid);
-				}
-				peer->reconf_out = 0;
-			} else
-				rib_byid(peer->loc_rib_id)->state =
-				    RECONF_RELOAD;
-		}
-	}
-
-	for (i = 0; i < rib_size; i++) {
-		struct rib *rib = rib_byid(i);
-		if (rib == NULL)
-			continue;
-		if (rib->state == RECONF_RELOAD) {
-			if (rib_dump_new(i, AID_UNSPEC, RDE_RUNNER_ROUNDS,
-			    rib, rde_softreconfig_out,
-			    rde_softreconfig_out_done, NULL) == -1)
-				fatal("%s: rib_dump_new", __func__);
-			softreconfig++;
-			log_info("starting softreconfig out for rib %s",
-			    rib->name);
-		}
-	}
-
-	/* if nothing to do move to last stage */
-	if (softreconfig == 0)
-		rde_softreconfig_done();
-}
-
-static void
 rde_softreconfig_out(struct rib_entry *re, void *arg)
 {
 	if (prefix_best(re) == NULL)
@@ -4263,36 +4294,6 @@ rde_softreconfig_out(struct rib_entry *re, void *arg)
 		return;
 
 	rde_generate_updates(re, NULL, 0, EVAL_RECONF);
-}
-
-static void
-rde_softreconfig_out_done(void *arg, uint8_t aid)
-{
-	struct rib	*rib = arg;
-
-	/* this RIB dump is done */
-	log_info("softreconfig out done for %s", rib->name);
-
-	/* check if other dumps are still running */
-	if (--softreconfig == 0)
-		rde_softreconfig_done();
-}
-
-static void
-rde_softreconfig_done(void)
-{
-	uint16_t	i;
-
-	for (i = 0; i < rib_size; i++) {
-		struct rib *rib = rib_byid(i);
-		if (rib == NULL)
-			continue;
-		rib->state = RECONF_NONE;
-	}
-
-	log_info("RDE soft reconfiguration done");
-	imsg_compose(ibuf_main, IMSG_RECONF_DONE, 0, 0,
-	    -1, NULL, 0);
 }
 
 static void
@@ -4373,7 +4374,7 @@ rde_rpki_softreload(struct rib_entry *re, void *bula)
 	struct pt_entry		*pt;
 	struct rde_peer		*peer;
 	struct rde_aspath	*asp;
-	enum filter_action	 action;
+	enum filter_actions	 action;
 	struct bgpd_addr	 prefix;
 	uint8_t			 roa_vstate, aspa_vstate;
 	uint16_t		 i;
@@ -4961,8 +4962,8 @@ rde_shutdown(void)
 	peer_shutdown();
 
 	/* free filters */
-	filterlist_free(rules);
-	filterlist_free(rules_tmp);
+	filterlist_free(out_rules);
+	filterlist_free(out_rules_tmp);
 
 	/* kill the VPN configs */
 	free_l3vpns(&conf->l3vpns);

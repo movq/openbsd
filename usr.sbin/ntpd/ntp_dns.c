@@ -1,4 +1,4 @@
-/*	$OpenBSD: ntp_dns.c,v 1.37 2026/04/21 12:35:45 henning Exp $ */
+/*	$OpenBSD: ntp_dns.c,v 1.36 2024/11/21 13:38:14 claudio Exp $ */
 
 /*
  * Copyright (c) 2003-2008 Henning Brauer <henning@openbsd.org>
@@ -31,7 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "ntpd.h"

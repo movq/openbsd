@@ -1,8 +1,6 @@
-#	$OpenBSD: Makefile,v 1.5 2026/04/25 14:36:12 jsing Exp $
+#	$OpenBSD: Makefile,v 1.4 2024/03/20 10:38:05 jsing Exp $
 
-PROGS +=	dtlstest
-PROGS +=	dtls_wire_test
-
+PROG=		dtlstest
 LDADD=		${SSL_INT} -lcrypto
 DPADD=		${LIBSSL} ${LIBCRYPTO}
 WARNINGS=	Yes
@@ -11,17 +9,13 @@ CFLAGS+=	-I${.CURDIR}/../../../../lib/libcrypto/bio
 CFLAGS+=	-I${.CURDIR}/../../../../lib/libssl
 
 REGRESS_TARGETS= \
-	regress-dtlstest \
-	regress-dtls_wire_test
+	regress-dtlstest
 
 # XXX(jsing): use CA root and chain
-regress-dtlstest: dtlstest
+regress-dtlstest: ${PROG}
 	./dtlstest \
 	    ${.CURDIR}/../../libssl/certs/server1-rsa.pem \
 	    ${.CURDIR}/../../libssl/certs/server1-rsa.pem \
 	    ${.CURDIR}/../../libssl/certs/ca-int-rsa.pem
-
-regress-dtls_wire_test: dtls_wire_test
-	./dtls_wire_test
 
 .include <bsd.regress.mk>

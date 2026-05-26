@@ -1,4 +1,4 @@
-/* $OpenBSD: tmux.h,v 1.1311 2026/05/05 13:18:46 nicm Exp $ */
+/* $OpenBSD: tmux.h,v 1.1306 2026/04/13 09:33:09 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -629,7 +629,6 @@ enum tty_code_code {
 	TTYC_SMUL,
 	TTYC_SMULX,
 	TTYC_SMXX,
-	TTYC_SPB,
 	TTYC_SXL,
 	TTYC_SS,
 	TTYC_SWD,
@@ -979,7 +978,6 @@ struct screen {
 	char				*title;
 	char				*path;
 	struct screen_titles		*titles;
-	u_int				 ntitles;
 
 	struct grid			*grid;	  /* grid data */
 
@@ -1984,7 +1982,6 @@ struct client {
 	char			*title;
 	char			*path;
 	const char		*cwd;
-	struct progress_bar	 progress_bar;
 
 	char			*term_name;
 	int			 term_features;
@@ -2329,7 +2326,6 @@ int		 checkshell(const char *);
 void		 setblocking(int, int);
 char 		*shell_argv0(const char *, int);
 uint64_t	 get_timer(void);
-char		*clean_name(const char *, const char *);
 const char	*sig2name(int);
 const char	*find_cwd(void);
 const char	*find_home(void);
@@ -2624,7 +2620,6 @@ void	tty_repeat_requests(struct tty *, int);
 void	tty_stop_tty(struct tty *);
 void	tty_set_title(struct tty *, const char *);
 void	tty_set_path(struct tty *, const char *);
-void	tty_set_progress_bar(struct tty *, struct progress_bar *);
 void	tty_default_attributes(struct tty *, const struct grid_cell *,
 	    struct colour_palette *, u_int, struct hyperlinks *);
 void	tty_update_mode(struct tty *, int, struct screen *);
@@ -2950,9 +2945,9 @@ void	 file_write_data(struct client_files *, struct imsg *);
 void	 file_write_close(struct client_files *, struct imsg *);
 void	 file_read_open(struct client_files *, struct tmuxpeer *, struct imsg *,
 	     int, int, client_file_cb, void *);
-int	 file_write_ready(struct client_files *, struct imsg *);
-int	 file_read_data(struct client_files *, struct imsg *);
-int	 file_read_done(struct client_files *, struct imsg *);
+void	 file_write_ready(struct client_files *, struct imsg *);
+void	 file_read_data(struct client_files *, struct imsg *);
+void	 file_read_done(struct client_files *, struct imsg *);
 void	 file_read_cancel(struct client_files *, struct imsg *);
 
 /* server.c */
@@ -3286,14 +3281,14 @@ void	 screen_set_default_cursor(struct screen *, struct options *);
 void	 screen_set_cursor_style(u_int, enum screen_cursor_style *, int *);
 void	 screen_set_cursor_colour(struct screen *, int);
 int	 screen_set_title(struct screen *, const char *);
-int	 screen_set_path(struct screen *, const char *);
+void	 screen_set_path(struct screen *, const char *);
 void	 screen_push_title(struct screen *);
 void	 screen_pop_title(struct screen *);
 void	 screen_set_progress_bar(struct screen *, enum progress_bar_state, int);
 void	 screen_resize(struct screen *, u_int, u_int, int);
 void	 screen_resize_cursor(struct screen *, u_int, u_int, int, int, int);
 void	 screen_set_selection(struct screen *, u_int, u_int, u_int, u_int,
-	     u_int, u_int, int, struct grid_cell *);
+	     u_int, int, struct grid_cell *);
 void	 screen_clear_selection(struct screen *);
 void	 screen_hide_selection(struct screen *);
 int	 screen_check_selection(struct screen *, u_int, u_int);
@@ -3531,7 +3526,6 @@ char		*window_copy_get_line(struct window_pane *, u_int);
 int		 window_copy_get_current_offset(struct window_pane *, u_int *,
 		     u_int *);
 char		*window_copy_get_hyperlink(struct window_pane *, u_int, u_int);
-void		 window_copy_set_line_numbers(struct window_pane *, int);
 
 /* window-option.c */
 extern const struct window_mode window_customize_mode;
@@ -3593,6 +3587,7 @@ struct session	*session_create(const char *, const char *, const char *,
 void		 session_destroy(struct session *, int,	 const char *);
 void		 session_add_ref(struct session *, const char *);
 void		 session_remove_ref(struct session *, const char *);
+char		*session_check_name(const char *);
 void		 session_update_activity(struct session *, struct timeval *);
 struct session	*session_next_session(struct session *, struct sort_criteria *);
 struct session	*session_previous_session(struct session *,
