@@ -1,4 +1,4 @@
-/*	$OpenBSD: cpu.h,v 1.26 2026/05/02 14:09:17 jsing Exp $	*/
+/*	$OpenBSD: cpu.h,v 1.25 2026/04/06 08:10:54 jca Exp $	*/
 
 /*
  * Copyright (c) 2019 Mike Larkin <mlarkin@openbsd.org>
@@ -41,8 +41,6 @@
 #include <machine/intr.h>
 #include <machine/frame.h>
 #include <machine/riscvreg.h>
-
-void cpu_identify_cleanup(void);
 
 /* All the CLKF_* macros take a struct clockframe * as an argument. */
 

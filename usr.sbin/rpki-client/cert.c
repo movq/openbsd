@@ -1,4 +1,4 @@
-/*	$OpenBSD: cert.c,v 1.236 2026/05/02 10:36:21 tb Exp $ */
+/*	$OpenBSD: cert.c,v 1.232 2026/04/07 10:59:19 tb Exp $ */
 /*
  * Copyright (c) 2022,2025 Theo Buehler <tb@openbsd.org>
  * Copyright (c) 2021 Job Snijders <job@openbsd.org>
@@ -1024,15 +1024,220 @@ cert_policies(const char *fn, struct cert *cert, const X509_EXTENSION *ext)
 }
 
 /*
+ * Append an IP address structure to our list of results, ensuring there is
+ * at most one inheritance marker per AFI and no overlapping ranges.
+ */
+static int
+append_ip(const char *fn, struct cert_ip *ips, size_t *num_ips,
+    const struct cert_ip *ip)
+{
+	if (!ip_addr_check_overlap(ip, fn, ips, *num_ips, 0))
+		return 0;
+	ips[(*num_ips)++] = *ip;
+	return 1;
+}
+
+/*
+ * Construct a RFC 3779 2.2.3.8 range from its bit string.
+ * Returns zero on failure, non-zero on success.
+ */
+int
+sbgp_addr(const char *fn, struct cert_ip *ips, size_t *num_ips, enum afi afi,
+    const ASN1_BIT_STRING *bs)
+{
+	struct cert_ip	ip;
+
+	memset(&ip, 0, sizeof(struct cert_ip));
+
+	ip.afi = afi;
+	ip.type = CERT_IP_ADDR;
+
+	if (!ip_addr_parse(bs, afi, fn, &ip.ip)) {
+		warnx("%s: RFC 3779 section 2.2.3.8: IPAddress: "
+		    "invalid IP address", fn);
+		return 0;
+	}
+
+	if (!ip_cert_compose_ranges(&ip)) {
+		warnx("%s: RFC 3779 section 2.2.3.8: IPAddress: "
+		    "IP address range reversed", fn);
+		return 0;
+	}
+
+	return append_ip(fn, ips, num_ips, &ip);
+}
+
+/*
+ * Parse RFC 3779 2.2.3.9 range of addresses.
+ * Returns zero on failure, non-zero on success.
+ */
+int
+sbgp_addr_range(const char *fn, struct cert_ip *ips, size_t *num_ips,
+    enum afi afi, const IPAddressRange *range)
+{
+	struct cert_ip	ip;
+
+	memset(&ip, 0, sizeof(struct cert_ip));
+
+	ip.afi = afi;
+	ip.type = CERT_IP_RANGE;
+
+	if (!ip_addr_parse(range->min, afi, fn, &ip.range.min)) {
+		warnx("%s: RFC 3779 section 2.2.3.9: IPAddressRange: "
+		    "invalid IP address", fn);
+		return 0;
+	}
+
+	if (!ip_addr_parse(range->max, afi, fn, &ip.range.max)) {
+		warnx("%s: RFC 3779 section 2.2.3.9: IPAddressRange: "
+		    "invalid IP address", fn);
+		return 0;
+	}
+
+	if (!ip_cert_compose_ranges(&ip)) {
+		warnx("%s: RFC 3779 section 2.2.3.9: IPAddressRange: "
+		    "IP address range reversed", fn);
+		return 0;
+	}
+
+	return append_ip(fn, ips, num_ips, &ip);
+}
+
+static int
+sbgp_addr_inherit(const char *fn, struct cert_ip *ips, size_t *num_ips,
+    enum afi afi)
+{
+	struct cert_ip	ip;
+
+	memset(&ip, 0, sizeof(struct cert_ip));
+
+	ip.afi = afi;
+	ip.type = CERT_IP_INHERIT;
+
+	return append_ip(fn, ips, num_ips, &ip);
+}
+
+int
+sbgp_parse_ipaddrblocks(const char *fn, const IPAddrBlocks *addrs,
+    struct cert_ip **out_ips, size_t *out_num_ips)
+{
+	const IPAddressFamily	*af;
+	const IPAddressOrRanges	*aors;
+	const IPAddressOrRange	*aor;
+	enum afi		 afi;
+	struct cert_ip		*ips = NULL;
+	size_t			 num_ips = 0, num;
+	int			 ipv4_seen = 0, ipv6_seen = 0;
+	int			 i, j, addrsz;
+
+	assert(*out_ips == NULL && *out_num_ips == 0);
+
+	addrsz = sk_IPAddressFamily_num(addrs);
+	if (addrsz != 1 && addrsz != 2) {
+		warnx("%s: RFC 6487 section 4.8.10: unexpected number of "
+		    "ipAddrBlocks (got %d, expected 1 or 2)", fn, addrsz);
+		goto out;
+	}
+
+	for (i = 0; i < addrsz; i++) {
+		af = sk_IPAddressFamily_value(addrs, i);
+
+		switch (af->ipAddressChoice->type) {
+		case IPAddressChoice_inherit:
+			aors = NULL;
+			num = num_ips + 1;
+			break;
+		case IPAddressChoice_addressesOrRanges:
+			aors = af->ipAddressChoice->u.addressesOrRanges;
+			num = num_ips + sk_IPAddressOrRange_num(aors);
+			break;
+		default:
+			warnx("%s: RFC 3779: IPAddressChoice: unknown type %d",
+			    fn, af->ipAddressChoice->type);
+			goto out;
+		}
+		if (num == num_ips) {
+			warnx("%s: RFC 6487 section 4.8.10: "
+			    "empty ipAddressesOrRanges", fn);
+			goto out;
+		}
+
+		if (num >= MAX_IP_SIZE)
+			goto out;
+		ips = recallocarray(ips, num_ips, num, sizeof(struct cert_ip));
+		if (ips == NULL)
+			err(1, NULL);
+
+		if (!ip_addr_afi_parse(fn, af->addressFamily, &afi)) {
+			warnx("%s: RFC 3779: invalid AFI", fn);
+			goto out;
+		}
+
+		switch (afi) {
+		case AFI_IPV4:
+			if (ipv4_seen++ > 0) {
+				warnx("%s: RFC 6487 section 4.8.10: "
+				    "IPv4 appears twice", fn);
+				goto out;
+			}
+			break;
+		case AFI_IPV6:
+			if (ipv6_seen++ > 0) {
+				warnx("%s: RFC 6487 section 4.8.10: "
+				    "IPv6 appears twice", fn);
+				goto out;
+			}
+			break;
+		}
+
+		if (aors == NULL) {
+			if (!sbgp_addr_inherit(fn, ips, &num_ips, afi))
+				goto out;
+			continue;
+		}
+
+		for (j = 0; j < sk_IPAddressOrRange_num(aors); j++) {
+			aor = sk_IPAddressOrRange_value(aors, j);
+			switch (aor->type) {
+			case IPAddressOrRange_addressPrefix:
+				if (!sbgp_addr(fn, ips, &num_ips, afi,
+				    aor->u.addressPrefix))
+					goto out;
+				break;
+			case IPAddressOrRange_addressRange:
+				if (!sbgp_addr_range(fn, ips, &num_ips, afi,
+				    aor->u.addressRange))
+					goto out;
+				break;
+			default:
+				warnx("%s: RFC 3779: IPAddressOrRange: "
+				    "unknown type %d", fn, aor->type);
+				goto out;
+			}
+		}
+	}
+
+	*out_ips = ips;
+	*out_num_ips = num_ips;
+
+	return 1;
+
+ out:
+	free(ips);
+
+	return 0;
+}
+
+/*
  * Parse an IP Resources X.509v3 extension, RFC 6487 4.8.10, with
  * syntax documented in RFC 3779 starting in section 2.2.
  * Returns zero on failure, non-zero on success.
  */
 static int
-cert_ipaddrblocks(const char *fn, struct cert *cert, const X509_EXTENSION *ext)
+sbgp_ipaddrblocks(const char *fn, struct cert *cert, const X509_EXTENSION *ext)
 {
-	IPAddrBlocks *addrs = NULL;
-	int rc = 0;
+	IPAddrBlocks	*addrs = NULL;
+	int		 rc = 0;
 
 	if (!X509_EXTENSION_get_critical(ext)) {
 		warnx("%s: RFC 6487 section 4.8.10: ipAddrBlocks: "
@@ -1061,6 +1266,96 @@ cert_ipaddrblocks(const char *fn, struct cert *cert, const X509_EXTENSION *ext)
 	return rc;
 }
 
+/*
+ * Append an AS identifier structure to our list of results.
+ * Makes sure that the identifiers do not overlap or improperly inherit
+ * as defined by RFC 3779 section 3.3.
+ */
+static int
+append_as(const char *fn, struct cert_as *ases, size_t *num_ases,
+    const struct cert_as *as)
+{
+	if (!as_check_overlap(as, fn, ases, *num_ases, 0))
+		return 0;
+	ases[(*num_ases)++] = *as;
+	return 1;
+}
+
+/*
+ * Parse a range of AS identifiers as in 3.2.3.8.
+ * Returns zero on failure, non-zero on success.
+ */
+int
+sbgp_as_range(const char *fn, struct cert_as *ases, size_t *num_ases,
+    const ASRange *range)
+{
+	struct cert_as		 as;
+
+	memset(&as, 0, sizeof(struct cert_as));
+	as.type = CERT_AS_RANGE;
+
+	if (!as_id_parse(range->min, &as.range.min)) {
+		warnx("%s: RFC 3779 section 3.2.3.8 (via RFC 1930): "
+		    "malformed AS identifier", fn);
+		return 0;
+	}
+
+	if (!as_id_parse(range->max, &as.range.max)) {
+		warnx("%s: RFC 3779 section 3.2.3.8 (via RFC 1930): "
+		    "malformed AS identifier", fn);
+		return 0;
+	}
+
+	if (as.range.max == as.range.min) {
+		warnx("%s: RFC 3379 section 3.2.3.8: ASRange: "
+		    "range is singular", fn);
+		return 0;
+	} else if (as.range.max < as.range.min) {
+		warnx("%s: RFC 3379 section 3.2.3.8: ASRange: "
+		    "range is out of order", fn);
+		return 0;
+	}
+
+	return append_as(fn, ases, num_ases, &as);
+}
+
+/*
+ * Parse an entire 3.2.3.10 integer type.
+ */
+int
+sbgp_as_id(const char *fn, struct cert_as *ases, size_t *num_ases,
+    const ASN1_INTEGER *i)
+{
+	struct cert_as	 as;
+
+	memset(&as, 0, sizeof(struct cert_as));
+	as.type = CERT_AS_ID;
+
+	if (!as_id_parse(i, &as.id)) {
+		warnx("%s: RFC 3779 section 3.2.3.10 (via RFC 1930): "
+		    "malformed AS identifier", fn);
+		return 0;
+	}
+	if (as.id == 0) {
+		warnx("%s: RFC 3779 section 3.2.3.10 (via RFC 1930): "
+		    "AS identifier zero is reserved", fn);
+		return 0;
+	}
+
+	return append_as(fn, ases, num_ases, &as);
+}
+
+static int
+sbgp_as_inherit(const char *fn, struct cert_as *ases, size_t *num_ases)
+{
+	struct cert_as as;
+
+	memset(&as, 0, sizeof(struct cert_as));
+	as.type = CERT_AS_INHERIT;
+
+	return append_as(fn, ases, num_ases, &as);
+}
+
 static int
 cert_as_inherit(const struct cert *cert)
 {
@@ -1079,13 +1374,99 @@ cert_has_one_as(const struct cert *cert)
 	return cert->ases[0].type == CERT_AS_ID;
 }
 
+int
+sbgp_parse_asids(const char *fn, const ASIdentifiers *asidentifiers,
+    struct cert_as **out_as, size_t *out_num_ases)
+{
+	const ASIdOrRanges	*aors = NULL;
+	struct cert_as		*as = NULL;
+	size_t			 num_ases = 0, num;
+	int			 i;
+
+	assert(*out_as == NULL && *out_num_ases == 0);
+
+	if (asidentifiers->rdi != NULL) {
+		warnx("%s: RFC 6487 section 4.8.11: autonomousSysIds: "
+		    "should not have RDI values", fn);
+		goto out;
+	}
+
+	if (asidentifiers->asnum == NULL) {
+		warnx("%s: RFC 6487 section 4.8.11: autonomousSysIds: "
+		    "no AS number resource set", fn);
+		goto out;
+	}
+
+	switch (asidentifiers->asnum->type) {
+	case ASIdentifierChoice_inherit:
+		num = 1;
+		break;
+	case ASIdentifierChoice_asIdsOrRanges:
+		aors = asidentifiers->asnum->u.asIdsOrRanges;
+		num = sk_ASIdOrRange_num(aors);
+		break;
+	default:
+		warnx("%s: RFC 3779 section 3.2.3.2: ASIdentifierChoice: "
+		    "unknown type %d", fn, asidentifiers->asnum->type);
+		goto out;
+	}
+
+	if (num == 0) {
+		warnx("%s: RFC 6487 section 4.8.11: empty asIdsOrRanges", fn);
+		goto out;
+	}
+	if (num >= MAX_AS_SIZE) {
+		warnx("%s: too many AS number entries: limit %d",
+		    fn, MAX_AS_SIZE);
+		goto out;
+	}
+	as = calloc(num, sizeof(struct cert_as));
+	if (as == NULL)
+		err(1, NULL);
+
+	if (aors == NULL) {
+		if (!sbgp_as_inherit(fn, as, &num_ases))
+			goto out;
+	}
+
+	for (i = 0; i < sk_ASIdOrRange_num(aors); i++) {
+		const ASIdOrRange *aor;
+
+		aor = sk_ASIdOrRange_value(aors, i);
+		switch (aor->type) {
+		case ASIdOrRange_id:
+			if (!sbgp_as_id(fn, as, &num_ases, aor->u.id))
+				goto out;
+			break;
+		case ASIdOrRange_range:
+			if (!sbgp_as_range(fn, as, &num_ases, aor->u.range))
+				goto out;
+			break;
+		default:
+			warnx("%s: RFC 3779 section 3.2.3.5: ASIdOrRange: "
+			    "unknown type %d", fn, aor->type);
+			goto out;
+		}
+	}
+
+	*out_as = as;
+	*out_num_ases = num_ases;
+
+	return 1;
+
+ out:
+	free(as);
+
+	return 0;
+}
+
 /*
  * Parse an AS Resources X.509v3 extension, RFC 6487 4.8.11, with
  * syntax documented in RFC 3779 starting in section 3.2.
  * Returns zero on failure, non-zero on success.
  */
 static int
-cert_asids(const char *fn, struct cert *cert, const X509_EXTENSION *ext)
+sbgp_asids(const char *fn, struct cert *cert, const X509_EXTENSION *ext)
 {
 	ASIdentifiers		*asidentifiers = NULL;
 	int			 rc = 0;
@@ -1206,13 +1587,13 @@ cert_parse_extensions(const char *fn, struct cert *cert)
 		case NID_sbgp_ipAddrBlock:
 			if (ip++ > 0)
 				goto dup;
-			if (!cert_ipaddrblocks(fn, cert, ext))
+			if (!sbgp_ipaddrblocks(fn, cert, ext))
 				goto out;
 			break;
 		case NID_sbgp_autonomousSysNum:
 			if (as++ > 0)
 				goto dup;
-			if (!cert_asids(fn, cert, ext))
+			if (!sbgp_asids(fn, cert, ext))
 				goto out;
 			break;
 		default:

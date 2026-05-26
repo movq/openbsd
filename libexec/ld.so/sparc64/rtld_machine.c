@@ -1,4 +1,4 @@
-/*	$OpenBSD: rtld_machine.c,v 1.72 2026/05/06 08:07:05 kettenis Exp $ */
+/*	$OpenBSD: rtld_machine.c,v 1.71 2025/09/09 08:41:48 claudio Exp $ */
 
 /*
  * Copyright (c) 1999 Dale Rahn
@@ -241,9 +241,6 @@ _dl_md_reloc(elf_object_t *object, int rel, int relasz)
 		const char *symn;
 
 		type = ELF_R_TYPE(relas->r_info);
-
-		if (type >= nitems(reloc_target_flags))
-			_dl_die("bad relocation %ld %d", i, type);
 
 		if (type == R_TYPE(NONE) || type == R_TYPE(JMP_SLOT))
 			continue;

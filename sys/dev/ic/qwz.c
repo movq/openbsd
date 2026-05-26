@@ -1,4 +1,4 @@
-/*	$OpenBSD: qwz.c,v 1.26 2026/04/26 19:25:08 mglocker Exp $	*/
+/*	$OpenBSD: qwz.c,v 1.24 2026/04/12 19:52:23 kirill Exp $	*/
 
 /*
  * Copyright 2023 Stefan Sperling <stsp@openbsd.org>
@@ -730,17 +730,8 @@ qwz_add_sta_key(struct qwz_softc *sc, struct ieee80211_node *ni,
 		nq->flags |= QWZ_NODE_FLAG_HAVE_PAIRWISE_KEY;
 
 	if ((nq->flags & want_keymask) == want_keymask) {
-		uint8_t pdev_id = 0; /* TODO: derive pdev ID somehow? */
-
-		/* 4-way handshake done; authorize the BSS peer now. */
-		ret = qwz_wmi_set_peer_param(sc, ni->ni_macaddr, arvif->vdev_id,
-		    pdev_id, WMI_PEER_AUTHORIZE, 1);
-		if (ret) {
-			printf("%s: unable to authorize BSS peer: %d\n",
-			    sc->sc_dev.dv_xname, ret);
-			return ret;
-		}
-
+		DPRINTF("marking port %s valid\n",
+		    ether_sprintf(ni->ni_macaddr));
 		ni->ni_port_valid = 1;
 		ieee80211_set_link_state(ic, LINK_STATE_UP);
 	}
@@ -1125,7 +1116,7 @@ qwz_hw_wcn7850_rx_desc_get_mpdu_seq_ctl_vld(struct hal_rx_desc *desc)
 	      le32toh(desc->u.wcn7850.mpdu_start.info4));
 }
 
-bool
+int
 qwz_hw_wcn7850_rx_desc_get_mpdu_fc_valid(struct hal_rx_desc *desc)
 {
 	return !!FIELD_GET(RX_MPDU_START_INFO4_MPDU_FCTRL_VALID,
@@ -1239,13 +1230,6 @@ qwz_hw_wcn7850_rx_desc_is_da_mcbc(struct hal_rx_desc *desc)
 	    le32toh(desc->u.wcn7850.msdu_end.info13));
 }
 
-bool
-qwz_hw_wcn7850_dp_rx_h_msdu_done(struct hal_rx_desc *desc)
-{
-	return !!(le32toh(desc->u.wcn7850.msdu_end.info14) &
-	    RX_MSDU_END_INFO14_MSDU_DONE);
-}
-
 int
 qwz_hw_wcn7850_dp_rx_h_is_decrypted(struct hal_rx_desc *desc)
 {
@@ -1286,21 +1270,7 @@ qwz_hw_wcn7850_dp_rx_h_mpdu_err(struct hal_rx_desc *desc)
 
 uint32_t qwz_hw_wcn7850_get_rx_desc_size(void)
 {
-	/*
-	 * Empirically observed on WCN7850 hw2.0 fw 0x110cffff: the FW
-	 * places the MSDU payload at offset 512 of the buffer (with the
-	 * mpdu_start_tag at 216 and mpdu_start data at 224, matching our
-	 * 80-byte rx_padding0). The struct sizeof works out to only 472
-	 * bytes, so override the descriptor size getter to return the
-	 * actual 512 bytes for m_adj to strip the right amount.
-	 *
-	 * NOTE: keeping struct sizeof at 472 is intentional; bumping
-	 * pkt_hdr_tlv to 168 to make sizeof = 512 caused spontaneous
-	 * machine reboots, suggesting a downstream code path (likely the
-	 * EAPOL TX response) was crashing the FW once real frames started
-	 * arriving. We isolate that here by only changing what m_adj sees.
-	 */
-	return 512;
+	return sizeof(struct hal_rx_desc_wcn7850);
 }
 
 uint8_t
@@ -1613,9 +1583,9 @@ const struct ce_attr qwz_host_ce_config_wcn7850[QWZ_CE_COUNT_WCN7850] = {
 		.dest_nentries = 0,
 	},
 
-	/* CE5: target->host pktlog (DIS_INTR: frees MSI vector 8 for DP group 0) */
+	/* CE5: target->host pktlog */
 	{
-		.flags = CE_ATTR_FLAGS | CE_ATTR_DIS_INTR,
+		.flags = CE_ATTR_FLAGS,
 		.src_nentries = 0,
 		.src_sz_max = 0,
 		.dest_nentries = 0,
@@ -1682,9 +1652,9 @@ const struct hal_rx_ops hal_rx_wcn7850_ops = {
 #ifdef notyet
 	.rx_desc_get_mesh_ctl = qwz_hw_wcn7850_rx_desc_get_mesh_ctl,
 	.rx_desc_get_mpdu_seq_ctl_vld = qwz_hw_wcn7850_rx_desc_get_mpdu_seq_ctl_vld,
+	.rx_desc_get_mpdu_fc_valid = qwz_hw_wcn7850_rx_desc_get_mpdu_fc_valid,
 	.rx_desc_get_mpdu_start_seq_no = qwz_hw_wcn7850_rx_desc_get_mpdu_start_seq_no,
 #endif
-	.rx_desc_get_mpdu_fc_valid = qwz_hw_wcn7850_rx_desc_get_mpdu_fc_valid,
 	.rx_desc_get_msdu_len = qwz_hw_wcn7850_rx_desc_get_msdu_len,
 #ifdef notyet
 	.rx_desc_get_msdu_sgi = qwz_hw_wcn7850_rx_desc_get_msdu_sgi,
@@ -1712,10 +1682,10 @@ const struct hal_rx_ops hal_rx_wcn7850_ops = {
 	.rx_desc_get_dot11_hdr = qwz_hw_wcn7850_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = qwz_hw_wcn7850_rx_desc_get_crypto_hdr,
 	.rx_desc_get_mpdu_frame_ctl = qwz_hw_wcn7850_rx_desc_get_mpdu_frame_ctl,
+	.dp_rx_h_msdu_done = qwz_hw_wcn7850_dp_rx_h_msdu_done,
 	.dp_rx_h_l4_cksum_fail = qwz_hw_wcn7850_dp_rx_h_l4_cksum_fail,
 	.dp_rx_h_ip_cksum_fail = qwz_hw_wcn7850_dp_rx_h_ip_cksum_fail,
 #endif
-	.dp_rx_h_msdu_done = qwz_hw_wcn7850_dp_rx_h_msdu_done,
 	.dp_rx_h_is_decrypted = qwz_hw_wcn7850_dp_rx_h_is_decrypted,
 	.dp_rx_h_mpdu_err = qwz_hw_wcn7850_dp_rx_h_mpdu_err,
 	.rx_desc_get_desc_size = qwz_hw_wcn7850_get_rx_desc_size,
@@ -7643,6 +7613,29 @@ qwz_hal_srng_get_params(struct qwz_softc *sc, struct hal_srng *srng,
 	params->flags = srng->flags;
 }
 
+void
+qwz_hal_tx_init_data_ring(struct qwz_softc *sc, struct hal_srng *srng)
+{
+	struct hal_srng_params params;
+	struct hal_tlv_hdr *tlv;
+	int i, entry_size;
+	uint8_t *desc;
+
+	memset(&params, 0, sizeof(params));
+
+	entry_size = qwz_hal_srng_get_entrysize(sc, HAL_TCL_DATA);
+	qwz_hal_srng_get_params(sc, srng, &params);
+	desc = (uint8_t *)params.ring_base_vaddr;
+
+	for (i = 0; i < params.num_entries; i++) {
+		tlv = (struct hal_tlv_hdr *)desc;
+		tlv->tl = FIELD_PREP(HAL_TLV_HDR_TAG, HAL_TCL_DATA_CMD) |
+		    FIELD_PREP(HAL_TLV_HDR_LEN,
+		    sizeof(struct hal_tcl_data_cmd));
+		desc += entry_size;
+	}
+}
+
 #define DSCP_TID_MAP_TBL_ENTRY_SIZE 64
 
 /* dscp_tid_map - Default DSCP-TID mapping
@@ -8028,6 +8021,9 @@ qwz_dp_srng_common_setup(struct qwz_softc *sc)
 			    sc->sc_dev.dv_xname, i, ret);
 			goto err;
 		}
+
+		srng = &sc->hal.srng_list[dp->tx_ring[i].tcl_data_ring.ring_id];
+		qwz_hal_tx_init_data_ring(sc, srng);
 	}
 
 	ret = qwz_dp_srng_setup(sc, &dp->reo_reinject_ring, HAL_REO_REINJECT,
@@ -8245,29 +8241,7 @@ void *ath12k_dp_cc_get_desc_addr_ptr(struct qwz_softc *sc,
 {
 	struct qwz_dp *dp = &sc->dp;
 
-	/*
-	 * Cast to void** before adding spt_idx so arithmetic steps by
-	 * sizeof(void*), not by 1 byte.
-	 */
-	return (void **)QWZ_DMA_KVA(dp->spt_info[ppt_idx].mem) + spt_idx;
-}
-
-struct ath12k_rx_desc_info *
-qwz_dp_get_rx_desc(struct qwz_softc *sc, uint32_t cookie)
-{
-	struct ath12k_rx_desc_info **desc_addr_ptr;
-	uint16_t ppt_idx, spt_idx;
-
-	ppt_idx = FIELD_GET(ATH12K_DP_CC_COOKIE_PPT, cookie);
-	spt_idx = FIELD_GET(ATH12K_DP_CC_COOKIE_SPT, cookie);
-
-	if (ppt_idx < ATH12K_RX_SPT_PAGE_OFFSET ||
-	    ppt_idx >= ATH12K_RX_SPT_PAGE_OFFSET + ATH12K_NUM_RX_SPT_PAGES ||
-	    spt_idx >= ATH12K_MAX_SPT_ENTRIES)
-		return NULL;
-
-	desc_addr_ptr = ath12k_dp_cc_get_desc_addr_ptr(sc, ppt_idx, spt_idx);
-	return *desc_addr_ptr;
+	return QWZ_DMA_KVA(dp->spt_info[ppt_idx].mem) + spt_idx;
 }
 
 int
@@ -10067,6 +10041,10 @@ qwz_peer_assoc_conf_event(struct qwz_softc *sc, struct mbuf *m)
 		   sc->sc_dev.dv_xname);
 		return;
 	}
+
+	DNPRINTF(QWZ_D_WMI, "%s: event peer assoc conf ev vdev id %d "
+	    "macaddr %s\n", __func__, peer_assoc_conf.vdev_id,
+	    ether_sprintf((u_char *)peer_assoc_conf.macaddr));
 
 	sc->peer_assoc_done = 1;
 	wakeup(&sc->peer_assoc_done);
@@ -12519,11 +12497,8 @@ qwz_peer_map_event(struct qwz_softc *sc, uint8_t vdev_id, uint16_t peer_id,
 	spin_lock_bh(&ab->base_lock);
 #endif
 	ni = ieee80211_find_node(ic, mac_addr);
-	if (ni == NULL) {
-		printf("%s: peer_map: no node for %s\n", sc->sc_dev.dv_xname,
-		    ether_sprintf(mac_addr));
+	if (ni == NULL)
 		return;
-	}
 	nq = (struct qwz_node *)ni;
 	peer = &nq->peer;
 
@@ -12664,9 +12639,6 @@ qwz_dp_htt_htc_t2h_msg_handler(struct qwz_softc *sc, struct mbuf *m)
 		ath12k_htt_backpressure_event_handler(ab, skb);
 		break;
 #endif
-	case HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND:
-		/* MLO peer migration; no action needed for non-MLO ops. */
-		break;
 	default:
 		printf("%s: htt event %d not handled\n", __func__, type);
 		break;
@@ -13068,13 +13040,6 @@ qwz_dp_rxbufs_replenish(struct qwz_softc *sc,
 			goto fail_free_mbuf;
 		}
 
-		/*
-		 * Invalidate any stale cache lines covering this buffer
-		 * before the FW writes RX data into it.
-		 */
-		bus_dmamap_sync(sc->sc_dmat, rx_desc->map, 0,
-		    rx_desc->map->dm_mapsize, BUS_DMASYNC_PREREAD);
-
 		cookie = rx_desc->cookie;
 
 		desc = qwz_hal_srng_src_get_next_entry(sc, srng);
@@ -13084,7 +13049,6 @@ qwz_dp_rxbufs_replenish(struct qwz_softc *sc,
 		TAILQ_REMOVE(used_list, rx_desc, entry);
 
 		rx_desc->m = m;
-		rx_desc->in_use = 1;
 		m = NULL;
 
 		num_remain--;
@@ -13489,76 +13453,6 @@ qwz_dp_rx_pdev_alloc(struct qwz_softc *sc, int mac_id)
 	return 0;
 }
 
-int
-qwz_dp_rxdma_ring_sel_config_wcn7850(struct qwz_softc *sc)
-{
-	struct qwz_dp *dp = &sc->dp;
-	struct htt_rx_ring_tlv_filter tlv_filter = { 0 };
-	uint32_t ring_id;
-	int i, ret = 0;
-
-	tlv_filter.rx_filter = HTT_RX_FILTER_TLV_FLAGS_MPDU_START |
-	    HTT_RX_FILTER_TLV_FLAGS_RX_PACKET |
-	    HTT_RX_FILTER_TLV_FLAGS_MSDU_END;
-	tlv_filter.pkt_filter_flags2 = HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_BAR;
-	tlv_filter.pkt_filter_flags3 = HTT_RX_FP_DATA_FILTER_FLASG3;
-
-	for (i = 0; i < sc->hw_params.num_rxmda_per_pdev; i++) {
-		ring_id = dp->rx_mac_buf_ring[i].ring_id;
-		ret = qwz_dp_tx_htt_rx_filter_setup(sc, ring_id, i,
-		    HAL_RXDMA_BUF, DP_RXDMA_REFILL_RING_SIZE, &tlv_filter);
-		if (ret) {
-			printf("%s: failed to configure rx_mac_buf_ring%d "
-			    "filter %d\n", sc->sc_dev.dv_xname, i, ret);
-			return ret;
-		}
-	}
-
-	return ret;
-}
-
-int
-qwz_dp_rx_htt_setup(struct qwz_softc *sc)
-{
-	struct qwz_dp *dp = &sc->dp;
-	uint32_t ring_id;
-	int i, ret;
-
-	/* TODO: Need to verify the HTT setup for QCN9224 */
-	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id;
-	ret = qwz_dp_tx_htt_srng_setup(sc, ring_id, 0, HAL_RXDMA_BUF);
-	if (ret) {
-		printf("%s: failed to configure rx_refill_buf_ring %d\n",
-		    sc->sc_dev.dv_xname, ret);
-		return ret;
-	}
-
-	if (sc->hw_params.rx_mac_buf_ring) {
-		for (i = 0; i < sc->hw_params.num_rxmda_per_pdev; i++) {
-			ring_id = dp->rx_mac_buf_ring[i].ring_id;
-			ret = qwz_dp_tx_htt_srng_setup(sc, ring_id, i,
-			    HAL_RXDMA_BUF);
-			if (ret) {
-				printf("%s: failed to configure rx_mac_buf_ring"
-				    "%d %d\n", sc->sc_dev.dv_xname, i, ret);
-				return ret;
-			}
-		}
-	}
-
-	for (i = 0; i < sc->hw_params.num_rxdma_dst_ring; i++) {
-		ring_id = dp->rxdma_err_dst_ring[i].ring_id;
-		ret = qwz_dp_tx_htt_srng_setup(sc, ring_id, i, HAL_RXDMA_DST);
-		if (ret) {
-			printf("%s: failed to configure rxdma_err_dst_ring"
-			    "%d %d\n", sc->sc_dev.dv_xname, i, ret);
-			return ret;
-		}
-	}
-
-	return qwz_dp_rxdma_ring_sel_config_wcn7850(sc);
-}
-
 void
 qwz_dp_pdev_free(struct qwz_softc *sc)
 {
@@ -13583,13 +13477,6 @@ qwz_dp_pdev_alloc(struct qwz_softc *sc)
 			    "for pdev_id %d\n", sc->sc_dev.dv_xname, i);
 			goto err;
 		}
-	}
-
-	ret = qwz_dp_rx_htt_setup(sc);
-	if (ret) {
-		printf("%s: failed to setup rx htt %d\n",
-		    sc->sc_dev.dv_xname, ret);
-		goto err;
 	}
 
 	return 0;
@@ -13672,97 +13559,6 @@ qwz_dp_update_vdev_search(struct qwz_softc *sc, struct qwz_vif *arvif)
 	}
 }
 
-/*
- * Compute the 32-bit TX bank config for this VDEV. Mirror of Linux
- * ath12k_wifi7_dp_tx_get_vdev_bank_config().
- */
-uint32_t
-qwz_dp_tx_get_vdev_bank_config(struct qwz_softc *sc, struct qwz_vif *arvif)
-{
-	uint32_t bank_config = 0;
-	enum hal_tcl_encap_type encap_type;
-
-	if (test_bit(ATH12K_FLAG_RAW_MODE, sc->sc_flags))
-		encap_type = HAL_TCL_ENCAP_TYPE_RAW;
-	else
-		encap_type = HAL_TCL_ENCAP_TYPE_NATIVE_WIFI;
-
-	bank_config |= FIELD_PREP(HAL_TX_BANK_CONFIG_ENCAP_TYPE, encap_type);
-	bank_config |= FIELD_PREP(HAL_TX_BANK_CONFIG_SRC_BUFFER_SWAP, 0) |
-	    FIELD_PREP(HAL_TX_BANK_CONFIG_LINK_META_SWAP, 0) |
-	    FIELD_PREP(HAL_TX_BANK_CONFIG_EPD, 0);
-
-	if (arvif->vdev_type == WMI_VDEV_TYPE_STA)
-		bank_config |= FIELD_PREP(HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN, 1);
-
-	bank_config |= FIELD_PREP(HAL_TX_BANK_CONFIG_ADDRX_EN,
-	    !!(arvif->hal_addr_search_flags & HAL_TX_ADDRX_EN)) |
-	    FIELD_PREP(HAL_TX_BANK_CONFIG_ADDRY_EN,
-	    !!(arvif->hal_addr_search_flags & HAL_TX_ADDRY_EN));
-
-	bank_config |= FIELD_PREP(HAL_TX_BANK_CONFIG_MESH_EN, 0) |
-	    FIELD_PREP(HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN, 1);
-	bank_config |= FIELD_PREP(HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID, 0);
-
-	return bank_config;
-}
-
-/*
- * Write the per-bank TX config register so the FW picks up the encap/
- * encrypt/search settings when it processes a tcl_data_cmd with this
- * bank_id. Mirror of Linux ath12k_wifi7_hal_tx_configure_bank_register().
- */
-void
-qwz_hal_tx_configure_bank_register(struct qwz_softc *sc, uint32_t bank_config,
-    uint8_t bank_id)
-{
-	sc->ops.write32(sc, HAL_TCL_SW_CONFIG_BANK_ADDR + 4 * bank_id,
-	    bank_config);
-}
-
-/*
- * Allocate (or reuse) a TX bank profile that matches the requested
- * bank_config. Configures the FW register on first use of a bank.
- * Returns -1 if no bank slot is available.
- */
-int
-qwz_dp_tx_get_bank_profile(struct qwz_softc *sc, struct qwz_vif *arvif)
-{
-	struct qwz_dp *dp = &sc->dp;
-	uint32_t bank_config = qwz_dp_tx_get_vdev_bank_config(sc, arvif);
-	int i, bank_id = -1, configure_register = 0;
-
-	for (i = 0; i < dp->num_bank_profiles; i++) {
-		if (dp->bank_profiles[i].is_configured &&
-		    dp->bank_profiles[i].bank_config == bank_config) {
-			bank_id = i;
-			goto inc_ref_and_return;
-		}
-		if (!dp->bank_profiles[i].is_configured ||
-		    dp->bank_profiles[i].num_users == 0) {
-			bank_id = i;
-			goto configure_and_return;
-		}
-	}
-
-	if (bank_id == -1) {
-		printf("%s: out of TX bank slots\n", sc->sc_dev.dv_xname);
-		return -1;
-	}
-
-configure_and_return:
-	dp->bank_profiles[bank_id].is_configured = 1;
-	dp->bank_profiles[bank_id].bank_config = bank_config;
-	configure_register = 1;
-inc_ref_and_return:
-	dp->bank_profiles[bank_id].num_users++;
-
-	if (configure_register)
-		qwz_hal_tx_configure_bank_register(sc, bank_config, bank_id);
-
-	return bank_id;
-}
-
 void
 qwz_dp_vdev_tx_attach(struct qwz_softc *sc, struct qwz_pdev *pdev,
     struct qwz_vif *arvif)
@@ -13775,15 +13571,6 @@ qwz_dp_vdev_tx_attach(struct qwz_softc *sc, struct qwz_pdev *pdev,
 	arvif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 
 	qwz_dp_update_vdev_search(sc, arvif);
-
-	/*
-	 * Allocate and configure a TX bank for this VDEV. The bank
-	 * register holds encap_type, encrypt_type, addrx/y_en, etc., and
-	 * the per-frame tcl_data_cmd descriptor only references it by
-	 * bank_id. WCN7850 (WiFi7) requires this; the older inline
-	 * encoding crashes the FW.
-	 */
-	arvif->bank_id = qwz_dp_tx_get_bank_profile(sc, arvif);
 }
 
 void
@@ -13974,8 +13761,6 @@ qwz_dp_tx_complete_msdu(struct qwz_softc *sc, struct dp_tx_ring *tx_ring,
 		return;
 	}
 
-	bus_dmamap_sync(sc->sc_dmat, tx_data->map, 0,
-	    tx_data->map->dm_mapsize, BUS_DMASYNC_POSTWRITE);
 	bus_dmamap_unload(sc->sc_dmat, tx_data->map);
 	m_freem(tx_data->m);
 	tx_data->m = NULL;
@@ -14234,7 +14019,7 @@ qwz_dp_process_rx_err_buf(struct qwz_softc *sc, uint32_t *ring_desc,
 	struct qwz_rx_data *rx_data;
 	struct hal_rx_desc *rx_desc;
 	uint16_t msdu_len;
-	uint32_t hal_rx_desc_sz = sc->hal.hal_desc_sz;
+	uint32_t hal_rx_desc_sz = sc->hw_params.hal_desc_sz;
 
 	if (buf_id >= rx_ring->bufs_max || isset(rx_ring->freemap, buf_id))
 		return;
@@ -14382,6 +14167,7 @@ qwz_dp_process_rx_err(struct qwz_softc *sc)
 
 	return tot_n_bufs_reaped;
 #endif
+	printf("%s:%d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -14630,6 +14416,7 @@ done:
 
 	return total_num_buffs_reaped;
 #endif
+	printf("%s:%d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -14795,6 +14582,11 @@ qwz_dp_rx_h_undecap_raw(struct qwz_softc *sc, struct qwz_rx_msdu *msdu,
 #endif
 }
 
+static inline uint8_t *
+qwz_dp_rx_h_80211_hdr(struct qwz_softc *sc, struct hal_rx_desc *desc)
+{
+	return sc->hal_rx_ops->rx_desc_get_hdr_status(desc);
+}
 
 static inline enum hal_encrypt_type
 qwz_dp_rx_h_enctype(struct qwz_softc *sc, struct hal_rx_desc *desc)
@@ -14812,95 +14604,46 @@ qwz_dp_rx_h_msdu_start_decap_type(struct qwz_softc *sc, struct hal_rx_desc *desc
 }
 
 void
-qwz_dp_rx_h_undecap_eth(struct qwz_softc *sc, struct qwz_rx_msdu *msdu,
-    struct hal_rx_desc *rx_desc)
-{
-	struct rx_mpdu_start_qcn9274 *mpdu = &rx_desc->u.wcn7850.mpdu_start;
-	struct ether_header *eth;
-	uint8_t da[IEEE80211_ADDR_LEN], sa[IEEE80211_ADDR_LEN];
-	uint8_t llc[8] = { 0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00 };
-	struct ieee80211_frame tmpwh;
-	int hdrlen;
-	uint8_t *p;
-	struct mbuf *m = msdu->m;
-
-	if (m->m_pkthdr.len < ETHER_HDR_LEN)
-		return;
-
-	eth = mtod(m, struct ether_header *);
-	memcpy(da, eth->ether_dhost, IEEE80211_ADDR_LEN);
-	memcpy(sa, eth->ether_shost, IEEE80211_ADDR_LEN);
-	memcpy(&llc[6], &eth->ether_type, 2); /* SNAP type = ethertype (BE) */
-
-	/* Determine 802.11 header length from mpdu_start frame_ctrl. */
-	tmpwh.i_fc[0] = le16toh(mpdu->frame_ctrl) & 0xff;
-	tmpwh.i_fc[1] = (le16toh(mpdu->frame_ctrl) >> 8) & 0xff;
-	hdrlen = sizeof(struct ieee80211_frame);
-	if (ieee80211_has_addr4(&tmpwh))
-		hdrlen += IEEE80211_ADDR_LEN;
-	if (ieee80211_has_qos(&tmpwh))
-		hdrlen += 2;
-
-	/* Strip Ethernet header. */
-	m_adj(m, ETHER_HDR_LEN);
-
-	/* Prepend LLC/SNAP header. */
-	M_PREPEND(m, 8, M_DONTWAIT);
-	if (m == NULL) {
-		msdu->m = NULL;
-		return;
-	}
-	msdu->m = m;
-	memcpy(mtod(m, void *), llc, 8);
-
-	/* Prepend 802.11 header. */
-	M_PREPEND(m, hdrlen, M_DONTWAIT);
-	if (m == NULL) {
-		msdu->m = NULL;
-		return;
-	}
-	msdu->m = m;
-	p = mtod(m, uint8_t *);
-	memset(p, 0, hdrlen);
-	p[0] = tmpwh.i_fc[0];
-	p[1] = tmpwh.i_fc[1];
-	memcpy(p + 2, &mpdu->duration, 2);
-	memcpy(p + 4, mpdu->addr1, IEEE80211_ADDR_LEN);
-	memcpy(p + 10, mpdu->addr2, IEEE80211_ADDR_LEN);
-	memcpy(p + 16, mpdu->addr3, IEEE80211_ADDR_LEN);
-	memcpy(p + 22, &mpdu->seq_ctrl, 2);
-	if (ieee80211_has_addr4(&tmpwh)) {
-		memcpy(p + 24, mpdu->addr4, IEEE80211_ADDR_LEN);
-		if (ieee80211_has_qos(&tmpwh))
-			memcpy(p + 30, &mpdu->qos_ctrl, 2);
-	} else if (ieee80211_has_qos(&tmpwh)) {
-		memcpy(p + 24, &mpdu->qos_ctrl, 2);
-	}
-
-	/* Override addr1/addr3 with actual DA/SA from Ethernet header. */
-	memcpy(p + 4, da, IEEE80211_ADDR_LEN);
-	memcpy(p + 16, sa, IEEE80211_ADDR_LEN);
-}
-
-void
 qwz_dp_rx_h_undecap(struct qwz_softc *sc, struct qwz_rx_msdu *msdu,
     struct hal_rx_desc *rx_desc, enum hal_encrypt_type enctype,
     int decrypted)
 {
+	uint8_t *first_hdr;
 	uint8_t decap;
 
+	first_hdr = qwz_dp_rx_h_80211_hdr(sc, rx_desc);
 	decap = qwz_dp_rx_h_msdu_start_decap_type(sc, rx_desc);
 
 	switch (decap) {
 	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
-		qwz_dp_rx_h_undecap_nwifi(sc, msdu, NULL, enctype);
+		qwz_dp_rx_h_undecap_nwifi(sc, msdu, first_hdr, enctype);
 		break;
 	case DP_RX_DECAP_TYPE_RAW:
 		qwz_dp_rx_h_undecap_raw(sc, msdu, enctype, decrypted);
 		break;
+#if 0
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
-		qwz_dp_rx_h_undecap_eth(sc, msdu, rx_desc);
+		ehdr = (struct ethhdr *)msdu->data;
+
+		/* mac80211 allows fast path only for authorized STA */
+		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE)) {
+			ATH12K_SKB_RXCB(msdu)->is_eapol = true;
+			ath12k_dp_rx_h_undecap_eth(ar, msdu, first_hdr,
+						   enctype, status);
+			break;
+		}
+
+		/* PN for mcast packets will be validated in mac80211;
+		 * remove eth header and add 802.11 header.
+		 */
+		if (ATH12K_SKB_RXCB(msdu)->is_mcbc && decrypted)
+			ath12k_dp_rx_h_undecap_eth(ar, msdu, first_hdr,
+						   enctype, status);
 		break;
+	case DP_RX_DECAP_TYPE_8023:
+		/* TODO: Handle undecap for these formats */
+		break;
+#endif
 	}
 }
 
@@ -15008,7 +14751,7 @@ qwz_dp_rx_process_msdu(struct qwz_softc *sc, struct qwz_rx_msdu *msdu,
 	uint8_t l3_pad_bytes;
 	uint16_t msdu_len;
 	int ret;
-	uint32_t hal_rx_desc_sz = sc->hal.hal_desc_sz;
+	uint32_t hal_rx_desc_sz = sc->hw_params.hal_desc_sz;
 
 	last_buf = qwz_dp_rx_get_msdu_last_buf(msdu_list, msdu);
 	if (!last_buf) {
@@ -15024,25 +14767,6 @@ qwz_dp_rx_process_msdu(struct qwz_softc *sc, struct qwz_rx_msdu *msdu,
 		    __func__);
 		return EIO;
 	}
-
-	/* Drop non-802.11 frames (e.g. WCN7850 FW internal messages). */
-	if (!sc->hal_rx_ops->rx_desc_get_mpdu_fc_valid(rx_desc))
-		return EIO;
-
-	/*
-	 * WCN7850 FW injects internal messages into the REO ring with
-	 * fc_valid=1 but garbage 802.11 contents. Their synthetic addr1
-	 * always ends in 84:e1 (regardless of the multicast bit). Drop
-	 * those, then drop any remaining unicast frames not addressed
-	 * to our own MAC.
-	 */
-	struct rx_mpdu_start_qcn9274 *mpdu = &rx_desc->u.wcn7850.mpdu_start;
-
-	if (mpdu->addr1[4] == 0x84 && mpdu->addr1[5] == 0xe1)
-		return EIO;
-	if (!(mpdu->addr1[0] & 0x01) &&
-	    !IEEE80211_ADDR_EQ(mpdu->addr1, sc->sc_ic.ic_myaddr))
-		return EIO;
 
 	msdu->rx_desc = rx_desc;
 	msdu_len = qwz_dp_rx_h_msdu_start_msdu_len(sc, rx_desc);
@@ -15134,25 +14858,27 @@ qwz_dp_rx_process_received_packets(struct qwz_softc *sc,
 int
 qwz_dp_process_rx(struct qwz_softc *sc, int ring_id)
 {
+#if 0
 	struct qwz_dp *dp = &sc->dp;
+	struct qwz_pdev_dp *pdev_dp = &sc->pdev_dp;
+	struct dp_rxdma_ring *rx_ring;
 	int num_buffs_reaped[MAX_RADIOS] = {0};
 	struct qwz_rx_msdu_list msdu_list[MAX_RADIOS];
-	TAILQ_HEAD(, ath12k_rx_desc_info) rx_desc_used_list;
-	struct ath12k_rx_desc_info *desc_info;
 	struct qwz_rx_msdu *msdu;
 	struct mbuf *m;
+	struct qwz_rx_data *rx_data;
 	int total_msdu_reaped = 0;
 	struct hal_srng *srng;
 	int done = 0;
-	int budget = 512;
+	int idx;
 	unsigned int mac_id;
 	struct hal_reo_dest_ring *desc;
 	enum hal_reo_dest_ring_push_reason push_reason;
+	uint32_t cookie;
 	int i;
 
 	for (i = 0; i < MAX_RADIOS; i++)
 		TAILQ_INIT(&msdu_list[i]);
-	TAILQ_INIT(&rx_desc_used_list);
 
 	srng = &sc->hal.srng_list[dp->reo_dst_ring[ring_id].ring_id];
 #ifdef notyet
@@ -15161,60 +14887,41 @@ qwz_dp_process_rx(struct qwz_softc *sc, int ring_id)
 try_again:
 	qwz_hal_srng_access_begin(sc, srng);
 
-	while (budget > 0 && (desc = (struct hal_reo_dest_ring *)
+	while ((desc = (struct hal_reo_dest_ring *)
 	    qwz_hal_srng_dst_get_next_entry(sc, srng))) {
-		budget--;
-		uint64_t desc_va;
-		uint32_t cookie;
-
 		cookie = FIELD_GET(BUFFER_ADDR_INFO1_SW_COOKIE,
 		    desc->buf_addr_info.info1);
-		desc_va = (uint64_t)desc->buf_va_hi << 32 | desc->buf_va_lo;
+		idx = FIELD_GET(DP_RXDMA_BUF_COOKIE_BUF_ID, cookie);
+		mac_id = FIELD_GET(DP_RXDMA_BUF_COOKIE_PDEV_ID, cookie);
 
-		/* Validate VA looks like a kernel address before dereferencing */
-		if (desc_va >= 0xffff800000000000ULL)
-			desc_info = (struct ath12k_rx_desc_info *)desc_va;
-		else
-			desc_info = NULL;
-
-		/* Fall back to cookie-based lookup if HW CC gave invalid VA */
-		if (desc_info == NULL ||
-		    desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
-			desc_info = qwz_dp_get_rx_desc(sc, cookie);
-			if (desc_info == NULL ||
-			    desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)
-				continue;
-		}
-
-		if (!desc_info->in_use)
+		if (mac_id >= MAX_RADIOS)
 			continue;
 
-		/*
-		 * Sync the DMA buffer for CPU read before reading the
-		 * descriptor / MSDU data.
-		 */
-		bus_dmamap_sync(sc->sc_dmat, desc_info->map, 0,
-		    desc_info->map->dm_mapsize, BUS_DMASYNC_POSTREAD);
-		bus_dmamap_unload(sc->sc_dmat, desc_info->map);
-		m = desc_info->m;
-		desc_info->m = NULL;
-		desc_info->in_use = 0;
+		rx_ring = &pdev_dp->rx_refill_buf_ring;
+		if (idx >= rx_ring->bufs_max || isset(rx_ring->freemap, idx))
+			continue;
 
-		/* WCN7850 is single-radio */
-		mac_id = 0;
+		rx_data = &rx_ring->rx_data[idx];
+		bus_dmamap_unload(sc->sc_dmat, rx_data->map);
+		m = rx_data->m;
+		rx_data->m = NULL;
+		setbit(rx_ring->freemap, idx);
+
 		num_buffs_reaped[mac_id]++;
-
-		TAILQ_INSERT_TAIL(&rx_desc_used_list, desc_info, entry);
 
 		push_reason = FIELD_GET(HAL_REO_DEST_RING_INFO0_PUSH_REASON,
 		    desc->info0);
 		if (push_reason !=
 		    HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION) {
 			m_freem(m);
+#if 0
+			sc->soc_stats.hal_reo_error[
+			    dp->reo_dst_ring[ring_id].ring_id]++;
+#endif
 			continue;
 		}
 
-		msdu = &desc_info->rx_msdu;
+		msdu = &rx_data->rx_msdu;
 		msdu->m = m;
 		msdu->is_first_msdu = !!(desc->rx_msdu_info.info0 &
 		    RX_MSDU_DESC_INFO0_FIRST_MSDU_IN_MPDU);
@@ -15226,7 +14933,8 @@ try_again:
 		    desc->rx_mpdu_info.meta_data);
 		msdu->seq_no = FIELD_GET(RX_MPDU_DESC_INFO0_SEQ_NUM,
 		    desc->rx_mpdu_info.info0);
-		msdu->tid = 0; /* no RX_QUEUE_NUM in wifi7 */
+		msdu->tid = FIELD_GET(HAL_REO_DEST_RING_INFO0_RX_QUEUE_NUM,
+		    desc->info0);
 
 		msdu->mac_id = mac_id;
 		TAILQ_INSERT_TAIL(&msdu_list[mac_id], msdu, entry);
@@ -15245,7 +14953,7 @@ try_again:
 	 * head pointer so that we can reap complete MPDU in the current
 	 * rx processing.
 	 */
-	if (!done && budget > 0 && qwz_hal_srng_dst_num_free(sc, srng, 1)) {
+	if (!done && qwz_hal_srng_dst_num_free(sc, srng, 1)) {
 		qwz_hal_srng_access_end(sc, srng);
 		goto try_again;
 	}
@@ -15263,11 +14971,16 @@ try_again:
 
 		qwz_dp_rx_process_received_packets(sc, &msdu_list[i], i);
 
-		qwz_dp_rxbufs_replenish(sc, &dp->rx_refill_buf_ring,
-		    &rx_desc_used_list, num_buffs_reaped[i]);
+		rx_ring = &sc->pdev_dp.rx_refill_buf_ring;
+
+		qwz_dp_rxbufs_replenish(sc, i, rx_ring, num_buffs_reaped[i],
+		    sc->hw_params.hal_params->rx_buf_rbm);
 	}
 exit:
 	return total_msdu_reaped;
+#endif
+	printf("%s:%d\n", __func__, __LINE__);
+	return 0;
 }
 
 #if 0
@@ -15571,7 +15284,6 @@ qwz_dp_wmask_compaction_rx_tlv_supported(struct qwz_softc *sc)
 void
 qwz_dp_hal_rx_desc_init(struct qwz_softc *sc)
 {
-	sc->hal_rx_ops = &hal_rx_wcn7850_ops;
 	if (qwz_dp_wmask_compaction_rx_tlv_supported(sc)) {
 		/* RX TLVS compaction is supported, hence change the hal_rx_ops
 		 * to compact hal_rx_ops.
@@ -21256,7 +20968,6 @@ qwz_vif_alloc(struct qwz_softc *sc)
 	arvif = malloc(sizeof(*arvif), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (arvif == NULL)
 		return NULL;
-	arvif->bank_id = -1;
 
 	txmgmt = &arvif->txmgmt;
 	for (i = 0; i < nitems(txmgmt->data); i++) {
@@ -21591,12 +21302,6 @@ qwz_init_task(void *arg)
 void
 qwz_mac_11d_scan_start(struct qwz_softc *sc, struct qwz_vif *arvif)
 {
-/*
- * XXX:
- * The 802.11d scanning command is currently causing a firmware error,
- * hence disabling this function for now.
- */
-#if 0
 	struct ieee80211com *ic = &sc->sc_ic;
 	struct wmi_11d_scan_start_params param;
 	int ret;
@@ -21644,7 +21349,6 @@ fin:
 	}
 #ifdef notyet
 	mutex_unlock(&ar->ab->vdev_id_11d_lock);
-#endif
 #endif
 }
 
@@ -22273,7 +21977,7 @@ qwz_peer_frags_flush(struct qwz_softc *sc, struct ath12k_peer *peer)
 #ifdef notyet
 	lockdep_assert_held(&ar->ab->base_lock);
 #endif
-	for (i = 0; i <= HAL_DESC_REO_NON_QOS_TID; i++) {
+	for (i = 0; i < IEEE80211_NUM_TID; i++) {
 		rx_tid = &peer->rx_tid[i];
 
 		qwz_dp_rx_frags_cleanup(sc, rx_tid, 1);
@@ -22293,7 +21997,7 @@ qwz_peer_rx_tid_cleanup(struct qwz_softc *sc, struct ath12k_peer *peer)
 #ifdef notyet
 	lockdep_assert_held(&ar->ab->base_lock);
 #endif
-	for (i = 0; i <= HAL_DESC_REO_NON_QOS_TID; i++) {
+	for (i = 0; i < IEEE80211_NUM_TID; i++) {
 		rx_tid = &peer->rx_tid[i];
 
 		qwz_peer_rx_tid_delete(sc, peer, i);
@@ -22497,7 +22201,7 @@ qwz_dp_peer_setup(struct qwz_softc *sc, int vdev_id, int pdev_id,
 		return ret;
 	}
 
-	for (tid = 0; tid <= HAL_DESC_REO_NON_QOS_TID; tid++) {
+	for (tid = 0; tid < IEEE80211_NUM_TID; tid++) {
 		ret = qwz_peer_rx_tid_setup(sc, ni, vdev_id, pdev_id,
 		    tid, 1, 0, HAL_PN_TYPE_NONE);
 		if (ret) {
@@ -22625,14 +22329,6 @@ qwz_dp_tx_get_tid(struct mbuf *m)
 	return tid;
 }
 
-/*
- * Build a WCN7850 / ath12k WiFi7 TCL data descriptor. Encap/encrypt/
- * search settings live in the bank addressed by ti->bank_id; the
- * descriptor only carries DESC_TYPE | BANK_ID + per-frame fields.
- * Each TCL_DATA ring slot is just a hal_tcl_data_cmd (no per-entry
- * TLV header, unlike ath11k); FW reads info0 from offset 0.
- * Mirror of Linux ath12k_wifi7_hal_tx_cmd_desc_setup().
- */
 void
 qwz_hal_tx_cmd_desc_setup(struct qwz_softc *sc, void *cmd,
     struct hal_tx_info *ti)
@@ -22649,24 +22345,29 @@ qwz_hal_tx_cmd_desc_setup(struct qwz_softc *sc, void *cmd,
 
 	tcl_cmd->info0 =
 	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DESC_TYPE, ti->type) |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID, ti->bank_id);
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ENCAP_TYPE, ti->encap_type) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ENCRYPT_TYPE, ti->encrypt_type) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_SEARCH_TYPE, ti->search_type) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ADDR_EN, ti->addr_search_flags) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_CMD_NUM, ti->meta_data_flags);
 
-	tcl_cmd->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CMD_NUM,
-	    ti->meta_data_flags);
+	tcl_cmd->info1 = ti->flags0 |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_DATA_LEN, ti->data_len) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_PKT_OFFSET, ti->pkt_offset);
 
-	tcl_cmd->info2 = ti->flags0 |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_DATA_LEN, ti->data_len) |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_PKT_OFFSET, ti->pkt_offset);
+	tcl_cmd->info2 = ti->flags1 |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TID, ti->tid) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_LMAC_ID, ti->lmac_id);
 
-	tcl_cmd->info3 = ti->flags1 |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_TID, ti->tid) |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_PMAC_ID, ti->lmac_id) |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_VDEV_ID, ti->vdev_id);
-
-	tcl_cmd->info4 =
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO4_SEARCH_INDEX, ti->bss_ast_idx) |
-	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO4_CACHE_SET_NUM, ti->bss_ast_hash);
-	tcl_cmd->info5 = 0;
+	tcl_cmd->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_DSCP_TID_TABLE_IDX,
+	    ti->dscp_tid_tbl_idx) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_SEARCH_INDEX, ti->bss_ast_idx) |
+	    FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_CACHE_SET_NUM, ti->bss_ast_hash);
+	tcl_cmd->info4 = 0;
+#ifdef notyet
+	if (ti->enable_mesh)
+		ab->hw_params.hw_ops->tx_mesh_enable(ab, tcl_cmd);
+#endif
 }
 
 int
@@ -22692,23 +22393,6 @@ qwz_dp_tx(struct qwz_softc *sc, struct qwz_vif *arvif, uint8_t pdev_id,
 		m_freem(m);
 		return ESHUTDOWN;
 	}
-
-	if (arvif->bank_id < 0) {
-		printf("%s: TX before TX bank is configured, dropping\n",
-		    sc->sc_dev.dv_xname);
-		m_freem(m);
-		return EIO;
-	}
-
-	/*
-	 * Default to no encryption. enum hal_encrypt_type starts with
-	 * HAL_ENCRYPT_TYPE_WEP_40 = 0, and the {0} initializer would
-	 * otherwise silently select WEP40.
-	 */
-	ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
-	ti.bank_id = arvif->bank_id;
-	ti.vdev_id = arvif->vdev_id;
-
 #if 0
 	if (unlikely(!(info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
 		     !ieee80211_is_data(hdr->frame_control)))
@@ -22802,7 +22486,7 @@ qwz_dp_tx(struct qwz_softc *sc, struct qwz_vif *arvif, uint8_t pdev_id,
 	if (ieee80211_vif_is_mesh(arvif->vif))
 		ti.enable_mesh = true;
 #endif
-	ti.flags1 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_TID_OVERWRITE, 1);
+	ti.flags1 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TID_OVERWRITE, 1);
 
 	ti.tid = qwz_dp_tx_get_tid(m);
 #if 0
@@ -22852,9 +22536,6 @@ qwz_dp_tx(struct qwz_softc *sc, struct qwz_vif *arvif, uint8_t pdev_id,
 	}
 	ti.paddr = tx_data->map->dm_segs[0].ds_addr;
 
-	bus_dmamap_sync(sc->sc_dmat, tx_data->map, 0,
-	    tx_data->map->dm_mapsize, BUS_DMASYNC_PREWRITE);
-
 	ti.data_len = m->m_pkthdr.len;
 
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
@@ -22884,7 +22565,8 @@ qwz_dp_tx(struct qwz_softc *sc, struct qwz_vif *arvif, uint8_t pdev_id,
 	tx_data->m = m;
 	tx_data->ni = ni;
 
-	qwz_hal_tx_cmd_desc_setup(sc, hal_tcl_desc, &ti);
+	qwz_hal_tx_cmd_desc_setup(sc,
+	    hal_tcl_desc + sizeof(struct hal_tlv_hdr), &ti);
 
 	qwz_hal_srng_access_end(sc, tcl_ring);
 
@@ -23638,7 +23320,7 @@ qwz_peer_assoc_h_basic(struct qwz_softc *sc, struct qwz_vif *arvif,
 
 	IEEE80211_ADDR_COPY(arg->peer_mac, ni->ni_macaddr);
 	arg->vdev_id = arvif->vdev_id;
-	arg->peer_associd = IEEE80211_AID(ni->ni_associd);
+	arg->peer_associd = ni->ni_associd;
 	arg->auth_flag = 1;
 	arg->peer_listen_intval = ni->ni_intval;
 	arg->peer_nss = 1;
@@ -23798,12 +23480,7 @@ qwz_run(struct qwz_softc *sc)
 	WARN_ON(arvif->is_up);
 #endif
 
-	/*
-	 * ni->ni_associd carries the raw on-wire AID field including the
-	 * top two reserved bits (which are always 11 on the wire). The FW
-	 * wants the 14-bit AID value only.
-	 */
-	arvif->aid = IEEE80211_AID(ni->ni_associd);
+	arvif->aid = ni->ni_associd;
 	IEEE80211_ADDR_COPY(arvif->bssid, ni->ni_bssid);
 
 	ret = qwz_wmi_vdev_up(sc, arvif->vdev_id, pdev_id, arvif->aid,
@@ -23821,6 +23498,14 @@ qwz_run(struct qwz_softc *sc)
 
 	DNPRINTF(QWZ_D_MAC, "%s: vdev %d up (associated) bssid %s aid %d\n",
 	    __func__, arvif->vdev_id, ether_sprintf(ni->ni_bssid), arvif->aid);
+
+	ret = qwz_wmi_set_peer_param(sc, ni->ni_macaddr, arvif->vdev_id,
+	    pdev_id, WMI_PEER_AUTHORIZE, 1);
+	if (ret) {
+		printf("%s: unable to authorize BSS peer: %d\n",
+		   sc->sc_dev.dv_xname, ret);
+		return ret;
+	}
 
 	/* Enable "ext" IRQs for datapath. */
 	sc->ops.irq_enable(sc);

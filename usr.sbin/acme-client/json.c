@@ -1,4 +1,4 @@
-/*	$Id: json.c,v 1.24 2026/05/02 13:08:36 florian Exp $ */
+/*	$Id: json.c,v 1.23 2026/02/23 10:27:49 sthen Exp $ */
 /*
  * Copyright (c) 2016 Kristaps Dzonsons <kristaps@bsd.lv>
  *
@@ -412,8 +412,7 @@ json_parse_challenge(struct jsmnn *n, struct chng *p)
 static enum orderstatus
 json_parse_order_status(struct jsmnn *n)
 {
-	char			*status;
-	enum orderstatus	 rc;
+	char	*status;
 
 	if (n == NULL)
 		return ORDER_INVALID;
@@ -422,20 +421,17 @@ json_parse_order_status(struct jsmnn *n)
 		return ORDER_INVALID;
 
 	if (strcmp(status, "pending") == 0)
-		rc = ORDER_PENDING;
+		return ORDER_PENDING;
 	else if (strcmp(status, "ready") == 0)
-		rc = ORDER_READY;
+		return ORDER_READY;
 	else if (strcmp(status, "processing") == 0)
-		rc = ORDER_PROCESSING;
+		return ORDER_PROCESSING;
 	else if (strcmp(status, "valid") == 0)
-		rc = ORDER_VALID;
+		return ORDER_VALID;
 	else if (strcmp(status, "invalid") == 0)
-		rc = ORDER_INVALID;
+		return ORDER_INVALID;
 	else
-		rc = ORDER_INVALID;
-
-	free(status);
-	return rc;
+		return ORDER_INVALID;
 }
 
 /*
@@ -447,17 +443,20 @@ json_parse_order(struct jsmnn *n, struct order *order)
 {
 	struct jsmnn	*array;
 	size_t		 i;
-	char		*str;
+	char		*finalize, *str;
 
 	order->status = json_parse_order_status(n);
 
 	if (n == NULL)
 		return 0;
 
-	if ((order->finalize = json_getstr(n, "finalize")) == NULL) {
+	if ((finalize = json_getstr(n, "finalize")) == NULL) {
 		warnx("no finalize field in order response");
 		return 0;
 	}
+
+	if ((order->finalize = strdup(finalize)) == NULL)
+		goto err;
 
 	if ((array = json_getarray(n, "authorizations")) == NULL)
 		goto err;
@@ -489,9 +488,12 @@ err:
 int
 json_parse_upd_order(struct jsmnn *n, struct order *order)
 {
+	char	*certificate;
 	order->status = json_parse_order_status(n);
-	order->certificate = json_getstr(n, "certificate");
-
+	if ((certificate = json_getstr(n, "certificate")) != NULL) {
+		if ((order->certificate = strdup(certificate)) == NULL)
+			return 0;
+	}
 	return 1;
 }
 
@@ -506,6 +508,7 @@ json_free_order(struct order *order)
 		free(order->auths[i]);
 	free(order->auths);
 
+	order->finalize = NULL;
 	order->auths = NULL;
 	order->authsz = 0;
 }

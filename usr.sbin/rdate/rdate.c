@@ -1,4 +1,4 @@
-/*	$OpenBSD: rdate.c,v 1.39 2026/04/28 13:25:04 millert Exp $	*/
+/*	$OpenBSD: rdate.c,v 1.38 2026/03/27 14:33:58 deraadt Exp $	*/
 /*	$NetBSD: rdate.c,v 1.4 1996/03/16 12:37:45 pk Exp $	*/
 
 /*
@@ -52,7 +52,7 @@
 #define logwtmp(a,b,c)
 #endif
 
-void ntp_client(const char *, int, struct timeval *, struct timeval *);
+void ntp_client(const char *, int, struct timeval *, struct timeval *, int);
 
 extern char    *__progname;
 __dead void	usage(void);
@@ -66,7 +66,7 @@ struct {
 __dead void
 usage(void)
 {
-	(void) fprintf(stderr, "usage: %s [-46anpsv] host\n", __progname);
+	(void) fprintf(stderr, "usage: %s [-46acnpsv] host\n", __progname);
 	exit(1);
 }
 
@@ -74,12 +74,12 @@ int
 main(int argc, char **argv)
 {
 	int             pr = 0, silent = 0, verbose = 0;
-	int		slidetime = 0;
+	int		slidetime = 0, corrleaps = 0;
 	char           *hname;
 	int             c, p[2], pid;
 	int		family = PF_UNSPEC;
 
-	while ((c = getopt(argc, argv, "46psanov")) != -1) {
+	while ((c = getopt(argc, argv, "46psanocv")) != -1) {
 		switch (c) {
 		case '4':
 			family = PF_INET;
@@ -103,6 +103,10 @@ main(int argc, char **argv)
 
 		case 'n':
 			/* noop */
+			break;
+
+		case 'c':
+			corrleaps = 1;
 			break;
 
 		case 'v':
@@ -140,7 +144,8 @@ main(int argc, char **argv)
 		setvbuf(stdout, NULL, _IOFBF, 0);
 		setvbuf(stderr, NULL, _IOFBF, 0);
 
-		ntp_client(hname, family, &pdata.new, &pdata.adjust);
+		ntp_client(hname, family, &pdata.new,
+		    &pdata.adjust, corrleaps);
 
 		if (write(STDOUT_FILENO, &pdata, sizeof pdata) != sizeof pdata)
 			exit(1);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_pfsync.c,v 1.334 2026/04/22 23:06:01 sashan Exp $	*/
+/*	$OpenBSD: if_pfsync.c,v 1.333 2026/04/12 03:16:04 deraadt Exp $	*/
 
 /*
  * Copyright (c) 2002 Michael Shalayeff
@@ -2956,8 +2956,7 @@ pfsync_in_updates(struct pfsync_softc *sc, struct pf_state *st,
 	st->pfsync_time = getuptime();
 	if (sync < 2) {
 		st->expire = st->pfsync_time;
-		if (st->timeout != PFTM_UNLINKED)
-			st->timeout = timeout;
+		st->timeout = timeout;
 	}
 
 	mtx_leave(&st->mtx);

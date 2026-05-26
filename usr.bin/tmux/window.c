@@ -1,4 +1,4 @@
-/* $OpenBSD: window.c,v 1.316 2026/05/03 14:57:09 nicm Exp $ */
+/* $OpenBSD: window.c,v 1.313 2026/04/04 16:40:27 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -408,14 +408,9 @@ window_remove_ref(struct window *w, const char *from)
 void
 window_set_name(struct window *w, const char *new_name)
 {
-	char	*name;
-
-	name = clean_name(new_name, "#");
-	if (name != NULL) {
-		free(w->name);
-		w->name = name;
-		notify_window("window-renamed", w);
-	}
+	free(w->name);
+	utf8_stravis(&w->name, new_name, VIS_OCTAL|VIS_CSTYLE|VIS_TAB|VIS_NL);
+	notify_window("window-renamed", w);
 }
 
 void
@@ -1998,15 +1993,13 @@ struct style_range *
 window_pane_border_status_get_range(struct window_pane *wp, u_int x, u_int y)
 {
 	struct style_ranges	*srs;
-	struct window		*w;
-	struct options		*wo;
+	struct window		*w = wp->window;
+	struct options		*wo = w->options;
 	u_int			 line;
 	int			 pane_status;
 
 	if (wp == NULL)
 		return (NULL);
-	w = wp->window;
-	wo = w->options;
 	srs = &wp->border_status_line.ranges;
 
 	pane_status = options_get_number(wo, "pane-border-status");

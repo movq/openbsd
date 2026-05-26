@@ -1,4 +1,4 @@
-/* $OpenBSD: paste.c,v 1.50 2026/04/28 08:52:37 nicm Exp $ */
+/* $OpenBSD: paste.c,v 1.49 2026/02/11 08:30:37 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -205,7 +205,6 @@ int
 paste_rename(const char *oldname, const char *newname, char **cause)
 {
 	struct paste_buffer	*pb, *pb_new;
-	char			*name;
 
 	if (cause != NULL)
 		*cause = NULL;
@@ -221,33 +220,23 @@ paste_rename(const char *oldname, const char *newname, char **cause)
 		return (-1);
 	}
 
-	name = clean_name(newname, "");
-	if (name == NULL) {
-		if (cause != NULL)
-			xasprintf(cause, "invalid buffer name: %s", newname);
-		return (-1);
-	}
-
 	pb = paste_get_name(oldname);
 	if (pb == NULL) {
 		if (cause != NULL)
 			xasprintf(cause, "no buffer %s", oldname);
-		free(name);
 		return (-1);
 	}
 
-	pb_new = paste_get_name(name);
-	if (pb_new == pb) {
-		free(name);
+	pb_new = paste_get_name(newname);
+	if (pb_new == pb)
 		return (0);
-	}
 	if (pb_new != NULL)
 		paste_free(pb_new);
 
 	RB_REMOVE(paste_name_tree, &paste_by_name, pb);
 
 	free(pb->name);
-	pb->name = name;
+	pb->name = xstrdup(newname);
 
 	if (pb->automatic)
 		paste_num_automatic--;
@@ -256,7 +245,7 @@ paste_rename(const char *oldname, const char *newname, char **cause)
 	RB_INSERT(paste_name_tree, &paste_by_name, pb);
 
 	notify_paste_buffer(oldname, 1);
-	notify_paste_buffer(pb->name, 0);
+	notify_paste_buffer(newname, 0);
 
 	return (0);
 }
@@ -269,7 +258,6 @@ int
 paste_set(char *data, size_t size, const char *name, char **cause)
 {
 	struct paste_buffer	*pb, *old;
-	char			*newname;
 
 	if (cause != NULL)
 		*cause = NULL;
@@ -289,16 +277,9 @@ paste_set(char *data, size_t size, const char *name, char **cause)
 		return (-1);
 	}
 
-	newname = clean_name(name, "");
-	if (newname == NULL) {
-		if (cause != NULL)
-			xasprintf(cause, "invalid buffer name: %s", name);
-		return (-1);
-	}
-
 	pb = xmalloc(sizeof *pb);
 
-	pb->name = newname;
+	pb->name = xstrdup(name);
 
 	pb->data = data;
 	pb->size = size;
@@ -308,13 +289,13 @@ paste_set(char *data, size_t size, const char *name, char **cause)
 
 	pb->created = time(NULL);
 
-	if ((old = paste_get_name(pb->name)) != NULL)
+	if ((old = paste_get_name(name)) != NULL)
 		paste_free(old);
 
 	RB_INSERT(paste_name_tree, &paste_by_name, pb);
 	RB_INSERT(paste_time_tree, &paste_by_time, pb);
 
-	notify_paste_buffer(pb->name, 0);
+	notify_paste_buffer(name, 0);
 
 	return (0);
 }

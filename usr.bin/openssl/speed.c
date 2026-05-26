@@ -1,4 +1,4 @@
-/* $OpenBSD: speed.c,v 1.53 2026/05/05 03:32:46 kenjiro Exp $ */
+/* $OpenBSD: speed.c,v 1.52 2026/03/19 20:28:46 tb Exp $ */
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *
@@ -156,8 +156,6 @@ static void
 pkey_print_message(const char *str, const char *str2,
     int bits, int sec);
 static void print_result(int alg, int run_no, int count, double time_used);
-static void speed_timer_start(int s);
-static double speed_timer_stop(int s);
 static int do_multi(int multi);
 
 #define SIZE_NUM	5
@@ -985,6 +983,9 @@ sig_done(int sig)
 	run = 0;
 }
 
+#define START	TM_RESET
+#define STOP	TM_GET
+
 static double
 time_f(int s)
 {
@@ -992,20 +993,6 @@ time_f(int s)
 		return app_timer_user(s);
 
 	return app_timer_real(s);
-}
-
-static void
-speed_timer_start(int s)
-{
-	run = 1;
-	alarm(s);
-	time_f(TM_RESET);
-}
-
-static double
-speed_timer_stop(int s)
-{
-	return time_f(s);
 }
 
 static const int KDF1_SHA1_len = 20;
@@ -1630,10 +1617,10 @@ speed_main(int argc, char **argv)
 	if (doit[D_MD4]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_MD4], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_Digest(&(buf[0]), (unsigned long) lengths[j], md, NULL, EVP_md4(), NULL);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_MD4, j, count, d);
 		}
 	}
@@ -1643,10 +1630,10 @@ speed_main(int argc, char **argv)
 	if (doit[D_MD5]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_MD5], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_Digest(&(buf[0]), (unsigned long) lengths[j], md, NULL, EVP_get_digestbyname("md5"), NULL);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_MD5, j, count, d);
 		}
 	}
@@ -1666,8 +1653,8 @@ speed_main(int argc, char **argv)
 
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_HMAC], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++) {
+			time_f(START);
+			for (count = 0, run = 1; COND; count++) {
 				if (!HMAC_Init_ex(hctx, NULL, 0, NULL, NULL)) {
 					HMAC_CTX_free(hctx);
 					goto end;
@@ -1681,7 +1668,7 @@ speed_main(int argc, char **argv)
 					goto end;
 				}
 			}
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_HMAC, j, count, d);
 		}
 		HMAC_CTX_free(hctx);
@@ -1691,10 +1678,10 @@ speed_main(int argc, char **argv)
 	if (doit[D_SHA1]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_SHA1], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_Digest(buf, (unsigned long) lengths[j], md, NULL, EVP_sha1(), NULL);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_SHA1, j, count, d);
 		}
 	}
@@ -1702,10 +1689,10 @@ speed_main(int argc, char **argv)
 	if (doit[D_SHA256]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_SHA256], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				SHA256(buf, lengths[j], md);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_SHA256, j, count, d);
 		}
 	}
@@ -1715,10 +1702,10 @@ speed_main(int argc, char **argv)
 	if (doit[D_SHA512]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_SHA512], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				SHA512(buf, lengths[j], md);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_SHA512, j, count, d);
 		}
 	}
@@ -1729,10 +1716,10 @@ speed_main(int argc, char **argv)
 	if (doit[D_RMD160]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_RMD160], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_Digest(buf, (unsigned long) lengths[j], md, NULL, EVP_ripemd160(), NULL);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_RMD160, j, count, d);
 		}
 	}
@@ -1741,11 +1728,11 @@ speed_main(int argc, char **argv)
 	if (doit[D_RC4]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_RC4], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				RC4(&rc4_ks, (unsigned int) lengths[j],
 				    buf, buf);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_RC4, j, count, d);
 		}
 	}
@@ -1754,23 +1741,23 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_DES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_DES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				DES_ncbc_encrypt(buf, buf, lengths[j], &sch,
 				    &DES_iv, DES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_DES, j, count, d);
 		}
 	}
 	if (doit[D_EDE3_DES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_EDE3_DES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				DES_ede3_cbc_encrypt(buf, buf, lengths[j],
 				    &sch, &sch2, &sch3,
 				    &DES_iv, DES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_EDE3_DES, j, count, d);
 		}
 	}
@@ -1779,72 +1766,72 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_128_AES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_128_AES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				AES_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &aes_ks1,
 				    iv, AES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_128_AES, j, count, d);
 		}
 	}
 	if (doit[D_CBC_192_AES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_192_AES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				AES_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &aes_ks2,
 				    iv, AES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_192_AES, j, count, d);
 		}
 	}
 	if (doit[D_CBC_256_AES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_256_AES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				AES_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &aes_ks3,
 				    iv, AES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_256_AES, j, count, d);
 		}
 	}
 	if (doit[D_IGE_128_AES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_IGE_128_AES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				AES_ige_encrypt(buf, buf2,
 				    (unsigned long) lengths[j], &aes_ks1,
 				    iv, AES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_IGE_128_AES, j, count, d);
 		}
 	}
 	if (doit[D_IGE_192_AES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_IGE_192_AES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				AES_ige_encrypt(buf, buf2,
 				    (unsigned long) lengths[j], &aes_ks2,
 				    iv, AES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_IGE_192_AES, j, count, d);
 		}
 	}
 	if (doit[D_IGE_256_AES]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_IGE_256_AES], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				AES_ige_encrypt(buf, buf2,
 				    (unsigned long) lengths[j], &aes_ks3,
 				    iv, AES_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_IGE_256_AES, j, count, d);
 		}
 	}
@@ -1854,10 +1841,10 @@ speed_main(int argc, char **argv)
 
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_GHASH], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				CRYPTO_gcm128_aad(ctx, buf, lengths[j]);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_GHASH, j, count, d);
 		}
 		CRYPTO_gcm128_release(ctx);
@@ -1880,11 +1867,11 @@ speed_main(int argc, char **argv)
 
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_AES_128_GCM], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_AEAD_CTX_seal(ctx, buf, &buf_len, BUFSIZE, nonce,
 				    nonce_len, buf, lengths[j], NULL, 0);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_AES_128_GCM,j,count,d);
 		}
 		EVP_AEAD_CTX_free(ctx);
@@ -1908,11 +1895,11 @@ speed_main(int argc, char **argv)
 
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_AES_256_GCM], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_AEAD_CTX_seal(ctx, buf, &buf_len, BUFSIZE, nonce,
 				    nonce_len, buf, lengths[j], NULL, 0);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_AES_256_GCM, j, count, d);
 		}
 		EVP_AEAD_CTX_free(ctx);
@@ -1937,11 +1924,11 @@ speed_main(int argc, char **argv)
 
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CHACHA20_POLY1305], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				EVP_AEAD_CTX_seal(ctx, buf, &buf_len, BUFSIZE, nonce,
 				    nonce_len, buf, lengths[j], NULL, 0);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CHACHA20_POLY1305, j, count, d);
 		}
 		EVP_AEAD_CTX_free(ctx);
@@ -1951,36 +1938,36 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_128_CML]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_128_CML], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				Camellia_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &camellia_ks1,
 				    iv, CAMELLIA_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_128_CML, j, count, d);
 		}
 	}
 	if (doit[D_CBC_192_CML]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_192_CML], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				Camellia_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &camellia_ks2,
 				    iv, CAMELLIA_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_192_CML, j, count, d);
 		}
 	}
 	if (doit[D_CBC_256_CML]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_256_CML], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				Camellia_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &camellia_ks3,
 				    iv, CAMELLIA_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_256_CML, j, count, d);
 		}
 	}
@@ -1989,12 +1976,12 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_IDEA]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_IDEA], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				idea_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &idea_ks,
 				    iv, IDEA_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_IDEA, j, count, d);
 		}
 	}
@@ -2003,12 +1990,12 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_RC2]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_RC2], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				RC2_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &rc2_ks,
 				    iv, RC2_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_RC2, j, count, d);
 		}
 	}
@@ -2017,12 +2004,12 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_BF]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_BF], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				BF_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &bf_ks,
 				    iv, BF_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_BF, j, count, d);
 		}
 	}
@@ -2031,12 +2018,12 @@ speed_main(int argc, char **argv)
 	if (doit[D_CBC_CAST]) {
 		for (j = 0; j < SIZE_NUM; j++) {
 			print_message(names[D_CBC_CAST], lengths[j]);
-			speed_timer_start(SECONDS);
-			for (count = 0; COND; count++)
+			time_f(START);
+			for (count = 0, run = 1; COND; count++)
 				CAST_cbc_encrypt(buf, buf,
 				    (unsigned long) lengths[j], &cast_ks,
 				    iv, CAST_ENCRYPT);
-			d = speed_timer_stop(SECONDS);
+			d = time_f(STOP);
 			print_result(D_CBC_CAST, j, count, d);
 		}
 	}
@@ -2068,29 +2055,29 @@ speed_main(int argc, char **argv)
 					EVP_EncryptInit_ex(ctx, evp_cipher, NULL, key16, iv);
 				EVP_CIPHER_CTX_set_padding(ctx, 0);
 
-				speed_timer_start(SECONDS);
+				time_f(START);
 				if (decrypt)
-					for (count = 0; COND; count++)
+					for (count = 0, run = 1; COND; count++)
 						EVP_DecryptUpdate(ctx, buf, &outl, buf, lengths[j]);
 				else
-					for (count = 0; COND; count++)
+					for (count = 0, run = 1; COND; count++)
 						EVP_EncryptUpdate(ctx, buf, &outl, buf, lengths[j]);
 				if (decrypt)
 					EVP_DecryptFinal_ex(ctx, buf, &outl);
 				else
 					EVP_EncryptFinal_ex(ctx, buf, &outl);
-				d = speed_timer_stop(SECONDS);
+				d = time_f(STOP);
 				EVP_CIPHER_CTX_free(ctx);
 			}
 			if (evp_md) {
 				names[D_EVP] = OBJ_nid2ln(EVP_MD_type(evp_md));
 				print_message(names[D_EVP], lengths[j]);
 
-				speed_timer_start(SECONDS);
-				for (count = 0; COND; count++)
+				time_f(START);
+				for (count = 0, run = 1; COND; count++)
 					EVP_Digest(buf, lengths[j], &(md[0]), NULL, evp_md, NULL);
 
-				d = speed_timer_stop(SECONDS);
+				d = time_f(STOP);
 			}
 			print_result(D_EVP, j, count, d);
 		}
@@ -2110,8 +2097,8 @@ speed_main(int argc, char **argv)
 			    rsa_bits[j],
 			    RSA_SECONDS);
 /*			RSA_blinding_on(rsa_key[j],NULL); */
-			speed_timer_start(RSA_SECONDS);
-			for (count = 0; COND; count++) {
+			time_f(START);
+			for (count = 0, run = 1; COND; count++) {
 				ret = RSA_sign(NID_md5_sha1, buf, 36, buf2,
 				    &rsa_num, rsa_key[j]);
 				if (ret == 0) {
@@ -2122,7 +2109,7 @@ speed_main(int argc, char **argv)
 					break;
 				}
 			}
-			d = speed_timer_stop(RSA_SECONDS);
+			d = time_f(STOP);
 			BIO_printf(bio_err, mr ? "+R1:%ld:%d:%.2f\n"
 			    : "%ld %d bit private RSA in %.2fs\n",
 			    count, rsa_bits[j], d);
@@ -2139,8 +2126,8 @@ speed_main(int argc, char **argv)
 			pkey_print_message("public", "rsa",
 			    rsa_bits[j],
 			    RSA_SECONDS);
-			speed_timer_start(RSA_SECONDS);
-			for (count = 0; COND; count++) {
+			time_f(START);
+			for (count = 0, run = 1; COND; count++) {
 				ret = RSA_verify(NID_md5_sha1, buf, 36, buf2,
 				    rsa_num, rsa_key[j]);
 				if (ret <= 0) {
@@ -2151,7 +2138,7 @@ speed_main(int argc, char **argv)
 					break;
 				}
 			}
-			d = speed_timer_stop(RSA_SECONDS);
+			d = time_f(STOP);
 			BIO_printf(bio_err, mr ? "+R2:%ld:%d:%.2f\n"
 			    : "%ld %d bit public RSA in %.2fs\n",
 			    count, rsa_bits[j], d);
@@ -2184,8 +2171,8 @@ speed_main(int argc, char **argv)
 			pkey_print_message("sign", "dsa",
 			    dsa_bits[j],
 			    DSA_SECONDS);
-			speed_timer_start(DSA_SECONDS);
-			for (count = 0; COND; count++) {
+			time_f(START);
+			for (count = 0, run = 1; COND; count++) {
 				ret = DSA_sign(EVP_PKEY_DSA, buf, 20, buf2,
 				    &kk, dsa_key[j]);
 				if (ret == 0) {
@@ -2196,7 +2183,7 @@ speed_main(int argc, char **argv)
 					break;
 				}
 			}
-			d = speed_timer_stop(DSA_SECONDS);
+			d = time_f(STOP);
 			BIO_printf(bio_err, mr ? "+R3:%ld:%d:%.2f\n"
 			    : "%ld %d bit DSA signs in %.2fs\n",
 			    count, dsa_bits[j], d);
@@ -2214,8 +2201,8 @@ speed_main(int argc, char **argv)
 			pkey_print_message("verify", "dsa",
 			    dsa_bits[j],
 			    DSA_SECONDS);
-			speed_timer_start(DSA_SECONDS);
-			for (count = 0; COND; count++) {
+			time_f(START);
+			for (count = 0, run = 1; COND; count++) {
 				ret = DSA_verify(EVP_PKEY_DSA, buf, 20, buf2,
 				    kk, dsa_key[j]);
 				if (ret <= 0) {
@@ -2226,7 +2213,7 @@ speed_main(int argc, char **argv)
 					break;
 				}
 			}
-			d = speed_timer_stop(DSA_SECONDS);
+			d = time_f(STOP);
 			BIO_printf(bio_err, mr ? "+R4:%ld:%d:%.2f\n"
 			    : "%ld %d bit DSA verify in %.2fs\n",
 			    count, dsa_bits[j], d);
@@ -2266,8 +2253,8 @@ speed_main(int argc, char **argv)
 				    test_curves_bits[j],
 				    ECDSA_SECONDS);
 
-				speed_timer_start(ECDSA_SECONDS);
-				for (count = 0; COND; count++) {
+				time_f(START);
+				for (count = 0, run = 1; COND; count++) {
 					ret = ECDSA_sign(0, buf, 20,
 					    ecdsasig, &ecdsasiglen,
 					    ecdsa[j]);
@@ -2278,7 +2265,7 @@ speed_main(int argc, char **argv)
 						break;
 					}
 				}
-				d = speed_timer_stop(ECDSA_SECONDS);
+				d = time_f(STOP);
 
 				BIO_printf(bio_err, mr ? "+R5:%ld:%d:%.2f\n" :
 				    "%ld %d bit ECDSA signs in %.2fs \n",
@@ -2298,8 +2285,8 @@ speed_main(int argc, char **argv)
 				pkey_print_message("verify", "ecdsa",
 				    test_curves_bits[j],
 				    ECDSA_SECONDS);
-				speed_timer_start(ECDSA_SECONDS);
-				for (count = 0; COND; count++) {
+				time_f(START);
+				for (count = 0, run = 1; COND; count++) {
 					ret = ECDSA_verify(0, buf, 20, ecdsasig, ecdsasiglen, ecdsa[j]);
 					if (ret != 1) {
 						BIO_printf(bio_err, "ECDSA verify failure\n");
@@ -2308,7 +2295,7 @@ speed_main(int argc, char **argv)
 						break;
 					}
 				}
-				d = speed_timer_stop(ECDSA_SECONDS);
+				d = time_f(STOP);
 				BIO_printf(bio_err, mr ? "+R6:%ld:%d:%.2f\n"
 				    : "%ld %d bit ECDSA verify in %.2fs\n",
 				    count, test_curves_bits[j], d);
@@ -2384,14 +2371,14 @@ speed_main(int argc, char **argv)
 					pkey_print_message("", "ecdh",
 					    test_curves_bits[j],
 					    ECDH_SECONDS);
-					speed_timer_start(ECDH_SECONDS);
-					for (count = 0; COND; count++) {
+					time_f(START);
+					for (count = 0, run = 1; COND; count++) {
 						ECDH_compute_key(secret_a,
 						    outlen,
 						    EC_KEY_get0_public_key(ecdh_b[j]),
 						    ecdh_a[j], kdf);
 					}
-					d = speed_timer_stop(ECDH_SECONDS);
+					d = time_f(STOP);
 					BIO_printf(bio_err, mr
 					    ? "+R7:%ld:%d:%.2f\n"
 					    : "%ld %d-bit ECDH ops in %.2fs\n",
@@ -2425,8 +2412,8 @@ speed_main(int argc, char **argv)
 			continue;
 
 		pkey_print_message("keygen", "mlkem", bits, MLKEM_SECONDS);
-		speed_timer_start(MLKEM_SECONDS);
-		for (count = 0; COND; count++) {
+		time_f(START);
+		for (count = 0, run = 1; COND; count++) {
 			/*
 			 * MLKEM_generate_key requires an uninitialized key
 			 * object, so allocate and free on every iteration.
@@ -2444,7 +2431,7 @@ speed_main(int argc, char **argv)
 			free(encoded_pub);
 			encoded_pub = NULL;
 		}
-		d = speed_timer_stop(MLKEM_SECONDS);
+		d = time_f(STOP);
 		if (run)
 			goto mlkem_err;
 		BIO_printf(bio_err, mr ? "+R8:%ld:%d:%.2f\n"
@@ -2463,8 +2450,8 @@ speed_main(int argc, char **argv)
 		encoded_pub = NULL;
 
 		pkey_print_message("encap", "mlkem", bits, MLKEM_SECONDS);
-		speed_timer_start(MLKEM_SECONDS);
-		for (count = 0; COND; count++) {
+		time_f(START);
+		for (count = 0, run = 1; COND; count++) {
 			if (!MLKEM_encap(pub, &ct, &ct_len, &ss,
 			    &ss_len))
 				break;
@@ -2473,7 +2460,7 @@ speed_main(int argc, char **argv)
 			free(ss);
 			ss = NULL;
 		}
-		d = speed_timer_stop(MLKEM_SECONDS);
+		d = time_f(STOP);
 		if (run)
 			goto mlkem_err;
 		BIO_printf(bio_err, mr ? "+R9:%ld:%d:%.2f\n"
@@ -2487,14 +2474,14 @@ speed_main(int argc, char **argv)
 		ss = NULL;
 
 		pkey_print_message("decap", "mlkem", bits, MLKEM_SECONDS);
-		speed_timer_start(MLKEM_SECONDS);
-		for (count = 0; COND; count++) {
+		time_f(START);
+		for (count = 0, run = 1; COND; count++) {
 			if (!MLKEM_decap(priv, ct, ct_len, &ss, &ss_len))
 				break;
 			free(ss);
 			ss = NULL;
 		}
-		d = speed_timer_stop(MLKEM_SECONDS);
+		d = time_f(STOP);
 		if (run)
 			goto mlkem_err;
 		BIO_printf(bio_err, mr ? "+R10:%ld:%d:%.2f\n"
@@ -2692,6 +2679,7 @@ print_message(const char *s, int length)
 	BIO_printf(bio_err, mr ? "+DT:%s:%d:%d\n"
 	    : "Doing %s for %ds on %d size blocks: ", s, SECONDS, length);
 	(void) BIO_flush(bio_err);
+	alarm(SECONDS);
 }
 
 static void
@@ -2701,6 +2689,7 @@ pkey_print_message(const char *str, const char *str2,
 	BIO_printf(bio_err, mr ? "+DTP:%d:%s:%s:%d\n"
 	    : "Doing %d bit %s %s for %ds: ", bits, str, str2, tm);
 	(void) BIO_flush(bio_err);
+	alarm(tm);
 }
 
 static void
