@@ -1,4 +1,4 @@
-/*	$OpenBSD: smtp_session.c,v 1.444.2.1 2026/03/26 18:53:05 bluhm Exp $	*/
+/*	$OpenBSD: smtp_session.c,v 1.444.2.2 2026/06/01 15:12:04 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2008 Gilles Chehade <gilles@poolp.org>
@@ -2119,6 +2119,9 @@ smtp_reply(struct smtp_session *s, char *fmt, ...)
 	va_start(ap, fmt);
 	n = vsnprintf(buf, sizeof buf, fmt, ap);
 	va_end(ap);
+	if (n >= (int)sizeof buf)
+		n = (int)sizeof buf - 1;
+
 	if (n < 0)
 		fatalx("smtp_reply: response format error");
 	if (n < 4)
@@ -2214,6 +2217,18 @@ smtp_free(struct smtp_session *s, const char * reason)
 
 	smtp_report_link_disconnect(s);
 	smtp_filter_end(s);
+
+	tree_pop(&wait_lka_helo, s->id);
+	tree_pop(&wait_lka_mail, s->id);
+	tree_pop(&wait_lka_rcpt, s->id);
+	tree_pop(&wait_parent_auth, s->id);
+	tree_pop(&wait_queue_msg, s->id);
+	tree_pop(&wait_queue_fd, s->id);
+	tree_pop(&wait_queue_commit, s->id);
+	tree_pop(&wait_ssl_init, s->id);
+	tree_pop(&wait_ssl_verify, s->id);
+	tree_pop(&wait_filters, s->id);
+	tree_pop(&wait_filter_fd, s->id);
 
 	if (s->flags & SF_SECURE && s->listener->flags & F_SMTPS)
 		stat_decrement("smtp.smtps", 1);

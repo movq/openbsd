@@ -1,4 +1,4 @@
-/*	$OpenBSD: lka.c,v 1.250 2024/06/11 16:30:06 tb Exp $	*/
+/*	$OpenBSD: lka.c,v 1.250.4.1 2026/06/01 15:12:04 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2008 Pierre-Yves Ritschard <pyr@openbsd.org>
@@ -25,6 +25,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "smtpd.h"
 #include "log.h"
@@ -81,6 +82,8 @@ lka_imsg(struct mproc *p, struct imsg *imsg)
 	size_t			 msgsz;
 	int			 ok;
 	int			 fcrdns;
+
+	memset(&userinfo, 0, sizeof userinfo);
 
 	if (imsg == NULL)
 		lka_shutdown();
