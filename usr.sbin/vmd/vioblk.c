@@ -1,4 +1,4 @@
-/*	$OpenBSD: vioblk.c,v 1.24 2025/08/02 15:16:18 dv Exp $	*/
+/*	$OpenBSD: vioblk.c,v 1.24.2.1 2026/06/01 15:26:21 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2023 Dave Voutila <dv@openbsd.org>
@@ -266,7 +266,7 @@ vioblk_notifyq(struct virtio_dev *dev, uint16_t vq_idx)
 	struct vioblk_dev *vioblk = &dev->vioblk;
 
 	/* Invalid queue? */
-	if (vq_idx > dev->num_queues)
+	if (vq_idx >= dev->num_queues)
 		return (0);
 
 	vq_info = &dev->vq[vq_idx];
@@ -283,6 +283,11 @@ vioblk_notifyq(struct virtio_dev *dev, uint16_t vq_idx)
 	while (idx != avail->idx) {
 		/* Retrieve Command descriptor. */
 		cmd_desc_idx = avail->ring[idx & vq_info->mask];
+		if (cmd_desc_idx >= vq_info->qs) {
+			log_warnx("%s: invalid head descriptor index",
+			    __func__);
+			goto reset;
+		}
 		desc = &table[cmd_desc_idx];
 		cmd_len = desc->len;
 
