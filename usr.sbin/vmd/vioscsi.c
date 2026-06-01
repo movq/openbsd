@@ -1,4 +1,4 @@
-/*	$OpenBSD: vioscsi.c,v 1.26 2025/08/02 15:16:18 dv Exp $  */
+/*	$OpenBSD: vioscsi.c,v 1.26.2.1 2026/06/01 15:26:21 bluhm Exp $  */
 
 /*
  * Copyright (c) 2017 Carlos Cardenas <ccardenas@openbsd.org>
@@ -1149,6 +1149,11 @@ vioscsi_handle_read_10(struct virtio_dev *dev,
 		    __func__, acct->resp_desc->addr, acct->resp_desc->len,
 		    acct->resp_idx, acct->req_idx, acct->idx);
 
+		if (acct->resp_desc->len == 0) {
+			log_warnx("%s: zero-length read_buf descriptor", __func__);
+			goto free_read_10;
+		}
+
 		/* Check we don't read beyond read_buf boundaries. */
 		if (acct->resp_desc->len > info->len - chunk_offset) {
 			log_warnx("%s: descriptor length beyond read_buf len",
@@ -1164,7 +1169,7 @@ vioscsi_handle_read_10(struct virtio_dev *dev,
 			    acct->resp_desc->addr);
 			goto free_read_10;
 		}
-		chunk_offset += acct->resp_desc->len;
+		chunk_offset += chunk_len;
 	} while (chunk_offset < info->len);
 
 	ret = 1;
@@ -1840,7 +1845,17 @@ vioscsi_notifyq(struct virtio_dev *dev, uint16_t vq_idx)
 	struct virtio_vq_acct acct;
 	struct virtio_vq_info *vq_info;
 
+	if (vq_idx >= dev->num_queues) {
+		log_warnx("%s: invalid virtqueue index %u", __func__, vq_idx);
+		return (0);
+	}
+
 	vq_info = &dev->vq[vq_idx];
+	if (!vq_info->vq_enabled) {
+		log_warnx("%s: virtqueue not enabled", __func__);
+		return (0);
+	}
+
 	vr = vq_info->q_hva;
 	if (vr == NULL)
 		fatalx("%s: null vring", __func__);
