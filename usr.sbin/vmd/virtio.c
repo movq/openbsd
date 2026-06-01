@@ -1,4 +1,4 @@
-/*	$OpenBSD: virtio.c,v 1.137 2026/04/14 21:41:19 dv Exp $	*/
+/*	$OpenBSD: virtio.c,v 1.137.4.1 2026/06/01 15:23:54 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
@@ -196,6 +196,7 @@ virtio_update_qa(struct virtio_dev *dev)
 {
 	struct virtio_vq_info *vq_info = NULL;
 	void *hva = NULL;
+	uint64_t availoff, usedoff, availsz, usedsz;
 
 	if (dev->driver_feature & VIRTIO_F_VERSION_1) {
 		if (dev->pci_cfg.queue_select >= dev->num_queues) {
@@ -212,11 +213,41 @@ virtio_update_qa(struct virtio_dev *dev)
 		vq_info->qs = dev->pci_cfg.queue_size;
 		vq_info->mask = vq_info->qs - 1;
 
+		/*
+		 * Require the available (driver) and used (device) area to be
+		 * similar to Virtio 0.9 but support Virtio 1.x alignment.
+		 */
+		if (dev->pci_cfg.queue_avail < dev->pci_cfg.queue_desc ||
+		    dev->pci_cfg.queue_used < dev->pci_cfg.queue_desc) {
+			vq_info->vq_enabled = 0;
+			return;
+		}
+
+		availoff = dev->pci_cfg.queue_avail - dev->pci_cfg.queue_desc;
+		usedoff = dev->pci_cfg.queue_used - dev->pci_cfg.queue_desc;
+		if (availoff > UINT32_MAX || usedoff > UINT32_MAX ||
+		    (usedoff & 3) != 0) {
+			vq_info->vq_enabled = 0;
+			return;
+		}
+
+		availsz = sizeof(uint16_t) * (2 + vq_info->qs);
+		usedsz = (sizeof(uint16_t) * 2) +
+		    (sizeof(struct vring_used_elem) * vq_info->qs);
+		hva = hvaddr_mem(dev->pci_cfg.queue_desc + availoff, availsz);
+		if (hva == NULL) {
+			vq_info->vq_enabled = 0;
+			return;
+		}
+		hva = hvaddr_mem(dev->pci_cfg.queue_desc + usedoff, usedsz);
+		if (hva == NULL) {
+			vq_info->vq_enabled = 0;
+			return;
+		}
+
 		if (vq_info->qs > 0 && vq_info->qs % 2 == 0) {
-			vq_info->vq_availoffset = dev->pci_cfg.queue_avail -
-			    dev->pci_cfg.queue_desc;
-			vq_info->vq_usedoffset = dev->pci_cfg.queue_used -
-			    dev->pci_cfg.queue_desc;
+			vq_info->vq_availoffset = availoff;
+			vq_info->vq_usedoffset = usedoff;
 			vq_info->vq_enabled = (dev->pci_cfg.queue_enable == 1);
 		} else {
 			vq_info->vq_availoffset = 0;
@@ -294,8 +325,10 @@ viornd_notifyq(struct virtio_dev *dev, uint16_t idx)
 	dxx = avail->ring[aidx] & vq_info->mask;
 
 	sz = desc[dxx].len;
-	if (sz > MAXPHYS)
-		fatalx("viornd descriptor size too large (%zu)", sz);
+	if (sz > MAXPHYS) {
+		log_warnx("viornd descriptor size too large (%zu)", sz);
+		return (0);
+	}
 
 	rnd_data = malloc(sz);
 	if (rnd_data == NULL)
