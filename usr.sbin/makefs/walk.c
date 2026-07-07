@@ -40,6 +40,8 @@
 #include <sys/stat.h>
 
 #include <assert.h>
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <stdlib.h>
@@ -51,7 +53,16 @@
 
 static	fsnode	*create_fsnode(const char *, const char *, const char *,
 			       struct stat *);
+static	fsnode	*create_synthetic_fsnode(const char *, const char *,
+			       const char *, mode_t, uid_t, gid_t, dev_t);
+static	fsnode	*find_child(fsnode *, const char *);
+static	fsnode	*ensure_dir(fsnode *, const char *);
+static	void	install_devnode(fsnode *, const char *, mode_t, uid_t, gid_t,
+			       dev_t);
 static	fsinode	*link_check(fsinode *);
+static	uint64_t parse_unsigned(const char *, const char *, unsigned long,
+			       uint64_t);
+static	dev_t	openbsd_makedev(unsigned int, unsigned int);
 
 
 /*
@@ -190,6 +201,74 @@ walk_dir(const char *root, const char *dir, fsnode *parent, fsnode *join)
 	return (first);
 }
 
+void
+apply_devspec(fsnode *root, const char *spec)
+{
+	FILE *fp;
+	char *line = NULL, *p, *save, *path, *type, *majstr, *minstr;
+	char *modestr, *uidstr, *gidstr, *extra;
+	size_t linesz = 0;
+	ssize_t linelen;
+	unsigned int major, minor;
+	mode_t mode, nodetype;
+	uid_t uid;
+	gid_t gid;
+	dev_t rdev;
+	unsigned long lineno = 0;
+
+	if ((fp = fopen(spec, "r")) == NULL)
+		err(1, "Can't open device spec `%s'", spec);
+
+	while ((linelen = getline(&line, &linesz, fp)) != -1) {
+		(void)linelen;
+		lineno++;
+		p = line;
+		while (*p == ' ' || *p == '\t')
+			p++;
+		if (*p == '\0' || *p == '\n' || *p == '#')
+			continue;
+
+		save = NULL;
+		path = strtok_r(p, " \t\r\n", &save);
+		type = strtok_r(NULL, " \t\r\n", &save);
+		majstr = strtok_r(NULL, " \t\r\n", &save);
+		minstr = strtok_r(NULL, " \t\r\n", &save);
+		modestr = strtok_r(NULL, " \t\r\n", &save);
+		uidstr = strtok_r(NULL, " \t\r\n", &save);
+		gidstr = strtok_r(NULL, " \t\r\n", &save);
+		extra = strtok_r(NULL, " \t\r\n", &save);
+		if (path == NULL || type == NULL || majstr == NULL ||
+		    minstr == NULL || modestr == NULL || uidstr == NULL ||
+		    gidstr == NULL)
+			errx(1, "%s:%lu: expected path type major minor mode uid gid",
+			    spec, lineno);
+		if (extra != NULL && extra[0] != '#')
+			errx(1, "%s:%lu: too many fields", spec, lineno);
+
+		if (strcmp(type, "c") == 0 || strcmp(type, "char") == 0)
+			nodetype = S_IFCHR;
+		else if (strcmp(type, "b") == 0 || strcmp(type, "block") == 0)
+			nodetype = S_IFBLK;
+		else
+			errx(1, "%s:%lu: unknown device type `%s'",
+			    spec, lineno, type);
+
+		major = parse_unsigned(spec, majstr, lineno, 0xff);
+		minor = parse_unsigned(spec, minstr, lineno, 0xffffff);
+		mode = parse_unsigned(spec, modestr, lineno, 07777);
+		uid = parse_unsigned(spec, uidstr, lineno, UINT_MAX);
+		gid = parse_unsigned(spec, gidstr, lineno, UINT_MAX);
+		rdev = openbsd_makedev(major, minor);
+
+		install_devnode(root, path, nodetype | mode, uid, gid, rdev);
+	}
+	if (ferror(fp))
+		err(1, "Can't read device spec `%s'", spec);
+	free(line);
+	if (fclose(fp) == EOF)
+		err(1, "Can't close device spec `%s'", spec);
+}
+
 static fsnode *
 create_fsnode(const char *root, const char *path, const char *name,
     struct stat *stbuf)
@@ -211,6 +290,149 @@ create_fsnode(const char *root, const char *path, const char *name,
 		    cur->inode->st.st_atim;
 	}
 	return (cur);
+}
+
+static fsnode *
+create_synthetic_fsnode(const char *root, const char *path, const char *name,
+    mode_t mode, uid_t uid, gid_t gid, dev_t rdev)
+{
+	fsnode *cur;
+	struct timespec ts;
+
+	cur = ecalloc(1, sizeof(*cur));
+	cur->path = estrdup(path);
+	cur->name = estrdup(name);
+	cur->inode = ecalloc(1, sizeof(*cur->inode));
+	cur->root = root;
+	cur->type = mode & S_IFMT;
+	cur->inode->nlink = 1;
+	cur->inode->st.st_mode = mode;
+	cur->inode->st.st_uid = uid;
+	cur->inode->st.st_gid = gid;
+	cur->inode->st.st_rdev = rdev;
+	cur->inode->st.st_size = 0;
+	ts.tv_sec = Tflag ? stampts : start_time.tv_sec;
+	ts.tv_nsec = Tflag ? 0 : start_time.tv_nsec;
+	cur->inode->st.st_atim = ts;
+	cur->inode->st.st_mtim = ts;
+	cur->inode->st.st_ctim = ts;
+	return (cur);
+}
+
+static fsnode *
+find_child(fsnode *dir, const char *name)
+{
+	fsnode *cur;
+
+	for (cur = dir; cur != NULL; cur = cur->next) {
+		if (strcmp(cur->name, name) == 0)
+			return (cur);
+	}
+	return (NULL);
+}
+
+static fsnode *
+ensure_dir(fsnode *parentdot, const char *name)
+{
+	fsnode *dir, *dot, *last;
+	char path[PATH_MAX + 1];
+
+	dir = find_child(parentdot, name);
+	if (dir != NULL) {
+		if (!S_ISDIR(dir->type))
+			errx(1, "Device spec path component `%s' is not a directory",
+			    name);
+		if (dir->child == NULL)
+			errx(1, "Directory `%s' has no child list", name);
+		return (dir);
+	}
+
+	dir = create_synthetic_fsnode(parentdot->root, parentdot->path, name,
+	    S_IFDIR | 0755, 0, 0, 0);
+	dir->parent = parentdot->parent;
+	dir->first = parentdot;
+
+	if ((size_t)snprintf(path, sizeof(path), "%s/%s", parentdot->path,
+	    name) >= sizeof(path))
+		errx(1, "Pathname too long.");
+	dot = create_synthetic_fsnode(parentdot->root, path, ".",
+	    S_IFDIR | 0755, 0, 0, 0);
+	dot->parent = dir;
+	dot->first = dot;
+	dir->child = dot;
+
+	for (last = parentdot; last->next != NULL; last = last->next)
+		continue;
+	last->next = dir;
+	return (dir);
+}
+
+static void
+install_devnode(fsnode *root, const char *path, mode_t mode, uid_t uid,
+    gid_t gid, dev_t rdev)
+{
+	fsnode *parentdot, *parentdir, *old, *last, *node;
+	char *copy, *p, *component, *next;
+
+	if (path[0] == '/')
+		path++;
+	if (*path == '\0')
+		errx(1, "Device spec path is empty");
+
+	copy = estrdup(path);
+	parentdot = root;
+	parentdir = root->parent;
+	p = copy;
+	for (;;) {
+		component = strsep(&p, "/");
+		if (component == NULL || *component == '\0' ||
+		    strcmp(component, ".") == 0 ||
+		    strcmp(component, "..") == 0)
+			errx(1, "Invalid device spec path `%s'", path);
+		next = p;
+		if (next == NULL)
+			break;
+		parentdir = ensure_dir(parentdot, component);
+		parentdot = parentdir->child;
+	}
+
+	old = find_child(parentdot, component);
+	if (old != NULL) {
+		if (S_ISDIR(old->type))
+			errx(1, "Device spec path `%s' names a directory", path);
+		free_fsnodes(old);
+	}
+
+	node = create_synthetic_fsnode(parentdot->root, parentdot->path,
+	    component, mode, uid, gid, rdev);
+	node->parent = parentdir;
+	node->first = parentdot;
+	for (last = parentdot; last->next != NULL; last = last->next)
+		continue;
+	last->next = node;
+	free(copy);
+}
+
+static uint64_t
+parse_unsigned(const char *spec, const char *s, unsigned long lineno,
+    uint64_t max)
+{
+	char *ep;
+	uint64_t v;
+
+	errno = 0;
+	v = strtoull(s, &ep, 0);
+	if (s[0] == '\0' || *ep != '\0' || errno == ERANGE || v > max)
+		errx(1, "%s:%lu: invalid unsigned integer `%s'",
+		    spec, lineno, s);
+	return (v);
+}
+
+static dev_t
+openbsd_makedev(unsigned int major, unsigned int minor)
+{
+	return (dev_t)((((major) & 0xff) << 8) | ((minor) & 0xff) |
+	    (((minor) & 0xffff00) << 8));
 }
 
 /*

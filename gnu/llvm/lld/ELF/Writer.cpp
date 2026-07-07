@@ -2440,7 +2440,7 @@ template <class ELFT> void Writer<ELFT>::fixSectionAlignments() {
 #ifdef __OpenBSD__
   // On i386, produce binaries that are compatible with our W^X implementation
   if (config->emachine == EM_386) {
-    auto NXAlign = [](OutputSection *Cmd) {
+    auto NXAlign = [this](OutputSection *Cmd) {
       if (Cmd && !Cmd->addrExpr)
         Cmd->addrExpr = [=] {
           return alignTo(script->getDot(), 0x20000000);

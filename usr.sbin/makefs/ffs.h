@@ -39,6 +39,8 @@
 #ifndef _FFS_H
 #define _FFS_H
 
+#include <stdint.h>
+
 typedef struct {
 	char	label[MAXVOLLEN];	/* volume name/label */
 	int	bsize;		/* block size */
@@ -53,6 +55,13 @@ typedef struct {
 	int	maxbsize;	/* maximum extent size */
 	int	maxblkspercg;	/* max # of blocks per cylinder group */
 	int	rdroot;		/* create rdroot disklabel */
+	int	openbsdlabel;	/* create OpenBSD disklabel */
+	int	sparse;		/* create sparse image */
+	uint64_t disksectors;	/* total sectors in target disk */
+	uint64_t openbsdstart;	/* OpenBSD partition start sector */
+	uint64_t openbsdsectors;	/* OpenBSD partition size in sectors */
+	int	duid_set;	/* duid was specified */
+	unsigned char duid[8];	/* disklabel duid */
 
 	struct disklabel *lp;	/* disk label */
 	struct partition *pp;	/* matching FFS partition in disklabel */
