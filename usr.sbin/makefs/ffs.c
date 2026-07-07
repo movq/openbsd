@@ -123,8 +123,11 @@ static  void	*ffs_build_dinode1(struct ufs1_dinode *, dirbuf_t *, fsnode *,
 				 fsnode *, fsinfo_t *);
 static  void	*ffs_build_dinode2(struct ufs2_dinode *, dirbuf_t *, fsnode *,
 				 fsnode *, fsinfo_t *);
+static	int	ffs_hexval(int);
+static	void	ffs_parse_duid(const char *, unsigned char *);
 
 struct disklabel *ffs_makerdroot(const fsinfo_t *);
+struct disklabel *ffs_makeopenbsdlabel(const fsinfo_t *);
 
 
 	/* publicly visible functions */
@@ -146,7 +149,13 @@ ffs_prep_opts(fsinfo_t *fsopts)
 	    { "maxbpg", &ffs_opts->maxbpg, OPT_INT32, 1, INT_MAX },
 	    { "minfree", &ffs_opts->minfree, OPT_INT32, 0, 99 },
 	    { "optimization", NULL, OPT_STRBUF, 0, 0 },
+	    { "openbsdlabel", &ffs_opts->openbsdlabel, OPT_INT32, 0, 1 },
+	    { "disksectors", &ffs_opts->disksectors, OPT_INT64, 0, LLONG_MAX },
+	    { "openbsdstart", &ffs_opts->openbsdstart, OPT_INT64, 0, LLONG_MAX },
+	    { "openbsdsectors", &ffs_opts->openbsdsectors, OPT_INT64, 1, LLONG_MAX },
+	    { "duid", NULL, OPT_STRBUF, 0, 0 },
 	    { "rdroot", &ffs_opts->rdroot, OPT_INT32, 0, 1 },
+	    { "sparse", &ffs_opts->sparse, OPT_BOOL, 0, 0 },
 	    { "version", &ffs_opts->version, OPT_INT32, 1, 2 },
 	    { .name = NULL }
 	};
@@ -161,6 +170,12 @@ ffs_prep_opts(fsinfo_t *fsopts)
 	ffs_opts->avgfpdir = AFPDIR;
 	ffs_opts->version = 1;
 	ffs_opts->rdroot = 0;
+	ffs_opts->openbsdlabel = 0;
+	ffs_opts->sparse = 0;
+	ffs_opts->disksectors = 0;
+	ffs_opts->openbsdstart = 0;
+	ffs_opts->openbsdsectors = 0;
+	ffs_opts->duid_set = 0;
 	ffs_opts->lp = NULL;
 	ffs_opts->pp = NULL;
 
@@ -213,8 +228,39 @@ ffs_parse_opts(const char *option, fsinfo_t *fsopts)
 			warnx("Invalid optimization `%s'", buf);
 			return 0;
 		}
+	} else if (strcmp(ffs_options[rv].name, "duid") == 0) {
+		ffs_parse_duid(buf, ffs_opts->duid);
+		ffs_opts->duid_set = 1;
 	}
 	return 1;
+}
+
+static int
+ffs_hexval(int c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
+static void
+ffs_parse_duid(const char *hex, unsigned char *duid)
+{
+	int i, hi, lo;
+
+	if (strlen(hex) != 16)
+		errx(1, "duid must be exactly 16 hex digits");
+	for (i = 0; i < 8; i++) {
+		hi = ffs_hexval((unsigned char)hex[i * 2]);
+		lo = ffs_hexval((unsigned char)hex[i * 2 + 1]);
+		if (hi == -1 || lo == -1)
+			errx(1, "duid must be exactly 16 hex digits");
+		duid[i] = (hi << 4) | lo;
+	}
 }
 
 struct disklabel *
@@ -247,6 +293,49 @@ ffs_makerdroot(const fsinfo_t *fsopts)
 	pp->p_fragblock = DISKLABELV1_FFS_FRAGBLOCK(fsize, bsize / fsize);
 	DL_SETPOFFSET(pp, poffset);
 	DL_SETPSIZE(pp, rdsize - poffset);
+
+	pp = &lp->d_partitions[RAW_PART];	/* a.k.a. 'c' */
+	DL_SETPOFFSET(pp, 0);
+	DL_SETPSIZE(pp, DL_GETDSIZE(lp));
+
+	return lp;
+}
+
+struct disklabel *
+ffs_makeopenbsdlabel(const fsinfo_t *fsopts)
+{
+	const ffs_opt_t		*ffs_opts = fsopts->fs_specific;
+	struct disklabel	*lp;
+	struct partition	*pp;
+	uint64_t		 fssize;
+	const uint32_t		 sectorsize = fsopts->sectorsize;
+	const uint32_t		 fsize = ffs_opts->fsize;
+	const uint32_t		 bsize = ffs_opts->bsize;
+
+	fssize = (fsopts->size + sectorsize - 1) / sectorsize;
+	if (fssize > ffs_opts->openbsdsectors)
+		errx(1, "filesystem is larger than OpenBSD partition");
+
+	lp = ecalloc(1, sizeof(struct disklabel));
+
+	lp->d_version = 1;
+	lp->d_type = DTYPE_SCSI;
+	strlcpy(lp->d_typename, "SCSI", sizeof(lp->d_typename));
+	lp->d_npartitions = RAW_PART + 1;
+	lp->d_secsize = sectorsize;
+	lp->d_nsectors = 1;
+	lp->d_ntracks = 1;
+	lp->d_ncylinders = 1;
+	lp->d_secpercyl = 1;
+	DL_SETDSIZE(lp, ffs_opts->disksectors);
+	DL_SETBSTART(lp, ffs_opts->openbsdstart);
+	DL_SETBEND(lp, ffs_opts->openbsdstart + ffs_opts->openbsdsectors);
+
+	pp = &lp->d_partitions[0];		/* a.k.a. 'a' */
+	pp->p_fstype = FS_BSDFFS;
+	pp->p_fragblock = DISKLABELV1_FFS_FRAGBLOCK(fsize, bsize / fsize);
+	DL_SETPOFFSET(pp, ffs_opts->openbsdstart);
+	DL_SETPSIZE(pp, fssize);
 
 	pp = &lp->d_partitions[RAW_PART];	/* a.k.a. 'c' */
 	DL_SETPOFFSET(pp, 0);
@@ -300,6 +389,9 @@ ffs_makefs(const char *image, const char *dir, fsnode *root, fsinfo_t *fsopts)
 	if (ffs_opts->rdroot == 1) {
 		ffs_opts->lp = ffs_makerdroot(fsopts);
 		ffs_opts->pp = &ffs_opts->lp->d_partitions[0];
+	} else if (ffs_opts->openbsdlabel == 1) {
+		ffs_opts->lp = ffs_makeopenbsdlabel(fsopts);
+		ffs_opts->pp = &ffs_opts->lp->d_partitions[0];
 	}
 
 	if (ffs_opts->lp != NULL) {
@@ -315,7 +407,10 @@ ffs_makefs(const char *image, const char *dir, fsnode *root, fsinfo_t *fsopts)
 
 		lp->d_magic = DISKMAGIC;
 		lp->d_magic2 = DISKMAGIC;
-		arc4random_buf(lp->d_uid, sizeof(lp->d_uid));
+		if (ffs_opts->duid_set)
+			memcpy(lp->d_uid, ffs_opts->duid, sizeof(lp->d_uid));
+		else
+			arc4random_buf(lp->d_uid, sizeof(lp->d_uid));
 		lp->d_checksum = 0;
 
 		p = (uint16_t *)lp;
@@ -355,8 +450,20 @@ ffs_validate(const char *dir, fsnode *root, fsinfo_t *fsopts)
 	assert(fsopts != NULL);
 	assert(ffs_opts != NULL);
 
-	if (lp != NULL && ffs_opts->rdroot == 1)
-		errx(1, "rdroot and disklabel are mutually exclusive");
+	if (ffs_opts->sparse && fsopts->offset != 0)
+		errx(1, "sparse and -O are mutually exclusive");
+	if (lp != NULL && (ffs_opts->rdroot == 1 ||
+	    ffs_opts->openbsdlabel == 1))
+		errx(1, "rdroot, openbsdlabel and disklabel are mutually exclusive");
+	if (ffs_opts->rdroot == 1 && ffs_opts->openbsdlabel == 1)
+		errx(1, "rdroot and openbsdlabel are mutually exclusive");
+	if (ffs_opts->openbsdlabel == 0 &&
+	    (ffs_opts->disksectors != 0 || ffs_opts->openbsdstart != 0 ||
+	    ffs_opts->openbsdsectors != 0))
+		errx(1, "disksectors, openbsdstart and openbsdsectors require openbsdlabel");
+	if (ffs_opts->duid_set && lp == NULL && ffs_opts->rdroot == 0 &&
+	    ffs_opts->openbsdlabel == 0)
+		errx(1, "duid requires disklabel, rdroot or openbsdlabel");
 
 	if (lp != NULL) {
 		for (i = 0; i < lp->d_npartitions; i++) {
@@ -398,6 +505,26 @@ ffs_validate(const char *dir, fsnode *root, fsinfo_t *fsopts)
 		if (ffs_opts->fsize == -1 || ffs_opts->bsize == -1 ||
 		    ffs_opts->density == -1)
 			errx(1, "rdroot requires bsize, fsize and density");
+		fsopts->sectorsize = DEV_BSIZE;
+	} else if (ffs_opts->openbsdlabel == 1) {
+		if (fsopts->freeblocks != 0 || fsopts->freeblockpc != 0 ||
+		    fsopts->freefiles != 0 || fsopts->freefilepc != 0 ||
+		    fsopts->offset != 0 || fsopts->sectorsize != -1 ||
+		    fsopts->minsize != fsopts->maxsize)
+			errx(1, "openbsdlabel and -bfMmOS are mutually exclusive");
+		if (fsopts->minsize == 0 || fsopts->maxsize == 0)
+			errx(1, "openbsdlabel requires -s");
+		if (ffs_opts->fsize == -1 || ffs_opts->bsize == -1 ||
+		    ffs_opts->density == -1)
+			errx(1, "openbsdlabel requires bsize, fsize and density");
+		if (ffs_opts->disksectors == 0)
+			errx(1, "openbsdlabel requires disksectors");
+		if (ffs_opts->openbsdsectors == 0)
+			errx(1, "openbsdlabel requires openbsdsectors");
+		if (ffs_opts->openbsdstart > ffs_opts->disksectors ||
+		    ffs_opts->openbsdsectors >
+		    ffs_opts->disksectors - ffs_opts->openbsdstart)
+			errx(1, "OpenBSD partition extends beyond disk");
 		fsopts->sectorsize = DEV_BSIZE;
 	}
 
@@ -474,6 +601,7 @@ static int
 ffs_create_image(const char *image, fsinfo_t *fsopts)
 {
 	struct fs	*fs;
+	ffs_opt_t	*ffs_opts;
 	char	*buf;
 	int	i, bufsize;
 	off_t	bufrem;
@@ -482,6 +610,8 @@ ffs_create_image(const char *image, fsinfo_t *fsopts)
 
 	assert (image != NULL);
 	assert (fsopts != NULL);
+	ffs_opts = fsopts->fs_specific;
+	assert (ffs_opts != NULL);
 
 		/* create image */
 	if (fsopts->offset == 0)
@@ -489,6 +619,14 @@ ffs_create_image(const char *image, fsinfo_t *fsopts)
 	if ((fsopts->fd = open(image, oflags, 0666)) == -1) {
 		warn("Can't open `%s' for writing", image);
 		return (-1);
+	}
+
+	if (ffs_opts->sparse) {
+		if (ftruncate(fsopts->fd, fsopts->size) == -1) {
+			warn("Can't set `%s' size", image);
+			return (-1);
+		}
+		goto make_fs;
 	}
 
 		/* zero image */
@@ -515,6 +653,7 @@ ffs_create_image(const char *image, fsinfo_t *fsopts)
 	}
 	free(buf);
 
+make_fs:
 		/* make the file system */
 	if (Tflag) {
 		tstamp = stampts;

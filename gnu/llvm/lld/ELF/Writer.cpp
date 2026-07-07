@@ -2614,7 +2614,7 @@ template <class ELFT> void Writer<ELFT>::fixSectionAlignments() {
 #ifndef __OpenBSD__
   // On i386, produce binaries that are compatible with our W^X implementation
   if (ctx.arg.emachine == EM_386) {
-    auto NXAlign = [](OutputSection *cmd) {
+    auto NXAlign = [this](OutputSection *cmd) {
       if (cmd && !cmd->addrExpr)
         cmd->addrExpr = [=] {
           return alignTo(ctx.script->getDot(), 0x20000000);
@@ -2625,7 +2625,7 @@ template <class ELFT> void Writer<ELFT>::fixSectionAlignments() {
       PhdrEntry *firstRW = nullptr;
       for (auto &p : part.phdrs) {
         if (p->p_type == PT_LOAD && (p->p_flags & PF_W)) {
-          firstRW = p;
+          firstRW = p.get();
           break;
         }
       }

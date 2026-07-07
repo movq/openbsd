@@ -120,10 +120,14 @@
 /* #undef HAVE_PTHREAD_SETNAME_NP */
 
 /* Define to 1 if you have the `pthread_get_name_np' function. */
+#ifndef __linux__
 #define HAVE_PTHREAD_GET_NAME_NP 1
+#endif
 
 /* Define to 1 if you have the `pthread_set_name_np' function. */
+#ifndef __linux__
 #define HAVE_PTHREAD_SET_NAME_NP 1
+#endif
 
 /* Define to 1 if you have the <mach/mach.h> header file. */
 /* #undef HAVE_MACH_MACH_H */
@@ -180,7 +184,9 @@
 #define HAVE_SYS_IOCTL_H 1
 
 /* Define to 1 if stat struct has st_mtimespec member .*/
+#ifndef __linux__
 #define HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC 1
+#endif
 
 /* Define to 1 if stat struct has st_mtim member. */
 #define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1

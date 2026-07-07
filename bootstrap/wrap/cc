@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Compiler wrapper that filters out OpenBSD-specific flags unknown to
+# upstream clang.  Set REAL_CC in the environment to override the
+# default compiler path.
+#
+: ${REAL_CC:=clang}
+
+for arg; do
+	case "$arg" in
+		-fno-ret-protector) ;;
+		-nopie) set -- "$@" "-no-pie" ;;
+		*) set -- "$@" "$arg" ;;
+	esac
+	shift
+done
+
+exec "${REAL_CC}" "$@"

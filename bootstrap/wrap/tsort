@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# tsort wrapper — strips -q flag unknown to GNU tsort.
+# OpenBSD's tsort uses -q for "quiet" (suppress cycle warnings).
+#
+for arg; do
+	case "$arg" in
+		-q) ;;
+		*) set -- "$@" "$arg" ;;
+	esac
+	shift
+done
+exec /bin/tsort "$@"
