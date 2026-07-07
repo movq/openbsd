@@ -42,6 +42,7 @@
 .Nd create a file system image from a directory tree
 .Sh SYNOPSIS
 .Nm
+.Op Fl D Ar devspec
 .Op Fl b Ar free-blocks
 .Op Fl f Ar free-files
 .Op Fl M Ar minimum-size
@@ -65,6 +66,29 @@ No special devices or privileges are required to perform this task.
 .Pp
 The options are as follows:
 .Bl -tag -width flag
+.It Fl D Ar devspec
+Read device nodes to overlay onto the input tree from
+.Ar devspec .
+Each non-empty, non-comment line contains:
+.Bd -literal -offset indent
+path type major minor mode uid gid
+.Ed
+.Pp
+.Ar type
+is
+.Ql c
+or
+.Ql char
+for a character device and
+.Ql b
+or
+.Ql block
+for a block device.
+Device numbers are encoded using the OpenBSD
+.Fn makedev
+layout before they are written to the image.
+Missing parent directories are created with mode 0755 and ownership
+0:0.
 .It Fl b Ar free-blocks
 Ensure that a minimum of
 .Ar free-blocks
@@ -184,12 +208,44 @@ Optimization preference: one of
 (default)
 or
 .Ql time .
+.It Sy openbsdlabel
+A disklabel appropriate for an OpenBSD partition inside a larger disk
+image will be built and written at a machine dependent location in the
+image.
+The target disk geometry must be provided with
+.Sy disksectors ,
+.Sy openbsdstart
+and
+.Sy openbsdsectors .
+The filesystem will be described by a FS_BSDFFS partition
+.Sq a
+whose offset is the absolute
+.Sy openbsdstart
+sector.
+.It Sy disksectors
+Total number of sectors in the target disk image for
+.Sy openbsdlabel .
+.It Sy openbsdstart
+Absolute starting sector of the OpenBSD partition in the target disk image
+for
+.Sy openbsdlabel .
+.It Sy openbsdsectors
+Size in sectors of the OpenBSD partition in the target disk image for
+.Sy openbsdlabel .
+.It Sy duid
+Sixteen hexadecimal digits to use as the disklabel DUID.
+If omitted, a random DUID is generated.
 .It Sy rdroot
 A disklabel appropriate for a ramdisk will be built and
 written at a machine dependent location in the image.
 The filesystem will be described by a FS_BSDFFS partition
 .Sq a ,
 with defaults offset=0, fsize=512, bsize=4096, minfree=0 and density=4096.
+.It Sy sparse
+Create the image as a sparse file.
+Free space in the file system may not consume space in the host file system.
+This option may not be used with
+.Fl O .
 .It Sy version
 UFS version.
 1 for FFS (default) or 2 for UFS2.

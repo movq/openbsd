@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# Minimal lorder replacement for bootstrap builds on Linux.
+#
+# OpenBSD's lorder(1) reads .o symbol tables via nm(1) and emits
+# dependency pairs for tsort(1).  Since we don't need topological
+# ordering (the linker resolves symbols regardless of archive order),
+# emit trivial pairs that tsort will reproduce in input order.
+#
+if [ $# -eq 0 ]; then
+	exec cat
+fi
+
+if [ $# -eq 1 ]; then
+	printf "%s %s\n" "$1" "$1"
+	exit 0
+fi
+
+prev=""
+for f; do
+	if [ -n "$prev" ]; then
+		printf "%s %s\n" "$prev" "$f"
+	fi
+	prev="$f"
+done

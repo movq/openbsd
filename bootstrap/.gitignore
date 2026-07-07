@@ -1,0 +1,10 @@
+/build/
+/bmake
+/tools
+/dest
+/obj-build
+/obj-host
+/bootstrap-tools
+/userland-tools
+/kernel-tools
+/openbsd-*-efi.img

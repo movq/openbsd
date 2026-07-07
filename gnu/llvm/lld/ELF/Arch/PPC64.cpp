@@ -1176,7 +1176,6 @@ void PPC64::writePltHeader(uint8_t *buf) const {
   // The 'bcl' instruction will set the link register to the address of the
   // following instruction ('mflr r11'). Here we store the offset from that
   // instruction  to the first entry in the GotPlt section.
-  int64_t gotPltOffset = ctx.in.gotPlt->getVA() - (ctx.in.plt->getVA() + 8);
   write64(ctx, buf + 52, gotPltOffset);
 #endif
 }

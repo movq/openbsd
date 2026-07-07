@@ -85,6 +85,7 @@ main(int argc, char *argv[])
 	fstype_t	*fstype;
 	fsinfo_t	 fsoptions;
 	fsnode		*root;
+	char		*devspec;
 	int		 ch, len;
 
 	if ((fstype = get_fstype(DEFAULT_FSTYPE)) == NULL)
@@ -97,14 +98,20 @@ main(int argc, char *argv[])
 
 	if (fstype->prepare_options)
 		fstype->prepare_options(&fsoptions);
+	devspec = NULL;
 
 	ch = clock_gettime(CLOCK_REALTIME, &start_time);
 	if (ch == -1)
 		err(1, "Unable to get system time");
 
 
-	while ((ch = getopt(argc, argv, "b:f:M:m:O:o:s:S:t:T:")) != -1) {
+	while ((ch = getopt(argc, argv, "D:b:f:M:m:O:o:s:S:t:T:")) != -1) {
 		switch (ch) {
+		case 'D':
+			free(devspec);
+			devspec = estrdup(optarg);
+			break;
+
 		case 'b':
 			len = strlen(optarg) - 1;
 			if (optarg[len] == '%') {
@@ -201,16 +208,21 @@ main(int argc, char *argv[])
 		err(1, "unveil %s", argv[0]);
 	if (unveil(argv[1], "rw") == -1)
 		err(1, "unveil %s", argv[1]);
+	if (devspec != NULL && unveil(devspec, "r") == -1)
+		err(1, "unveil %s", devspec);
 	if (pledge("stdio rpath wpath cpath", NULL) == -1)
 		err(1, "pledge");
 
 				/* walk the tree */
 	root = walk_dir(argv[1], ".", NULL, NULL);
+	if (devspec != NULL)
+		apply_devspec(root, devspec);
 
 				/* build the file system */
 	fstype->make_fs(argv[0], argv[1], root, &fsoptions);
 
 	free_fsnodes(root);
+	free(devspec);
 
 	exit(0);
 }
@@ -344,8 +356,9 @@ usage(void)
 	extern char *__progname;
 
 	fprintf(stderr,
-"usage: %s [-b free-blocks] [-f free-files] [-M minimum-size]\n"
-"\t[-m maximum-size] [-O offset] [-o fs-options] [-S sector-size]\n"
+"usage: %s [-D devspec] [-b free-blocks] [-f free-files]\n"
+"\t[-M minimum-size] [-m maximum-size] [-O offset] [-o fs-options]\n"
+"\t[-S sector-size]\n"
 "\t[-s image-size] [-T timestamp] [-t fs-type] image-file directory\n",
 	    __progname);
 

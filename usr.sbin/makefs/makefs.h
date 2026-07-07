@@ -162,6 +162,7 @@ int		set_option(const option_t *, const char *, char *, size_t);
 int		set_option_var(const option_t *, const char *, const char *,
     char *, size_t);
 fsnode *	walk_dir(const char *, const char *, fsnode *, fsnode *);
+void		apply_devspec(fsnode *, const char *);
 void		free_fsnodes(fsnode *);
 option_t *	copy_opts(const option_t *);
 

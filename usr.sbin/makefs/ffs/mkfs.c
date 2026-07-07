@@ -151,7 +151,9 @@ ffs_mkfs(const char *fsys, const fsinfo_t *fsopts, time_t tstamp)
 		printf("preposterous size %lld\n", (long long)fssize);
 		exit(13);
 	}
-	ffs_wtfs(fssize - 1, sectorsize, (char *)&sblock, fsopts);
+	/* Sparse regular files are already sized by ffs_create_image(). */
+	if (!ffs_opts->sparse)
+		ffs_wtfs(fssize - 1, sectorsize, (char *)&sblock, fsopts);
 
 	/*
 	 * collect and verify the filesystem density info
