@@ -30,7 +30,7 @@
 .\"
 .\"	@(#)fsck.8	8.3 (Berkeley) 11/29/94
 .\"
-.Dd $Mdocdate: March 31 2022 $
+.Dd $Mdocdate: July 13 2026 $
 .Dt FSCK_FFS 8
 .Os
 .Sh NAME
@@ -38,7 +38,7 @@
 .Nd Fast File System consistency check and interactive repair
 .Sh SYNOPSIS
 .Nm fsck_ffs
-.Op Fl fnpy
+.Op Fl Efnpy
 .Op Fl b Ar block#
 .Op Fl c Ar level
 .Op Fl m Ar mode
@@ -135,6 +135,18 @@ combined.
 The following flags are interpreted by
 .Nm fsck_ffs :
 .Bl -tag -width indent
+.It Fl E
+After a successful check and any repairs, ask the device to discard all
+unallocated filesystem fragments.
+The filesystem is checked even if it is marked clean.
+This option requires write access and may not be used with
+.Fl n .
+It also requires an unmounted filesystem; the corresponding block device
+is held open for the duration of the check to prevent a concurrent mount.
+All repaired metadata is flushed and the device cache is synchronized before
+the first discard request is issued.
+Discard is an offline storage optimization, not a filesystem repair.
+It destroys stale data in free space that might otherwise be recoverable.
 .It Fl b Ar block#
 Use the
 .Ar block#

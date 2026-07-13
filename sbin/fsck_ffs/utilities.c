@@ -31,6 +31,8 @@
  */
 
 #include <sys/param.h>	/* DEV_BSIZE isset setbit clrbit */
+#include <sys/dkio.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 #include <ufs/ufs/dinode.h>
@@ -38,6 +40,7 @@
 #include <ufs/ffs/fs.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -54,7 +57,13 @@
 long				diskreads, totalreads;	/* Disk cache statistics */
 static struct bufarea		cgblk;			/* backup buffer for cylinder group blocks */
 
+char	Eflag;
+int	fsblockfd = -1;
+int	ioerror;
+int	discardfailed;
+
 static void rwerror(char *, daddr_t);
+static int discardfree(void);
 
 int
 ftypeok(union dinode *dp)
@@ -293,6 +302,7 @@ void
 ckfini(int markclean)
 {
 	struct bufarea *bp, *nbp;
+	int force;
 	int cnt = 0;
 	sigset_t oset, nset;
 	int64_t sblockloc;
@@ -304,6 +314,10 @@ ckfini(int markclean)
 	if (fswritefd < 0) {
 		(void)close(fsreadfd);
 		fsreadfd = -1;
+		if (fsblockfd != -1) {
+			(void)close(fsblockfd);
+			fsblockfd = -1;
+		}
 		sigprocmask(SIG_SETMASK, &oset, NULL);
 		return;
 	}
@@ -363,6 +377,21 @@ ckfini(int markclean)
 			flush(fswritefd, &sblk);
 		}
 	}
+	if (Eflag && blockmap != NULL) {
+		if (!markclean || rerun || ioerror) {
+			pwarn("FREE SPACE NOT DISCARDED: FILE SYSTEM CHECK "
+			    "DID NOT COMPLETE CLEANLY\n");
+			discardfailed = 1;
+		} else {
+			force = 1;
+			if (ioctl(fswritefd, DIOCCACHESYNC, &force) == -1) {
+				pwarn("FREE SPACE NOT DISCARDED: CACHE SYNC: %s\n",
+				    strerror(errno));
+				discardfailed = 1;
+			} else if (!discardfree())
+				discardfailed = 1;
+		}
+	}
 	if (debug)
 		printf("cache missed %ld of %ld (%d%%)\n", diskreads,
 		    totalreads, (int)(diskreads * 100 / totalreads));
@@ -370,7 +399,66 @@ ckfini(int markclean)
 	fsreadfd = -1;
 	(void)close(fswritefd);
 	fswritefd = -1;
+	if (fsblockfd != -1) {
+		(void)close(fsblockfd);
+		fsblockfd = -1;
+	}
 	sigprocmask(SIG_SETMASK, &oset, NULL);
+}
+
+static int
+discardfree(void)
+{
+	struct dk_discard discard = { 0 };
+	struct dk_discard_range *range;
+	uint64_t frag, start, end;
+	uint64_t bytes = 0, nranges = 0;
+
+	if (preen)
+		pwarn("DISCARDING FREE SPACE\n");
+	else
+		printf("** Discarding free space\n");
+
+	end = sblock.fs_size;
+	if (sblock.fs_fsize <= 0 || end > UINT64_MAX / sblock.fs_fsize) {
+		pwarn("DISCARD FAILED: FILE SYSTEM IS TOO LARGE\n");
+		return (0);
+	}
+	for (frag = 0; frag < end;) {
+		while (frag < end && testbmap(frag))
+			frag++;
+		if (frag == end)
+			break;
+		start = frag;
+		while (frag < end && !testbmap(frag))
+			frag++;
+
+		range = &discard.ranges[discard.nranges++];
+		range->offset = start * (uint64_t)sblock.fs_fsize;
+		range->length = (frag - start) * (uint64_t)sblock.fs_fsize;
+		bytes += range->length;
+		nranges++;
+		if (debug)
+			printf("discard offset %llu length %llu\n",
+			    (unsigned long long)range->offset,
+			    (unsigned long long)range->length);
+
+		if (discard.nranges != DK_DISCARD_MAX_RANGES)
+			continue;
+		if (ioctl(fswritefd, DIOCDISCARD, &discard) == -1) {
+			pwarn("DISCARD FAILED: %s\n", strerror(errno));
+			return (0);
+		}
+		discard.nranges = 0;
+	}
+	if (discard.nranges != 0 &&
+	    ioctl(fswritefd, DIOCDISCARD, &discard) == -1) {
+		pwarn("DISCARD FAILED: %s\n", strerror(errno));
+		return (0);
+	}
+	printf("Discarded %llu bytes in %llu ranges\n",
+	    (unsigned long long)bytes, (unsigned long long)nranges);
+	return (1);
 }
 
 int
@@ -384,6 +472,7 @@ bread(int fd, char *buf, daddr_t blk, long size)
 	offset *= DEV_BSIZE;
 	if (pread(fd, buf, size, offset) == size)
 		return (0);
+	ioerror = 1;
 	rwerror("READ", blk);
 	errs = 0;
 	memset(buf, 0, (size_t)size);
@@ -419,6 +508,7 @@ bwrite(int fd, char *buf, daddr_t blk, long size)
 		fsmodified = 1;
 		return;
 	}
+	ioerror = 1;
 	rwerror("WRITE", blk);
 	printf("THE FOLLOWING SECTORS COULD NOT BE WRITTEN:");
 	for (cp = buf, i = 0; i < size; i += secsize, cp += secsize)
