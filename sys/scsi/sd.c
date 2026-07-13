@@ -996,7 +996,7 @@ sd_ioctl_discard(struct sd_softc *sc, dev_t dev, struct dk_discard *discard)
 	struct disklabel		*lp = sc->sc_dk.dk_label;
 	struct partition	*pp = &lp->d_partitions[DISKPART(dev)];
 	struct dk_discard_range *range;
-	u_int64_t		 partoff, partsize, offset, length;
+	u_int64_t		 partoff, partsize, partbytes, offset, length;
 	u_int64_t		 start, blocks;
 	u_int32_t		 secsize;
 	int			 error, i;
@@ -1035,10 +1035,33 @@ sd_ioctl_discard(struct sd_softc *sc, dev_t dev, struct dk_discard *discard)
 	}
 
 	error = sd_unmap_params(sc);
-	if (error != 0)
+	if (error == 0)
+		return sd_unmap(sc, discard, partoff);
+	if (error != EOPNOTSUPP)
 		return error;
 
-	return sd_unmap(sc, discard, partoff);
+	/*
+	 * Give emulated SCSI adapters whole-device byte ranges.  The adapter
+	 * owns any further mapping to its backing storage.
+	 */
+	if (partoff > UINT64_MAX / secsize)
+		return EINVAL;
+	partbytes = partoff * secsize;
+	for (i = 0; i < discard->nranges; i++) {
+		offset = discard->ranges[i].offset;
+		length = discard->ranges[i].length;
+		if (offset > UINT64_MAX - partbytes ||
+		    length > UINT64_MAX - (offset + partbytes))
+			return EINVAL;
+	}
+	for (i = 0; i < discard->nranges; i++)
+		discard->ranges[i].offset += partbytes;
+	error = scsi_do_ioctl(sc->sc_link, DIOCDISCARD,
+	    (caddr_t)discard, FWRITE);
+	for (i = 0; i < discard->nranges; i++)
+		discard->ranges[i].offset -= partbytes;
+
+	return error == ENOTTY ? EOPNOTSUPP : error;
 }
 
 int

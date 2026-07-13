@@ -339,6 +339,7 @@ extern u_int8_t		sr_bootkey[SR_CRYPTO_MAXKEYBYTES];
 
 /* forward define to prevent dependency goo */
 struct sr_softc;
+struct dk_discard;
 
 struct sr_ccb {
 	struct buf		ccb_buf;	/* MUST BE FIRST!! */
@@ -597,6 +598,8 @@ struct sr_discipline {
 	void			(*sd_free_resources)(struct sr_discipline *);
 	int			(*sd_ioctl_handler)(struct sr_discipline *,
 				    struct bioc_discipline *);
+	int			(*sd_discard)(struct sr_discipline *,
+				    struct dk_discard *, int);
 	int			(*sd_start_discipline)(struct sr_discipline *);
 	void			(*sd_set_chunk_state)(struct sr_discipline *,
 				    int, int);
