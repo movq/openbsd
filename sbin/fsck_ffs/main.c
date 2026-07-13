@@ -102,7 +102,7 @@ struct ufs2_dinode ufs2_zino;
 void
 usage(void)
 {
-	fprintf(stderr, "usage: %s [-fnpy] [-b block#] [-c level] "
+	fprintf(stderr, "usage: %s [-Efnpy] [-b block#] [-c level] "
 	    "[-m mode] filesystem\n", __progname);
 	exit(1);
 }
@@ -110,14 +110,20 @@ int
 main(int argc, char *argv[])
 {
 	int ch;
+	int nopt = 0;
 	int ret = 0;
 
 	checkroot();
 
 	sync();
 	skipclean = 1;
-	while ((ch = getopt(argc, argv, "dfpnNyYb:c:m:")) != -1) {
+	while ((ch = getopt(argc, argv, "EdfpnNyYb:c:m:")) != -1) {
 		switch (ch) {
+		case 'E':
+			Eflag = 1;
+			skipclean = 0;
+			break;
+
 		case 'p':
 			preen = 1;
 			break;
@@ -154,6 +160,7 @@ main(int argc, char *argv[])
 
 		case 'n':
 		case 'N':
+			nopt = 1;
 			nflag = 1;
 			yflag = 0;
 			break;
@@ -173,6 +180,8 @@ main(int argc, char *argv[])
 
 	if (argc != 1)
 		usage();
+	if (Eflag && nopt)
+		errexit("-E and -n are mutually exclusive\n");
 
 	if (signal(SIGINT, SIG_IGN) != SIG_IGN)
 		(void)signal(SIGINT, catch);
@@ -180,10 +189,10 @@ main(int argc, char *argv[])
 		(void)signal(SIGQUIT, catchquit);
 	catchinfo(0);
 
-	(void)checkfilesys(blockcheck(*argv), 0, 0L, 0);
+	ret = checkfilesys(blockcheck(*argv), 0, 0L, 0);
 
 	if (returntosingle)
-		ret = 2;
+		ret |= 2;
 
 	exit(ret);
 }
@@ -231,7 +240,11 @@ checkfilesys(char *filesys, char *mntpt, long auxdata, int child)
 			(void)close(fswritefd);
 			fswritefd = -1;
 		}
-		return (0);
+		if (fsblockfd != -1) {
+			(void)close(fsblockfd);
+			fsblockfd = -1;
+		}
+		return (Eflag ? 8 : 0);
 	}
 	info_filesys = filesys;
 
@@ -358,6 +371,8 @@ checkfilesys(char *filesys, char *mntpt, long auxdata, int child)
 	free(sblk.b_un.b_buf);
 	free(asblk.b_un.b_buf);
 
+	if (discardfailed)
+		return (8);
 	if (!fsmodified)
 		return (0);
 	if (!preen)
