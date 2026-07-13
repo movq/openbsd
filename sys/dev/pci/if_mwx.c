@@ -3715,10 +3715,9 @@ mwx_mac_init(struct mwx_softc *sc)
 	/* enable hardware de-aggregation */
 	mwx_set(sc, dcr0, MT_MDP_DCR0_DAMSDU_EN);
 
-	if (sc->sc_hwtype != MWX_HW_MT7925) {
-		/* enable hardware rx header translation */
-		mwx_set(sc, dcr0, MT_MDP_DCR0_RX_HDR_TRANS_EN);
-	}
+	/* net80211 expects 802.11 frames; translated frames are rejected. */
+	if (sc->sc_hwtype != MWX_HW_MT7925)
+		mwx_clear(sc, dcr0, MT_MDP_DCR0_RX_HDR_TRANS_EN);
 
 	for (i = 0; i < MWX_WTBL_SIZE; i++)
 		mwx_mac_wtbl_update(sc, i);
