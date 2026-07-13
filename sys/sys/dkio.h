@@ -33,6 +33,7 @@
 #ifndef _SYS_DKIO_H_
 #define _SYS_DKIO_H_
 
+#include <sys/types.h>
 #include <sys/ioccom.h>
 
 /*
@@ -76,5 +77,24 @@ struct dk_diskmap {
 #define	DIOCMAP		_IOWR('d', 119, struct dk_diskmap)
 
 #define	DIOCCACHESYNC	_IOW('d', 120, int)	/* sync cache (force?) */
+
+/*
+ * Discard partition-relative byte ranges.  Completion means that the device
+ * accepted every range; discarded blocks need not read back as zeroes.
+ */
+struct dk_discard_range {
+	uint64_t	offset;
+	uint64_t	length;
+};
+
+#define DK_DISCARD_MAX_RANGES	240
+
+struct dk_discard {
+	uint32_t	nranges;
+	uint32_t	flags;
+	struct dk_discard_range ranges[DK_DISCARD_MAX_RANGES];
+};
+
+#define DIOCDISCARD	_IOW('d', 121, struct dk_discard)
 
 #endif /* _SYS_DKIO_H_ */

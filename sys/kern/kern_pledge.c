@@ -1168,6 +1168,7 @@ pledge_ioctl(struct proc *p, long com, struct file *fp)
 		case DIOCGPDINFO:
 		case DIOCRLDINFO:
 		case DIOCWDINFO:
+		case DIOCDISCARD:
 		case BIOCDISK:
 		case BIOCINQ:
 		case BIOCINSTALLBOOT:

@@ -93,6 +93,7 @@ int	sd_thin_pages(struct sd_softc *, int);
 int	sd_vpd_block_limits(struct sd_softc *, int);
 int	sd_vpd_thin(struct sd_softc *, int);
 int	sd_thin_params(struct sd_softc *, int);
+int	sd_unmap_params(struct sd_softc *);
 int	sd_get_parms(struct sd_softc *, int);
 int	sd_flush(struct sd_softc *, int);
 
@@ -100,6 +101,8 @@ void	viscpy(u_char *, u_char *, int);
 
 int	sd_ioctl_inquiry(struct sd_softc *, struct dk_inquiry *);
 int	sd_ioctl_cache(struct sd_softc *, long, struct dk_cache *);
+int	sd_ioctl_discard(struct sd_softc *, dev_t, struct dk_discard *);
+int	sd_unmap(struct sd_softc *, struct dk_discard *, u_int64_t);
 
 int	sd_cmd_rw6(struct scsi_generic *, int, u_int64_t, u_int32_t);
 int	sd_cmd_rw10(struct scsi_generic *, int, u_int64_t, u_int32_t);
@@ -962,6 +965,18 @@ sdioctl(dev_t dev, u_long cmd, caddr_t addr, int flag, struct proc *p)
 			error = sd_flush(sc, 0);
 		goto exit;
 
+	case DIOCDISCARD:
+		if (!ISSET(flag, FWRITE)) {
+			error = EBADF;
+			goto exit;
+		}
+		if ((error = disk_lock(&sc->sc_dk)) != 0)
+			goto exit;
+		error = sd_ioctl_discard(sc, dev,
+		    (struct dk_discard *)addr);
+		disk_unlock(&sc->sc_dk);
+		goto exit;
+
 	default:
 		if (part != RAW_PART) {
 			error = ENOTTY;
@@ -972,6 +987,148 @@ sdioctl(dev_t dev, u_long cmd, caddr_t addr, int flag, struct proc *p)
 
  exit:
 	device_unref(&sc->sc_dev);
+	return error;
+}
+
+int
+sd_ioctl_discard(struct sd_softc *sc, dev_t dev, struct dk_discard *discard)
+{
+	struct disklabel		*lp = sc->sc_dk.dk_label;
+	struct partition	*pp = &lp->d_partitions[DISKPART(dev)];
+	struct dk_discard_range *range;
+	u_int64_t		 partoff, partsize, offset, length;
+	u_int64_t		 start, blocks;
+	u_int32_t		 secsize;
+	int			 error, i;
+
+	if (discard->nranges == 0 ||
+	    discard->nranges > DK_DISCARD_MAX_RANGES ||
+	    discard->flags != 0)
+		return EINVAL;
+
+	secsize = lp->d_secsize;
+	if (secsize == 0 || secsize != sc->params.secsize)
+		return EINVAL;
+
+	partoff = DL_GETPOFFSET(pp);
+	partsize = DL_GETPSIZE(pp);
+	if (partoff > sc->params.disksize ||
+	    partsize > sc->params.disksize - partoff)
+		return EINVAL;
+
+	/*
+	 * Validate the complete batch before issuing the first command.  A
+	 * later hardware failure can still leave an earlier command complete.
+	 */
+	for (i = 0; i < discard->nranges; i++) {
+		range = &discard->ranges[i];
+		offset = range->offset;
+		length = range->length;
+		if (length == 0 || offset % secsize != 0 ||
+		    length % secsize != 0)
+			return EINVAL;
+
+		start = offset / secsize;
+		blocks = length / secsize;
+		if (start > partsize || blocks > partsize - start)
+			return EINVAL;
+	}
+
+	error = sd_unmap_params(sc);
+	if (error != 0)
+		return error;
+
+	return sd_unmap(sc, discard, partoff);
+}
+
+int
+sd_unmap(struct sd_softc *sc, struct dk_discard *discard, u_int64_t partoff)
+{
+	struct scsi_unmap_data	*data;
+	struct scsi_unmap_desc	*descs, *desc;
+	struct scsi_unmap	*cmd;
+	struct scsi_xfer	*xs;
+	u_int64_t		 lba = 0, left = 0, blocks, total;
+	size_t			 alloclen, listlen;
+	u_int32_t		 cdbdescs, maxblocks, maxdescs, ndescs;
+	u_int			 i = 0;
+	int			 error = 0;
+
+	maxblocks = sc->params.unmap_sectors;
+	maxdescs = MIN(sc->params.unmap_descs, DK_DISCARD_MAX_RANGES);
+	cdbdescs = (UINT16_MAX - sizeof(*data)) / sizeof(*descs);
+	if (maxdescs > cdbdescs)
+		maxdescs = cdbdescs;
+	if (maxblocks == 0 || maxdescs == 0)
+		return EOPNOTSUPP;
+
+	alloclen = sizeof(*data) + maxdescs * sizeof(*descs);
+	data = dma_alloc(alloclen, PR_WAITOK | PR_ZERO);
+	if (data == NULL)
+		return ENOMEM;
+	descs = (struct scsi_unmap_desc *)(data + 1);
+
+	while (i < discard->nranges) {
+		memset(data, 0, alloclen);
+		ndescs = 0;
+		total = 0;
+
+		while (i < discard->nranges && ndescs < maxdescs &&
+		    total < maxblocks) {
+			if (left == 0) {
+				lba = partoff +
+				    discard->ranges[i].offset /
+				    sc->params.secsize;
+				left = discard->ranges[i].length /
+				    sc->params.secsize;
+			}
+
+			blocks = MIN(left, maxblocks - total);
+			desc = &descs[ndescs++];
+			_lto8b(lba, desc->logical_addr);
+			_lto4b(blocks, desc->logical_blocks);
+
+			lba += blocks;
+			left -= blocks;
+			total += blocks;
+			if (left == 0)
+				i++;
+		}
+
+		if (ndescs == 0) {
+			error = EIO;
+			break;
+		}
+
+		listlen = sizeof(*data) + ndescs * sizeof(*descs);
+		_lto2b(listlen - sizeof(data->data_length),
+		    data->data_length);
+		_lto2b(ndescs * sizeof(*descs), data->desc_length);
+
+		xs = scsi_xs_get(sc->sc_link, SCSI_DATA_OUT);
+		if (xs == NULL) {
+			error = ENOMEM;
+			break;
+		}
+
+		memset(&xs->cmd, 0, sizeof(xs->cmd));
+		cmd = (struct scsi_unmap *)&xs->cmd;
+		cmd->opcode = UNMAP;
+		_lto2b(listlen, cmd->list_len);
+
+		xs->cmdlen = sizeof(*cmd);
+		xs->data = (u_char *)data;
+		xs->datalen = listlen;
+		xs->retries = 2;
+		xs->timeout = 100000;
+
+		error = scsi_xs_sync(xs);
+		scsi_xs_put(xs);
+		if (error != 0)
+			break;
+	}
+
+	dma_free(data, alloclen);
 	return error;
 }
 
@@ -1481,7 +1638,7 @@ sd_thin_pages(struct sd_softc *sc, int flags)
 {
 	struct scsi_vpd_hdr		*pg;
 	u_int8_t			*pages;
-	size_t				 len = 0;
+	size_t				 len = 0, pglen = sizeof(*pg);
 	int				 i, rv, score = 0;
 
 	pg = dma_alloc(sizeof(*pg), (ISSET(flags, SCSI_NOSLEEP) ?
@@ -1499,9 +1656,14 @@ sd_thin_pages(struct sd_softc *sc, int flags)
 		goto done;
 
 	len = _2btol(pg->page_length);
+	if (len > UINT16_MAX - sizeof(*pg)) {
+		rv = EOPNOTSUPP;
+		goto done;
+	}
 
-	dma_free(pg, sizeof(*pg));
-	pg = dma_alloc(sizeof(*pg) + len, (ISSET(flags, SCSI_NOSLEEP) ?
+	dma_free(pg, pglen);
+	pglen = sizeof(*pg) + len;
+	pg = dma_alloc(pglen, (ISSET(flags, SCSI_NOSLEEP) ?
 	    PR_NOWAIT : PR_WAITOK) | PR_ZERO);
 	if (pg == NULL)
 		return ENOMEM;
@@ -1510,18 +1672,13 @@ sd_thin_pages(struct sd_softc *sc, int flags)
 		rv = ENXIO;
 		goto done;
 	}
-	rv = scsi_inquire_vpd(sc->sc_link, pg, sizeof(*pg) + len,
+	rv = scsi_inquire_vpd(sc->sc_link, pg, pglen,
 	    SI_PG_SUPPORTED, flags);
 	if (rv != 0)
 		goto done;
 
 	pages = (u_int8_t *)(pg + 1);
-	if (pages[0] != SI_PG_SUPPORTED) {
-		rv = EIO;
-		goto done;
-	}
-
-	for (i = 1; i < len; i++) {
+	for (i = 0; i < len; i++) {
 		switch (pages[i]) {
 		case SI_PG_DISK_LIMITS:
 		case SI_PG_DISK_THIN:
@@ -1534,7 +1691,7 @@ sd_thin_pages(struct sd_softc *sc, int flags)
 		rv = EOPNOTSUPP;
 
 done:
-	dma_free(pg, sizeof(*pg) + len);
+	dma_free(pg, pglen);
 	return rv;
 }
 
@@ -1558,11 +1715,24 @@ sd_vpd_block_limits(struct sd_softc *sc, int flags)
 	if (rv != 0)
 		goto done;
 
-	if (_2btol(pg->hdr.page_length) == SI_PG_DISK_LIMITS_LEN_THIN) {
-		sc->params.unmap_sectors = _4btol(pg->max_unmap_lba_count);
-		sc->params.unmap_descs = _4btol(pg->max_unmap_desc_count);
-	} else
+	if (pg->hdr.page_code != SI_PG_DISK_LIMITS ||
+	    _2btol(pg->hdr.page_length) < SI_PG_DISK_LIMITS_LEN_UNMAP) {
 		rv = EOPNOTSUPP;
+		goto done;
+	}
+
+	sc->params.unmap_sectors = _4btol(pg->max_unmap_lba_count);
+	sc->params.unmap_descs = _4btol(pg->max_unmap_desc_count);
+	sc->params.unmap_granularity =
+	    _4btol(pg->optimal_unmap_granularity);
+	sc->params.unmap_alignment =
+	    _4btol(pg->unmap_granularity_align);
+	if (ISSET(sc->params.unmap_alignment,
+	    SI_PG_DISK_LIMITS_UGAVALID)) {
+		sc->params.unmap_alignment_valid = 1;
+		CLR(sc->params.unmap_alignment,
+		    SI_PG_DISK_LIMITS_UGAVALID);
+	}
 
 done:
 	dma_free(pg, sizeof(*pg));
@@ -1589,15 +1759,16 @@ sd_vpd_thin(struct sd_softc *sc, int flags)
 	if (rv != 0)
 		goto done;
 
-#ifdef notyet
-	if (ISSET(pg->flags, VPD_DISK_THIN_TPU))
-		sc->sc_delete = sd_unmap;
-	else if (ISSET(pg->flags, VPD_DISK_THIN_TPWS)) {
-		sc->sc_delete = sd_write_same_16;
-		sc->params.unmap_descs = 1; /* WRITE SAME 16 only does one */
-	} else
+	if (pg->hdr.page_code != SI_PG_DISK_THIN ||
+	    _2btol(pg->hdr.page_length) < 4) {
 		rv = EOPNOTSUPP;
-#endif /* notyet */
+		goto done;
+	}
+
+	if (ISSET(pg->flags, VPD_DISK_THIN_TPU))
+		SET(sc->flags, SDF_UNMAP);
+	else
+		CLR(sc->flags, SDF_UNMAP);
 
 done:
 	dma_free(pg, sizeof(*pg));
@@ -1621,6 +1792,44 @@ sd_thin_params(struct sd_softc *sc, int flags)
 	if (rv != 0)
 		return rv;
 
+	if (ISSET(sc->flags, SDF_UNMAP) &&
+	    sc->params.unmap_sectors != 0 &&
+	    sc->params.unmap_descs != 0)
+		SET(sc->flags, SDF_UNMAP_PROBED);
+	else
+		CLR(sc->flags, SDF_UNMAP);
+	return 0;
+}
+
+int
+sd_unmap_params(struct sd_softc *sc)
+{
+	int rv;
+
+	if (ISSET(sc->flags, SDF_UNMAP_PROBED))
+		return ISSET(sc->flags, SDF_UNMAP) ? 0 : EOPNOTSUPP;
+
+	if (ISSET(sc->sc_link->flags, SDEV_ATAPI)) {
+		SET(sc->flags, SDF_UNMAP_PROBED);
+		return EOPNOTSUPP;
+	}
+
+	sc->params.unmap_sectors = 0;
+	sc->params.unmap_descs = 0;
+	sc->params.unmap_granularity = 0;
+	sc->params.unmap_alignment = 0;
+	sc->params.unmap_alignment_valid = 0;
+	CLR(sc->flags, SDF_UNMAP);
+
+	rv = sd_thin_params(sc, SCSI_VPD_UMASS);
+	SET(sc->flags, SDF_UNMAP_PROBED);
+	if (rv != 0 || !ISSET(sc->flags, SDF_UNMAP)) {
+		CLR(sc->flags, SDF_UNMAP);
+		if (rv == ENOMEM || rv == ENXIO)
+			return rv;
+		return EOPNOTSUPP;
+	}
+
 	return 0;
 }
 
@@ -1642,6 +1851,13 @@ sd_get_parms(struct sd_softc *sc, int flags)
 	struct page_reduced_geometry	*reduced = NULL;
 	u_char				*page0 = NULL;
 	int				 big, err = 0;
+
+	CLR(sc->flags, SDF_UNMAP | SDF_UNMAP_PROBED);
+	sc->params.unmap_sectors = 0;
+	sc->params.unmap_descs = 0;
+	sc->params.unmap_granularity = 0;
+	sc->params.unmap_alignment = 0;
+	sc->params.unmap_alignment_valid = 0;
 
 	if (sd_read_cap(sc, flags) != 0)
 		return -1;

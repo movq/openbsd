@@ -913,8 +913,10 @@ scsi_inquire_vpd(struct scsi_link *link, void *buf, u_int buflen,
 	u_int32_t		 bytes;
 #endif /* SCSIDEBUG */
 
-	if (ISSET(link->flags, SDEV_UMASS))
+	if (ISSET(link->flags, SDEV_UMASS) &&
+	    !ISSET(flags, SCSI_VPD_UMASS))
 		return EJUSTRETURN;
+	CLR(flags, SCSI_VPD_UMASS);
 
 	xs = scsi_xs_get(link, flags | SCSI_DATA_IN | SCSI_SILENT);
 	if (xs == NULL)

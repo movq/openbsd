@@ -60,6 +60,8 @@ struct sd_softc {
 #define	SDF_DIRTY	0x20		/* disk is dirty; needs cache flush */
 #define	SDF_DYING	0x40		/* dying, when deactivated */
 #define	SDF_THIN	0x01		/* disk is thin provisioned */
+#define	SDF_UNMAP	0x02		/* disk supports SCSI UNMAP */
+#define	SDF_UNMAP_PROBED 0x04		/* explicit discovery was attempted */
 	struct scsi_link	*sc_link; /* contains our targ, lun, etc. */
 	struct disk_parms {
 		u_int32_t	heads;		/* number of heads */
@@ -69,6 +71,9 @@ struct sd_softc {
 		u_int64_t	disksize;	/* total number sectors */
 		u_int32_t	unmap_sectors;	/* maximum sectors/unmap */
 		u_int32_t	unmap_descs;	/* maximum descriptors/unmap */
+		u_int32_t	unmap_granularity;
+		u_int32_t	unmap_alignment;
+		int		unmap_alignment_valid;
 	} params;
 
 	struct scsi_xshandler sc_xsh;
