@@ -426,6 +426,7 @@ SIMPLEQ_HEAD(scsi_xfer_list, scsi_xfer);
 #define	SCSI_IGNORE_MEDIA_CHANGE	0x00080	/* ignore MEDIA CHANGE */
 #define	SCSI_IGNORE_ILLEGAL_REQUEST	0x00100	/* ignore ILLEGAL REQUEST */
 #define	SCSI_RESET	0x00200	/* Reset the device in question		*/
+#define	SCSI_VPD_UMASS	0x00400	/* allow explicit VPD inquiry on umass */
 #define	SCSI_DATA_IN	0x00800	/* expect data to come INTO memory	*/
 #define	SCSI_DATA_OUT	0x01000	/* expect data to flow OUT of memory	*/
 #define	SCSI_TARGET	0x02000	/* This defines a TARGET mode op.	*/
