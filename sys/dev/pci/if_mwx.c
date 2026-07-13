@@ -59,7 +59,7 @@ static const struct pci_matchid mwx_devices[] = {
 	{ PCI_VENDOR_MEDIATEK, PCI_PRODUCT_MEDIATEK_RZ717 },
 };
 
-#define MWX_DEBUG	1
+/* #define MWX_DEBUG	1 */
 
 #define	MT7920_ROM_PATCH	"mwx-mt7961_patch_mcu_1a_2_hdr"
 #define	MT7920_FIRMWARE_WM	"mwx-mt7961_ram_code_1a"
@@ -594,6 +594,7 @@ void		mt7921_mac_reset_counters(struct mwx_softc *);
 void		mt7921_mac_set_timing(struct mwx_softc *);
 int		mt7921_mcu_uni_add_dev(struct mwx_softc *, struct mwx_vif *,
 		    struct mwx_node *, int);
+int		mt7921_mcu_uni_add_bss(struct mwx_softc *, int);
 int		mt7921_mcu_set_sniffer(struct mwx_softc *, int);
 int		mt7921_mcu_set_beacon_filter(struct mwx_softc *, int);
 int		mt7921_mcu_set_bss_pm(struct mwx_softc *, int);
@@ -1134,6 +1135,12 @@ mwx_newstate_task(void *ptr)
 
 		mt7921_mcu_hw_scan_cancel(sc); /* XXX */
 		mwx_mcu_set_deep_sleep(sc, 0);
+		rv = mt7921_mcu_uni_add_bss(sc, 1);
+		if (rv)
+			break;
+		rv = mt7921_mac_sta_update(sc, NULL, 1, 1);
+		if (rv)
+			break;
 		mt7921_mcu_set_rts_thresh(sc, 0x92b, 0);
 		break;
 	}
@@ -1368,7 +1375,9 @@ mwx_radiotap_attach(struct mwx_softc *sc)
 int
 mwx_tx(struct mwx_softc *sc, struct mbuf *m, struct ieee80211_node *ni)
 {
+#if MWX_DEBUG
 	struct mwx_node *mn = (void *)ni;
+#endif
 	struct mwx_txwi *mt;
 	struct mt76_txwi *txp;
 	int rv;
@@ -1384,6 +1393,7 @@ mwx_tx(struct mwx_softc *sc, struct mbuf *m, struct ieee80211_node *ni)
 	if (rv != 0)
 		return rv;
 
+#if MWX_DEBUG
 printf("%s: TX WCID %08x id %d pid %d\n", DEVNAME(sc), mn->wcid, 0, mt->mt_idx);
 printf("%s: TX txwi %08x %08x %08x %08x %08x %08x %08x %08x\n",
 DEVNAME(sc), txp->txwi[0], txp->txwi[1],
@@ -1392,6 +1402,7 @@ txp->txwi[6], txp->txwi[7]);
 printf("%s: TX hw txp %d %d %d %d %04x %04x %04x %04x\n", DEVNAME(sc),
     txp->msdu_id[0], txp->msdu_id[1], txp->msdu_id[2], txp->msdu_id[3],
     txp->ptr[0].len0, txp->ptr[0].len1, txp->ptr[1].len0, txp->ptr[1].len1);
+#endif
 
 	return mwx_dma_txwi_enqueue(sc, &sc->sc_txq, mt);
 }
@@ -1404,9 +1415,11 @@ mwx_rx(struct mwx_softc *sc, struct mbuf *m, struct mbuf_list *ml)
 	struct ieee80211_node *ni;
 	struct ieee80211_frame *wh;
 	struct ieee80211_rxinfo rxi = { 0 };
+	int rv;
 
 
-	if (mt7921_mac_fill_rx(sc, m, &rxi) == -1) {
+	rv = mt7921_mac_fill_rx(sc, m, &rxi);
+	if (rv != 0) {
 		ifp->if_ierrors++;
 		m_freem(m);
 		return;
@@ -4842,6 +4855,75 @@ printf("%s: %s cmd %x wcid %d\n", DEVNAME(sc), __func__, cmd, mn->wcid);
 }
 
 int
+mt7921_mcu_uni_add_bss(struct mwx_softc *sc, int enable)
+{
+	struct ieee80211_node *ni = sc->sc_ic.ic_bss;
+	struct mwx_vif *mvif = &sc->sc_vif;
+	struct {
+		struct {
+			uint8_t		bss_idx;
+			uint8_t		pad[3];
+		} __packed hdr;
+		struct mt76_connac_bss_basic_tlv basic;
+		struct {
+			uint16_t	tag;
+			uint16_t	len;
+			uint8_t		qos;
+			uint8_t		pad[3];
+		} __packed qos;
+	} req = {
+		.hdr = {
+			.bss_idx = mvif->idx,
+		},
+		.basic = {
+			.tag = htole16(UNI_BSS_INFO_BASIC),
+			.len = htole16(sizeof(req.basic)),
+			.active = 1,
+			.omac_idx = mvif->omac_idx,
+			.hw_bss_idx = mvif->omac_idx > EXT_BSSID_START ?
+			    HW_BSSID_0 : mvif->omac_idx,
+			.band_idx = mvif->band_idx,
+			.conn_type = htole32(STA_TYPE_STA | NETWORK_INFRA),
+			.conn_state = !enable,
+			.wmm_idx = mvif->wmm_idx,
+			.bmc_tx_wlan_idx =
+			    htole16(mvif->vif_mn.wcid),
+			.bcn_interval = htole16(ni->ni_intval),
+			.dtim_period = ni->ni_dtimperiod,
+			.sta_idx = htole16(mvif->vif_mn.wcid),
+		},
+		.qos = {
+			.tag = htole16(UNI_BSS_INFO_QBSS),
+			.len = htole16(sizeof(req.qos)),
+			.qos = (ni->ni_flags & IEEE80211_NODE_QOS) != 0,
+		},
+	};
+
+	memcpy(req.basic.bssid, ni->ni_bssid, sizeof(req.basic.bssid));
+	req.basic.nonht_basic_phy =
+	    htole16(mt7921_get_phy_mode_v2(sc, ni));
+
+	if (IEEE80211_IS_CHAN_2GHZ(ni->ni_chan)) {
+		req.basic.phymode = PHY_MODE_B | PHY_MODE_G;
+		if (ieee80211_node_supports_ht(ni))
+			req.basic.phymode |= PHY_MODE_GN;
+	} else {
+		req.basic.phymode = PHY_MODE_A;
+		if (ieee80211_node_supports_ht(ni))
+			req.basic.phymode |= PHY_MODE_AN;
+		if (ieee80211_node_supports_vht(ni))
+			req.basic.phymode |= PHY_MODE_AC;
+	}
+
+	DPRINTF("%s: %s enable %d bssid %s wcid %u phymode %02x\n",
+	    DEVNAME(sc), __func__, enable, ether_sprintf(ni->ni_bssid),
+	    mvif->vif_mn.wcid, req.basic.phymode);
+
+	return mwx_mcu_send_wait(sc, MCU_UNI_CMD_BSS_INFO_UPDATE,
+	    &req, sizeof(req));
+}
+
+int
 mt7921_mcu_set_sniffer(struct mwx_softc *sc, int enable)
 {
 	struct {
@@ -5691,8 +5773,10 @@ mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 
 	count = MT_TX_FREE0_MSDU_CNT_GET(txval);
 
+#if MWX_DEBUG
 	printf("%s: val %x count %d\n", __func__, txval, count);
 	pkt_hex_dump(m);
+#endif
 
 	if (count * sizeof(txval) > m->m_len)
 		goto out;
@@ -6022,7 +6106,12 @@ mt7921_mcu_wtbl_generic_tlv(struct mbuf *m, uint16_t *tlvnum,
 		generic->muar_idx = sc->sc_vif.omac_idx;
 		generic->qos = (ni->ni_flags & IEEE80211_NODE_QOS) != 0;
 	} else {
-		memset(generic->peer_addr, 0xff, IEEE80211_ADDR_LEN);
+		if (ic->ic_opmode == IEEE80211_M_STA)
+			memcpy(generic->peer_addr, ic->ic_bss->ni_bssid,
+			    IEEE80211_ADDR_LEN);
+		else
+			memset(generic->peer_addr, 0xff,
+			    IEEE80211_ADDR_LEN);
 		generic->muar_idx = 0xe;
 	}
 
@@ -6073,8 +6162,9 @@ int
 mt7921_mac_sta_update(struct mwx_softc *sc, struct ieee80211_node *ni,
     int add, int new)
 {
-	struct mwx_node *mn = (struct mwx_node *)ni;
 	struct mwx_vif *mvif = &sc->sc_vif;
+	struct mwx_node *mn = ni != NULL ? (struct mwx_node *)ni :
+	    &mvif->vif_mn;
 	struct sta_req_hdr *hdr;
 	struct sta_rec_wtbl *wtbl;
 	struct mbuf *m;
@@ -6085,16 +6175,15 @@ mt7921_mac_sta_update(struct mwx_softc *sc, struct ieee80211_node *ni,
 	if (m == NULL)
 		return ENOBUFS;
 
-	if (ni != NULL)
-		mt7921_mcu_add_basic_tlv(m, &tlvnum, sc, ni, add, new);
+	mt7921_mcu_add_basic_tlv(m, &tlvnum, sc, ni, add, new);
 
 	if (ni != NULL && add)
 		mt7921_mcu_add_sta_tlv(m, &tlvnum, sc, ni, add, new);
 
 	wtbl = mwx_append_tlv(m, &tlvnum, STA_REC_WTBL,
 	    sizeof(*wtbl));
-	wtbl->wlan_idx_lo = mn ? mn->wcid & 0xff : 0,
-	wtbl->wlan_idx_hi = mn ? mn->wcid >> 8 : 0,
+	wtbl->wlan_idx_lo = mn->wcid & 0xff;
+	wtbl->wlan_idx_hi = mn->wcid >> 8;
 	wtbl->operation = WTBL_RESET_AND_SET;
 
 	if (add) {
@@ -6108,8 +6197,8 @@ mt7921_mac_sta_update(struct mwx_softc *sc, struct ieee80211_node *ni,
 	wtbl->tlv_num = htole16(wnum);
 	wtbl->len = htole16(le16toh(wtbl->len) + wlen);
 
-	mwx_fill_sta_req_hdr(m, mvif, mn ? mvif->omac_idx : 0,
-	    mn ? mn->wcid : 0, tlvnum);
+	mwx_fill_sta_req_hdr(m, mvif, ni != NULL ? mvif->omac_idx : 0xe,
+	    mn->wcid, tlvnum);
 	return mwx_mcu_send_mbuf_wait(sc, MCU_UNI_CMD_STA_REC_UPDATE, m);
 }
 

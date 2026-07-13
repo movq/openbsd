@@ -1130,6 +1130,13 @@ struct mt76_connac_bss_basic_tlv {
 	uint8_t		pad[1];
 } __packed;
 
+#define	PHY_MODE_A				(1U << 0)
+#define	PHY_MODE_B				(1U << 1)
+#define	PHY_MODE_G				(1U << 2)
+#define	PHY_MODE_GN				(1U << 3)
+#define	PHY_MODE_AN				(1U << 4)
+#define	PHY_MODE_AC				(1U << 5)
+
 struct mt76_connac_mcu_scan_ssid {
 	uint32_t	ssid_len;
 	uint8_t		ssid[IEEE80211_NWID_LEN];
