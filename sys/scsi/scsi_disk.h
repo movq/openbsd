@@ -437,6 +437,7 @@ struct scsi_vpd_disk_limits {
 	struct scsi_vpd_hdr hdr;
 #define SI_PG_DISK_LIMITS_LEN		0x10
 #define SI_PG_DISK_LIMITS_LEN_THIN	0x3c
+#define SI_PG_DISK_LIMITS_LEN_UNMAP	0x20
 
 	u_int8_t		_reserved1[1];
 	u_int8_t		max_comp_wr_len;

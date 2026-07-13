@@ -1,0 +1,55 @@
+.\"	$OpenBSD$
+.\"
+.\" Copyright (c) 2026 Mike
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 13 2026 $
+.Dt DISKDISCARD 8
+.Os
+.Sh NAME
+.Nm diskdiscard
+.Nd discard explicit disk byte ranges
+.Sh SYNOPSIS
+.Nm diskdiscard
+.Ar device offset length
+.Op Ar offset length ...
+.Sh DESCRIPTION
+.Nm
+asks a disk to discard one or more byte ranges using
+.Dv DIOCDISCARD .
+Each
+.Ar offset
+is relative to the opened disklabel partition.
+Values may be decimal, octal, or hexadecimal.
+Offsets and lengths must be aligned to the disk logical sector size and every
+range must be wholly contained in the partition.
+.Pp
+.Nm
+is a diagnostic program.
+It does not determine whether a range is unused and does not check whether the
+partition is mounted.
+Discarding an allocated range can destroy data.
+The device must be a raw character device for an unmounted, disposable
+partition whose free ranges have been determined independently.
+.Pp
+Successful completion means that the device accepted every range.
+It does not imply that subsequent reads return zeroes.
+If a request requires multiple hardware commands, an error may be reported
+after earlier ranges have already been discarded.
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr ioctl 2 ,
+.Xr sd 4 ,
+.Xr disklabel 8
