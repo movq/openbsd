@@ -2,40 +2,40 @@
 
 ## Summary
 
-The experimental OpenBSD `mwx(4)` driver works for IPv4 and unicast Wi-Fi
-traffic on this machine, but it does not receive inbound Wi-Fi
-group-addressed traffic. IPv6 fails as a consequence because return-path
-Neighbor Discovery uses solicited-node multicast.
+The inbound multicast failure has been diagnosed and fixed. Two firmware
+records were missing from the OpenBSD association sequence:
 
-The initial symptom looked like an IPv6 routing problem:
+1. The associated BSS was not updated with its BSSID, beacon/DTIM values,
+   PHY mode, QoS state, and reserved BMC WCID.
+2. Reserved group WCID 19 received the GTK but had no station-record or WTBL
+   GENERIC/RX/HDR_TRANS setup.
 
-- SLAAC configured global IPv6 addresses.
-- A default IPv6 route was installed.
-- The router's link-local address was reachable.
-- External IPv6 destinations were not reachable.
+Adding only the Linux-style association-time `BSS_INFO_UPDATE` made group
+frames reach host DMA, but they arrived with invalid WCID 1023, security mode
+0, and `HDR_TRANS_ERROR`. Initializing WCID 19 before GTK installation made
+the same frames report WCID 19, CCMP security mode 4, GTK key ID 1, and no RX
+descriptor errors.
 
-Packet captures and tests from another WLAN station showed that the more
-general problem is missing inbound multicast. Three kernel changes have been
-tested without changing the behavior:
+The final test kernel receives the Linux station's `ff02::1` echo requests,
+answers solicited-node Neighbor Discovery, and passes external IPv6 traffic.
+The earlier symptom looked like an IPv6 routing problem even though SLAAC,
+the default route, and unicast traffic were all working.
+
+Three earlier experiments did not change the behavior:
 
 1. Enabling the MT7921/MT7922 firmware RX filter like Linux.
 2. Falling back to net80211 software crypto for the GTK.
 3. Disabling hardware RX header translation.
-
-The next useful step is to instrument the earliest RX path and inspect the
-RX descriptor and RFCR state for group frames, rather than trying further
-unverified fixes.
 
 ## Test Environment
 
 - Machine: Framework laptop
 - OS: OpenBSD 7.9-current
 - Kernel configuration: `MIKE`
-- Current test kernel:
+- Fix-validation kernel:
 
 ```text
 OpenBSD mike-framework-obsd.local 7.9 MIKE#2 amd64
-OpenBSD 7.9-current (MIKE) #2: Mon Jul 13 13:51:22 BST 2026
 ```
 
 - Wi-Fi device:
@@ -57,7 +57,7 @@ PCI vendor 14c3, product 0616
 - OpenBSD working tree:
   `/home/mike/src/openbsd-src`
 - Kernel build tree:
-  `/usr/src/sys/arch/amd64/compile/MIKE`
+  `/home/mike/src/openbsd-src/sys/arch/amd64/compile/MIKE`
 
 The other test machine is a Linux WLAN station:
 
@@ -319,16 +319,14 @@ if (sc->sc_hwtype != MWX_HW_MT7925)
 	mwx_clear(sc, dcr0, MT_MDP_DCR0_RX_HDR_TRANS_EN);
 ```
 
-The running `MIKE#2` kernel was verified to contain this change and not the
-two earlier experiments.
+That test kernel was verified to contain this change and not the two earlier
+experiments.
 
 Result: no change. Solicited-node and all-nodes multicast remained absent.
 
-This is the only current workspace modification:
-
-```text
-M sys/dev/pci/if_mwx.c
-```
+The header-translation change remains in the final source because net80211
+expects 802.11 frames. It became effective for group traffic once WCID 19 was
+configured with `no_rx_trans = 1`.
 
 ## Group-Key and WCID Notes
 
@@ -347,33 +345,28 @@ muar_idx = 0x0e;
 
 The pairwise key uses the AP peer node's WCID.
 
-This broadly matches Linux. For a normal managed-station GTK, mac80211 links
-the key without a station, and `mt7921_set_key()` selects
-`mvif->sta.deflink.wcid`, the reserved interface WCID.
-
-Potential differences still worth checking:
-
-- Whether OpenBSD creates all required station-record and WTBL TLVs for the
-  reserved group WCID before installing the GTK.
-- Whether the RX descriptor reports WCID 19 for multicast frames.
-- Whether the firmware accepts the GTK update but associates it with the
-  wrong BSS or MUAR index.
-- Whether the current `STA_REC_KEY` request is sufficient for MT7922.10 and
-  this firmware revision.
+This key selection matches Linux. The missing piece was initialization of the
+reserved WCID before the key update. OpenBSD now creates its broadcast
+station record and WTBL GENERIC/RX/HDR_TRANS TLVs while entering RUN. In
+station mode the group WTBL entry uses the AP BSSID, MUAR index `0x0e`, and
+`no_rx_trans = 1`.
 
 ## Current Source and Build State
 
-The source trees are distinct:
+The kernel is now built directly from the workspace:
 
 ```text
 /home/mike/src/openbsd-src
-/usr/src
+/home/mike/src/openbsd-src/sys/arch/amd64/compile/MIKE
 ```
 
-For `MIKE#2`, `/usr/src/sys/dev/pci/if_mwx.c` was synchronized with the
-header-translation change from the workspace. The running kernel has no
-`mt7921_mcu_set_rxfilter` symbol, confirming that the earlier experiment is
-not present.
+`MIKE#2` contains the working BSS and WCID changes plus temporary RX/RFCR
+diagnostics. The workspace has since removed those diagnostics while
+retaining the functional changes and the correction that treats every
+nonzero `mt7921_mac_fill_rx()` result as an RX error.
+
+The cleaned source builds successfully as `MIKE#3` and is installed as
+`/bsd`; the validated diagnostic `MIKE#2` is preserved as `/obsd`.
 
 The current workspace diff passes:
 
@@ -381,42 +374,17 @@ The current workspace diff passes:
 git diff --check -- sys/dev/pci/if_mwx.c sys/dev/pci/if_mwxreg.h
 ```
 
-## Recommended Next Steps
+## Resolution Evidence
 
-### Instrument RX Drop Reasons
+### Early RX and RFCR Instrumentation
 
-Add counters or rate-limited diagnostics at the earliest point where normal
-RX descriptors are dequeued. At minimum, count and print:
+The first instrumented kernel counted normal RX descriptors before
+`mt7921_mac_fill_rx()`. While the Linux station continuously sent `ff02::1`,
+all descriptors were address type 1 (U2M). There were no parser errors or
+rejections.
 
-- RX packet type
-- RXD0 through RXD4
-- WLAN index
-- unicast versus multicast address type
-- security mode and key ID
-- `ICV_ERR`
-- `FCS_ERR`
-- `AMSDU_ERR`
-- `HDR_TRANS`
-- maximum-length and header-translation errors
-
-Diagnostics must happen before `mt7921_mac_fill_rx()` returns an error.
-Current Ethernet and radiotap BPF taps occur too late to show frames rejected
-there.
-
-Run the instrumentation while the Linux station sends `ff02::1`. This will
-show whether group frames enter host DMA and exactly why they are rejected.
-If no RX descriptor appears, the drop occurs in firmware, hardware filtering,
-or GTK processing before host DMA.
-
-### Read and Test RFCR Directly
-
-Log `MT_WF_RFCR(0)`:
-
-- After firmware startup
-- After `MCU_CE_CMD_SET_RX_FILTER`
-- After association and key installation
-
-Check whether any of these are set:
+RFCR was `0x00000000` at RUN, pairwise-key installation, and group-key
+installation. In particular, none of these were set:
 
 ```c
 MT_WF_RFCR_DROP_MCAST
@@ -424,35 +392,65 @@ MT_WF_RFCR_DROP_BCAST
 MT_WF_RFCR_DROP_MCAST_FILTERED
 ```
 
-As a controlled diagnostic, directly clear only those bits after association
-and log the value read back. The earlier MCU-command experiment did not
-prove that the firmware command changed RFCR.
+This proved that the original drop happened before host DMA and was not
+caused by those RFCR bits.
 
-### Capture Over the Air
+### Association-Time BSS Update
 
-Use a second adapter in monitor mode on the AP channel to verify:
+Linux calls `mt76_connac_mcu_uni_add_bss()` when a station associates.
+OpenBSD did not have the equivalent call. A port of its BASIC and QBSS update
+was added while entering RUN. It supplies:
 
-- The AP transmits the Linux station's `ff02::1` packet over the air.
-- Whether it transmits group traffic as native multicast or
-  multicast-to-unicast.
-- The 802.11 receiver address, protected bit, CCMP key ID, and BSSID.
+- The associated AP BSSID.
+- Beacon interval and DTIM period.
+- PHY mode and non-HT basic PHY capabilities.
+- QoS and infrastructure-station connection state.
+- Reserved WCID 19 as `bmc_tx_wlan_idx` and `sta_idx`.
 
-This separates an AP forwarding decision from a receive-side driver drop.
+After this change, group descriptors immediately reached DMA, but they had:
 
-### Test an Open Network
+```text
+addr 2/3, wcid 1023, sec 0, HDR_TRANS_ERROR
+```
 
-Testing `mwx` on an open AP would cleanly separate GTK/decryption from generic
-multicast RX. Nearby scans showed an open `EE WiFi` SSID, although it may use
-a captive portal and may not bridge clients. A controlled Linux hotspot or
-test AP without WPA would be preferable.
+No incoming multicast reached the Ethernet BPF tap, and external IPv6 still
+failed.
 
-### Validate the Reserved Group WCID
+### Reserved WCID Initialization
 
-Compare the complete Linux and OpenBSD BSS/group-WCID setup, not only the key
-TLV. Useful diagnostics include:
+OpenBSD previously installed the GTK on WCID 19 without first creating the
+group station record and WTBL entries. The RUN transition now calls
+`mt7921_mac_sta_update(sc, NULL, 1, 1)` after the BSS update and before key
+installation.
 
-- Initializing or dumping WCID 19 before and after BSS setup.
-- Dumping the key-related station record after GTK installation.
-- Temporarily installing the GTK on both WCID 19 and the AP peer WCID to test
-  WCID selection.
-- Verifying `bmc_tx_wlan_idx`, `sta_idx`, `bss_idx`, and `muar_idx`.
+With the group WCID initialized, descriptors changed to:
+
+```text
+addr 2/3, wcid 19, sec 4, key 1, no RX error
+```
+
+This identifies CCMP hardware decryption with the GTK and confirms that the
+reserved group receive path is correctly selected.
+
+### Final Network Tests
+
+The Linux station's background all-nodes multicast requests appeared in
+OpenBSD tcpdump:
+
+```text
+c8:5e:a9:0e:05:fb > 33:33:00:00:00:01:
+fe80::5006:60da:ef3f:2af4 > ff02::1: ICMP6 echo request
+```
+
+OpenBSD sent unicast echo replies. Solicited-node Neighbor Solicitations for
+the stable global address also appeared, followed by OpenBSD Neighbor
+Advertisements.
+
+Final tests passed:
+
+```text
+Cloudflare IPv6: 5 transmitted, 5 received
+Google IPv6:     3 transmitted, 3 received
+Linux IPv6:      5 transmitted, 5 received
+Linux IPv4:      5 transmitted, 5 received
+```
