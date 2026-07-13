@@ -2466,6 +2466,10 @@ sr_scsi_ioctl(struct scsi_link *link, u_long cmd, caddr_t addr, int flag)
 	case DIOCGCACHE:
 	case DIOCSCACHE:
 		return (EOPNOTSUPP);
+	case DIOCDISCARD:
+		if (sd->sd_discard == NULL)
+			return (EOPNOTSUPP);
+		return sd->sd_discard(sd, (struct dk_discard *)addr, flag);
 	default:
 		return (ENOTTY);
 	}
@@ -3955,6 +3959,7 @@ sr_discipline_init(struct sr_discipline *sd, int level)
 	sd->sd_create = NULL;
 	sd->sd_free_resources = sr_free_resources;
 	sd->sd_ioctl_handler = NULL;
+	sd->sd_discard = NULL;
 	sd->sd_openings = NULL;
 	sd->sd_meta_opt_handler = NULL;
 	sd->sd_rebuild = sr_rebuild;
