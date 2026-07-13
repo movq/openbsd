@@ -20,6 +20,7 @@
 
 #include "bio.h"
 
+#include <sys/stdint.h>
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
@@ -83,6 +84,8 @@ int		sr_crypto_ioctl_internal(struct sr_discipline *,
 		    struct sr_crypto *, struct bioc_discipline *);
 int		sr_crypto_ioctl(struct sr_discipline *,
 		    struct bioc_discipline *);
+int		sr_crypto_discard(struct sr_discipline *,
+		    struct dk_discard *, int);
 int		sr_crypto_meta_opt_handler_internal(struct sr_discipline *,
 		    struct sr_crypto *, struct sr_meta_opt_hdr *);
 int		sr_crypto_meta_opt_handler(struct sr_discipline *,
@@ -122,9 +125,72 @@ sr_crypto_discipline_init(struct sr_discipline *sd)
 	sd->sd_create = sr_crypto_create;
 	sd->sd_free_resources = sr_crypto_free_resources;
 	sd->sd_ioctl_handler = sr_crypto_ioctl;
+	sd->sd_discard = sr_crypto_discard;
 	sd->sd_meta_opt_handler = sr_crypto_meta_opt_handler;
 	sd->sd_scsi_rw = sr_crypto_rw;
 	sd->sd_scsi_done = sr_crypto_done;
+}
+
+int
+sr_crypto_discard(struct sr_discipline *sd, struct dk_discard *discard,
+    int flag)
+{
+	struct sr_chunk		*chunk;
+	struct dk_discard_range	*range;
+	u_int64_t		 dataoff, volsize;
+	u_int32_t		 secsize;
+	int			 error, i;
+
+	if (!ISSET(flag, FWRITE))
+		return EBADF;
+	if (sd->sd_type != SR_MD_CRYPTO)
+		return EOPNOTSUPP;
+	if (!sd->sd_ready || sd->sd_vol_status != BIOC_SVONLINE ||
+	    sd->sd_meta == NULL || sd->sd_meta->ssdi.ssd_chunk_no != 1 ||
+	    sd->sd_vol.sv_chunks == NULL)
+		return ENXIO;
+
+	chunk = sd->sd_vol.sv_chunks[0];
+	if (chunk == NULL || chunk->src_vn == NULL ||
+	    chunk->src_dev_mm == NODEV ||
+	    chunk->src_meta.scm_status != BIOC_SDONLINE)
+		return ENXIO;
+	if (discard->nranges == 0 ||
+	    discard->nranges > DK_DISCARD_MAX_RANGES ||
+	    discard->flags != 0)
+		return EINVAL;
+	if (sd->sd_meta->ssdi.ssd_size < 0 ||
+	    (u_int64_t)sd->sd_meta->ssdi.ssd_size > UINT64_MAX / DEV_BSIZE ||
+	    sd->sd_meta->ssd_data_blkno == 0)
+		return EINVAL;
+
+	volsize = (u_int64_t)sd->sd_meta->ssdi.ssd_size * DEV_BSIZE;
+	dataoff = (u_int64_t)sd->sd_meta->ssd_data_blkno * DEV_BSIZE;
+	secsize = sd->sd_meta->ssdi.ssd_secsize;
+	if (secsize == 0 || dataoff % secsize != 0)
+		return EINVAL;
+
+	/* Validate the complete batch before forwarding any ranges. */
+	for (i = 0; i < discard->nranges; i++) {
+		range = &discard->ranges[i];
+		if (range->length == 0 || range->offset > volsize ||
+		    range->length > volsize - range->offset ||
+		    range->offset % secsize != 0 ||
+		    range->length % secsize != 0 ||
+		    range->offset > UINT64_MAX - dataoff ||
+		    range->length >
+		    UINT64_MAX - (range->offset + dataoff))
+			return EINVAL;
+	}
+
+	for (i = 0; i < discard->nranges; i++)
+		discard->ranges[i].offset += dataoff;
+	error = VOP_IOCTL(chunk->src_vn, DIOCDISCARD, (caddr_t)discard,
+	    flag, NOCRED, curproc);
+	for (i = 0; i < discard->nranges; i++)
+		discard->ranges[i].offset -= dataoff;
+
+	return error;
 }
 
 int
