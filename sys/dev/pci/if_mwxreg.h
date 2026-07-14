@@ -1346,6 +1346,18 @@ struct sta_rec_ra_info {
 #define	RA_LEGACY_OFDM	0x3fc0
 #define	RA_LEGACY_CCK	0x000f
 
+#define	STA_REC_BA			0x06
+struct sta_rec_ba {
+	uint16_t	tag;
+	uint16_t	len;
+	uint8_t		tid;
+	uint8_t		ba_type;
+	uint8_t		amsdu;
+	uint8_t		ba_en;
+	uint16_t	ssn;
+	uint16_t	winsize;
+} __packed;
+
 #define	STA_REC_HT			0x09
 struct sta_rec_ht {
 	uint16_t	tag;
@@ -1476,6 +1488,31 @@ struct wtbl_hdr_trans {
 	uint8_t		no_rx_trans;
 	uint8_t		rsv;
 } __packed;
+
+#define	WTBL_BA				0x08
+struct wtbl_ba {
+	uint16_t	tag;
+	uint16_t	len;
+	uint8_t		tid;
+	uint8_t		ba_type;
+	uint8_t		rsv0[2];
+	uint16_t	sn;
+	uint8_t		ba_en;
+	uint8_t		ba_winsize_idx;
+	uint16_t	ba_winsize;
+	uint8_t		peer_addr[IEEE80211_ADDR_LEN];
+	uint8_t		rst_ba_tid;
+	uint8_t		rst_ba_sel;
+	uint8_t		rst_ba_sb;
+	uint8_t		band_idx;
+	uint8_t		rsv1[4];
+} __packed;
+
+#define	MT_BA_TYPE_INVALID		0
+#define	MT_BA_TYPE_ORIGINATOR		1
+#define	MT_BA_TYPE_RECIPIENT		2
+
+#define	RST_BA_MAC_TID_MATCH		0
 
 #define	WTBL_SMPS			0x0d
 struct wtbl_smps {

@@ -36,7 +36,7 @@ optional HT features:
 - 20 MHz only.
 - Long guard interval only.
 - No LDPC, STBC, greenfield, or A-MSDU.
-- No TX A-MPDU or firmware ADDBA offload.
+- Initially no TX A-MPDU or block-ack handling.
 
 When net80211 negotiates HT, the associated AP station record includes
 `STA_REC_HT`, `PHY_TYPE_BIT_HT`, and the intersection of the AP's receive MCS
@@ -49,16 +49,15 @@ The selected channel remains `CMD_CBW_20MHZ` because no 40 MHz or wider
 channel flags are advertised. Legacy association remains available when HT
 negotiation is rejected, including for incompatible cipher configurations.
 
-This is only the unaggregated HT PHY baseline. Block-ack handling is still
-required before enabling A-MPDU, and wider channels and additional spatial
-streams remain later stages.
+This was the unaggregated HT PHY baseline. The block-ack stage below builds
+on it; wider channels and additional spatial streams remain later stages.
 
 ## WMM QoS Implementation
 
-The driver now advertises `IEEE80211_C_QOS` independently of the still-disabled
-TX A-MPDU and firmware ADDBA capabilities. This lets net80211 include WMM
-information during association and negotiate QoS with the AP without starting
-block-ack sessions.
+The driver initially advertised `IEEE80211_C_QOS` independently of TX A-MPDU
+and firmware ADDBA capabilities. This let net80211 include WMM information
+during association and negotiate QoS with the AP without starting block-ack
+sessions.
 
 The associated AP's QoS state is passed in the BSS, station, and WTBL firmware
 records. The firmware EDCA command is populated from net80211's negotiated
@@ -78,10 +77,44 @@ are explicitly mapped to the LMAC's BK/BE/VI/VO queue order. Non-QoS frames
 use BE.
 
 OpenBSD net80211 intentionally emits QoS Data frames only after a TX block-ack
-agreement has been established. As a result, ordinary payload remains on BE
-during this pre-A-MPDU stage even though WMM negotiation and firmware EDCA
-configuration are active. The queue mapping will begin handling per-TID data
-when the subsequent A-MPDU stage enables and negotiates block ack.
+agreement has been established. As a result, ordinary payload remained on BE
+during the pre-A-MPDU stage even though WMM negotiation and firmware EDCA
+configuration were active. The queue mapping begins handling per-TID data
+after the A-MPDU support below negotiates block ack.
+
+## A-MPDU and Block Ack Implementation
+
+The driver now advertises `IEEE80211_C_TX_AMPDU`, with a 64 KiB maximum
+A-MPDU length and no MPDU density requirement. It deliberately does not
+advertise `IEEE80211_C_ADDBA_OFFLOAD`: OpenBSD net80211 sends and receives the
+ADDBA and DELBA action frames, tracks agreement state, and performs RX
+reordering.
+
+The net80211 TX and RX BA callbacks defer firmware commands to the driver's
+task queue because they can be called from the RX path and the firmware
+commands wait for MCU acknowledgements. A pending net80211 agreement is
+accepted only after both MediaTek firmware records have been programmed:
+
+- The nested `WTBL_BA` record configures the originator or recipient WTBL
+  entry with the negotiated TID, starting sequence number, and window size.
+- The `STA_REC_BA` record enables or disables the corresponding per-station
+  BA session.
+
+TX ADDBA requests are marked with `MT_TXD5_ADD_BA`, and compressed Block Ack
+Request frames copy their TID into the TX descriptor. Once a TX agreement is
+active, net80211 emits QoS Data frames and the existing descriptor path maps
+their TIDs to the appropriate WMM queues. Firmware performs TX aggregation.
+
+RX A-MPDUs continue through the hardware de-aggregation path. Individual
+QoS MPDUs retain their sequence and TID fields, allowing net80211's existing
+64-frame BA reorder buffer to deliver them in order.
+
+This first implementation has the following deliberate limits:
+
+- BA firmware programming is enabled only in station mode.
+- TIDs 0-7 are supported.
+- A-MSDU remains disabled even if the peer sets the ADDBA A-MSDU bit.
+- ADDBA/DELBA management exchange remains host-managed.
 
 ## Original Findings
 
