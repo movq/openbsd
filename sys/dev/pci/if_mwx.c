@@ -253,6 +253,7 @@ struct mwx_tx_stats {
 	uint64_t	queue_restarts;
 	uint64_t	drained;
 	uint64_t	rates[MWX_NLEGACY_RATES];
+	uint64_t	ht_mcs[8];
 	uint16_t	last_rate;
 	uint16_t	last_wcid;
 	uint8_t		last_bw;
@@ -1667,9 +1668,8 @@ mwx_preinit(struct mwx_softc *sc)
 			    ieee80211_ieee2mhz(chan, IEEE80211_CHAN_2GHZ);
 			ic->ic_channels[chan].ic_flags =
 			    IEEE80211_CHAN_CCK | IEEE80211_CHAN_OFDM |
-			    IEEE80211_CHAN_DYN | IEEE80211_CHAN_2GHZ;
-			/* TODO 11n and 11ac flags:
-			 * IEEE80211_CHAN_HT | IEEE80211_CHAN_40MHZ */
+			    IEEE80211_CHAN_DYN | IEEE80211_CHAN_2GHZ |
+			    IEEE80211_CHAN_HT;
 		}
 
 	}
@@ -1682,10 +1682,9 @@ mwx_preinit(struct mwx_softc *sc)
 			ic->ic_channels[chan].ic_freq =
 			    ieee80211_ieee2mhz(chan, IEEE80211_CHAN_5GHZ);
 			ic->ic_channels[chan].ic_flags = IEEE80211_CHAN_A |
-			    IEEE80211_CHAN_5GHZ;
-			/* TODO 11n and 11ac flags:
-			 * IEEE80211_CHAN_HT | IEEE80211_CHAN_40MHZ |
-			 * IEEE80211_CHAN_VHT
+			    IEEE80211_CHAN_5GHZ | IEEE80211_CHAN_HT;
+			/* TODO 11ac and wider channel flags:
+			 * IEEE80211_CHAN_40MHZ | IEEE80211_CHAN_VHT
 			 * ic_xflags |= IEEE80211_CHANX_80MHZ
 			 */
 
@@ -1860,16 +1859,18 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	    IEEE80211_C_SHSLOT |	/* short slot time supported */
 	    IEEE80211_C_SHPREAMBLE;	/* short preamble supported */
 
-#if NOTYET
-	ic->ic_htcaps = IEEE80211_HTCAP_SGI20 | IEEE80211_HTCAP_SGI40;
-	ic->ic_htcaps |= IEEE80211_HTCAP_CBW20_40;
-	ic->ic_htcaps |=
-	    (IEEE80211_HTCAP_SMPS_DIS << IEEE80211_HTCAP_SMPS_SHIFT);
-#endif
+	/*
+	 * Start with mandatory HT20 using one spatial stream.  Optional HT
+	 * features and wider channels can be enabled independently later.
+	 */
+	ic->ic_htcaps = 0;
 	ic->ic_htxcaps = 0;
 	ic->ic_txbfcaps = 0;
 	ic->ic_aselcaps = 0;
-	ic->ic_ampdu_params = (IEEE80211_AMPDU_PARAM_SS_4 | 0x3 /* 64k */);
+	ic->ic_ampdu_params = IEEE80211_AMPDU_PARAM_SS_NONE;
+	ic->ic_tx_mcs_set = IEEE80211_TX_MCS_SET_DEFINED;
+	memset(ic->ic_sup_mcs, 0, sizeof(ic->ic_sup_mcs));
+	ic->ic_sup_mcs[0] = 0xff;		/* MCS 0-7 */
 
 #if NOTYET
 	ic->ic_vhtcaps = IEEE80211_VHTCAP_MAX_MPDU_LENGTH_11454 |
@@ -4532,6 +4533,12 @@ mwx_tx_stats_print(struct mwx_softc *sc)
 		    mt76_rates[i].rate & 1 ? ".5" : "",
 		    (unsigned long long)stats->rates[i]);
 	}
+	for (i = 0; i < nitems(stats->ht_mcs); i++) {
+		if (stats->ht_mcs[i] == 0)
+			continue;
+		printf(" mcs%u=%llu", i,
+		    (unsigned long long)stats->ht_mcs[i]);
+	}
 	if (stats->unknown_rate != 0)
 		printf(" unknown-rate=%llu",
 		    (unsigned long long)stats->unknown_rate);
@@ -4583,6 +4590,17 @@ mt7921_mac_add_txs(struct mwx_softc *sc, const void *data)
 		sc->sc_tx_stats.fixed++;
 	if (txs0 & MT_TXS0_ACK_ERROR_MASK)
 		sc->sc_tx_stats.ack_errors++;
+
+	i = (txrate & MT_TX_RATE_MODE_MASK) >> MT_TX_RATE_MODE_SHIFT;
+	if (i == MT_PHY_TYPE_HT || i == MT_PHY_TYPE_HT_GF) {
+		i = txrate & MT_TX_RATE_IDX_MASK;
+		if (i < nitems(sc->sc_tx_stats.ht_mcs)) {
+			sc->sc_tx_stats.ht_mcs[i]++;
+			ni->ni_txmcs = i;
+		} else
+			sc->sc_tx_stats.unknown_rate++;
+		return;
+	}
 
 	for (i = 0; i < nitems(mt76_rates); i++) {
 		uint16_t hw_rate = mt76_rates[i].hw_value;
@@ -5330,13 +5348,13 @@ mt7921_mcu_uni_add_bss(struct mwx_softc *sc, int enable)
 
 	if (IEEE80211_IS_CHAN_2GHZ(ni->ni_chan)) {
 		req.basic.phymode = PHY_MODE_B | PHY_MODE_G;
-		if (ieee80211_node_supports_ht(ni))
+		if (ni->ni_flags & IEEE80211_NODE_HT)
 			req.basic.phymode |= PHY_MODE_GN;
 	} else {
 		req.basic.phymode = PHY_MODE_A;
-		if (ieee80211_node_supports_ht(ni))
+		if (ni->ni_flags & IEEE80211_NODE_HT)
 			req.basic.phymode |= PHY_MODE_AN;
-		if (ieee80211_node_supports_vht(ni))
+		if (ni->ni_flags & IEEE80211_NODE_VHT)
 			req.basic.phymode |= PHY_MODE_AC;
 	}
 
@@ -5970,7 +5988,7 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 	uint32_t val;
 	uint8_t type, subtype, tid = 0;
 	u_int hdrlen;
-	int data, fixed_rate = -1, multicast;
+	int data, fixed_mcs = -1, fixed_rate = -1, multicast;
 
 
 	wh = mtod(m, struct ieee80211_frame *);
@@ -5981,8 +5999,13 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 	data = (wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) ==
 	    IEEE80211_FC0_TYPE_DATA;
 	multicast = IEEE80211_IS_MULTICAST(wh->i_addr1);
-	if (!multicast && data && ic->ic_fixed_rate != -1)
-		fixed_rate = ieee80211_get_rate(ic);
+	if (!multicast && data) {
+		if ((ni->ni_flags & IEEE80211_NODE_HT) &&
+		    ic->ic_fixed_mcs != -1)
+			fixed_mcs = ic->ic_fixed_mcs;
+		else if (ic->ic_fixed_rate != -1)
+			fixed_rate = ieee80211_get_rate(ic);
+	}
 
 	if ((wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) ==
 	    IEEE80211_FC0_TYPE_CTL)
@@ -6029,7 +6052,7 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 	}
 #endif
 
-	if (multicast || !data || fixed_rate != -1) {
+	if (multicast || !data || fixed_rate != -1 || fixed_mcs != -1) {
 		/* Fixed rate is available just for 802.11 txd. */
 		uint32_t rate, val6;
 
@@ -6037,7 +6060,11 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 		/* hardware won't add HTC for mgmt/ctrl frame */
 		val |= htole32(MT_TXD2_HTC_VLD);
 
-		rate = mt7921_mac_tx_rate_val(sc, fixed_rate);
+		if (fixed_mcs != -1)
+			rate = (MT_PHY_TYPE_HT << MT_TX_RATE_MODE_SHIFT) |
+			    (fixed_mcs & MT_TX_RATE_IDX_MASK);
+		else
+			rate = mt7921_mac_tx_rate_val(sc, fixed_rate);
 
 		val6 = MT_TXD6_FIXED_BW;
 		val6 |= (rate << MT_TXD6_TX_RATE_SHIFT) & MT_TXD6_TX_RATE_MASK;
@@ -6302,7 +6329,7 @@ mt7921_get_phy_mode_v2(struct mwx_softc *sc, struct ieee80211_node *ni)
 
 	if (IEEE80211_IS_CHAN_2GHZ(ni->ni_chan)) {
 		mode |= PHY_TYPE_BIT_HR_DSSS | PHY_TYPE_BIT_ERP;
-		if (ieee80211_node_supports_ht(ni))
+		if (ni->ni_flags & IEEE80211_NODE_HT)
 			mode |= PHY_TYPE_BIT_HT;
 #ifdef NOTYET
 		if (ieee80211_node_supports_he(ni))
@@ -6310,9 +6337,9 @@ mt7921_get_phy_mode_v2(struct mwx_softc *sc, struct ieee80211_node *ni)
 #endif
 	} else if (IEEE80211_IS_CHAN_5GHZ(ni->ni_chan) /* || CHAN_6GHZ */) {
 		mode |= PHY_TYPE_BIT_OFDM;
-		if (ieee80211_node_supports_ht(ni))
+		if (ni->ni_flags & IEEE80211_NODE_HT)
 			mode |= PHY_TYPE_BIT_HT;
-		if (ieee80211_node_supports_vht(ni))
+		if (ni->ni_flags & IEEE80211_NODE_VHT)
 			mode |= PHY_TYPE_BIT_VHT;
 #ifdef NOTYET
 		if (ieee80211_node_supports_he(ni))
@@ -6494,21 +6521,25 @@ void
 mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
     struct ieee80211_node *ni, enum mt76_sta_info_state sta_state)
 {
-	//struct ieee80211com *ic = &sc->sc_ic;
+	struct ieee80211com *ic = &sc->sc_ic;
 	struct sta_rec_ra_info *ra_info;
 	struct sta_rec_state *state;
 	struct sta_rec_phy *phy;
 	uint16_t basic_rates, supp_rates;
 
-#ifdef NOTYET
 	/* sta rec ht */
-	if (sta->deflink.ht_cap.ht_supported) {
+	if (ni->ni_flags & IEEE80211_NODE_HT) {
 		struct sta_rec_ht *ht;
 
 		ht = mwx_append_tlv(m, tlvnum, STA_REC_HT, sizeof(*ht));
-		ht->ht_cap = htole16(sta->deflink.ht_cap.cap);
+		/*
+		 * HT20, long GI and one spatial stream require no optional
+		 * capability bits.
+		 */
+		ht->ht_cap = 0;
 	}
 
+#ifdef NOTYET
 	/* sta rec vht */
 	if (sta->deflink.vht_cap.vht_supported) {
 		struct sta_rec_vht *vht;
@@ -6550,23 +6581,17 @@ mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 	mt7921_mcu_get_legacy_rates(ni, &supp_rates, &basic_rates);
 	phy->basic_rate = htole16(basic_rates);
 	phy->phy_type = mt7921_get_phy_mode_v2(sc, ni);
-#ifdef NOTYET
-	phy->ampdu = FIELD_PREP(IEEE80211_HT_AMPDU_PARM_FACTOR,
-	    sta->deflink.ht_cap.ampdu_factor) |
-	    FIELD_PREP(IEEE80211_HT_AMPDU_PARM_DENSITY,
-	    sta->deflink.ht_cap.ampdu_density);
-#endif
+	if (ni->ni_flags & IEEE80211_NODE_HT)
+		phy->ampdu = ni->ni_ampdu_param &
+		    (IEEE80211_AMPDU_PARAM_LE | IEEE80211_AMPDU_PARAM_SS);
 	phy->rcpi = mt7921_mcu_get_rcpi(ni);
 
 	ra_info = mwx_append_tlv(m, tlvnum, STA_REC_RA,
 	    sizeof(*ra_info));
 	ra_info->legacy = htole16(supp_rates);
-#ifdef NOTYET
-	if (sta->deflink.ht_cap.ht_supported)
-		memcpy(ra_info->rx_mcs_bitmask,
-			sta->deflink.ht_cap.mcs.rx_mask,
-			HT_MCS_MASK_NUM);
-#endif
+	if (ni->ni_flags & IEEE80211_NODE_HT)
+		ra_info->rx_mcs_bitmask[0] =
+		    ni->ni_rxmcs[0] & ic->ic_sup_mcs[0];
 
 	state = mwx_append_tlv(m, tlvnum, STA_REC_STATE, sizeof(*state));
 	state->state = sta_state;
@@ -6580,6 +6605,9 @@ mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 		    phy->phy_type, phy->rcpi, basic_rates, supp_rates);
 		for (i = 0; i < ni->ni_rates.rs_nrates; i++)
 			printf(" 0x%02x", ni->ni_rates.rs_rates[i]);
+		if (ni->ni_flags & IEEE80211_NODE_HT)
+			printf(" ht-mcs 0x%02x",
+			    ra_info->rx_mcs_bitmask[0]);
 		printf("\n");
 	}
 #ifdef NOTYET
