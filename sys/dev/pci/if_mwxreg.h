@@ -1335,6 +1335,12 @@ struct sta_rec_ra_info {
 #define	RA_LEGACY_CCK	0x000f
 
 #define	STA_REC_STATE			0x07
+enum mt76_sta_info_state {
+	MT76_STA_INFO_STATE_NONE,
+	MT76_STA_INFO_STATE_AUTH,
+	MT76_STA_INFO_STATE_ASSOC
+};
+
 struct sta_rec_state {
 	uint16_t	tag;
 	uint16_t	len;
