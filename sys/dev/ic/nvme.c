@@ -29,6 +29,8 @@
 #include <sys/mutex.h>
 #include <sys/pool.h>
 #include <sys/disk.h>
+#include <sys/fcntl.h>
+#include <sys/dkio.h>
 
 #include <sys/atomic.h>
 
@@ -94,6 +96,8 @@ int	nvme_scsi_probe(struct scsi_link *);
 void	nvme_scsi_free(struct scsi_link *);
 uint64_t nvme_scsi_size(const struct nvm_identify_namespace *);
 int	nvme_scsi_ioctl(struct scsi_link *, u_long, caddr_t, int);
+int	nvme_scsi_discard(struct scsi_link *, struct dk_discard *);
+int	nvme_scsi_discard_error(u_int16_t);
 int	nvme_passthrough_cmd(struct nvme_softc *, struct nvme_pt_cmd *,
 	int, int);
 
@@ -157,6 +161,7 @@ static const struct nvme_ops nvme_ops = {
 
 #define NVME_TIMO_QOP			5000	/* ms to create/delete queue */
 #define NVME_TIMO_PT			5000	/* ms to complete passthrough */
+#define NVME_TIMO_DSM			100000	/* ms to deallocate ranges */
 #define NVME_TIMO_IDENT			10000	/* ms to probe/identify */
 #define NVME_TIMO_LOG_PAGE		5000	/* ms to read log pages */
 #define NVME_TIMO_DELAYNS		10	/* ns to delay() in poll loop */
@@ -949,6 +954,148 @@ nvme_scsi_size(const struct nvm_identify_namespace *ns)
 }
 
 int
+nvme_scsi_discard(struct scsi_link *link, struct dk_discard *discard)
+{
+	struct nvme_softc		*sc = link->bus->sb_adapter_softc;
+	struct nvm_identify_namespace	*ns;
+	struct nvm_namespace_format	*format;
+	struct nvm_dsm_range		*ranges, *range;
+	struct nvme_dmamem		*mem = NULL;
+	struct nvme_ccb			*ccb = NULL;
+	struct nvme_sqe			 sqe;
+	u_int64_t			 blocksize, nsblocks;
+	u_int64_t			 slba = 0, left = 0, blocks;
+	size_t				 alloclen;
+	u_int				 i = 0, nranges;
+	u_int				 lbaf;
+	int				 error = 0;
+	u_int16_t			 status;
+
+	CTASSERT(sizeof(struct nvm_dsm_range) == 16);
+
+	if (discard->nranges == 0 ||
+	    discard->nranges > DK_DISCARD_MAX_RANGES ||
+	    discard->flags != 0)
+		return EINVAL;
+	if (!ISSET(lemtoh16(&sc->sc_identify.oncs), NVM_ID_CTRL_ONCS_DSM))
+		return EOPNOTSUPP;
+	if (sc->sc_namespaces == NULL || link->target == 0 ||
+	    link->target > sc->sc_nn ||
+	    (ns = sc->sc_namespaces[link->target].ident) == NULL ||
+	    sc->sc_q == NULL)
+		return ENXIO;
+
+	lbaf = NVME_ID_NS_FLBAS(ns->flbas);
+	if (lbaf > ns->nlbaf || lbaf >= nitems(ns->lbaf))
+		return EINVAL;
+	format = &ns->lbaf[lbaf];
+	if (format->lbads >= 64)
+		return EINVAL;
+	blocksize = 1ULL << format->lbads;
+	nsblocks = nvme_scsi_size(ns);
+
+	/* Validate the complete batch before issuing the first command. */
+	for (i = 0; i < discard->nranges; i++) {
+		struct dk_discard_range *drange = &discard->ranges[i];
+
+		if (drange->length == 0 ||
+		    drange->offset % blocksize != 0 ||
+		    drange->length % blocksize != 0)
+			return EINVAL;
+
+		slba = drange->offset / blocksize;
+		blocks = drange->length / blocksize;
+		if (slba > nsblocks || blocks > nsblocks - slba)
+			return EINVAL;
+	}
+
+	alloclen = NVM_DSM_MAX_RANGES * sizeof(*ranges);
+	mem = nvme_dmamem_alloc(sc, alloclen);
+	if (mem == NULL)
+		return ENOMEM;
+	ranges = NVME_DMA_KVA(mem);
+
+	ccb = scsi_io_get(&sc->sc_iopool, 0);
+	if (ccb == NULL) {
+		error = ENOMEM;
+		goto done;
+	}
+
+	i = 0;
+	while (i < discard->nranges) {
+		memset(ranges, 0, alloclen);
+		nranges = 0;
+
+		while (i < discard->nranges &&
+		    nranges < NVM_DSM_MAX_RANGES) {
+			if (left == 0) {
+				slba = discard->ranges[i].offset / blocksize;
+				left = discard->ranges[i].length / blocksize;
+			}
+
+			blocks = MIN(left, 0xffffffffULL);
+			range = &ranges[nranges++];
+			htolem32(&range->nlb, blocks);
+			htolem64(&range->slba, slba);
+
+			slba += blocks;
+			left -= blocks;
+			if (left == 0)
+				i++;
+		}
+
+		memset(&sqe, 0, sizeof(sqe));
+		sqe.opcode = NVM_CMD_DSM;
+		htolem32(&sqe.nsid, link->target);
+		htolem64(&sqe.entry.prp[0], NVME_DMA_DVA(mem));
+		htolem32(&sqe.cdw10, nranges - 1);
+		htolem32(&sqe.cdw11, NVM_DSM_ATTR_DEALLOCATE);
+
+		ccb->ccb_done = nvme_empty_done;
+		ccb->ccb_cookie = &sqe;
+
+		nvme_dmamem_sync(sc, mem, BUS_DMASYNC_PREWRITE);
+		status = nvme_poll(sc, sc->sc_q, ccb, nvme_sqe_fill,
+		    NVME_TIMO_DSM);
+		nvme_dmamem_sync(sc, mem, BUS_DMASYNC_POSTWRITE);
+
+		error = nvme_scsi_discard_error(status);
+		if (error != 0)
+			break;
+	}
+
+done:
+	if (ccb != NULL)
+		scsi_io_put(&sc->sc_iopool, ccb);
+	nvme_dmamem_free(sc, mem);
+	return error;
+}
+
+int
+nvme_scsi_discard_error(u_int16_t status)
+{
+	if (status == 0)
+		return 0;
+	if (NVME_CQE_SCT(status) != NVME_CQE_SCT_GENERIC)
+		return EIO;
+
+	switch (NVME_CQE_SC(status)) {
+	case NVME_CQE_SC_INVALID_OPCODE:
+		return EOPNOTSUPP;
+	case NVME_CQE_SC_INVALID_FIELD:
+	case NVME_CQE_SC_LBA_RANGE:
+		return EINVAL;
+	case NVME_CQE_SC_INVALID_NS:
+	case NVME_CQE_NS_NOT_RDY:
+		return ENXIO;
+	case NVME_CQE_SC_CAP_EXCEEDED:
+		return ENOSPC;
+	default:
+		return EIO;
+	}
+}
+
+int
 nvme_passthrough_cmd(struct nvme_softc *sc, struct nvme_pt_cmd *pt, int dv_unit,
     int nsid)
 {
@@ -1027,16 +1174,24 @@ int
 nvme_scsi_ioctl(struct scsi_link *link, u_long cmd, caddr_t addr, int flag)
 {
 	struct nvme_softc		*sc = link->bus->sb_adapter_softc;
-	struct nvme_pt_cmd		*pt = (struct nvme_pt_cmd *)addr;
+	struct nvme_pt_cmd		*pt;
 	int				 rv;
 
 	switch (cmd) {
+	case DIOCDISCARD:
+		if (!ISSET(flag, FWRITE))
+			return EBADF;
+		rw_enter_write(&sc->sc_lock);
+		rv = nvme_scsi_discard(link, (struct dk_discard *)addr);
+		rw_exit_write(&sc->sc_lock);
+		return rv;
 	case NVME_PASSTHROUGH_CMD:
 		break;
 	default:
 		return ENOTTY;
 	}
 
+	pt = (struct nvme_pt_cmd *)addr;
 	if ((pt->pt_cdw10 & 0xff) == 0)
 		pt->pt_nsid = link->target;
 
