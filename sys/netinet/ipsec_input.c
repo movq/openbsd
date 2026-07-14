@@ -1,4 +1,4 @@
-/*	$OpenBSD: ipsec_input.c,v 1.221 2025/07/08 00:47:41 jsg Exp $	*/
+/*	$OpenBSD: ipsec_input.c,v 1.221.2.1 2026/07/14 13:08:20 bluhm Exp $	*/
 /*
  * The authors of this code are John Ioannidis (ji@tla.org),
  * Angelos D. Keromytis (kermit@csd.uch.gr) and
@@ -417,6 +417,10 @@ ipsec_common_input_cb(struct mbuf **mp, struct tdb *tdbp, int skip,
 			IPSEC_ISTAT(esps_hdrops, ahs_hdrops, ipcomps_hdrops);
 			goto baddone;
 		}
+		if (m->m_pkthdr.len > IP_MAXPACKET) {
+			IPSEC_ISTAT(esps_toobig, ahs_toobig, ipcomps_toobig);
+			goto baddone;
+		}
 
 		ip = mtod(m, struct ip *);
 		ip->ip_len = htons(m->m_pkthdr.len);
@@ -434,6 +438,10 @@ ipsec_common_input_cb(struct mbuf **mp, struct tdb *tdbp, int skip,
 			    ipsp_address(&tdbp->tdb_dst, buf, sizeof(buf)),
 			    ntohl(tdbp->tdb_spi));
 			IPSEC_ISTAT(esps_hdrops, ahs_hdrops, ipcomps_hdrops);
+			goto baddone;
+		}
+		if (m->m_pkthdr.len > IPV6_MAXPACKET + skip) {
+			IPSEC_ISTAT(esps_toobig, ahs_toobig, ipcomps_toobig);
 			goto baddone;
 		}
 
