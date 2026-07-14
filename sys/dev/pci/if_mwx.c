@@ -322,6 +322,13 @@ struct mwx_setkey_task_arg {
 	struct ieee80211_key	*k;
 };
 
+#define MWX_MAX_TID_COUNT	8
+
+struct mwx_ba_task_data {
+	uint16_t		start_tidmask;
+	uint16_t		stop_tidmask;
+};
+
 struct mwx_softc {
 	struct device		sc_dev;
 	struct ieee80211com	sc_ic;
@@ -354,8 +361,11 @@ struct mwx_softc {
 	struct task		sc_newstate_task;
 	struct task		sc_bgscan_done_task;
 	struct task		sc_setkey_task;
+	struct task		sc_ba_task;
 	struct task		sc_scan_task;
 	struct task		sc_reset_task;
+	struct mwx_ba_task_data	sc_ba_rx;
+	struct mwx_ba_task_data	sc_ba_tx;
 	struct timeout		sc_reset_to;
 	u_int			sc_flags;
 #define MWX_FLAG_SCANNING		0x01
@@ -531,6 +541,15 @@ void		mwx_radiotap_attach(struct mwx_softc *);
 int		mwx_newstate(struct ieee80211com *, enum ieee80211_state, int);
 void		mwx_newstate_task(void *);
 void		mwx_updateedca(struct ieee80211com *);
+int		mwx_ampdu_rx_start(struct ieee80211com *,
+		    struct ieee80211_node *, uint8_t);
+void		mwx_ampdu_rx_stop(struct ieee80211com *,
+		    struct ieee80211_node *, uint8_t);
+int		mwx_ampdu_tx_start(struct ieee80211com *,
+		    struct ieee80211_node *, uint8_t);
+void		mwx_ampdu_tx_stop(struct ieee80211com *,
+		    struct ieee80211_node *, uint8_t);
+void		mwx_ba_task(void *);
 int		mwx_scan(struct mwx_softc *);
 int		mwx_bgscan(struct ieee80211com *);
 void		mwx_bgscan_done(struct ieee80211com *,
@@ -686,6 +705,8 @@ int		 mt7921_mcu_wtbl_hdr_trans_tlv(struct mbuf *, uint16_t *,
 		    struct mwx_softc *, struct ieee80211_node *);
 int		 mt7921_mcu_wtbl_ht_tlv(struct mbuf *, uint16_t *,
 		    struct mwx_softc *, struct ieee80211_node *);
+int		 mt7921_mcu_sta_ba_update(struct mwx_softc *,
+		    struct ieee80211_node *, uint8_t, int, int);
 int		 mt7921_mac_sta_update(struct mwx_softc *,
 		    struct ieee80211_node *, int, enum mt76_sta_info_state);
 void		 mt7921_mcu_add_key_tlv(struct mbuf *, uint16_t *,
@@ -892,9 +913,12 @@ mwx_stop(struct ifnet *ifp)
 	task_del(sc->sc_nswq, &sc->sc_newstate_task);
 	task_del(sc->sc_nswq, &sc->sc_bgscan_done_task);
 	task_del(sc->sc_nswq, &sc->sc_setkey_task);
+	task_del(sc->sc_nswq, &sc->sc_ba_task);
 	task_del(sc->sc_nswq, &sc->sc_scan_task);
 	task_del(sc->sc_nswq, &sc->sc_reset_task);
 	timeout_del(&sc->sc_reset_to);
+	memset(&sc->sc_ba_rx, 0, sizeof(sc->sc_ba_rx));
+	memset(&sc->sc_ba_tx, 0, sizeof(sc->sc_ba_tx));
 
 	/* XXX need a barrier here */
 
@@ -1172,6 +1196,137 @@ mwx_updateedca(struct ieee80211com *ic)
 	rv = mt7921_mcu_set_tx(sc, &sc->sc_vif);
 	if (rv)
 		printf("%s: could not update EDCA parameters\n", DEVNAME(sc));
+}
+
+/*
+ * MCU commands wait for firmware and cannot run in the BA callback context.
+ * EBUSY leaves the agreement pending until mwx_ba_task() completes it.
+ */
+int
+mwx_ampdu_rx_start(struct ieee80211com *ic, struct ieee80211_node *ni,
+    uint8_t tid)
+{
+	struct mwx_softc *sc = ic->ic_softc;
+
+	if (tid >= MWX_MAX_TID_COUNT)
+		return EINVAL;
+	if (ic->ic_opmode != IEEE80211_M_STA || ni != ic->ic_bss)
+		return ENOTSUP;
+	if (ic->ic_state != IEEE80211_S_RUN)
+		return ENXIO;
+	if (sc->sc_ba_rx.start_tidmask & (1U << tid))
+		return EBUSY;
+
+	sc->sc_ba_rx.start_tidmask |= 1U << tid;
+	task_add(sc->sc_nswq, &sc->sc_ba_task);
+	return EBUSY;
+}
+
+void
+mwx_ampdu_rx_stop(struct ieee80211com *ic, struct ieee80211_node *ni,
+    uint8_t tid)
+{
+	struct mwx_softc *sc = ic->ic_softc;
+
+	if (tid >= MWX_MAX_TID_COUNT || ic->ic_opmode != IEEE80211_M_STA ||
+	    ni != ic->ic_bss ||
+	    (sc->sc_ba_rx.stop_tidmask & (1U << tid)))
+		return;
+
+	sc->sc_ba_rx.stop_tidmask |= 1U << tid;
+	task_add(sc->sc_nswq, &sc->sc_ba_task);
+}
+
+int
+mwx_ampdu_tx_start(struct ieee80211com *ic, struct ieee80211_node *ni,
+    uint8_t tid)
+{
+	struct mwx_softc *sc = ic->ic_softc;
+
+	if (tid >= MWX_MAX_TID_COUNT)
+		return EINVAL;
+	if (ic->ic_opmode != IEEE80211_M_STA || ni != ic->ic_bss)
+		return ENOTSUP;
+	if (ic->ic_state != IEEE80211_S_RUN)
+		return ENXIO;
+	if (sc->sc_ba_tx.start_tidmask & (1U << tid))
+		return EBUSY;
+
+	sc->sc_ba_tx.start_tidmask |= 1U << tid;
+	task_add(sc->sc_nswq, &sc->sc_ba_task);
+	return EBUSY;
+}
+
+void
+mwx_ampdu_tx_stop(struct ieee80211com *ic, struct ieee80211_node *ni,
+    uint8_t tid)
+{
+	struct mwx_softc *sc = ic->ic_softc;
+
+	if (tid >= MWX_MAX_TID_COUNT || ic->ic_opmode != IEEE80211_M_STA ||
+	    ni != ic->ic_bss ||
+	    (sc->sc_ba_tx.stop_tidmask & (1U << tid)))
+		return;
+
+	sc->sc_ba_tx.stop_tidmask |= 1U << tid;
+	task_add(sc->sc_nswq, &sc->sc_ba_task);
+}
+
+void
+mwx_ba_task(void *arg)
+{
+	struct mwx_softc *sc = arg;
+	struct ieee80211com *ic = &sc->sc_ic;
+	struct ieee80211_node *ni = ic->ic_bss;
+	int err, s, tid;
+
+	s = splnet();
+
+	for (tid = 0; tid < MWX_MAX_TID_COUNT; tid++) {
+		if (sc->sc_ba_rx.start_tidmask & (1U << tid)) {
+			struct ieee80211_rx_ba *ba = &ni->ni_rx_ba[tid];
+
+			sc->sc_ba_rx.start_tidmask &= ~(1U << tid);
+			if (ba->ba_state == IEEE80211_BA_REQUESTED &&
+			    ic->ic_state == IEEE80211_S_RUN) {
+				err = mt7921_mcu_sta_ba_update(sc, ni, tid, 1, 0);
+				if (err)
+					ieee80211_addba_req_refuse(ic, ni, tid);
+				else
+					ieee80211_addba_req_accept(ic, ni, tid);
+			}
+		}
+		if (sc->sc_ba_rx.stop_tidmask & (1U << tid)) {
+			sc->sc_ba_rx.stop_tidmask &= ~(1U << tid);
+			if (ic->ic_state == IEEE80211_S_RUN &&
+			    mt7921_mcu_sta_ba_update(sc, ni, tid, 0, 0))
+				printf("%s: could not stop RX BA session TID %d\n",
+				    DEVNAME(sc), tid);
+		}
+		if (sc->sc_ba_tx.start_tidmask & (1U << tid)) {
+			struct ieee80211_tx_ba *ba = &ni->ni_tx_ba[tid];
+
+			sc->sc_ba_tx.start_tidmask &= ~(1U << tid);
+			if (ba->ba_state == IEEE80211_BA_REQUESTED &&
+			    ic->ic_state == IEEE80211_S_RUN) {
+				err = mt7921_mcu_sta_ba_update(sc, ni, tid, 1, 1);
+				if (err)
+					ieee80211_addba_resp_refuse(ic, ni, tid,
+					    IEEE80211_STATUS_UNSPECIFIED);
+				else
+					ieee80211_addba_resp_accept(ic, ni, tid);
+			}
+		}
+		if (sc->sc_ba_tx.stop_tidmask & (1U << tid)) {
+			sc->sc_ba_tx.stop_tidmask &= ~(1U << tid);
+			if (ic->ic_state == IEEE80211_S_RUN &&
+			    mt7921_mcu_sta_ba_update(sc, ni, tid, 0, 1))
+				printf("%s: could not stop TX BA session TID %d\n",
+				    DEVNAME(sc), tid);
+		}
+	}
+
+	splx(s);
 }
 
 #ifndef IEEE80211_STA_ONLY
@@ -1888,10 +2043,7 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	/* Set device capabilities. */
 	ic->ic_caps =
 	    IEEE80211_C_QOS |		/* WMM */
-#if NOTYET
 	    IEEE80211_C_TX_AMPDU |	/* A-MPDU */
-	    IEEE80211_C_ADDBA_OFFLOAD | /* device sends ADDBA/DELBA frames */
-#endif
 	    IEEE80211_C_WEP |		/* WEP */
 	    IEEE80211_C_RSN |		/* WPA/RSN */
 	    IEEE80211_C_SCANALL |	/* device scans all channels at once */
@@ -1913,7 +2065,7 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	ic->ic_htxcaps = 0;
 	ic->ic_txbfcaps = 0;
 	ic->ic_aselcaps = 0;
-	ic->ic_ampdu_params = IEEE80211_AMPDU_PARAM_SS_NONE;
+	ic->ic_ampdu_params = IEEE80211_AMPDU_PARAM_SS_NONE | 0x3 /* 64K */;
 	ic->ic_tx_mcs_set = IEEE80211_TX_MCS_SET_DEFINED;
 	memset(ic->ic_sup_mcs, 0, sizeof(ic->ic_sup_mcs));
 	ic->ic_sup_mcs[0] = 0xff;		/* MCS 0-7 */
@@ -1963,6 +2115,10 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	ic->ic_set_key = mwx_set_key;
 	ic->ic_delete_key = mwx_delete_key;
 	ic->ic_updateedca = mwx_updateedca;
+	ic->ic_ampdu_rx_start = mwx_ampdu_rx_start;
+	ic->ic_ampdu_rx_stop = mwx_ampdu_rx_stop;
+	ic->ic_ampdu_tx_start = mwx_ampdu_tx_start;
+	ic->ic_ampdu_tx_stop = mwx_ampdu_tx_stop;
 
 	sc->sc_nswq = taskq_create("mwxns", 1, IPL_NET, 0);
 	if (sc->sc_nswq == NULL) {
@@ -1973,6 +2129,7 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	task_set(&sc->sc_newstate_task, mwx_newstate_task, sc);
 	task_set(&sc->sc_bgscan_done_task, mwx_bgscan_done_task, sc);
 	task_set(&sc->sc_setkey_task, mwx_setkey_task, sc);
+	task_set(&sc->sc_ba_task, mwx_ba_task, sc);
 	task_set(&sc->sc_scan_task, mwx_end_scan_task, sc);
 	task_set(&sc->sc_reset_task, mwx_reset_task, sc);
 	timeout_set(&sc->sc_reset_to, mwx_reset_timeo, sc);
@@ -6107,21 +6264,35 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 		tid = qos & IEEE80211_QOS_TID;
 	}
 
-#ifdef NOTYET
-	if (ieee80211_is_action(fc) &&
-	    mgmt->u.action.category == WLAN_CATEGORY_BACK &&
-	    mgmt->u.action.u.addba_req.action_code == WLAN_ACTION_ADDBA_REQ) {
-		u16 capab = le16_to_cpu(mgmt->u.action.u.addba_req.capab);
+	if ((wh->i_fc[0] & (IEEE80211_FC0_TYPE_MASK |
+	    IEEE80211_FC0_SUBTYPE_MASK)) ==
+	    (IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_ACTION) &&
+	    m->m_pkthdr.len >= hdrlen + 5) {
+		uint8_t action[5];
+		uint16_t params;
 
-		txp->txwi[5] |= htole32(MT_TXD5_ADD_BA);
-		tid = (capab >> 2) & IEEE80211_QOS_CTL_TID_MASK;
-	} else if (ieee80211_is_back_req(hdr->frame_control)) {
-		struct ieee80211_bar *bar = (struct ieee80211_bar *)hdr;
-		u16 control = le16_to_cpu(bar->control);
+		m_copydata(m, hdrlen, sizeof(action), action);
+		memcpy(&params, &action[3], sizeof(params));
+		params = le16toh(params);
+		if (action[0] == IEEE80211_CATEG_BA &&
+		    action[1] == IEEE80211_ACTION_ADDBA_REQ) {
+			tid = (params >> IEEE80211_ADDBA_TID_SHIFT) &
+			    IEEE80211_QOS_TID;
+			txp->txwi[5] |= htole32(MT_TXD5_ADD_BA);
+		}
+	} else if ((wh->i_fc[0] & (IEEE80211_FC0_TYPE_MASK |
+	    IEEE80211_FC0_SUBTYPE_MASK)) ==
+	    (IEEE80211_FC0_TYPE_CTL | IEEE80211_FC0_SUBTYPE_BAR) &&
+	    m->m_pkthdr.len >= hdrlen + 2) {
+		uint8_t barctl[2];
+		uint16_t ctl;
 
-		tid = FIELD_GET(IEEE80211_BAR_CTRL_TID_INFO_MASK, control);
+		m_copydata(m, hdrlen, sizeof(barctl), barctl);
+		memcpy(&ctl, barctl, sizeof(ctl));
+		ctl = le16toh(ctl);
+		tid = (ctl & IEEE80211_BA_TID_INFO_MASK) >>
+		    IEEE80211_BA_TID_INFO_SHIFT;
 	}
-#endif
 
 	val = MT_HDR_FORMAT_802_11 | MT_TXD1_HDR_INFO(hdrlen / 2) |
 	    MT_TXD1_TID(tid);
@@ -6787,6 +6958,84 @@ mt7921_mcu_wtbl_ht_tlv(struct mbuf *m, uint16_t *tlvnum,
 	//smps->smps = (sta->deflink.smps_mode == IEEE80211_SMPS_DYNAMIC);
 
 	return sizeof(*smps);
+}
+
+int
+mt7921_mcu_sta_ba_update(struct mwx_softc *sc, struct ieee80211_node *ni,
+    uint8_t tid, int enable, int tx)
+{
+	struct mwx_vif *mvif = &sc->sc_vif;
+	struct mwx_node *mn = (struct mwx_node *)ni;
+	struct ieee80211_tx_ba *txba;
+	struct ieee80211_rx_ba *rxba;
+	struct sta_rec_wtbl *wtbl;
+	struct wtbl_ba *wba;
+	struct sta_rec_ba *sba;
+	struct mbuf *m;
+	uint16_t ssn, tlvnum = 0, winsize, wnum = 0;
+	int rv;
+
+	if (tid >= MWX_MAX_TID_COUNT)
+		return EINVAL;
+
+	txba = &ni->ni_tx_ba[tid];
+	rxba = &ni->ni_rx_ba[tid];
+	if (tx) {
+		ssn = txba->ba_winstart;
+		winsize = txba->ba_winsize;
+	} else {
+		ssn = rxba->ba_winstart;
+		winsize = rxba->ba_winsize;
+	}
+
+	m = mwx_alloc_sta_req_tlv(sizeof(struct sta_req_hdr));
+	if (m == NULL)
+		return ENOBUFS;
+
+	wtbl = mwx_append_tlv(m, &tlvnum, STA_REC_WTBL, sizeof(*wtbl));
+	wtbl->wlan_idx_lo = mn->wcid & 0xff;
+	wtbl->wlan_idx_hi = mn->wcid >> 8;
+	wtbl->operation = WTBL_SET;
+
+	wba = mwx_append_tlv(m, &wnum, WTBL_BA, sizeof(*wba));
+	wba->tid = tid;
+	wba->ba_type = tx ? MT_BA_TYPE_ORIGINATOR : MT_BA_TYPE_RECIPIENT;
+	wba->ba_winsize = htole16(enable ? winsize : 0);
+	if (tx) {
+		wba->sn = htole16(enable ? ssn : 0);
+		wba->ba_en = enable;
+	} else {
+		memcpy(wba->peer_addr, ni->ni_macaddr,
+		    sizeof(wba->peer_addr));
+		wba->rst_ba_tid = tid;
+		wba->rst_ba_sel = RST_BA_MAC_TID_MATCH;
+		wba->rst_ba_sb = 1;
+	}
+	wtbl->tlv_num = htole16(wnum);
+	wtbl->len = htole16(le16toh(wtbl->len) + sizeof(*wba));
+
+	mwx_fill_sta_req_hdr(m, mvif, mvif->omac_idx, mn->wcid, tlvnum);
+	rv = mwx_mcu_send_mbuf_wait(sc, MCU_UNI_CMD_STA_REC_UPDATE, m);
+	if (rv)
+		return rv;
+
+	tlvnum = 0;
+	m = mwx_alloc_sta_req_tlv(sizeof(struct sta_req_hdr));
+	if (m == NULL)
+		return ENOBUFS;
+
+	sba = mwx_append_tlv(m, &tlvnum, STA_REC_BA, sizeof(*sba));
+	sba->tid = tid;
+	sba->ba_type = tx ? MT_BA_TYPE_ORIGINATOR : MT_BA_TYPE_RECIPIENT;
+	sba->ba_en = enable ? 1U << tid : 0;
+	sba->ssn = htole16(ssn);
+	sba->winsize = htole16(winsize);
+
+	mwx_fill_sta_req_hdr(m, mvif, mvif->omac_idx, mn->wcid, tlvnum);
+	DPRINTF("%s: %s %s BA session TID %u SSN %u window %u\n",
+	    DEVNAME(sc), enable ? "start" : "stop", tx ? "TX" : "RX",
+	    tid, ssn, winsize);
+	return mwx_mcu_send_mbuf_wait(sc, MCU_UNI_CMD_STA_REC_UPDATE, m);
 }
 
 int
