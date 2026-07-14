@@ -1346,6 +1346,14 @@ struct sta_rec_ra_info {
 #define	RA_LEGACY_OFDM	0x3fc0
 #define	RA_LEGACY_CCK	0x000f
 
+#define	STA_REC_HT			0x09
+struct sta_rec_ht {
+	uint16_t	tag;
+	uint16_t	len;
+	uint16_t	ht_cap;
+	uint16_t	rsv;
+} __packed;
+
 #define	STA_REC_STATE			0x07
 enum mt76_sta_info_state {
 	MT76_STA_INFO_STATE_NONE,
