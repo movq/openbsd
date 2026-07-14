@@ -220,6 +220,7 @@ struct mwx_txwi {
 	LIST_ENTRY(mwx_txwi)		mt_entry;
 	u_int32_t			mt_addr;
 	u_int				mt_idx;
+	time_t				mt_timestamp;
 	int				mt_map_loaded;
 	int				mt_busy;
 };
@@ -281,6 +282,7 @@ struct mwx_queue {
 #define	MWX_TXWI_LOMARK		32
 #define	MWX_TX_RING_STOP_RESERVE	32
 #define	MWX_TX_RING_RESTART_RESERVE	64
+#define	MWX_TX_TIMEOUT		15
 
 struct mwx_hw_capa {
 	int8_t		has_2ghz;
@@ -360,6 +362,15 @@ struct mwx_softc {
 	int			sc_coredump_cnt;
 	int8_t			sc_resetting;
 	int8_t			sc_fw_loaded;
+	int			sc_tx_timer;
+	uint64_t		sc_intr_count;
+	uint64_t		sc_intr_tx;
+	uint64_t		sc_intr_rx_data;
+	uint64_t		sc_intr_rx_mcu;
+	uint64_t		sc_mcu_events;
+	uint64_t		sc_tx_free_events;
+	uint64_t		sc_mcu_timeouts;
+	uint64_t		sc_tx_timeouts;
 
 	enum ieee80211_state	sc_ns_state;
 	int			sc_ns_arg;
@@ -535,6 +546,8 @@ int		mwx_activate(struct device *, int);
 void		mwx_reset(struct mwx_softc *);
 void		mwx_reset_timeo(void *);
 void		mwx_reset_task(void *);
+void		mwx_dump_status(struct mwx_softc *, const char *, uint32_t,
+		    int);
 int		mwx_txwi_alloc(struct mwx_softc *, int);
 void		mwx_txwi_free(struct mwx_softc *);
 struct mwx_txwi	*mwx_txwi_get(struct mwx_softc *);
@@ -833,6 +846,7 @@ mwx_init(struct ifnet *ifp)
 
 	ifp->if_flags |= IFF_RUNNING;
 	ifq_clr_oactive(&ifp->if_snd);
+	sc->sc_tx_timer = 0;
 
 	if (ic->ic_opmode == IEEE80211_M_MONITOR) {
 		ic->ic_bss->ni_chan = ic->ic_ibss_chan;
@@ -872,6 +886,7 @@ mwx_stop(struct ifnet *ifp)
 
 
 	ifp->if_timer = 0;
+	sc->sc_tx_timer = 0;
 	ifp->if_flags &= ~IFF_RUNNING;
 	ifq_clr_oactive(&ifp->if_snd);
 
@@ -884,14 +899,18 @@ mwx_stop(struct ifnet *ifp)
 		sc->sc_bgscan_arg = NULL;
 		sc->sc_bgscan_arg_size = 0;
 		if (sc->sc_flags & MWX_FLAG_SCANNING) {
-			mt7921_mcu_hw_scan_cancel(sc);
+			if (!sc->sc_resetting)
+				mt7921_mcu_hw_scan_cancel(sc);
 			sc->sc_flags &= ~MWX_FLAG_SCANNING;
 		}
 
 		mn = &sc->sc_vif.vif_mn;
-		mt7921_mcu_uni_add_dev(sc, &sc->sc_vif, mn, 0);
-		mwx_mcu_set_deep_sleep(sc, 1);
-		mt7921_mcu_set_mac_enable(sc, 0, 0);
+		if (!sc->sc_resetting)
+			mt7921_mcu_uni_add_dev(sc, &sc->sc_vif, mn, 0);
+		if (!sc->sc_resetting)
+			mwx_mcu_set_deep_sleep(sc, 1);
+		if (!sc->sc_resetting)
+			mt7921_mcu_set_mac_enable(sc, 0, 0);
 		if (mwx_dma_reset(sc, 0) != 0)
 			printf("%s: could not reset DMA while stopping\n",
 			    DEVNAME(sc));
@@ -912,7 +931,39 @@ mwx_stop(struct ifnet *ifp)
 void
 mwx_watchdog(struct ifnet *ifp)
 {
+	struct mwx_softc *sc = ifp->if_softc;
+	struct mwx_txwi_desc *txwi = &sc->sc_txwi;
+	time_t age, now = getuptime(), oldest = 0;
+	int i, txwi_capacity, txwi_used;
+
 	ifp->if_timer = 0;
+
+	txwi_capacity = txwi->mt_count - MT_PACKET_ID_FIRST;
+	txwi_used = txwi_capacity - txwi->mt_nfree;
+	for (i = MT_PACKET_ID_FIRST; i < txwi->mt_count; i++) {
+		if (!txwi->mt_data[i].mt_busy)
+			continue;
+		if (oldest == 0 ||
+		    txwi->mt_data[i].mt_timestamp < oldest)
+			oldest = txwi->mt_data[i].mt_timestamp;
+	}
+	if (txwi_used == 0) {
+		sc->sc_tx_timer = 0;
+	} else {
+		age = oldest != 0 ? now - oldest : MWX_TX_TIMEOUT;
+		if (age >= MWX_TX_TIMEOUT) {
+			sc->sc_tx_timer = 0;
+			printf("%s: device timeout, %d TXWI%s outstanding\n",
+			    DEVNAME(sc), txwi_used, txwi_used == 1 ? "" : "s");
+			sc->sc_tx_timeouts++;
+			ifp->if_oerrors++;
+			mwx_dump_status(sc, "TX timeout", 0, 0);
+			mwx_reset(sc);
+			return;
+		}
+		sc->sc_tx_timer = MAX((int)(MWX_TX_TIMEOUT - age), 1);
+		ifp->if_timer = 1;
+	}
 	ieee80211_watchdog(ifp);
 }
 
@@ -973,8 +1024,11 @@ mwx_start(struct ifnet *ifp)
 			continue;
 		}
 
-		if (ifp->if_flags & IFF_UP)
+		if (ifp->if_flags & IFF_UP) {
+			if (sc->sc_tx_timer == 0)
+				sc->sc_tx_timer = MWX_TX_TIMEOUT;
 			ifp->if_timer = 1;
+		}
 	}
 }
 
@@ -1442,6 +1496,7 @@ mwx_tx(struct mwx_softc *sc, struct mbuf *m, struct ieee80211_node *ni)
 	}
 	mt->mt_mbuf = m;
 	mt->mt_ni = ni;
+	mt->mt_timestamp = getuptime();
 
 	/* XXX DMA memory access without BUS_DMASYNC_PREWRITE */
 	txp = mt->mt_desc;
@@ -1540,6 +1595,7 @@ mwx_intr(void *arg)
 		mwx_write(sc, MT_WFDMA0_HOST_INT_ENA, mask);
 		return 0;
 	}
+	sc->sc_intr_count++;
 
 	/* TODO power management */
 //	mt76_connac_pm_ref(&dev->mphy, &dev->pm);
@@ -1559,15 +1615,23 @@ mwx_intr(void *arg)
 			intr |= MT_INT_RX_DONE_DATA;
 	}
 
-	if (intr & (MT_INT_TX_DONE_ALL | MT7925_INT_TX_DONE_ALL))
+	if (intr & (MT_INT_TX_DONE_ALL | MT7925_INT_TX_DONE_ALL)) {
+		sc->sc_intr_tx++;
 		mwx_dma_tx_done(sc);
+	}
 
-	if (intr & MT_INT_RX_DONE_WM)
+	if (intr & MT_INT_RX_DONE_WM) {
+		sc->sc_intr_rx_mcu++;
 		mwx_dma_rx_done(sc, &sc->sc_rxfwdlq);
-	if (intr & MT_INT_RX_DONE_WM2)
+	}
+	if (intr & MT_INT_RX_DONE_WM2) {
+		sc->sc_intr_rx_mcu++;
 		mwx_dma_rx_done(sc, &sc->sc_rxmcuq);
-	if (intr & MT_INT_RX_DONE_DATA)
+	}
+	if (intr & MT_INT_RX_DONE_DATA) {
+		sc->sc_intr_rx_data++;
 		mwx_dma_rx_done(sc, &sc->sc_rxq);
+	}
 
 	/* TODO power management */
 //	mt76_connac_pm_unref(&dev->mphy, &dev->pm);
@@ -1964,10 +2028,70 @@ mwx_reset_task(void *arg)
 	if (ifp->if_flags & IFF_RUNNING)
 		mwx_stop(ifp);
 
+	/*
+	 * Resets are normally requested after firmware stops responding.
+	 * Force mwx_init() through WFSYS reset and firmware reload.
+	 */
+	sc->sc_fw_loaded = 0;
 	if (!fatal && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == IFF_UP)
 		mwx_init(ifp);
 	sc->sc_resetting = 0;
 	sc->sc_coredump_cnt = 0;
+}
+
+void
+mwx_dump_status(struct mwx_softc *sc, const char *reason, uint32_t cmd, int seq)
+{
+	struct mwx_txwi_desc *txwi = &sc->sc_txwi;
+	struct mwx_queue *txq = &sc->sc_txq;
+	struct mwx_queue *mcuq = &sc->sc_txmcuq;
+	struct mwx_queue *rxq = &sc->sc_rxq;
+	uint32_t wait = 0;
+	int i, txwi_capacity, txwi_used;
+
+	for (i = 1; i < nitems(sc->sc_mcu_wait); i++) {
+		if (sc->sc_mcu_wait[i].mcu_cmd != 0)
+			wait |= 1U << i;
+	}
+	txwi_capacity = txwi->mt_count - MT_PACKET_ID_FIRST;
+	txwi_used = txwi_capacity - txwi->mt_nfree;
+
+	printf("%s: %s: cmd %08x seq %d state %d flags %x "
+	    "txwi %d/%d timer %d wait %04x\n",
+	    DEVNAME(sc), reason, cmd, seq, sc->sc_ic.ic_state,
+	    sc->sc_ic.ic_if.if_flags, txwi_used, txwi_capacity,
+	    sc->sc_tx_timer, wait);
+	printf("%s: status: fw %08x own %08x dma %08x intr %08x/%08x "
+	    "mcu %08x\n", DEVNAME(sc), mwx_read(sc, MT_CONN_ON_MISC),
+	    mwx_read(sc, MT_CONN_ON_LPCTL),
+	    mwx_read(sc, MT_WFDMA0_GLO_CFG),
+	    mwx_read(sc, MT_WFDMA0_HOST_INT_STA),
+	    mwx_read(sc, MT_WFDMA0_HOST_INT_ENA),
+	    mwx_read(sc, MT_MCU_CMD));
+	printf("%s: rings (cons/prod/cpu/dma): tx %u/%u/%u/%u "
+	    "mcu-tx %u/%u/%u/%u rx %u/%u/%u/%u\n", DEVNAME(sc),
+	    txq->mq_cons, txq->mq_prod,
+	    mwx_read(sc, txq->mq_regbase + MT_DMA_CPU_IDX),
+	    mwx_read(sc, txq->mq_regbase + MT_DMA_DMA_IDX),
+	    mcuq->mq_cons, mcuq->mq_prod,
+	    mwx_read(sc, mcuq->mq_regbase + MT_DMA_CPU_IDX),
+	    mwx_read(sc, mcuq->mq_regbase + MT_DMA_DMA_IDX),
+	    rxq->mq_cons, rxq->mq_prod,
+	    mwx_read(sc, rxq->mq_regbase + MT_DMA_CPU_IDX),
+	    mwx_read(sc, rxq->mq_regbase + MT_DMA_DMA_IDX));
+	printf("%s: progress: submitted %llu completed %llu tx-free %llu "
+	    "intr %llu tx %llu rx-data %llu rx-mcu %llu mcu-events %llu "
+	    "timeouts %llu/%llu\n", DEVNAME(sc),
+	    (unsigned long long)sc->sc_tx_stats.submitted,
+	    (unsigned long long)sc->sc_tx_stats.completed,
+	    (unsigned long long)sc->sc_tx_free_events,
+	    (unsigned long long)sc->sc_intr_count,
+	    (unsigned long long)sc->sc_intr_tx,
+	    (unsigned long long)sc->sc_intr_rx_data,
+	    (unsigned long long)sc->sc_intr_rx_mcu,
+	    (unsigned long long)sc->sc_mcu_events,
+	    (unsigned long long)sc->sc_tx_timeouts,
+	    (unsigned long long)sc->sc_mcu_timeouts);
 }
 
 int
@@ -2123,6 +2247,7 @@ mwx_txwi_put(struct mwx_softc *sc, struct mwx_txwi *mt)
 		ieee80211_release_node(&sc->sc_ic, mt->mt_ni);
 		mt->mt_ni = NULL;
 	}
+	mt->mt_timestamp = 0;
 
 	memset(mt->mt_desc, 0, sizeof(*mt->mt_desc));
 	mt->mt_busy = 0;
@@ -3060,7 +3185,9 @@ printf("%s: %s: cmd %08x\n", DEVNAME(sc), __func__, cmd);
 	}
 	splx(s);
 	if (rv != 0) {
-		memset(&sc->sc_mcu_wait[seq], 0, sizeof(sc->sc_mcu_wait[0]));
+		if (cmd != MCU_CMD_FW_SCATTER && seqp != NULL)
+			memset(&sc->sc_mcu_wait[seq], 0,
+			    sizeof(sc->sc_mcu_wait[0]));
 		m_freem(m);
 	}
 	return rv;
@@ -3113,6 +3240,7 @@ mwx_mcu_rx_event(struct mwx_softc *sc, struct mbuf *m)
 
 	rxd_size = (sc->sc_hwtype == MWX_HW_MT7925) ?
 	    MT7925_MCU_RXD_SIZE : MT7921_MCU_RXD_SIZE;
+	sc->sc_mcu_events++;
 
 	if ((m = m_pullup(m, sizeof(*rxd) + rxd_size)) == NULL)
 		return;
@@ -3227,23 +3355,31 @@ int
 mwx_mcu_wait_resp_int(struct mwx_softc *sc, uint32_t cmd, int seq,
     uint32_t *val)
 {
-	int rv;
+	int rv = 0, s;
 
 	KASSERT(seq < nitems(sc->sc_mcu_wait));
 
-	rv = tsleep_nsec(&sc->sc_mcu_wait[seq], 0, "mwxwait", SEC_TO_NSEC(3));
+	s = splnet();
+	while (sc->sc_mcu_wait[seq].mcu_m == NULL && rv == 0) {
+		rv = tsleep_nsec(&sc->sc_mcu_wait[seq], 0, "mwxwait",
+		    SEC_TO_NSEC(3));
+	}
 	if (rv != 0) {
 		printf("%s: command %x timeout\n", DEVNAME(sc), cmd);
+		sc->sc_mcu_timeouts++;
+		mwx_dump_status(sc, "MCU timeout", cmd, seq);
+		memset(&sc->sc_mcu_wait[seq], 0,
+		    sizeof(sc->sc_mcu_wait[seq]));
+		splx(s);
 		mwx_reset(sc);
 		return rv;
 	}
 
-	if (sc->sc_mcu_wait[seq].mcu_m != NULL) {
-		m_freem(sc->sc_mcu_wait[seq].mcu_m);
-		sc->sc_mcu_wait[seq].mcu_m = NULL;
-	}
+	m_freem(sc->sc_mcu_wait[seq].mcu_m);
 	if (val != NULL)
 		*val = sc->sc_mcu_wait[seq].mcu_int;
+	memset(&sc->sc_mcu_wait[seq], 0, sizeof(sc->sc_mcu_wait[seq]));
+	splx(s);
 	return 0;
 }
 
@@ -3251,25 +3387,31 @@ int
 mwx_mcu_wait_resp_msg(struct mwx_softc *sc, uint32_t cmd, int seq,
     struct mbuf **mp)
 {
-	int rv;
+	int rv = 0, s;
 
 	KASSERT(seq < nitems(sc->sc_mcu_wait));
 
-	rv = tsleep_nsec(&sc->sc_mcu_wait[seq], 0, "mwxwait", SEC_TO_NSEC(3));
+	s = splnet();
+	while (sc->sc_mcu_wait[seq].mcu_m == NULL && rv == 0) {
+		rv = tsleep_nsec(&sc->sc_mcu_wait[seq], 0, "mwxwait",
+		    SEC_TO_NSEC(3));
+	}
 	if (rv != 0) {
 		printf("%s: command %x timeout\n", DEVNAME(sc), cmd);
+		sc->sc_mcu_timeouts++;
+		mwx_dump_status(sc, "MCU timeout", cmd, seq);
+		memset(&sc->sc_mcu_wait[seq], 0,
+		    sizeof(sc->sc_mcu_wait[seq]));
+		splx(s);
 		mwx_reset(sc);
 		return rv;
-	}
-	if (sc->sc_mcu_wait[seq].mcu_m == NULL) {
-		printf("%s: command response missing\n", DEVNAME(sc));
-		return ENOENT;
 	}
 	if (mp != NULL)
 		*mp = sc->sc_mcu_wait[seq].mcu_m;
 	else
 		m_freem(sc->sc_mcu_wait[seq].mcu_m);
-	sc->sc_mcu_wait[seq].mcu_m = NULL;
+	memset(&sc->sc_mcu_wait[seq], 0, sizeof(sc->sc_mcu_wait[seq]));
+	splx(s);
 	return 0;
 }
 
@@ -6048,6 +6190,7 @@ void
 mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 {
 	struct ieee80211com *ic = &sc->sc_ic;
+	struct ifnet *ifp = &ic->ic_if;
 	struct ieee80211_node *ni;
 	struct mwx_node *mn;
 	struct mwx_txwi *mt;
@@ -6057,6 +6200,7 @@ mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 
 	/* first cleanup the TX dma rings */
 	mwx_dma_tx_cleanup(sc, &sc->sc_txq);
+	sc->sc_tx_free_events++;
 
 	if ((m = m_pullup(m, m->m_pkthdr.len)) == NULL)
 		return;
@@ -6120,6 +6264,13 @@ mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 	}
 
 	m_freem(m);
+	if (sc->sc_txwi.mt_nfree ==
+	    sc->sc_txwi.mt_count - MT_PACKET_ID_FIRST) {
+		sc->sc_tx_timer = 0;
+	} else {
+		if (ifp->if_flags & IFF_UP)
+			ifp->if_timer = 1;
+	}
 	mwx_tx_restart(sc);
 }
 
