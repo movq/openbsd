@@ -843,6 +843,7 @@ struct mt76_txwi {
 /* VHT/HE only use bits 0-3 */
 #define	MT_TX_RATE_IDX_MASK			0x0000003f
 
+#define	MT_TXS0_FIXED_RATE			0x80000000
 #define	MT_TXS0_BW_MASK			0x60000000
 #define	MT_TXS0_BW_SHIFT			29
 #define	MT_TXS0_TXS_FORMAT_MASK			0x01800000
