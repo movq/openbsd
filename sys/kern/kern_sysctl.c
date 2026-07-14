@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_sysctl.c,v 1.483 2025/09/23 08:00:48 mpi Exp $	*/
+/*	$OpenBSD: kern_sysctl.c,v 1.483.2.1 2026/07/14 12:12:33 bluhm Exp $	*/
 /*	$NetBSD: kern_sysctl.c,v 1.17 1996/05/20 17:49:05 mrg Exp $	*/
 
 /*-
@@ -2657,6 +2657,24 @@ sysctl_diskinit(int update, struct proc *p)
 }
 
 #if defined(SYSVMSG) || defined(SYSVSEM) || defined(SYSVSHM)
+/*
+ * In-kernel semaphore implementation
+ */
+struct semid_ds_kern {
+	struct ipc_perm	sem_perm;	/* operation permission struct */
+	struct sem	*sem_base;	/* pointer to first semaphore in set */
+	unsigned short	sem_nsems;	/* number of sems in set */
+	time_t		sem_otime;	/* last operation time */
+	time_t		sem_ctime;	/* last change time */
+	    				/* Times measured in secs since */
+	    				/* 00:00:00 GMT, Jan. 1, 1970 */
+	struct refcnt	sem_refcnt;
+};
+
+/* rename sema for stable as it is declared as struct semid_ds in sem.h */
+extern struct semid_ds_kern **sema_kern;
+#define sema sema_kern
+
 int
 sysctl_sysvipc(int *name, u_int namelen, void *where, size_t *sizep)
 {
@@ -2746,20 +2764,26 @@ sysctl_sysvipc(int *name, u_int namelen, void *where, size_t *sizep)
 			switch (*name) {
 #ifdef SYSVSEM
 			case KERN_SYSVIPC_SEM_INFO:
-				if (sema[i] != NULL)
-					memcpy(&semsi->semids[i], sema[i],
-					    dssize);
-				else
-					memset(&semsi->semids[i], 0, dssize);
+				if (sema[i] != NULL) {
+					semsi->semids[i].sem_perm =
+					    sema[i]->sem_perm;
+					semsi->semids[i].sem_nsems =
+					    sema[i]->sem_nsems;
+					semsi->semids[i].sem_otime =
+					    sema[i]->sem_otime;
+					semsi->semids[i].sem_ctime =
+					    sema[i]->sem_ctime;
+				}
 				break;
 #endif
 #ifdef SYSVSHM
 			case KERN_SYSVIPC_SHM_INFO:
-				if (shmsegs[i] != NULL)
-					memcpy(&shmsi->shmids[i], shmsegs[i],
-					    dssize);
-				else
-					memset(&shmsi->shmids[i], 0, dssize);
+				if (shmsegs[i] != NULL) {
+ 					memcpy(&shmsi->shmids[i], shmsegs[i],
+ 					    dssize);
+					shmsi->shmids[i].shm_internal = NULL;
+				}
+
 				break;
 #endif
 			}

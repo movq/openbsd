@@ -1,4 +1,4 @@
-/*	$OpenBSD: sysv_shm.c,v 1.81 2024/11/05 15:34:30 mpi Exp $	*/
+/*	$OpenBSD: sysv_shm.c,v 1.81.2.1 2026/07/14 12:12:33 bluhm Exp $	*/
 /*	$NetBSD: sysv_shm.c,v 1.50 1998/10/21 22:24:29 tron Exp $	*/
 
 /*
@@ -85,6 +85,10 @@ struct shmid_ds *shm_find_segment_by_shmid(int);
  * shmsegs (an array of 'struct shmid_ds *')
  * per proc 'struct shmmap_head' with an array of 'struct shmmap_state'
  */
+
+/* Limit to prevent chunk size overflow in sys_shmat() */
+#define SHMSEG_MAX \
+    ((0xffffffff - sizeof(int)) / sizeof(struct shmmap_state) / 8)
 
 #define	SHMSEG_REMOVED  	0x0200		/* can't overlap ACCESSPERMS */
 
@@ -224,17 +228,30 @@ sys_shmat(struct proc *p, void *v, register_t *retval)
 
 	shmmap_h = (struct shmmap_head *)p->p_vmspace->vm_shm;
 	if (shmmap_h == NULL) {
+		struct shmmap_head *shmmap_h_probe;
+		int shmseg_local = atomic_load_int(&shminfo.shmseg);
+
 		size = sizeof(int) +
-		    shminfo.shmseg * sizeof(struct shmmap_state);
+		    shmseg_local * sizeof(struct shmmap_state);
 		shmmap_h = malloc(size, M_SHM, M_WAITOK | M_CANFAIL);
 		if (shmmap_h == NULL)
 			return (ENOMEM);
-		shmmap_h->shmseg = shminfo.shmseg;
+
+		shmmap_h_probe =
+		    (struct shmmap_head *)READ_ONCE(p->p_vmspace->vm_shm);
+		if (shmmap_h_probe != NULL) {
+			free(shmmap_h, M_SHM, size);
+			shmmap_h = shmmap_h_probe;
+			goto allocated;
+		}
+
+		shmmap_h->shmseg = shmseg_local;
 		for (i = 0, shmmap_s = shmmap_h->state; i < shmmap_h->shmseg;
 		    i++, shmmap_s++)
 			shmmap_s->shmid = -1;
 		p->p_vmspace->vm_shm = (caddr_t)shmmap_h;
 	}
+allocated:
 	shmseg = shm_find_segment_by_shmid(SCARG(uap, shmid));
 	if (shmseg == NULL)
 		return (EINVAL);
@@ -414,10 +431,10 @@ shmget_allocate_segment(struct proc *p,
 	 * the key we want in the meantime.  Yes, this is ugly.
 	 */
 	key = SCARG(uap, key);
-	shmseg = pool_get(&shm_pool, key == IPC_PRIVATE ? PR_WAITOK :
-	    PR_NOWAIT);
+	shmseg = pool_get(&shm_pool,
+	    (key == IPC_PRIVATE ? PR_WAITOK : PR_NOWAIT) | PR_ZERO);
 	if (shmseg == NULL) {
-		shmseg = pool_get(&shm_pool, PR_WAITOK);
+		shmseg = pool_get(&shm_pool, PR_WAITOK | PR_ZERO);
 		if (shm_find_segment_by_key(key) != -1) {
 			pool_put(&shm_pool, shmseg);
 			shm_nused--;
@@ -609,7 +626,7 @@ sysctl_sysvshm(int *name, u_int namelen, void *oldp, size_t *oldlenp,
 		return (0);
 	case KERN_SHMINFO_SHMSEG:
 		return (sysctl_int_bounded(oldp, oldlenp, newp, newlen,
-		    &shminfo.shmseg, 1, INT_MAX));
+		    &shminfo.shmseg, 1, SHMSEG_MAX));
 	case KERN_SHMINFO_SHMALL:
 		/* can't decrease shmall */
 		return (sysctl_int_bounded(oldp, oldlenp, newp, newlen,
