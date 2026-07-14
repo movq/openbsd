@@ -277,8 +277,10 @@ struct mwx_queue {
 	int				mq_wakeme;
 };
 
-#define	MWX_TX_STOP_RESERVE	32
-#define	MWX_TX_RESTART_RESERVE	64
+#define	MWX_TXWI_HIMARK		64
+#define	MWX_TXWI_LOMARK		32
+#define	MWX_TX_RING_STOP_RESERVE	32
+#define	MWX_TX_RING_RESTART_RESERVE	64
 
 struct mwx_hw_capa {
 	int8_t		has_2ghz;
@@ -2535,19 +2537,19 @@ mwx_dma_queued(struct mwx_queue *q)
 }
 
 static inline int
-mwx_tx_himark(int capacity)
+mwx_tx_ring_himark(int capacity)
 {
-	if (capacity <= MWX_TX_STOP_RESERVE)
+	if (capacity <= MWX_TX_RING_STOP_RESERVE)
 		return capacity;
-	return capacity - MWX_TX_STOP_RESERVE;
+	return capacity - MWX_TX_RING_STOP_RESERVE;
 }
 
 static inline int
-mwx_tx_lowmark(int capacity)
+mwx_tx_ring_lowmark(int capacity)
 {
-	if (capacity <= MWX_TX_RESTART_RESERVE)
+	if (capacity <= MWX_TX_RING_RESTART_RESERVE)
 		return capacity / 2;
-	return capacity - MWX_TX_RESTART_RESERVE;
+	return capacity - MWX_TX_RING_RESTART_RESERVE;
 }
 
 int
@@ -2559,8 +2561,8 @@ mwx_tx_resources_full(struct mwx_softc *sc)
 	int txwi_used = txwi_capacity - txwi->mt_nfree;
 	int ring_capacity = ring->mq_count - 1;
 
-	return txwi_used >= mwx_tx_himark(txwi_capacity) ||
-	    mwx_dma_queued(ring) >= mwx_tx_himark(ring_capacity);
+	return txwi_used >= MIN(MWX_TXWI_HIMARK, txwi_capacity) ||
+	    mwx_dma_queued(ring) >= mwx_tx_ring_himark(ring_capacity);
 }
 
 void
@@ -2577,8 +2579,8 @@ mwx_tx_restart(struct mwx_softc *sc)
 	if (!(ifp->if_flags & IFF_RUNNING) ||
 	    !ifq_is_oactive(&ifp->if_snd))
 		return;
-	if (txwi_used >= mwx_tx_lowmark(txwi_capacity) ||
-	    mwx_dma_queued(ring) >= mwx_tx_lowmark(ring_capacity))
+	if (txwi_used > MIN(MWX_TXWI_LOMARK, txwi_capacity / 2) ||
+	    mwx_dma_queued(ring) >= mwx_tx_ring_lowmark(ring_capacity))
 		return;
 
 	ifq_clr_oactive(&ifp->if_snd);
