@@ -36,7 +36,7 @@ optional HT features:
 - 20 MHz only.
 - Long guard interval only.
 - No LDPC, STBC, greenfield, or A-MSDU.
-- No QoS, TX A-MPDU, or firmware ADDBA offload.
+- No TX A-MPDU or firmware ADDBA offload.
 
 When net80211 negotiates HT, the associated AP station record includes
 `STA_REC_HT`, `PHY_TYPE_BIT_HT`, and the intersection of the AP's receive MCS
@@ -49,9 +49,39 @@ The selected channel remains `CMD_CBW_20MHZ` because no 40 MHz or wider
 channel flags are advertised. Legacy association remains available when HT
 negotiation is rejected, including for incompatible cipher configurations.
 
-This is only the unaggregated HT PHY baseline. QoS and block-ack handling are
-still required before enabling A-MPDU, and wider channels and additional
-spatial streams remain later stages.
+This is only the unaggregated HT PHY baseline. Block-ack handling is still
+required before enabling A-MPDU, and wider channels and additional spatial
+streams remain later stages.
+
+## WMM QoS Implementation
+
+The driver now advertises `IEEE80211_C_QOS` independently of the still-disabled
+TX A-MPDU and firmware ADDBA capabilities. This lets net80211 include WMM
+information during association and negotiate QoS with the AP without starting
+block-ack sessions.
+
+The associated AP's QoS state is passed in the BSS, station, and WTBL firmware
+records. The firmware EDCA command is populated from net80211's negotiated
+`ic_edca_ac[]` parameters:
+
+- ECWmin and ECWmax exponents are converted to contention windows with
+  `2^ECW - 1`.
+- AIFSN and TXOP are passed in the units used by net80211 and mt76.
+- BE/BK/VI/VO parameters are placed in the firmware's ACI order.
+- Association-time parameters are programmed while entering RUN.
+- EDCA changes received in later beacons are programmed through
+  `ic_updateedca`.
+
+TX descriptors now select the LMAC access-category queue from a QoS frame's
+TID, including net80211's admission-control downgrade. The OpenBSD AC values
+are explicitly mapped to the LMAC's BK/BE/VI/VO queue order. Non-QoS frames
+use BE.
+
+OpenBSD net80211 intentionally emits QoS Data frames only after a TX block-ack
+agreement has been established. As a result, ordinary payload remains on BE
+during this pre-A-MPDU stage even though WMM negotiation and firmware EDCA
+configuration are active. The queue mapping will begin handling per-TID data
+when the subsequent A-MPDU stage enables and negotiates block ack.
 
 ## Original Findings
 

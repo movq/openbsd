@@ -524,6 +524,7 @@ void		mwx_radiotap_attach(struct mwx_softc *);
 
 int		mwx_newstate(struct ieee80211com *, enum ieee80211_state, int);
 void		mwx_newstate_task(void *);
+void		mwx_updateedca(struct ieee80211com *);
 int		mwx_scan(struct mwx_softc *);
 int		mwx_bgscan(struct ieee80211com *);
 void		mwx_bgscan_done(struct ieee80211com *,
@@ -1138,6 +1139,27 @@ mwx_newassoc(struct ieee80211com *ic, struct ieee80211_node *ni, int isnew)
 	/* XXX TODO rate handling here */
 }
 
+void
+mwx_updateedca(struct ieee80211com *ic)
+{
+	struct mwx_softc *sc = ic->ic_softc;
+	struct ifnet *ifp = &ic->ic_if;
+	int rv;
+
+	/*
+	 * Association responses update EDCA before the RUN transition.  The
+	 * transition programs those parameters after the BSS has been added.
+	 */
+	if (!(ifp->if_flags & IFF_RUNNING) ||
+	    ic->ic_state != IEEE80211_S_RUN ||
+	    task_pending(&sc->sc_newstate_task))
+		return;
+
+	rv = mt7921_mcu_set_tx(sc, &sc->sc_vif);
+	if (rv)
+		printf("%s: could not update EDCA parameters\n", DEVNAME(sc));
+}
+
 #ifndef IEEE80211_STA_ONLY
 void
 mwx_node_leave(struct ieee80211com *ic, struct ieee80211_node *ni)
@@ -1242,6 +1264,9 @@ mwx_newstate_task(void *ptr)
 			break;
 		rv = mt7921_mac_sta_update(sc, NULL, 1,
 		    MT76_STA_INFO_STATE_NONE);
+		if (rv)
+			break;
+		rv = mt7921_mcu_set_tx(sc, &sc->sc_vif);
 		if (rv)
 			break;
 		memset(&sc->sc_tx_stats, 0, sizeof(sc->sc_tx_stats));
@@ -1842,8 +1867,9 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 
 	/* Set device capabilities. */
 	ic->ic_caps =
+	    IEEE80211_C_QOS |		/* WMM */
 #if NOTYET
-	    IEEE80211_C_QOS | IEEE80211_C_TX_AMPDU | /* A-MPDU */
+	    IEEE80211_C_TX_AMPDU |	/* A-MPDU */
 	    IEEE80211_C_ADDBA_OFFLOAD | /* device sends ADDBA/DELBA frames */
 #endif
 	    IEEE80211_C_WEP |		/* WEP */
@@ -1916,6 +1942,7 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	ic->ic_bgscan_done = mwx_bgscan_done;
 	ic->ic_set_key = mwx_set_key;
 	ic->ic_delete_key = mwx_delete_key;
+	ic->ic_updateedca = mwx_updateedca;
 
 	sc->sc_nswq = taskq_create("mwxns", 1, IPL_NET, 0);
 	if (sc->sc_nswq == NULL) {
@@ -5451,10 +5478,11 @@ mt7921_mcu_set_bss_pm(struct mwx_softc *sc, int enable)
 	return rv;
 }
 
-#define IEEE80211_NUM_ACS	4
 int
 mt7921_mcu_set_tx(struct mwx_softc *sc, struct mwx_vif *mvif)
 {
+	struct ieee80211com *ic = &sc->sc_ic;
+	struct ieee80211_node *ni = ic->ic_bss;
 	struct edca {
 		uint16_t	cw_min;
 		uint16_t	cw_max;
@@ -5464,14 +5492,15 @@ mt7921_mcu_set_tx(struct mwx_softc *sc, struct mwx_vif *mvif)
 		uint8_t		acm;
 	} __packed;
 	struct mt7921_mcu_tx {
-		struct edca	edca[IEEE80211_NUM_ACS];
+		struct edca	edca[EDCA_NUM_AC];
 		uint8_t		bss_idx;
 		uint8_t		qos;
 		uint8_t		wmm_idx;
 		uint8_t		pad;
 	} __packed req = {
 		.bss_idx = mvif->idx,
-		.qos = /* vif->bss_conf.qos */ 0,
+		.qos = (ic->ic_flags & IEEE80211_F_QOS) != 0 &&
+		    ni != NULL && (ni->ni_flags & IEEE80211_NODE_QOS) != 0,
 		.wmm_idx = mvif->wmm_idx,
 	};
 #ifdef NOTYET
@@ -5491,7 +5520,7 @@ mt7921_mcu_set_tx(struct mwx_softc *sc, struct mwx_vif *mvif)
 		uint8_t		qos;
 		uint8_t		wmm_idx;
 		uint8_t		pad1;
-		struct mu_edca	edca[IEEE80211_NUM_ACS];
+		struct mu_edca	edca[EDCA_NUM_AC];
 		uint8_t		pad3[32];
 	} __packed req_mu = {
 		.bss_idx = mvif->mt76.idx,
@@ -5499,29 +5528,22 @@ mt7921_mcu_set_tx(struct mwx_softc *sc, struct mwx_vif *mvif)
 		.wmm_idx = mvif->mt76.wmm_idx,
 	};
 #endif
-	static const int to_aci[] = { 1, 0, 2, 3 };
 	int ac, rv;
 
-	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
-		//struct ieee80211_tx_queue_params *q = &mvif->queue_params[ac];
-		struct edca *e = &req.edca[to_aci[ac]];
+	for (ac = 0; ac < EDCA_NUM_AC; ac++) {
+		const struct ieee80211_edca_ac_params *q = &ic->ic_edca_ac[ac];
+		struct edca *e = &req.edca[ac];
 
-		e->aifs = htole16(/* q->aifs */ 2);
-		e->txop = htole16(/* q->txop */ 0);
+		e->aifs = htole16(q->ac_aifsn);
+		e->txop = htole16(q->ac_txoplimit);
+		e->cw_min = htole16((1U << q->ac_ecwmin) - 1);
+		e->cw_max = htole16((1U << q->ac_ecwmax) - 1);
 
-#ifdef NOTYET
-		if (q->cw_min)
-			e->cw_min = htole16(q->cw_min);
-		else
-#endif
-			e->cw_min = htole16(5);
-
-#ifdef NOTYET
-		if ( q->cw_max)
-			e->cw_max = htole16(q->cw_max);
-		else
-#endif
-			e->cw_max = htole16(10);
+		DPRINTF("%s: EDCA ac %d aifs %u cwmin %u cwmax %u "
+		    "txop %u acm %u\n", DEVNAME(sc), ac, q->ac_aifsn,
+		    (1U << q->ac_ecwmin) - 1,
+		    (1U << q->ac_ecwmax) - 1, q->ac_txoplimit,
+		    q->ac_acm);
 	}
 
 	rv = mwx_mcu_send_msg(sc, MCU_CE_CMD_SET_EDCA_PARMS, &req,
@@ -5533,7 +5555,7 @@ mt7921_mcu_set_tx(struct mwx_softc *sc, struct mwx_vif *mvif)
 	if (!vif->bss_conf.he_support)
 		return 0;
 
-	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
+	for (ac = 0; ac < EDCA_NUM_AC; ac++) {
 		struct ieee80211_he_mu_edca_param_ac_rec *q;
 		struct mu_edca *e;
 
@@ -5541,7 +5563,7 @@ mt7921_mcu_set_tx(struct mwx_softc *sc, struct mwx_vif *mvif)
 			break;
 
 		q = &mvif->queue_params[ac].mu_edca_param_rec;
-		e = &(req_mu.edca[to_aci[ac]]);
+		e = &(req_mu.edca[ac]);
 
 		e->cw_min = q->ecw_min_max & 0xf;
 		e->cw_max = (q->ecw_min_max & 0xf0) >> 4;
@@ -6138,19 +6160,28 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 }
 
 static inline uint8_t
-mt7921_lmac_mapping(uint8_t ac)
+mt7921_lmac_mapping(enum ieee80211_edca_ac ac)
 {
-	/* LMAC uses the reverse order of mac80211 AC indexes */
-	return 3 - ac;
+	static const uint8_t ac_to_lmac[EDCA_NUM_AC] = {
+		[EDCA_AC_BE] = 1,
+		[EDCA_AC_BK] = 0,
+		[EDCA_AC_VI] = 2,
+		[EDCA_AC_VO] = 3,
+	};
+
+	KASSERT(ac < EDCA_NUM_AC);
+	return ac_to_lmac[ac];
 }
 
 void
 mt7921_mac_write_txwi(struct mwx_softc *sc, struct mbuf *m,
     struct ieee80211_node *ni, struct mt76_txwi *txp)
 {
+	struct ieee80211com *ic = &sc->sc_ic;
 	struct mwx_node *mn = (void *)ni;
 	struct ieee80211_frame *wh;
 	uint32_t val, p_fmt, omac_idx;
+	enum ieee80211_edca_ac ac;
 	uint8_t q_idx, wmm_idx, band_idx;
 	uint8_t phy_idx = 0;
 	/* XXX hardcoded and wrong */
@@ -6161,6 +6192,10 @@ mt7921_mac_write_txwi(struct mwx_softc *sc, struct mbuf *m,
 	omac_idx = sc->sc_vif.omac_idx << MT_TXD1_OWN_MAC_SHIFT;
 	wmm_idx = sc->sc_vif.wmm_idx;
 	band_idx = sc->sc_vif.band_idx;
+	ac = EDCA_AC_BE;
+	if (ieee80211_has_qos(wh))
+		ac = ieee80211_up_to_ac(ic,
+		    ieee80211_get_qos(wh) & IEEE80211_QOS_TID);
 
 	if (qid >= MT_TXQ_PSD) {
 		p_fmt = MT_TX_TYPE_CT;
@@ -6168,7 +6203,7 @@ mt7921_mac_write_txwi(struct mwx_softc *sc, struct mbuf *m,
 	} else {
 		p_fmt = MT_TX_TYPE_CT;
 		q_idx = wmm_idx * MWX_MAX_WMM_SETS +
-		    mt7921_lmac_mapping(/* skb_get_queue_mapping(skb) */ 0);
+		    mt7921_lmac_mapping(ac);
 
 #ifdef NOTYET
 		/* counting non-offloading skbs */
