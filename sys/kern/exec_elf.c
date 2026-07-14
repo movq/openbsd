@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec_elf.c,v 1.194 2025/09/20 13:53:36 mpi Exp $	*/
+/*	$OpenBSD: exec_elf.c,v 1.194.2.1 2026/07/14 11:51:09 bluhm Exp $	*/
 
 /*
  * Copyright (c) 1996 Per Fogelstrom
@@ -88,7 +88,6 @@
 #include <uvm/uvm_extern.h>
 
 #include <machine/reg.h>
-#include <machine/exec.h>
 #include <machine/elf.h>
 
 int	elf_load_file(struct proc *, char *, struct exec_package *,
@@ -357,7 +356,7 @@ elf_load_file(struct proc *p, char *path, struct exec_package *epp,
 	} loadmap[ELF_MAX_VALID_PHDR];
 	int nload, idx = 0;
 	Elf_Addr pos;
-	int file_align;
+	Elf_Off file_align = PAGE_SIZE;
 	int loop;
 	size_t randomizequota = ELF_RANDOMIZE_LIMIT;
 	vaddr_t text_start = -1, text_end = 0;
@@ -410,11 +409,16 @@ elf_load_file(struct proc *p, char *path, struct exec_package *epp,
 			loadmap[idx].vaddr = trunc_page(ph[i].p_vaddr);
 			loadmap[idx].memsz = round_page (ph[i].p_vaddr +
 			    ph[i].p_memsz - loadmap[idx].vaddr);
-			file_align = ph[i].p_align;
+			if (ph[i].p_align > file_align)
+				file_align = ph[i].p_align;
 			idx++;
 		}
 	}
 	nload = idx;
+	if (nload == 0) {
+		error = EINVAL;
+		goto bad1;
+	}
 
 	/*
 	 * Load the interpreter where a non-fixed mmap(NULL, ...)
@@ -737,10 +741,6 @@ exec_elf_makecmds(struct proc *p, struct exec_package *epp)
 			} else
 				addr = ELF_NO_ADDR;
 
-			/* Static binaries may not call pinsyscalls() */
-			if (interp == NULL)
-				p->p_vmspace->vm_map.flags |= VM_MAP_PINSYSCALL_ONCE;
-
 			/*
 			 * Calculates size of text and data segments
 			 * by starting at first and going to end of last.
@@ -943,16 +943,18 @@ exec_elf_fixup(struct proc *p, struct exec_package *epp)
 	struct	elf_args *ap;
 	AuxInfo ai[ELF_AUX_ENTRIES], *a;
 
+	interp = epp->ep_interp;
+
+	/* disable kbind() and pinsyscalls() in programs that don't use ld.so */
+	if (interp == NULL) {
+		p->p_p->ps_kbind_addr = BOGO_PC;
+		p->p_vmspace->vm_map.flags |= VM_MAP_PINSYSCALL_ONCE;
+	}
+
 	ap = epp->ep_args;
 	if (ap == NULL) {
 		return (0);
 	}
-
-	interp = epp->ep_interp;
-
-	/* disable kbind in programs that don't use ld.so */
-	if (interp == NULL)
-		p->p_p->ps_kbind_addr = BOGO_PC;
 
 	if (interp &&
 	    (error = elf_load_file(p, interp, epp, ap)) != 0) {
@@ -1038,7 +1040,7 @@ elf_os_pt_note_name(Elf_Note *np, int *typep)
 
 	for (i = 0; i < nitems(elf_note_names); i++) {
 		size_t namlen = strlen(elf_note_names[i].name);
-		if (np->namesz < namlen)
+		if (np->namesz <= namlen)
 			continue;
 		/* verify name padding (after the NUL) is NUL */
 		for (j = namlen + 1; j < elfround(np->namesz); j++)
@@ -1096,14 +1098,26 @@ elf_os_pt_note(struct proc *p, struct exec_package *epp, Elf_Ehdr *eh, int *name
 
 		for (offset = 0; offset < ph->p_filesz; offset += total) {
 			Elf_Note *np2 = (Elf_Note *)((char *)np + offset);
+			size_t remaining = ph->p_filesz - offset;
 			int name, type;
 
-			if (offset + sizeof(Elf_Note) > ph->p_filesz)
+			if (sizeof(Elf_Note) > remaining)
 				break;
+			remaining -= sizeof(Elf_Note);
+
+			if (elfround(np2->namesz) < np2->namesz ||
+			    elfround(np2->descsz) < np2->descsz)
+				break;
+
+			if (elfround(np2->namesz) > remaining)
+				break;
+			remaining -= elfround(np2->namesz);
+			if (elfround(np2->descsz) > remaining)
+				break;
+			remaining -= elfround(np2->descsz);
+
 			total = sizeof(Elf_Note) + elfround(np2->namesz) +
 			    elfround(np2->descsz);
-			if (offset + total > ph->p_filesz)
-				break;
 			name = elf_os_pt_note_name(np2, &type);
 			if (name == ELF_NOTE_NAME_OPENBSD &&
 			    type == NT_OPENBSD_PROF)
@@ -1556,6 +1570,7 @@ coredump_note_elf(struct proc *p, void *iocookie, size_t *sizep)
 
 	notesize = sizeof(nhdr) + elfround(namesize) + elfround(sizeof(intreg));
 	if (iocookie) {
+		memset(&intreg, 0, sizeof(intreg));
 		error = process_read_regs(p, &intreg);
 		if (error)
 			return (error);
@@ -1575,6 +1590,7 @@ coredump_note_elf(struct proc *p, void *iocookie, size_t *sizep)
 #ifdef PT_GETFPREGS
 	notesize = sizeof(nhdr) + elfround(namesize) + elfround(sizeof(freg));
 	if (iocookie) {
+		memset(&freg, 0, sizeof(freg));
 		error = process_read_fpregs(p, &freg);
 		if (error)
 			return (error);
