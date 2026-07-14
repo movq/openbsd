@@ -346,6 +346,83 @@ without relying on the default `ni_txrate`.
 This work is important for diagnosis, although firmware-offloaded rate
 control may not require host feedback to operate.
 
+### Stage 2a: Fix TX backpressure and ownership
+
+TX resource handling should be corrected before enabling HT or aggregation.
+Higher PHY rates and A-MPDU will increase the rate at which the host submits
+packets and make the existing failure paths easier to trigger.
+
+There are two finite resources on the normal data path:
+
+- The pool contains `MWX_TXWI_MAX`, currently 512, TXWI entries.
+- The data DMA ring contains 256 descriptors, with one descriptor used for
+  each submitted TXWI.
+
+`mwx_start()` does not check either resource before removing a packet from
+`if_snd` or the management queue. It has a placeholder for setting
+`if_snd` active, but never calls `ifq_set_oactive()`. It therefore continues
+dequeueing after the ring or TXWI pool has become full.
+
+The resulting error handling does not have a consistent packet-ownership
+contract:
+
+1. `mwx_tx()` removes a TXWI from `mt_freelist` and marks it busy.
+2. If `mwx_txwi_enqueue()` cannot load the packet DMA map, `mwx_tx()` returns
+   without calling `mwx_txwi_put()`. The TXWI remains busy and is permanently
+   removed from the free list.
+3. If the packet map succeeds but `mwx_dma_txwi_enqueue()` finds the data
+   ring full, the TXWI already owns the mbuf and a loaded DMA map. The TXWI
+   was never submitted to hardware, so no TX-free notification will arrive
+   to release it.
+4. The ring-full branch calls `bus_dmamap_unload()` on the DMA map belonging
+   to the current queue slot even though that map was not loaded for this
+   TXWI submission. The loaded map which actually needs unwinding belongs to
+   the TXWI.
+5. `mwx_start()` releases the node reference and increments `if_oerrors` when
+   `mwx_tx()` fails, but it neither frees nor requeues the mbuf. Repeated
+   failures can therefore leak both packets and TXWI entries while the start
+   loop continues to dequeue traffic.
+
+There is also an ownership problem on the successful path. Net80211 returns
+a referenced `ieee80211_node` with an encapsulated data frame, and management
+frames carry their referenced node in `m_pkthdr.ph_cookie`. Unlike drivers
+such as `iwx`, `mwx` does not retain that pointer in its per-packet TX state
+and does not release it when `mwx_mac_tx_free()` completes the packet.
+
+Resource exhaustion should be handled before dequeueing a packet. A suitable
+design is:
+
+- Track the number of available TXWI entries and data-ring descriptors.
+- Stop dequeueing and call `ifq_set_oactive()` when either resource reaches a
+  high-water threshold.
+- Reserve both resources before committing packet ownership to the TX path.
+- Once `mwx_tx()` accepts a packet, make the TXWI the unambiguous owner of the
+  mbuf, DMA map, and node reference until completion or reset.
+- Unwind partial setup in reverse order on every error: unload the packet map
+  if loaded, detach or free the mbuf according to the caller contract,
+  release the node reference, clear the descriptor, and return the TXWI to
+  the free list.
+- When TX completion returns enough resources, clear `oactive` and invoke
+  `if_start` to resume both management and data traffic. A low-water
+  threshold should be used to avoid repeatedly stopping and restarting for
+  one descriptor.
+- During stop or reset, drain every busy TXWI and release the same resources
+  as the normal completion path.
+
+An ordinary full-ring condition should not be treated as an output error.
+It is expected flow control. Since a data packet has already been transformed
+from Ethernet to 802.11 after `ieee80211_encap()`, avoiding dequeue until
+resources are available is simpler and safer than attempting to put an
+encapsulated packet back on `if_snd`.
+
+The initial upload test also showed why queue behavior needs to be measured
+separately from PHY rate. `iperf3` queued 27.1 MBytes in approximately 10
+seconds at a reported sender rate of 22.7 Mbit/s, while the receiver took
+20.23 seconds and reported 11.3 Mbit/s. This does not prove that the driver
+queue caused the entire delay, since TCP socket buffers can also absorb a
+short test, but it demonstrates that sender throughput cannot be used as the
+delivered throughput while a large queue is still draining.
+
 ### Stage 3: Enable HT and VHT coherently
 
 Only after the legacy station update works reliably:
@@ -384,13 +461,11 @@ from 20 to 40 MHz by itself because it removes repeated per-frame overhead.
 Once A-MPDU is stable, add A-MSDU station capability and enable
 `MT_TXD7_HW_AMSDU` only for eligible traffic.
 
-The TX queue also needs proper backpressure. `mwx_start()` currently contains
-a TODO where it should mark the interface send queue active when descriptors
-or TXWI entries are exhausted. Error paths should return or requeue packets
-without leaking a busy TXWI or dropping an uncontrolled burst.
-
-This may not be the current 4.5 Mbit/s limiter, but it will become important
-as packet rate and throughput increase.
+TX backpressure and ownership are described in Stage 2a and should already
+be correct before reaching this stage. A-MSDU adds another ownership layer
+because one hardware submission may represent multiple packets, so it should
+reuse the same completion and reset invariants rather than add a separate
+cleanup path.
 
 ## Verification Plan
 
@@ -419,6 +494,26 @@ For aggregation:
 - Check for duplicate frames, BA-window gaps, retries, and BAR storms.
 - Test with WPA2 because OpenBSD intentionally avoids TX A-MPDU on
   unencrypted networks.
+
+For TX backpressure and ownership:
+
+- Run long upload, reverse, and bidirectional tests rather than relying on a
+  short test which can finish while TCP and driver queues are still draining.
+- Compare sender and receiver byte counts, throughput, and duration after all
+  queued traffic has drained.
+- Record TXWI free, busy, submitted, and completed counts and verify that
+  `free + busy` remains equal to the configured pool size.
+- Record ring-full, TXWI-empty, queue-stop, and queue-restart events. Ring
+  saturation should stop dequeueing without increasing `if_oerrors`.
+- Verify that every accepted packet produces exactly one completion or is
+  reclaimed by stop/reset, and that every node reference is released.
+- Exercise resource exhaustion by temporarily reducing the ring or TXWI pool
+  size, and exercise DMA-map failures with fault injection if available.
+- Run ping concurrently with a saturated upload to measure latency and check
+  that high/low watermarks prevent an excessive queue-drain tail.
+- Repeat interface down/up, reassociation, suspend/resume, and reset while
+  traffic is queued, checking for leaked TXWI entries, DMA maps, mbufs, and
+  node references.
 
 Regression testing should include suspend/resume, background scanning,
 reassociation, roaming between BSSIDs, key replacement, and repeated
