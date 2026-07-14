@@ -236,6 +236,7 @@ struct mwx_txwi_desc {
 #define	MWX_TX_STATS_INTERVAL	1024
 struct mwx_tx_stats {
 	uint64_t	txs;
+	uint64_t	fixed;
 	uint64_t	completed;
 	uint64_t	retries;
 	uint64_t	failed;
@@ -621,7 +622,7 @@ int		mt7921_mcu_set_tx(struct mwx_softc *, struct mwx_vif *);
 int		mwx_mcu_set_hif_suspend(struct mwx_softc *, int);
 int		mt7921_mac_fill_rx(struct mwx_softc *, struct mbuf *,
 		    struct ieee80211_rxinfo *);
-uint32_t	mt7921_mac_tx_rate_val(struct mwx_softc *);
+uint32_t	mt7921_mac_tx_rate_val(struct mwx_softc *, int);
 void		mt7921_mac_write_txwi_80211(struct mwx_softc *, struct mbuf *,
 		    struct ieee80211_node *, struct mt76_txwi *);
 void		mt7921_mac_write_txwi(struct mwx_softc *, struct mbuf *,
@@ -4224,9 +4225,11 @@ mwx_tx_stats_print(struct mwx_softc *sc)
 	int i;
 
 	printf("%s: tx stats: wcid %u last-rate 0x%04x bw %u txs %llu "
-	    "completed %llu retries %llu failed %llu ack-errors %llu",
+	    "fixed %llu completed %llu retries %llu failed %llu "
+	    "ack-errors %llu",
 	    DEVNAME(sc), stats->last_wcid, stats->last_rate, stats->last_bw,
 	    (unsigned long long)stats->txs,
+	    (unsigned long long)stats->fixed,
 	    (unsigned long long)stats->completed,
 	    (unsigned long long)stats->retries,
 	    (unsigned long long)stats->failed,
@@ -4285,6 +4288,8 @@ mt7921_mac_add_txs(struct mwx_softc *sc, const void *data)
 	sc->sc_tx_stats.last_rate = txrate;
 	sc->sc_tx_stats.last_wcid = wcid;
 	sc->sc_tx_stats.last_bw = bw;
+	if (txs0 & MT_TXS0_FIXED_RATE)
+		sc->sc_tx_stats.fixed++;
 	if (txs0 & MT_TXS0_ACK_ERROR_MASK)
 		sc->sc_tx_stats.ack_errors++;
 
@@ -5635,22 +5640,25 @@ mt7921_mac_fill_rx(struct mwx_softc *sc, struct mbuf *m,
 }
 
 uint32_t
-mt7921_mac_tx_rate_val(struct mwx_softc *sc)
+mt7921_mac_tx_rate_val(struct mwx_softc *sc, int fixed_rate)
 {
 	int rateidx = 0, offset = 4;
 	uint32_t rate, mode;
 
-	/* XXX TODO basic_rates
-	rateidx = ffs(vif->bss_conf.basic_rates) - 1;
-	*/
-
-	if (IEEE80211_IS_CHAN_2GHZ(sc->sc_ic.ic_bss->ni_chan))
-		offset = 0;
-	/* pick the lowest rate for hidden nodes */
-	if (rateidx < 0)
-		rateidx = 0;
-
-	rateidx += offset;
+	if (fixed_rate != -1) {
+		for (rateidx = 0; rateidx < nitems(mt76_rates); rateidx++) {
+			if (mt76_rates[rateidx].rate == fixed_rate)
+				break;
+		}
+		if (rateidx == nitems(mt76_rates))
+			fixed_rate = -1;
+	}
+	if (fixed_rate == -1) {
+		/* XXX TODO derive the management rate from basic_rates. */
+		if (IEEE80211_IS_CHAN_2GHZ(sc->sc_ic.ic_bss->ni_chan))
+			offset = 0;
+		rateidx = offset;
+	}
 
 	if (rateidx >= nitems(mt76_rates))
 		rateidx = offset;
@@ -5671,7 +5679,7 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 	uint32_t val;
 	uint8_t type, subtype, tid = 0;
 	u_int hdrlen;
-	int multicast;
+	int data, fixed_rate = -1, multicast;
 
 
 	wh = mtod(m, struct ieee80211_frame *);
@@ -5679,9 +5687,14 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 	type >>= IEEE80211_FC0_TYPE_SHIFT;
 	subtype = wh->i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK;
 	subtype >>= IEEE80211_FC0_SUBTYPE_SHIFT;
+	data = (wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) ==
+	    IEEE80211_FC0_TYPE_DATA;
 	multicast = IEEE80211_IS_MULTICAST(wh->i_addr1);
+	if (!multicast && data && ic->ic_fixed_rate != -1)
+		fixed_rate = ieee80211_get_rate(ic);
 
-	if (type == IEEE80211_FC0_TYPE_CTL)
+	if ((wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) ==
+	    IEEE80211_FC0_TYPE_CTL)
 		hdrlen = sizeof(struct ieee80211_frame_min);
 	else
 		hdrlen = ieee80211_get_hdrlen(wh);
@@ -5725,15 +5738,15 @@ mt7921_mac_write_txwi_80211(struct mwx_softc *sc, struct mbuf *m,
 	}
 #endif
 
-	if (multicast || type != IEEE80211_FC0_TYPE_DATA) {
-		/* Fixed rata is available just for 802.11 txd */
+	if (multicast || !data || fixed_rate != -1) {
+		/* Fixed rate is available just for 802.11 txd. */
 		uint32_t rate, val6;
 
 		val |= MT_TXD2_FIX_RATE;
 		/* hardware won't add HTC for mgmt/ctrl frame */
 		val |= htole32(MT_TXD2_HTC_VLD);
 
-		rate = mt7921_mac_tx_rate_val(sc);
+		rate = mt7921_mac_tx_rate_val(sc, fixed_rate);
 
 		val6 = MT_TXD6_FIXED_BW;
 		val6 |= (rate << MT_TXD6_TX_RATE_SHIFT) & MT_TXD6_TX_RATE_MASK;
@@ -5940,8 +5953,9 @@ mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 					ic->ic_if.if_oerrors++;
 				}
 				if (DEVDEBUG(sc) &&
+				    (sc->sc_tx_stats.completed == 1 ||
 				    sc->sc_tx_stats.completed %
-				    MWX_TX_STATS_INTERVAL == 0)
+				    MWX_TX_STATS_INTERVAL == 0))
 					mwx_tx_stats_print(sc);
 			}
 		}
@@ -6255,6 +6269,18 @@ mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 
 	state = mwx_append_tlv(m, tlvnum, STA_REC_STATE, sizeof(*state));
 	state->state = sta_state;
+	if (DEVDEBUG(sc) && sta_state == MT76_STA_INFO_STATE_ASSOC) {
+		struct mwx_node *mn = (struct mwx_node *)ni;
+		int i;
+
+		printf("%s: assoc stats: wcid %u aid %u phy 0x%02x "
+		    "rcpi %u basic 0x%04x legacy 0x%04x rates",
+		    DEVNAME(sc), mn->wcid, IEEE80211_AID(ni->ni_associd),
+		    phy->phy_type, phy->rcpi, basic_rates, supp_rates);
+		for (i = 0; i < ni->ni_rates.rs_nrates; i++)
+			printf(" 0x%02x", ni->ni_rates.rs_rates[i]);
+		printf("\n");
+	}
 #ifdef NOTYET
 	if (sta->deflink.vht_cap.vht_supported) {
 		state->vht_opmode = sta->deflink.bandwidth;
