@@ -232,6 +232,21 @@ struct mwx_txwi_desc {
 	LIST_HEAD(, mwx_txwi)		mt_freelist;
 };
 
+#define	MWX_NLEGACY_RATES	12
+#define	MWX_TX_STATS_INTERVAL	1024
+struct mwx_tx_stats {
+	uint64_t	txs;
+	uint64_t	completed;
+	uint64_t	retries;
+	uint64_t	failed;
+	uint64_t	ack_errors;
+	uint64_t	unknown_rate;
+	uint64_t	rates[MWX_NLEGACY_RATES];
+	uint16_t	last_rate;
+	uint16_t	last_wcid;
+	uint8_t		last_bw;
+};
+
 struct mwx_queue_data {
 	struct mbuf			*md_mbuf;
 	struct mwx_txwi			*md_txwi;
@@ -304,6 +319,7 @@ struct mwx_softc {
 	struct mwx_queue	sc_rxfwdlq;
 
 	struct mwx_txwi_desc	sc_txwi;
+	struct mwx_tx_stats	sc_tx_stats;
 
 	bus_space_tag_t		sc_st;
 	bus_space_handle_t	sc_memh;
@@ -424,6 +440,7 @@ const struct mwx_rate {
 	{	96,	(MT_PHY_TYPE_OFDM << 8) | 8 },
 	{	108,	(MT_PHY_TYPE_OFDM << 8) | 12 },
 };
+CTASSERT(nitems(mt76_rates) == MWX_NLEGACY_RATES);
 
 #define MWX_NUM_6GHZ_CHANNELS   nitems(mwx_channels_6ghz)
 
@@ -578,6 +595,8 @@ int		mt7921_mcu_set_rts_thresh(struct mwx_softc *, uint32_t,
 int		mwx_mcu_set_deep_sleep(struct mwx_softc *, int);
 void		mt7921_mcu_low_power_event(struct mwx_softc *, struct mbuf *);
 void		mt7921_mcu_tx_done_event(struct mwx_softc *, struct mbuf *);
+void		mt7921_mac_add_txs(struct mwx_softc *, const void *);
+void		mwx_tx_stats_print(struct mwx_softc *);
 void		mwx_end_scan_task(void *);
 void		mt7921_mcu_scan_event(struct mwx_softc *, struct mbuf *);
 int		mt7921_mcu_hw_scan(struct mwx_softc *, int);
@@ -1148,6 +1167,7 @@ mwx_newstate_task(void *ptr)
 		    MT76_STA_INFO_STATE_NONE);
 		if (rv)
 			break;
+		memset(&sc->sc_tx_stats, 0, sizeof(sc->sc_tx_stats));
 		mt7921_mcu_set_rts_thresh(sc, 0x92b, 0);
 		break;
 	}
@@ -2647,13 +2667,19 @@ mwx_dma_rx_process(struct mwx_softc *sc, struct mbuf_list *ml)
 		case PKT_TYPE_TXRX_NOTIFY:
 			mwx_mac_tx_free(sc, m);
 			break;
-		case PKT_TYPE_TXS:
-#if TODO
-			for (rxd += 2; rxd + 8 <= end; rxd += 8)
-				mt7921_mac_add_txs(dev, rxd);
-#endif
+		case PKT_TYPE_TXS: {
+			uint32_t *txs;
+			int i, nwords;
+
+			if ((m = m_pullup(m, m->m_pkthdr.len)) == NULL)
+				break;
+			txs = mtod(m, uint32_t *);
+			nwords = m->m_len / sizeof(*txs);
+			for (i = 2; i + 8 <= nwords; i += 8)
+				mt7921_mac_add_txs(sc, &txs[i]);
 			m_freem(m);
 			break;
+		}
 		case PKT_TYPE_NORMAL_MCU:
 		case PKT_TYPE_NORMAL:
 			mwx_rx(sc, m, &mlout);
@@ -4192,6 +4218,102 @@ mt7921_mcu_low_power_event(struct mwx_softc *sc, struct mbuf *m)
 }
 
 void
+mwx_tx_stats_print(struct mwx_softc *sc)
+{
+	struct mwx_tx_stats *stats = &sc->sc_tx_stats;
+	int i;
+
+	printf("%s: tx stats: wcid %u last-rate 0x%04x bw %u txs %llu "
+	    "completed %llu retries %llu failed %llu ack-errors %llu",
+	    DEVNAME(sc), stats->last_wcid, stats->last_rate, stats->last_bw,
+	    (unsigned long long)stats->txs,
+	    (unsigned long long)stats->completed,
+	    (unsigned long long)stats->retries,
+	    (unsigned long long)stats->failed,
+	    (unsigned long long)stats->ack_errors);
+	for (i = 0; i < nitems(stats->rates); i++) {
+		if (stats->rates[i] == 0)
+			continue;
+		printf(" %u%sM=%llu", (unsigned int)mt76_rates[i].rate / 2,
+		    mt76_rates[i].rate & 1 ? ".5" : "",
+		    (unsigned long long)stats->rates[i]);
+	}
+	if (stats->unknown_rate != 0)
+		printf(" unknown-rate=%llu",
+		    (unsigned long long)stats->unknown_rate);
+	printf("\n");
+}
+
+void
+mt7921_mac_add_txs(struct mwx_softc *sc, const void *data)
+{
+	struct ieee80211com *ic = &sc->sc_ic;
+	struct ieee80211_node *ni;
+	struct mwx_node *mn;
+	const uint32_t *txs_data = data;
+	uint32_t txs0, txs2, txs3;
+	uint16_t txrate, wcid;
+	uint8_t bw, format, pid;
+	int i, j;
+
+	if (sc->sc_hwtype == MWX_HW_MT7925)
+		return;
+
+	txs0 = le32toh(txs_data[0]);
+	txs2 = le32toh(txs_data[2]);
+	txs3 = le32toh(txs_data[3]);
+	format = (txs0 & MT_TXS0_TXS_FORMAT_MASK) >>
+	    MT_TXS0_TXS_FORMAT_SHIFT;
+	if (format > 1)
+		return;
+
+	wcid = (txs2 & MT_TXS2_WCID_MASK) >> MT_TXS2_WCID_SHIFT;
+	pid = (txs3 & MT_TXS3_PID_MASK) >> MT_TXS3_PID_SHIFT;
+	if (pid < MT_PACKET_ID_FIRST || ic->ic_state != IEEE80211_S_RUN)
+		return;
+
+	ni = ic->ic_bss;
+	if (ni == NULL)
+		return;
+	mn = (struct mwx_node *)ni;
+	if (mn->wcid != wcid)
+		return;
+
+	txrate = txs0 & MT_TXS0_TX_RATE_MASK;
+	bw = (txs0 & MT_TXS0_BW_MASK) >> MT_TXS0_BW_SHIFT;
+	sc->sc_tx_stats.txs++;
+	sc->sc_tx_stats.last_rate = txrate;
+	sc->sc_tx_stats.last_wcid = wcid;
+	sc->sc_tx_stats.last_bw = bw;
+	if (txs0 & MT_TXS0_ACK_ERROR_MASK)
+		sc->sc_tx_stats.ack_errors++;
+
+	for (i = 0; i < nitems(mt76_rates); i++) {
+		uint16_t hw_rate = mt76_rates[i].hw_value;
+		uint16_t rate_mode, rate_idx;
+
+		rate_mode = (hw_rate >> 8) << MT_TX_RATE_MODE_SHIFT;
+		rate_idx = hw_rate & MT_TX_RATE_IDX_MASK;
+		if ((txrate & MT_TX_RATE_MODE_MASK) == rate_mode &&
+		    (txrate & MT_TX_RATE_IDX_MASK) == rate_idx)
+			break;
+	}
+	if (i == nitems(mt76_rates)) {
+		sc->sc_tx_stats.unknown_rate++;
+		return;
+	}
+	sc->sc_tx_stats.rates[i]++;
+
+	for (j = 0; j < ni->ni_rates.rs_nrates; j++) {
+		if ((ni->ni_rates.rs_rates[j] & IEEE80211_RATE_VAL) ==
+		    mt76_rates[i].rate) {
+			ni->ni_txrate = j;
+			break;
+		}
+	}
+}
+
+void
 mt7921_mcu_tx_done_event(struct mwx_softc *sc, struct mbuf *m)
 {
 	struct mt7921_mcu_tx_done_event {
@@ -4219,7 +4341,7 @@ mt7921_mcu_tx_done_event(struct mwx_softc *sc, struct mbuf *m)
 	if (m->m_len < sizeof(*event))
 		return;
 	event = mtod(m, struct mt7921_mcu_tx_done_event *);
-	// TODO mt7921_mac_add_txs(dev, event->txs);
+	mt7921_mac_add_txs(sc, event->txs);
 }
 
 int
@@ -5763,10 +5885,13 @@ mt7921_mac_write_txwi(struct mwx_softc *sc, struct mbuf *m,
 void
 mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 {
+	struct ieee80211com *ic = &sc->sc_ic;
+	struct ieee80211_node *ni;
+	struct mwx_node *mn;
 	struct mwx_txwi *mt;
 	uint32_t *txfree;
 	uint32_t  txval;
-	int count, i;
+	int count, i, nfreed = 0, nwords, wcid = -1;
 
 	/* first cleanup the TX dma rings */
 	mwx_dma_tx_cleanup(sc, &sc->sc_txq);
@@ -5785,27 +5910,41 @@ mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 	pkt_hex_dump(m);
 #endif
 
-	if (count * sizeof(txval) > m->m_len)
-		goto out;
-
 	txfree = mtod(m, uint32_t *);
-	for (i = 0; i < count; i++) {
-		uint16_t msdu;
+	nwords = m->m_len / sizeof(*txfree);
+	for (i = 0; i < nwords && nfreed < count; i++) {
+		uint16_t attempts, msdu, status;
 
 		txval = le32toh(txfree[i]);
 		if (txval & MT_TX_FREE_PAIR) {
-			count++;
-			/* TODO any wcid fumbling */
-			/* wcid = MT_TX_FREE_WLAN_ID_GET(txval); */
+			wcid = MT_TX_FREE_WLAN_ID_GET(txval);
 			continue;
 		}
+		nfreed++;
 
-#if NOTYET
-		if (wcid != NULL) {
-			status = !!(txval & MT_TX_FREE_STATUS_MASK);
-			retries = txval & MT_TX_FREE_COUNT_MASK;
+		ni = ic->ic_bss;
+		if (ni != NULL) {
+			mn = (struct mwx_node *)ni;
+			if (sc->sc_hwtype != MWX_HW_MT7925 &&
+			    ic->ic_state == IEEE80211_S_RUN &&
+			    wcid == mn->wcid) {
+				attempts = txval & MT_TX_FREE_COUNT_MASK;
+				status =
+				    (txval & MT_TX_FREE_STATUS_MASK) != 0;
+				sc->sc_tx_stats.completed++;
+				if (attempts > 0)
+					sc->sc_tx_stats.retries +=
+					    attempts - 1;
+				if (status) {
+					sc->sc_tx_stats.failed++;
+					ic->ic_if.if_oerrors++;
+				}
+				if (DEVDEBUG(sc) &&
+				    sc->sc_tx_stats.completed %
+				    MWX_TX_STATS_INTERVAL == 0)
+					mwx_tx_stats_print(sc);
+			}
 		}
-#endif
 
 		msdu = MT_TX_FREE_MSDU_ID_GET(txval);
 		if (msdu >= sc->sc_txwi.mt_count)
@@ -5817,7 +5956,6 @@ mwx_mac_tx_free(struct mwx_softc *sc, struct mbuf *m)
 
 	}
 
- out:
 	m_freem(m);
 }
 
