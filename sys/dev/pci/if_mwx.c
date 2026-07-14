@@ -618,7 +618,8 @@ void		*mwx_append_tlv(struct mbuf *, uint16_t *, int, int);
 void		 mt7921_mcu_add_basic_tlv(struct mbuf *, uint16_t *,
 		    struct mwx_softc *, struct ieee80211_node *, int, int);
 void		 mt7921_mcu_add_sta_tlv(struct mbuf *, uint16_t *,
-		    struct mwx_softc *, struct ieee80211_node *, int, int);
+		    struct mwx_softc *, struct ieee80211_node *,
+		    enum mt76_sta_info_state);
 int		 mt7921_mcu_wtbl_generic_tlv(struct mbuf *, uint16_t *,
 		    struct mwx_softc *, struct ieee80211_node *);
 int		 mt7921_mcu_wtbl_hdr_trans_tlv(struct mbuf *, uint16_t *,
@@ -626,7 +627,7 @@ int		 mt7921_mcu_wtbl_hdr_trans_tlv(struct mbuf *, uint16_t *,
 int		 mt7921_mcu_wtbl_ht_tlv(struct mbuf *, uint16_t *,
 		    struct mwx_softc *, struct ieee80211_node *);
 int		 mt7921_mac_sta_update(struct mwx_softc *,
-		    struct ieee80211_node *, int, int);
+		    struct ieee80211_node *, int, enum mt76_sta_info_state);
 void		 mt7921_mcu_add_key_tlv(struct mbuf *, uint16_t *,
 		    struct ieee80211_key *, int);
 int		 mt7921_mcu_sta_key_update(struct mwx_softc *,
@@ -1124,7 +1125,8 @@ mwx_newstate_task(void *ptr)
 		if (rv)
 			break;
 		mwx_mcu_set_deep_sleep(sc, 0);
-		mt7921_mac_sta_update(sc, sc->sc_ic.ic_bss, 1, 1);
+		rv = mt7921_mac_sta_update(sc, ic->ic_bss, 1,
+		    MT76_STA_INFO_STATE_NONE);
 		break;
 	case IEEE80211_S_ASSOC:
 		mwx_mcu_set_deep_sleep(sc, 1);
@@ -1138,7 +1140,12 @@ mwx_newstate_task(void *ptr)
 		rv = mt7921_mcu_uni_add_bss(sc, 1);
 		if (rv)
 			break;
-		rv = mt7921_mac_sta_update(sc, NULL, 1, 1);
+		rv = mt7921_mac_sta_update(sc, ic->ic_bss, 1,
+		    MT76_STA_INFO_STATE_ASSOC);
+		if (rv)
+			break;
+		rv = mt7921_mac_sta_update(sc, NULL, 1,
+		    MT76_STA_INFO_STATE_NONE);
 		if (rv)
 			break;
 		mt7921_mcu_set_rts_thresh(sc, 0x92b, 0);
@@ -5985,15 +5992,60 @@ mt7921_mcu_add_basic_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 	basic->qos = (ni->ni_flags & IEEE80211_NODE_QOS) != 0;
 }
 
+static void
+mt7921_mcu_get_legacy_rates(struct ieee80211_node *ni,
+    uint16_t *supp_rates, uint16_t *basic_rates)
+{
+	const struct ieee80211_rateset *rs = &ni->ni_rates;
+	int first_rate, i, j;
+	uint8_t rate;
+
+	*supp_rates = 0;
+	*basic_rates = 0;
+	first_rate = IEEE80211_IS_CHAN_2GHZ(ni->ni_chan) ? 0 : 4;
+
+	for (i = 0; i < rs->rs_nrates; i++) {
+		rate = rs->rs_rates[i] & IEEE80211_RATE_VAL;
+		for (j = first_rate; j < nitems(mt76_rates); j++) {
+			if (mt76_rates[j].rate == rate)
+				break;
+		}
+		if (j == nitems(mt76_rates))
+			continue;
+
+		/* The firmware legacy mask leaves bits 4 and 5 unused. */
+		if (j < 4)
+			*supp_rates |= 1U << j;
+		else
+			*supp_rates |= 1U << (j + 2);
+
+		if (rs->rs_rates[i] & IEEE80211_RATE_BASIC)
+			*basic_rates |= 1U << (j - first_rate);
+	}
+}
+
+static uint8_t
+mt7921_mcu_get_rcpi(struct ieee80211_node *ni)
+{
+	int rcpi, rssi;
+
+	if (ni->ni_rssi == 0)
+		return 0;
+
+	rssi = (int8_t)ni->ni_rssi;
+	rcpi = 2 * rssi + 220;
+	return MIN(MAX(rcpi, 0), 220);
+}
+
 void
 mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
-    struct ieee80211_node *ni, int add, int new)
+    struct ieee80211_node *ni, enum mt76_sta_info_state sta_state)
 {
 	//struct ieee80211com *ic = &sc->sc_ic;
 	struct sta_rec_ra_info *ra_info;
 	struct sta_rec_state *state;
 	struct sta_rec_phy *phy;
-	uint16_t supp_rates;
+	uint16_t basic_rates, supp_rates;
 
 #ifdef NOTYET
 	/* sta rec ht */
@@ -6042,11 +6094,8 @@ mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 #endif
 
 	phy = mwx_append_tlv(m, tlvnum, STA_REC_PHY, sizeof(*phy));
-	/* XXX basic_rates: bitmap of basic rates, each bit stands for an
-	 *      index into the rate table configured by the driver in
-	 *      the current band.
-	 */
-	phy->basic_rate = htole16(0x0150); /* XXX */
+	mt7921_mcu_get_legacy_rates(ni, &supp_rates, &basic_rates);
+	phy->basic_rate = htole16(basic_rates);
 	phy->phy_type = mt7921_get_phy_mode_v2(sc, ni);
 #ifdef NOTYET
 	phy->ampdu = FIELD_PREP(IEEE80211_HT_AMPDU_PARM_FACTOR,
@@ -6054,19 +6103,7 @@ mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 	    FIELD_PREP(IEEE80211_HT_AMPDU_PARM_DENSITY,
 	    sta->deflink.ht_cap.ampdu_density);
 #endif
-	// XXX phy->rcpi = rssi_to_rcpi(-ewma_rssi_read(&sc->sc_vif.rssi));
-	phy->rcpi = 0xdc;	/* XXX STOLEN FROM LINUX DUMP */
-
-#ifdef HACK
-	supp_rates = sta->deflink.supp_rates[band];
-	if (band == NL80211_BAND_2GHZ)
-		supp_rates = FIELD_PREP(RA_LEGACY_OFDM, supp_rates >> 4) |
-		FIELD_PREP(RA_LEGACY_CCK, supp_rates & 0xf);
-	else
-		supp_rates = FIELD_PREP(RA_LEGACY_OFDM, supp_rates);
-#else
-	supp_rates = RA_LEGACY_OFDM;
-#endif
+	phy->rcpi = mt7921_mcu_get_rcpi(ni);
 
 	ra_info = mwx_append_tlv(m, tlvnum, STA_REC_RA,
 	    sizeof(*ra_info));
@@ -6079,7 +6116,7 @@ mt7921_mcu_add_sta_tlv(struct mbuf *m, uint16_t *tlvnum, struct mwx_softc *sc,
 #endif
 
 	state = mwx_append_tlv(m, tlvnum, STA_REC_STATE, sizeof(*state));
-	state->state = /* XXX sta_state */ 0;
+	state->state = sta_state;
 #ifdef NOTYET
 	if (sta->deflink.vht_cap.vht_supported) {
 		state->vht_opmode = sta->deflink.bandwidth;
@@ -6160,7 +6197,7 @@ mt7921_mcu_wtbl_ht_tlv(struct mbuf *m, uint16_t *tlvnum,
 
 int
 mt7921_mac_sta_update(struct mwx_softc *sc, struct ieee80211_node *ni,
-    int add, int new)
+    int add, enum mt76_sta_info_state sta_state)
 {
 	struct mwx_vif *mvif = &sc->sc_vif;
 	struct mwx_node *mn = ni != NULL ? (struct mwx_node *)ni :
@@ -6169,16 +6206,17 @@ mt7921_mac_sta_update(struct mwx_softc *sc, struct ieee80211_node *ni,
 	struct sta_rec_wtbl *wtbl;
 	struct mbuf *m;
 	uint16_t tlvnum = 0, wnum = 0;
-	int wlen = 0;
+	int new, wlen = 0;
 
 	m = mwx_alloc_sta_req_tlv(sizeof(*hdr));
 	if (m == NULL)
 		return ENOBUFS;
 
+	new = ni == NULL || sta_state != MT76_STA_INFO_STATE_ASSOC;
 	mt7921_mcu_add_basic_tlv(m, &tlvnum, sc, ni, add, new);
 
 	if (ni != NULL && add)
-		mt7921_mcu_add_sta_tlv(m, &tlvnum, sc, ni, add, new);
+		mt7921_mcu_add_sta_tlv(m, &tlvnum, sc, ni, sta_state);
 
 	wtbl = mwx_append_tlv(m, &tlvnum, STA_REC_WTBL,
 	    sizeof(*wtbl));
