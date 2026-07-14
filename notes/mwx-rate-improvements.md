@@ -18,13 +18,42 @@ media: IEEE802.11 autoselect (OFDM6 mode 11a)
 ieee80211: nwid EE-C75NQ7 chan 100 bssid b8:6a:f1:bf:de:71 -50dBm
 ```
 
-The short conclusion is that the driver is limited by more than the absence
-of wide channels. It currently negotiates a legacy 802.11a link, leaves the
-firmware's AP station record in a preliminary state, has placeholder legacy
-rate-control data, does not report the actual firmware-selected TX rate, and
-does not enable QoS or frame aggregation.
+The original investigation concluded that the driver was limited by more
+than the absence of wide channels. It negotiated a legacy 802.11a link, left
+the firmware's AP station record in a preliminary state, had placeholder
+legacy rate-control data, did not report the actual firmware-selected TX
+rate, and did not enable QoS or frame aggregation. The station-record,
+rate-reporting, and TX-resource issues were addressed before the minimal HT
+work described below.
 
-## Confirmed Findings
+## HT20 SISO Implementation
+
+The first HT implementation now advertises mandatory single-stream 20 MHz
+HT on the existing 2 GHz and 5 GHz channels. It deliberately advertises no
+optional HT features:
+
+- MCS 0-7 only.
+- 20 MHz only.
+- Long guard interval only.
+- No LDPC, STBC, greenfield, or A-MSDU.
+- No QoS, TX A-MPDU, or firmware ADDBA offload.
+
+When net80211 negotiates HT, the associated AP station record includes
+`STA_REC_HT`, `PHY_TYPE_BIT_HT`, and the intersection of the AP's receive MCS
+set with local MCS 0-7. Firmware PHY mode follows the negotiated
+`IEEE80211_NODE_HT` flag rather than the presence of an HT capabilities IE in
+a scan result. Fixed HT MCS selections and HT TX-status reporting support MCS
+0-7 as well.
+
+The selected channel remains `CMD_CBW_20MHZ` because no 40 MHz or wider
+channel flags are advertised. Legacy association remains available when HT
+negotiation is rejected, including for incompatible cipher configurations.
+
+This is only the unaggregated HT PHY baseline. QoS and block-ack handling are
+still required before enabling A-MPDU, and wider channels and additional
+spatial streams remain later stages.
+
+## Original Findings
 
 ### The link is legacy-only
 
