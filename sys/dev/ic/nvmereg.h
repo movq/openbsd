@@ -256,6 +256,15 @@ struct nvme_cqe {
 #define NVM_CMD_COMPARE		0x05 /* Compare */
 #define NVM_CMD_DSM		0x09 /* Dataset Management */
 
+#define NVM_DSM_MAX_RANGES	256
+#define NVM_DSM_ATTR_DEALLOCATE	(1 << 2)
+
+struct nvm_dsm_range {
+	u_int32_t	attributes;
+	u_int32_t	nlb;
+	u_int64_t	slba;
+} __packed __aligned(8);
+
 /* Power State Descriptor Data */
 struct nvm_identify_psd {
 	u_int16_t	mp;		/* Max Power */
@@ -338,6 +347,7 @@ struct nvm_identify_controller {
 	u_int32_t	nn;		/* Number of Namespaces */
 
 	u_int16_t	oncs;		/* Optional NVM Command Support */
+#define NVM_ID_CTRL_ONCS_DSM			(1 << 2)
 #define NVM_ID_CTRL_ONCS_FMT			"\020" \
 	"\006RSV" "\001SCMP" "\011SCPY" "\003SDMGMT" "\005SF" \
 	"\010SV" "\002SWU" "\004SWZ" "\007TS"
