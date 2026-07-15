@@ -116,6 +116,27 @@ This first implementation has the following deliberate limits:
 - A-MSDU remains disabled even if the peer sets the ADDBA A-MSDU bit.
 - ADDBA/DELBA management exchange remains host-managed.
 
+### Initial Runtime Validation
+
+The first test kernel associated successfully on 5 GHz channel 104 at about
+`-61 dBm` and reported `HT-MCS7 mode 11n`. After an internet speed test,
+`netstat -W mwx0` showed that block ack was active:
+
+```text
+2 new input block ack agreements
+1 new output block ack agreement
+0 input block ack window jumps
+0 expected input block ack frames never arrived
+0 input block ack window gaps timed out
+0 input block ack agreements timed out
+0 output block ack agreements timed out
+```
+
+The internet test reached approximately 40-45 Mbit/s. This is not a
+controlled WLAN throughput measurement, but it is close to the expected
+practical ceiling of the current HT20, one-stream, long-GI MCS 7 PHY rate of
+65 Mbit/s. A local `iperf3` test remains to be run.
+
 ## Original Findings
 
 ### The link is legacy-only
