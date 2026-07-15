@@ -3498,9 +3498,6 @@ mwx_mcu_rx_event(struct mwx_softc *sc, struct mbuf *m)
 		mt7921_mcu_scan_event(sc, m);
 		break;
 #if 0
-	case MCU_EVENT_BSS_BEACON_LOSS:
-		mt7921_mcu_connection_loss_event(dev, skb);
-		break;
 	case MCU_EVENT_BSS_ABSENCE:
 		mt7921_mcu_bss_event(dev, skb);
 		break;
@@ -3522,6 +3519,35 @@ mwx_mcu_rx_event(struct mwx_softc *sc, struct mbuf *m)
 	case MCU_EVENT_TX_DONE:
 		mt7921_mcu_tx_done_event(sc, m);
 		break;
+	case MCU_EVENT_BSS_BEACON_LOSS: {
+		struct ieee80211com *ic = &sc->sc_ic;
+		struct {
+			uint8_t bss_idx;
+			uint8_t reason;
+			uint8_t pad[2];
+		} __packed *event;
+
+		if (m->m_len < sizeof(*event))
+			break;
+		event = mtod(m, void *);
+		if (event->bss_idx != sc->sc_vif.idx ||
+		    ic->ic_opmode != IEEE80211_M_STA ||
+		    ic->ic_state != IEEE80211_S_RUN)
+			break;
+
+		if (DEVDEBUG(sc)) {
+			printf("%s: firmware reports beacon loss for %s "
+			    "(reason %u); checking if this AP is still "
+			    "responding\n", DEVNAME(sc),
+			    ether_sprintf(ic->ic_bss->ni_macaddr),
+			    event->reason);
+			mwx_dump_status(sc, "beacon loss", 0, 0);
+		}
+		if (ic->ic_mgt_timer == 0)
+			IEEE80211_SEND_MGMT(ic, ic->ic_bss,
+			    IEEE80211_FC0_SUBTYPE_PROBE_REQ, 0);
+		break;
+	}
 	case MCU_EVENT_BSS_ABSENCE: {
 		struct {
 			uint8_t bss_idx;
@@ -3827,6 +3853,12 @@ mwx_wfsys_reset(struct mwx_softc *sc)
 
 	mwx_clear(sc, reg, WFSYS_SW_RST_B);
 	delay(50 * 1000);
+	if (mwx_poll(sc, MT_CONN_ON_MISC, 0, MT_TOP_MISC2_FW_N9_RDY,
+	    500) != 0) {
+		printf("%s: firmware did not enter reset state\n",
+		    DEVNAME(sc));
+		return ETIMEDOUT;
+	}
 	mwx_set(sc, reg, WFSYS_SW_RST_B);
 
 	return mwx_poll(sc, reg, WFSYS_SW_INIT_DONE, WFSYS_SW_INIT_DONE, 500);
