@@ -3853,12 +3853,6 @@ mwx_wfsys_reset(struct mwx_softc *sc)
 
 	mwx_clear(sc, reg, WFSYS_SW_RST_B);
 	delay(50 * 1000);
-	if (mwx_poll(sc, MT_CONN_ON_MISC, 0, MT_TOP_MISC2_FW_N9_RDY,
-	    500) != 0) {
-		printf("%s: firmware did not enter reset state\n",
-		    DEVNAME(sc));
-		return ETIMEDOUT;
-	}
 	mwx_set(sc, reg, WFSYS_SW_RST_B);
 
 	return mwx_poll(sc, reg, WFSYS_SW_INIT_DONE, WFSYS_SW_INIT_DONE, 500);
