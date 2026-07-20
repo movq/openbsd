@@ -259,6 +259,24 @@ struct mwx_tx_stats {
 	uint8_t		last_bw;
 };
 
+struct mwx_rx_stats {
+	uint64_t	normal;
+	uint64_t	normal_mcu;
+	uint64_t	txs;
+	uint64_t	unknown;
+	uint64_t	parse_errors;
+	uint64_t	mgmt;
+	uint64_t	ctl;
+	uint64_t	data;
+	uint64_t	beacons;
+	uint64_t	probe_resps;
+	uint64_t	hwdec;
+	uint32_t	last_flags;
+	int		last_rssi;
+	uint8_t		last_chan;
+	uint8_t		last_fc0;
+};
+
 struct mwx_queue_data {
 	struct mbuf			*md_mbuf;
 	struct mwx_txwi			*md_txwi;
@@ -345,6 +363,7 @@ struct mwx_softc {
 
 	struct mwx_txwi_desc	sc_txwi;
 	struct mwx_tx_stats	sc_tx_stats;
+	struct mwx_rx_stats	sc_rx_stats;
 
 	bus_space_tag_t		sc_st;
 	bus_space_handle_t	sc_memh;
@@ -1439,6 +1458,8 @@ mwx_newstate_task(void *ptr)
 		if (rv)
 			break;
 		memset(&sc->sc_tx_stats, 0, sizeof(sc->sc_tx_stats));
+		memset(&sc->sc_rx_stats, 0, sizeof(sc->sc_rx_stats));
+		sc->sc_last_rx_packet = 0;
 		mt7921_mcu_set_rts_thresh(sc, 0x92b, 0);
 		break;
 	}
@@ -1737,6 +1758,7 @@ mwx_rx(struct mwx_softc *sc, struct mbuf *m, struct mbuf_list *ml)
 
 	rv = mt7921_mac_fill_rx(sc, m, &rxi);
 	if (rv != 0) {
+		sc->sc_rx_stats.parse_errors++;
 		ifp->if_ierrors++;
 		m_freem(m);
 		return;
@@ -1744,6 +1766,31 @@ mwx_rx(struct mwx_softc *sc, struct mbuf *m, struct mbuf_list *ml)
 
 	wh = mtod(m, struct ieee80211_frame *);
 	sc->sc_last_rx_packet = getuptime();
+	sc->sc_rx_stats.last_flags = rxi.rxi_flags;
+	sc->sc_rx_stats.last_rssi = rxi.rxi_rssi;
+	sc->sc_rx_stats.last_chan = rxi.rxi_chan;
+	sc->sc_rx_stats.last_fc0 = wh->i_fc[0];
+	if (rxi.rxi_flags & IEEE80211_RXI_HWDEC)
+		sc->sc_rx_stats.hwdec++;
+	switch (wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) {
+	case IEEE80211_FC0_TYPE_MGT:
+		sc->sc_rx_stats.mgmt++;
+		switch (wh->i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK) {
+		case IEEE80211_FC0_SUBTYPE_BEACON:
+			sc->sc_rx_stats.beacons++;
+			break;
+		case IEEE80211_FC0_SUBTYPE_PROBE_RESP:
+			sc->sc_rx_stats.probe_resps++;
+			break;
+		}
+		break;
+	case IEEE80211_FC0_TYPE_CTL:
+		sc->sc_rx_stats.ctl++;
+		break;
+	case IEEE80211_FC0_TYPE_DATA:
+		sc->sc_rx_stats.data++;
+		break;
+	}
 
 #if NBPFILTER > 0
 	if (__predict_false(sc->sc_drvbpf != NULL)) {
@@ -2275,9 +2322,10 @@ mwx_dump_status(struct mwx_softc *sc, const char *reason, uint32_t cmd, int seq)
 	txwi_used = txwi_capacity - txwi->mt_nfree;
 
 	printf("%s: %s: cmd %08x seq %d state %d flags %x "
-	    "txwi %d/%d timer %d wait %04x\n",
+	    "mgt %d bmiss %d txwi %d/%d timer %d wait %04x\n",
 	    DEVNAME(sc), reason, cmd, seq, sc->sc_ic.ic_state,
-	    sc->sc_ic.ic_if.if_flags, txwi_used, txwi_capacity,
+	    sc->sc_ic.ic_if.if_flags, sc->sc_ic.ic_mgt_timer,
+	    sc->sc_ic.ic_bmissthres, txwi_used, txwi_capacity,
 	    sc->sc_tx_timer, wait);
 	printf("%s: status: fw %08x own %08x dma %08x intr %08x/%08x "
 	    "mcu %08x\n", DEVNAME(sc), mwx_read(sc, MT_CONN_ON_MISC),
@@ -2307,6 +2355,27 @@ mwx_dump_status(struct mwx_softc *sc, const char *reason, uint32_t cmd, int seq)
 	    (unsigned long long)ifp->if_opackets,
 	    (unsigned long long)sc->sc_tx_timeouts,
 	    (unsigned long long)sc->sc_mcu_timeouts);
+	printf("%s: tx status: txs %llu retries %llu failed %llu "
+	    "ack-errors %llu\n", DEVNAME(sc),
+	    (unsigned long long)sc->sc_tx_stats.txs,
+	    (unsigned long long)sc->sc_tx_stats.retries,
+	    (unsigned long long)sc->sc_tx_stats.failed,
+	    (unsigned long long)sc->sc_tx_stats.ack_errors);
+	printf("%s: rx types: normal %llu normal-mcu %llu txs %llu "
+	    "unknown %llu parse-errors %llu\n", DEVNAME(sc),
+	    (unsigned long long)sc->sc_rx_stats.normal,
+	    (unsigned long long)sc->sc_rx_stats.normal_mcu,
+	    (unsigned long long)sc->sc_rx_stats.txs,
+	    (unsigned long long)sc->sc_rx_stats.unknown,
+	    (unsigned long long)sc->sc_rx_stats.parse_errors);
+	printf("%s: radio rx: mgt %llu beacon %llu probe-resp %llu "
+	    "ctl %llu data %llu hwdec %llu\n", DEVNAME(sc),
+	    (unsigned long long)sc->sc_rx_stats.mgmt,
+	    (unsigned long long)sc->sc_rx_stats.beacons,
+	    (unsigned long long)sc->sc_rx_stats.probe_resps,
+	    (unsigned long long)sc->sc_rx_stats.ctl,
+	    (unsigned long long)sc->sc_rx_stats.data,
+	    (unsigned long long)sc->sc_rx_stats.hwdec);
 	printf("%s: activity age: intr %lld tx-intr %lld rx-intr %lld "
 	    "rx-packet %lld mcu-event %lld tx-free %lld\n", DEVNAME(sc),
 	    sc->sc_last_intr ? (long long)(now - sc->sc_last_intr) : -1LL,
@@ -2320,6 +2389,10 @@ mwx_dump_status(struct mwx_softc *sc, const char *reason, uint32_t cmd, int seq)
 	    (long long)(now - sc->sc_last_mcu_event) : -1LL,
 	    sc->sc_last_tx_free ?
 	    (long long)(now - sc->sc_last_tx_free) : -1LL);
+	printf("%s: last radio rx: fc0 %02x chan %u rssi %d flags %08x\n",
+	    DEVNAME(sc), sc->sc_rx_stats.last_fc0,
+	    sc->sc_rx_stats.last_chan, sc->sc_rx_stats.last_rssi,
+	    sc->sc_rx_stats.last_flags);
 }
 
 int
@@ -3162,6 +3235,7 @@ mwx_dma_rx_process(struct mwx_softc *sc, struct mbuf_list *ml)
 			uint32_t *txs;
 			int i, nwords;
 
+			sc->sc_rx_stats.txs++;
 			if ((m = m_pullup(m, m->m_pkthdr.len)) == NULL)
 				break;
 			txs = mtod(m, uint32_t *);
@@ -3171,11 +3245,16 @@ mwx_dma_rx_process(struct mwx_softc *sc, struct mbuf_list *ml)
 			m_freem(m);
 			break;
 		}
-		case PKT_TYPE_NORMAL_MCU:
 		case PKT_TYPE_NORMAL:
+			sc->sc_rx_stats.normal++;
+			mwx_rx(sc, m, &mlout);
+			break;
+		case PKT_TYPE_NORMAL_MCU:
+			sc->sc_rx_stats.normal_mcu++;
 			mwx_rx(sc, m, &mlout);
 			break;
 		default:
+			sc->sc_rx_stats.unknown++;
 			if (DEVDEBUG(sc))
 				printf("%s: received unknown pkt type %d\n",
 				    DEVNAME(sc), type);
