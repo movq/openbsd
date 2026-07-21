@@ -1629,6 +1629,74 @@ ieee80211_save_ie(const u_int8_t *frm, u_int8_t **ie)
 	return 0;
 }
 
+static void
+ieee80211_process_csa(struct ieee80211com *ic, const uint8_t *csa,
+    const uint8_t *xcsa, uint8_t bchan)
+{
+	struct ifnet *ifp = &ic->ic_if;
+	struct ieee80211_channel *curchan = ic->ic_bss->ni_chan;
+	struct ieee80211_channel *newchan;
+	uint8_t mode, chan, count;
+
+	if (csa == NULL && xcsa == NULL) {
+		if (ic->ic_channel_switch != NULL)
+			ic->ic_channel_switch(ic, NULL, 0, 0);
+		return;
+	}
+
+	if (csa != NULL) {
+		mode = csa[2];
+		chan = csa[3];
+		count = csa[4];
+	} else {
+		mode = xcsa[2];
+		chan = xcsa[4];
+		count = xcsa[5];
+	}
+
+	if (mode > 1 || chan == 0 ||
+	    isclr(ic->ic_chan_active, chan) ||
+	    ic->ic_channels[chan].ic_freq == 0) {
+		if (ifp->if_flags & IFF_DEBUG)
+			printf("%s: AP announced switch to unsupported "
+			    "channel %u\n", ifp->if_xname, chan);
+		if (ic->ic_channel_switch != NULL)
+			ic->ic_channel_switch(ic, NULL, 0, 0);
+		ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);
+		return;
+	}
+
+	newchan = &ic->ic_channels[chan];
+	if ((IEEE80211_IS_CHAN_2GHZ(curchan) !=
+	    IEEE80211_IS_CHAN_2GHZ(newchan)) ||
+	    (IEEE80211_IS_CHAN_5GHZ(curchan) !=
+	    IEEE80211_IS_CHAN_5GHZ(newchan))) {
+		if (ifp->if_flags & IFF_DEBUG)
+			printf("%s: AP announced cross-band switch to "
+			    "channel %u\n", ifp->if_xname, chan);
+		if (ic->ic_channel_switch != NULL)
+			ic->ic_channel_switch(ic, NULL, 0, 0);
+		ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);
+		return;
+	}
+
+	if (chan == bchan && mode == 0) {
+		if (ic->ic_channel_switch != NULL)
+			ic->ic_channel_switch(ic, NULL, 0, 0);
+		return;
+	}
+
+	if (ic->ic_channel_switch == NULL) {
+		if (ifp->if_flags & IFF_DEBUG)
+			printf("%s: AP is switching to channel %u; "
+			    "rescanning\n", ifp->if_xname, chan);
+		ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);
+		return;
+	}
+
+	ic->ic_channel_switch(ic, newchan, mode, count);
+}
+
 /*-
  * Beacon/Probe response frame format:
  * [8]   Timestamp
@@ -1903,6 +1971,9 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, struct mbuf *m,
 	    ic->ic_state == IEEE80211_S_RUN &&
 	    ni->ni_state == IEEE80211_STA_BSS) {
 		int updateprot = 0;
+
+		if (!isprobe)
+			ieee80211_process_csa(ic, csa, xcsa, bchan);
 		/*
 		 * Check if protection mode has changed since last beacon.
 		 */
