@@ -267,6 +267,9 @@ struct ieee80211com {
 				    struct ieee80211_node *, u_int8_t);
 	void			(*ic_updateprot)(struct ieee80211com *);
 	void			(*ic_updatechan)(struct ieee80211com *);
+	/* A NULL channel cancels a pending channel switch. */
+	void			(*ic_channel_switch)(struct ieee80211com *,
+				    struct ieee80211_channel *, uint8_t, uint8_t);
 	void			(*ic_updatedtim)(struct ieee80211com *);
 	int			(*ic_bgscan_start)(struct ieee80211com *);
 	void			(*ic_bgscan_done)(struct ieee80211com *,

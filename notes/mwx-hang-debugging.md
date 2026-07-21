@@ -74,10 +74,61 @@ failure because firmware continues completing host TX requests.
 scan messages in `dmesg` and should not be treated as proof that live radio
 reception has resumed. The displayed RSSI can likewise be stale.
 
-The current evidence points toward firmware/radio association state or
+The initial evidence pointed toward firmware/radio association state or
 radio RX becoming wedged while the PCI DMA and host-facing firmware path
-remain operational. It does not look like a generic PCI interrupt failure
+remained operational. It did not look like a generic PCI interrupt failure
 or a full TX-ring lockup.
+
+## Channel-Switch Finding
+
+A second instrumented failure was captured on July 21, 2026. Ten pings
+bound to `192.168.1.68` all failed. The interface counters changed as
+follows:
+
+```text
+Ipkts 3010 -> 3010
+Opkts 2675 -> 2685
+Ofail  125 -> 135
+```
+
+A simultaneous 15-second radiotap capture contained nine outbound ICMP
+echo requests and no inbound frames. The DEBUG-enabled stop dump showed:
+
+```text
+mwx0: progress: submitted 2689 completed 2689 ...
+mwx0: tx status: txs 2689 retries 1885 failed 134 ack-errors 134
+mwx0: rx types: normal 3009 normal-mcu 1271 txs 1486 ...
+mwx0: radio rx: mgt 1271 beacon 1255 ... data 3009 hwdec 3008
+mwx0: activity age: intr 44 tx-intr 44 rx-intr 44 rx-packet 874
+    mcu-event 44 tx-free 44
+mwx0: last radio rx: fc0 80 chan 100 rssi -54 flags 00000000
+```
+
+The host-facing firmware path was still active and all TX requests had
+completed, but no over-the-air frame had arrived for more than 14 minutes.
+The last frame was a beacon on channel 100.
+
+The important new evidence came from recovery. Before teardown, the
+interface and last received frame were on channel 100. Immediately after
+firmware reload, the same AP BSSID (`b8:6a:f1:bf:de:71`) was found and
+rejoined on channel 104, and gateway traffic worked again. This is strong
+evidence that the AP changed channels while `mwx` remained tuned to the old
+channel. It explains the apparent total radio-RX freeze without requiring
+an RX DMA or radio hardware wedge.
+
+Net80211 already recognized CSA and Extended CSA elements while parsing
+beacons, but used them only to mark scan-table nodes as temporarily
+unsuitable for association. It did not process CSA from the associated AP
+in RUN state. By comparison, Linux mac80211 tracks the CSA target and
+countdown and invokes the MT7921 channel-switch callbacks. The Linux driver
+programs the new channel context at countdown expiry while retaining the
+association.
+
+The firmware's reason-6 beacon-loss event was not a reliable substitute for
+CSA. It occurred shortly after association while normal traffic and beacons
+were still arriving. The directed probe timer was correctly cleared by a
+later beacon, but firmware did not send another useful event when the AP
+eventually left channel 100.
 
 ## Existing Recovery and Timeout Paths
 
@@ -236,22 +287,45 @@ For frame-control values in the last-radio-frame line, common values include:
 An RX flags value containing `IEEE80211_RXI_HWDEC` indicates that firmware
 reported successful hardware decryption.
 
-## Possible Recovery Policy
+## CSA Implementation
 
-Automatic recovery should wait until the next dump distinguishes the
-failure mode. A simple lack-of-IP-traffic watchdog would produce false
-positives on an idle network.
+Net80211 now passes validated beacon CSA announcements from the associated
+AP to a driver callback. The parser accepts CSA and Extended CSA elements,
+checks the switch mode and target against the active channel set, and
+rejects cross-band switches. If a driver has no channel-switch callback, or
+the target is unsupported, net80211 falls back to scanning instead of
+remaining on the abandoned channel.
 
-Reasonable later options include:
+The `mwx` callback:
 
-- Rely on the existing directed-probe management timeout if radio RX has
-  completely stopped, after fixing any timer or state-transition issue.
-- Force a rescan when firmware reports beacon loss and no normal radio
-  packet or probe response arrives within the management timeout.
-- Force a full firmware reset rather than only a rescan if host-facing
-  notifications continue but normal RX remains frozen across reassociation.
-- Detect a data/crypto wedge separately when beacons continue but encrypted
-  data and ARP responses do not.
+- Tracks updates to the AP's CSA countdown.
+- Honors CSA mode 1 by blocking new data transmissions until the switch.
+- Uses the AP beacon interval and countdown to schedule the switch.
+- Updates `ic_bss->ni_chan` and sends `MCU_EXT_CMD_CHANNEL_SWITCH` from the
+  driver's serialized task queue.
+- Keeps the existing association, keys, and BA state intact.
+- Cancels stale CSA timers and tasks if the announcement disappears or the
+  interface leaves RUN.
+- Resets the device if firmware rejects or times out the channel-switch
+  command.
 
-Any automated policy should dump status before changing state so that the
-failure evidence is retained.
+The driver's current advertised PHY support is HT20, so the CSA target
+channel is sufficient for its negotiated channel definition. Wider-channel
+CSA wrapper elements will need to be handled when 40/80/160 MHz operation
+is enabled. Spectrum Management and Extended Channel Switch action frames
+are also not yet handled; this first implementation follows CSA elements
+from associated-BSS beacons.
+
+The `MIKE` kernel builds successfully with this implementation. Runtime
+validation still requires booting the new kernel and inducing or waiting
+for another AP channel change. With DEBUG enabled, the expected messages
+are:
+
+```text
+mwx0: AP announced switch to channel 104, mode ..., count ...
+mwx0: switched to channel 104
+```
+
+The interface should remain in RUN and bound gateway traffic should resume
+after only the channel-switch interruption, without a firmware reload or
+new authentication exchange.
