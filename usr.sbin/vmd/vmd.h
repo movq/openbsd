@@ -64,6 +64,7 @@
 #define VM_TTYNAME_MAX		16
 #define VM_MAX_DISKS_PER_VM	4
 #define VM_MAX_NICS_PER_VM	4
+#define VM_DISK_SECTOR_SIZE	512
 
 #define VM_PCI_MMIO_BAR_SIZE	0x00010000
 #define VM_PCI_IO_BAR_BASE	0x1000
@@ -257,6 +258,8 @@ struct vmop_create_params {
 	char			 vmc_disks[VM_MAX_DISKS_PER_VM][PATH_MAX];
 	enum vm_disk_fmt	 vmc_disktypes[VM_MAX_DISKS_PER_VM];
 	unsigned int		 vmc_diskbases[VM_MAX_DISKS_PER_VM];
+	uint64_t		 vmc_disksizes[VM_MAX_DISKS_PER_VM];
+	dev_t			 vmc_diskdevs[VM_MAX_DISKS_PER_VM];
 	char			 vmc_cdrom[PATH_MAX];
 
 	/* Emulated network devices */
@@ -483,6 +486,7 @@ int	 vm_register(struct privsep *, struct vmop_create_params *,
 	    struct vmd_vm **, uint32_t, uid_t);
 int	 vm_checkperm(struct vmd_vm *, struct vmop_owner *, uid_t);
 int	 vm_checkaccess(int, unsigned int, uid_t, int);
+int	 vm_checkdisk(int, unsigned int, uid_t, int, uint64_t *, dev_t *);
 int	 vm_opentty(struct vmd_vm *);
 void	 vm_closetty(struct vmd_vm *);
 void	 switch_remove(struct vmd_switch *);

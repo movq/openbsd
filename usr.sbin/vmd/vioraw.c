@@ -25,36 +25,51 @@
 
 #include "virtio.h"
 
+struct virtio_raw {
+	int	 fd;
+	off_t	 size;
+};
+
 static ssize_t
 raw_pread(void *file, char *buf, size_t len, off_t off)
 {
-	return pread(*(int *)file, buf, len, off);
+	struct virtio_raw *raw = file;
+
+	return pread(raw->fd, buf, len, off);
 }
 
 static ssize_t
 raw_preadv(void *file, struct iovec *iov, int cnt, off_t offset)
 {
-	return preadv(*(int *)file, iov, cnt, offset);
+	struct virtio_raw *raw = file;
+
+	return preadv(raw->fd, iov, cnt, offset);
 }
 
 static ssize_t
 raw_pwrite(void *file, char *buf, size_t len, off_t off)
 {
-	return pwrite(*(int *)file, buf, len, off);
+	struct virtio_raw *raw = file;
+
+	return pwrite(raw->fd, buf, len, off);
 }
 
 static ssize_t
 raw_pwritev(void *file, struct iovec *iov, int cnt, off_t offset)
 {
-	return pwritev(*(int *)file, iov, cnt, offset);
+	struct virtio_raw *raw = file;
+
+	return pwritev(raw->fd, iov, cnt, offset);
 }
 
 static void
 raw_close(void *file, int stayopen)
 {
+	struct virtio_raw *raw = file;
+
 	if (!stayopen)
-		close(*(int *)file);
-	free(file);
+		close(raw->fd);
+	free(raw);
 }
 
 /*
@@ -62,29 +77,32 @@ raw_close(void *file, int stayopen)
  * number of bytes in *szp, returning -1 for error, 0 for success.
  */
 int
-virtio_raw_init(struct virtio_backing *file, off_t *szp, int *fd, size_t nfd)
+virtio_raw_init(struct virtio_backing *file, off_t *szp, int *fd, size_t nfd,
+    off_t size)
 {
-	off_t sz;
-	int *fdp;
+	struct virtio_raw *raw;
 
-	if (nfd != 1)
+	if (nfd != 1 || size < 0)
 		return (-1);
 
-	sz = lseek(fd[0], 0, SEEK_END);
-	if (sz == -1)
-		return (-1);
+	if (size == 0) {
+		size = lseek(fd[0], 0, SEEK_END);
+		if (size == -1)
+			return (-1);
+	}
 
-	fdp = malloc(sizeof(int));
-	if (!fdp)
+	raw = malloc(sizeof(*raw));
+	if (raw == NULL)
 		return (-1);
-	*fdp = fd[0];
-	file->p = fdp;
+	raw->fd = fd[0];
+	raw->size = size;
+	file->p = raw;
 	file->pread = raw_pread;
 	file->preadv = raw_preadv;
 	file->pwrite = raw_pwrite;
 	file->pwritev = raw_pwritev;
 	file->close = raw_close;
-	*szp = sz;
+	*szp = raw->size;
 	return (0);
 }
 

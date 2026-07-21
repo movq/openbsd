@@ -217,7 +217,8 @@ is specified.
 .It Ic disable
 Do not automatically start this VM.
 .It Ic disk Ar path Op Cm format Ar fmt
-Disk image file (may be specified multiple times to add multiple disk images).
+Disk image file or raw character disk device
+(may be specified multiple times to add multiple disks).
 The format may be specified as either
 .Cm qcow2
 (a sparse file format which reduces storage) or
@@ -225,6 +226,21 @@ The format may be specified as either
 If left unspecified, the format defaults to
 .Cm raw
 if it cannot be derived automatically.
+.Pp
+A disk device must be an
+.Ox
+raw character disk partition, must use 512-byte sectors, and must use the
+.Cm raw
+format.
+For example:
+.Bd -literal -offset indent
+disk "/dev/rsd1c" format raw
+.Ed
+.Pp
+The device is passed through with its partition-relative size and offsets.
+The administrator must ensure that it is not mounted, used as swap, or
+otherwise accessed by the host while assigned to a VM.
+Partitions from the same disk unit cannot be assigned to multiple running VMs.
 .It Oo Ic local Oc Ic interface Oo Ar name Oc Op Brq ...
 Network interface to add to the VM.
 The optional
