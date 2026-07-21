@@ -1,0 +1,60 @@
+.\"	$OpenBSD$
+.\"
+.\" Copyright (c) 2026 Mike Jones <mike@mjones.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate$
+.Dt CRYPTCTL 8
+.Os
+.Sh NAME
+.Nm cryptctl
+.Nd configure a virtual disk from a VeraCrypt volume
+.Sh SYNOPSIS
+.Nm cryptctl
+.Op Fl p Ar pim
+.Ar device
+.Sh DESCRIPTION
+The
+.Nm
+utility reads a VeraCrypt header from the disk partition
+.Ar device ,
+prompts for a passphrase, and configures an AES-XTS encrypted
+.Xr softraid 4
+mapping.
+The mapping is attached as an
+.Xr sd 4
+disk and uses no softraid metadata on the backing partition.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl p Ar pim
+Use the VeraCrypt Personal Iterations Multiplier
+.Ar pim .
+The default value of zero selects 500,000 PBKDF2 iterations.
+.El
+.Pp
+Only normal VeraCrypt volumes using AES-XTS with two 256-bit keys and
+PBKDF2-HMAC-SHA512 are supported.
+The primary header is used when possible, with automatic fallback to the
+backup header.
+Hidden volumes, system encryption, in-place encryption, key files, and
+other ciphers or key derivation functions are not supported.
+Mappings can be removed with
+.Xr bioctl 8 .
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr sd 4 ,
+.Xr softraid 4 ,
+.Xr bioctl 8
