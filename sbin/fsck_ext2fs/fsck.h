@@ -163,11 +163,16 @@ extern char	yflag;			/* assume a yes response */
 extern int	bflag;			/* location of alternate super block */
 extern int	debug;			/* output debugging info */
 extern int	preen;			/* just fix normal inconsistencies */
+extern char	Eflag;			/* discard unallocated blocks */
+extern char	resolved;		/* cleared if unresolved changes */
 extern char	havesb;			/* superblock has been read */
 extern char	skipclean;		/* skip clean file systems if preening */
 extern int	fsmodified;		/* 1 => write done to file system */
 extern int	fsreadfd;		/* file descriptor for reading file system */
 extern int	fswritefd;		/* file descriptor for writing file system */
+extern int	fsblockfd;		/* block device held to exclude mounts */
+extern int	ioerror;		/* read or write error occurred */
+extern int	discardfailed;		/* requested discard did not complete */
 extern int	rerun;			/* rerun fsck.  Only used in non-preen mode */
 
 extern daddr32_t	maxfsblock;		/* number of blocks in the file system */
