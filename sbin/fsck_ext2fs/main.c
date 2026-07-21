@@ -80,6 +80,7 @@ char	yflag;			/* assume a yes response */
 int	bflag;			/* location of alternate super block */
 int	debug;			/* output debugging info */
 int	preen;			/* just fix normal inconsistencies */
+char	resolved;		/* cleared if unresolved changes */
 char	havesb;			/* superblock has been read */
 char	skipclean;		/* skip clean file systems if preening */
 int	fsmodified;		/* 1 => write done to file system */
@@ -106,14 +107,20 @@ int
 main(int argc, char *argv[])
 {
 	int ch;
+	int nopt = 0;
 	int ret = 0;
 
 	checkroot();
 
 	sync();
 	skipclean = 1;
-	while ((ch = getopt(argc, argv, "b:dfm:npy")) != -1) {
+	while ((ch = getopt(argc, argv, "Eb:dfm:npy")) != -1) {
 		switch (ch) {
+		case 'E':
+			Eflag = 1;
+			skipclean = 0;
+			break;
+
 		case 'b':
 			skipclean = 0;
 			bflag = argtoi('b', "number", optarg, 10);
@@ -136,6 +143,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'n':
+			nopt = 1;
 			nflag = 1;
 			yflag = 0;
 			break;
@@ -159,16 +167,18 @@ main(int argc, char *argv[])
 
 	if (argc != 1)
 		usage();
+	if (Eflag && nopt)
+		errexit("-E and -n are mutually exclusive\n");
 
 	if (signal(SIGINT, SIG_IGN) != SIG_IGN)
 		(void)signal(SIGINT, catch);
 	if (preen)
 		(void)signal(SIGQUIT, catchquit);
 
-	(void)checkfilesys(blockcheck(*argv), 0, 0L, 0);
+	ret = checkfilesys(blockcheck(*argv), 0, 0L, 0);
 
 	if (returntosingle)
-		ret = 2;
+		ret |= 2;
 
 	exit(ret);
 }
@@ -207,8 +217,27 @@ checkfilesys(char *filesys, char *mntpt, long auxdata, int child)
 		if (preen)
 			pfatal("CAN'T CHECK FILE SYSTEM.");
 	case -1:
-		return (0);
+		if (fsreadfd != -1) {
+			(void)close(fsreadfd);
+			fsreadfd = -1;
+		}
+		if (fswritefd != -1) {
+			(void)close(fswritefd);
+			fswritefd = -1;
+		}
+		if (fsblockfd != -1) {
+			(void)close(fsblockfd);
+			fsblockfd = -1;
+		}
+		return (Eflag ? 8 : 0);
 	}
+
+	/*
+	 * Cleared if any questions are answered no. Used to decide if
+	 * the superblock should be marked clean.
+	 */
+	resolved = 1;
+
 	/*
 	 * 1: scan inodes tallying blocks used
 	 */
@@ -303,15 +332,19 @@ checkfilesys(char *filesys, char *mntpt, long auxdata, int child)
 		sblock.e2fs.e2fs_lastfsck = t;
 		sbdirty();
 	}
-	ckfini(1);
+	if (rerun)
+		resolved = 0;
+	ckfini(resolved);
 	free(blockmap);
 	free(statemap);
 	free((char *)lncntp);
+	if (discardfailed)
+		return (8);
 	if (!fsmodified)
 		return (0);
 	if (!preen)
 		printf("\n***** FILE SYSTEM WAS MODIFIED *****\n");
-	if (rerun)
+	if (rerun || !resolved)
 		printf("\n***** PLEASE RERUN FSCK *****\n");
 	if (hotroot()) {
 		struct statfs stfs_buf;
@@ -348,7 +381,7 @@ usage(void)
 	extern char *__progname;
 
 	(void) fprintf(stderr,
-	    "usage: %s [-dfnpy] [-b block#] [-m mode] filesystem\n",
+	    "usage: %s [-Edfnpy] [-b block#] [-m mode] filesystem\n",
 	    __progname);
 	exit(1);
 }

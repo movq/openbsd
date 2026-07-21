@@ -32,16 +32,19 @@
  */
 
 #include <sys/param.h>	/* DEV_BSIZE isset setbit */
+#include <sys/dkio.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
-#include <sys/signal.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
 #include <ufs/ext2fs/ext2fs_dir.h>
 #include <ufs/ext2fs/ext2fs.h>
 #include <ufs/ufs/dinode.h> /* for IFMT & friends */
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <errno.h>
 
@@ -51,7 +54,13 @@
 
 long	diskreads, totalreads;	/* Disk cache statistics */
 
+char	Eflag;
+int	fsblockfd = -1;
+int	ioerror;
+int	discardfailed;
+
 static void rwerror(char *, daddr32_t);
+static int discardfree(void);
 
 int
 ftypeok(struct ext2fs_dinode *dp)
@@ -86,6 +95,7 @@ reply(char *question)
 	printf("\n");
 	if (!persevere && (nflag || fswritefd < 0)) {
 		printf("%s? no\n\n", question);
+		resolved = 0;
 		return (0);
 	}
 	if (yflag || (persevere && nflag)) {
@@ -101,12 +111,15 @@ reply(char *question)
 			return (1);
 		}
 		while (c != '\n' && getc(stdin) != '\n')
-			if (feof(stdin))
+			if (feof(stdin)) {
+				resolved = 0;
 				return (0);
+			}
 	} while (c != 'y' && c != 'Y' && c != 'n' && c != 'N');
 	printf("\n");
 	if (c == 'y' || c == 'Y')
 		return (1);
+	resolved = 0;
 	return (0);
 }
 
@@ -231,10 +244,22 @@ void
 ckfini(int markclean)
 {
 	struct bufarea *bp, *nbp;
+	int force;
 	int cnt = 0;
+	sigset_t oset, nset;
+
+	sigemptyset(&nset);
+	sigaddset(&nset, SIGINT);
+	sigprocmask(SIG_BLOCK, &nset, &oset);
 
 	if (fswritefd < 0) {
 		(void)close(fsreadfd);
+		fsreadfd = -1;
+		if (fsblockfd != -1) {
+			(void)close(fsblockfd);
+			fsblockfd = -1;
+		}
+		sigprocmask(SIG_SETMASK, &oset, NULL);
 		return;
 	}
 	flush(fswritefd, &sblk);
@@ -271,11 +296,90 @@ ckfini(int markclean)
 			flush(fswritefd, &sblk);
 		}
 	}
+	if (Eflag && blockmap != NULL) {
+		if (!markclean || rerun || ioerror) {
+			pwarn("FREE SPACE NOT DISCARDED: FILE SYSTEM CHECK "
+			    "DID NOT COMPLETE CLEANLY\n");
+			discardfailed = 1;
+		} else {
+			force = 1;
+			if (ioctl(fswritefd, DIOCCACHESYNC, &force) == -1) {
+				pwarn("FREE SPACE NOT DISCARDED: CACHE SYNC: %s\n",
+				    strerror(errno));
+				discardfailed = 1;
+			} else if (!discardfree())
+				discardfailed = 1;
+		}
+	}
 	if (debug)
 		printf("cache missed %ld of %ld (%d%%)\n", diskreads,
 		    totalreads, (int)(diskreads * 100 / totalreads));
 	(void)close(fsreadfd);
+	fsreadfd = -1;
 	(void)close(fswritefd);
+	fswritefd = -1;
+	if (fsblockfd != -1) {
+		(void)close(fsblockfd);
+		fsblockfd = -1;
+	}
+	sigprocmask(SIG_SETMASK, &oset, NULL);
+}
+
+static int
+discardfree(void)
+{
+	struct dk_discard discard = { 0 };
+	struct dk_discard_range *range;
+	uint64_t block, start, end;
+	uint64_t bytes = 0, nranges = 0;
+
+	if (preen)
+		pwarn("DISCARDING FREE SPACE\n");
+	else
+		printf("** Discarding free space\n");
+
+	end = sblock.e2fs.e2fs_bcount;
+	if (sblock.e2fs_bsize <= 0 ||
+	    end > UINT64_MAX / sblock.e2fs_bsize) {
+		pwarn("DISCARD FAILED: FILE SYSTEM IS TOO LARGE\n");
+		return (0);
+	}
+	for (block = 0; block < end;) {
+		while (block < end && testbmap(block))
+			block++;
+		if (block == end)
+			break;
+		start = block;
+		while (block < end && !testbmap(block))
+			block++;
+
+		range = &discard.ranges[discard.nranges++];
+		range->offset = start * (uint64_t)sblock.e2fs_bsize;
+		range->length = (block - start) *
+		    (uint64_t)sblock.e2fs_bsize;
+		bytes += range->length;
+		nranges++;
+		if (debug)
+			printf("discard offset %llu length %llu\n",
+			    (unsigned long long)range->offset,
+			    (unsigned long long)range->length);
+
+		if (discard.nranges != DK_DISCARD_MAX_RANGES)
+			continue;
+		if (ioctl(fswritefd, DIOCDISCARD, &discard) == -1) {
+			pwarn("DISCARD FAILED: %s\n", strerror(errno));
+			return (0);
+		}
+		discard.nranges = 0;
+	}
+	if (discard.nranges != 0 &&
+	    ioctl(fswritefd, DIOCDISCARD, &discard) == -1) {
+		pwarn("DISCARD FAILED: %s\n", strerror(errno));
+		return (0);
+	}
+	printf("Discarded %llu bytes in %llu ranges\n",
+	    (unsigned long long)bytes, (unsigned long long)nranges);
+	return (1);
 }
 
 int
@@ -289,6 +393,7 @@ bread(int fd, char *buf, daddr32_t blk, long size)
 	offset *= DEV_BSIZE;
 	if (pread(fd, buf, size, offset) == size)
 		return (0);
+	ioerror = 1;
 	rwerror("READ", blk);
 	errs = 0;
 	memset(buf, 0, (size_t)size);
@@ -324,6 +429,7 @@ bwrite(int fd, char *buf, daddr32_t blk, long size)
 		fsmodified = 1;
 		return;
 	}
+	ioerror = 1;
 	rwerror("WRITE", blk);
 	printf("THE FOLLOWING SECTORS COULD NOT BE WRITTEN:");
 	for (cp = buf, i = 0; i < size; i += secsize, cp += secsize)
