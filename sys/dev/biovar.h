@@ -280,6 +280,17 @@ struct bioc_patrol {
 	int		bp_autonow;
 };
 
+#define BIOCCRYPTOPLAIN _IOWR('B', 43, struct bioc_crypto_plain)
+struct bioc_crypto_plain {
+	struct bio	bcp_bio;
+	dev_t		bcp_backing_dev;
+	u_int32_t	bcp_flags;
+	u_int64_t	bcp_data_offset;
+	u_int64_t	bcp_data_length;
+	u_int64_t	bcp_iv_offset;
+	u_int8_t	bcp_key[64];
+};
+
 /* kernel and userspace defines */
 #define BIOC_INQ		0x0001
 #define BIOC_DISK		0x0002
@@ -292,6 +303,7 @@ struct bioc_patrol {
 #define BIOC_DISCIPLINE		0x0100
 #define BIOC_INSTALLBOOT	0x0200
 #define BIOC_PATROL		0x0400
+#define BIOC_CRYPTOPLAIN	0x0800
 
 /* user space defines */
 #define BIOC_DEVLIST		0x10000
