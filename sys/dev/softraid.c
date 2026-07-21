@@ -3709,7 +3709,6 @@ sr_ioctl_cryptoplain(struct sr_softc *sc, struct bioc_crypto_plain *bcp)
 	sd->sd_create = NULL;
 	sd->sd_assemble = NULL;
 	sd->sd_ioctl_handler = NULL;
-	sd->sd_discard = NULL;
 	sd->sd_meta_opt_handler = NULL;
 	sd->sd_meta_type = SR_META_F_NATIVE;
 	sd->sd_meta_flags = BIOC_SCNOAUTOASSEMBLE;
