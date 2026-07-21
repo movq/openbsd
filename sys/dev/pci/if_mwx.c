@@ -383,12 +383,18 @@ struct mwx_softc {
 	struct task		sc_ba_task;
 	struct task		sc_scan_task;
 	struct task		sc_reset_task;
+	struct task		sc_csa_task;
 	struct mwx_ba_task_data	sc_ba_rx;
 	struct mwx_ba_task_data	sc_ba_tx;
 	struct timeout		sc_reset_to;
+	struct timeout		sc_csa_to;
 	u_int			sc_flags;
 #define MWX_FLAG_SCANNING		0x01
 #define MWX_FLAG_BGSCAN			0x02
+#define MWX_FLAG_CSA			0x04
+#define MWX_FLAG_CSA_BLOCK_TX		0x08
+	struct ieee80211_channel *sc_csa_chan;
+	uint8_t			sc_csa_count;
 	int			sc_coredump_cnt;
 	int8_t			sc_resetting;
 	int8_t			sc_fw_loaded;
@@ -559,6 +565,11 @@ void		mwx_radiotap_attach(struct mwx_softc *);
 
 int		mwx_newstate(struct ieee80211com *, enum ieee80211_state, int);
 void		mwx_newstate_task(void *);
+void		mwx_channel_switch(struct ieee80211com *,
+		    struct ieee80211_channel *, uint8_t, uint8_t);
+void		mwx_csa_cancel(struct mwx_softc *, int);
+void		mwx_csa_timeo(void *);
+void		mwx_csa_task(void *);
 void		mwx_updateedca(struct ieee80211com *);
 int		mwx_ampdu_rx_start(struct ieee80211com *,
 		    struct ieee80211_node *, uint8_t);
@@ -935,7 +946,12 @@ mwx_stop(struct ifnet *ifp)
 	task_del(sc->sc_nswq, &sc->sc_ba_task);
 	task_del(sc->sc_nswq, &sc->sc_scan_task);
 	task_del(sc->sc_nswq, &sc->sc_reset_task);
+	task_del(sc->sc_nswq, &sc->sc_csa_task);
 	timeout_del(&sc->sc_reset_to);
+	timeout_del(&sc->sc_csa_to);
+	sc->sc_flags &= ~(MWX_FLAG_CSA | MWX_FLAG_CSA_BLOCK_TX);
+	sc->sc_csa_chan = NULL;
+	sc->sc_csa_count = 0;
 	memset(&sc->sc_ba_rx, 0, sizeof(sc->sc_ba_rx));
 	memset(&sc->sc_ba_tx, 0, sizeof(sc->sc_ba_tx));
 
@@ -1362,6 +1378,130 @@ mwx_node_leave(struct ieee80211com *ic, struct ieee80211_node *ni)
 }
 #endif
 
+void
+mwx_csa_cancel(struct mwx_softc *sc, int restart)
+{
+	struct ifnet *ifp = &sc->sc_ic.ic_if;
+	int blocked = sc->sc_flags & MWX_FLAG_CSA_BLOCK_TX;
+
+	timeout_del(&sc->sc_csa_to);
+	task_del(sc->sc_nswq, &sc->sc_csa_task);
+	sc->sc_flags &= ~(MWX_FLAG_CSA | MWX_FLAG_CSA_BLOCK_TX);
+	sc->sc_csa_chan = NULL;
+	sc->sc_csa_count = 0;
+
+	if (blocked && !mwx_tx_resources_full(sc)) {
+		ifq_clr_oactive(&ifp->if_snd);
+		if (restart && (ifp->if_flags & IFF_RUNNING))
+			(*ifp->if_start)(ifp);
+	}
+}
+
+void
+mwx_channel_switch(struct ieee80211com *ic, struct ieee80211_channel *chan,
+    uint8_t mode, uint8_t count)
+{
+	struct mwx_softc *sc = ic->ic_softc;
+	struct ifnet *ifp = &ic->ic_if;
+	uint64_t usecs;
+	int first;
+
+	if (chan == NULL) {
+		if (sc->sc_flags & MWX_FLAG_CSA)
+			mwx_csa_cancel(sc, 1);
+		return;
+	}
+
+	first = (sc->sc_flags & MWX_FLAG_CSA) == 0 ||
+	    sc->sc_csa_chan != chan;
+	sc->sc_flags |= MWX_FLAG_CSA;
+	sc->sc_csa_chan = chan;
+	sc->sc_csa_count = count;
+
+	if (mode != 0) {
+		sc->sc_flags |= MWX_FLAG_CSA_BLOCK_TX;
+		ifq_set_oactive(&ifp->if_snd);
+	} else if (sc->sc_flags & MWX_FLAG_CSA_BLOCK_TX) {
+		sc->sc_flags &= ~MWX_FLAG_CSA_BLOCK_TX;
+		if (!mwx_tx_resources_full(sc)) {
+			ifq_clr_oactive(&ifp->if_snd);
+			(*ifp->if_start)(ifp);
+		}
+	}
+
+	if (first && DEVDEBUG(sc))
+		printf("%s: AP announced switch to channel %u, mode %u, "
+		    "count %u\n", DEVNAME(sc), ieee80211_chan2ieee(ic, chan),
+		    mode, count);
+
+	if (count == 0) {
+		timeout_del(&sc->sc_csa_to);
+		task_add(sc->sc_nswq, &sc->sc_csa_task);
+		return;
+	}
+
+	usecs = (uint64_t)count *
+	    (ic->ic_bss->ni_intval != 0 ? ic->ic_bss->ni_intval : 100) *
+	    IEEE80211_DUR_TU;
+	timeout_add_usec(&sc->sc_csa_to, usecs);
+}
+
+void
+mwx_csa_timeo(void *arg)
+{
+	struct mwx_softc *sc = arg;
+
+	if (sc->sc_flags & MWX_FLAG_CSA)
+		task_add(sc->sc_nswq, &sc->sc_csa_task);
+}
+
+void
+mwx_csa_task(void *arg)
+{
+	struct mwx_softc *sc = arg;
+	struct ieee80211com *ic = &sc->sc_ic;
+	struct ifnet *ifp = &ic->ic_if;
+	struct ieee80211_channel *oldchan, *newchan;
+	int blocked, rv, s;
+
+	s = splnet();
+	if (ic->ic_state != IEEE80211_S_RUN ||
+	    (sc->sc_flags & MWX_FLAG_CSA) == 0 ||
+	    sc->sc_csa_chan == NULL) {
+		splx(s);
+		return;
+	}
+
+	oldchan = ic->ic_bss->ni_chan;
+	newchan = sc->sc_csa_chan;
+	blocked = sc->sc_flags & MWX_FLAG_CSA_BLOCK_TX;
+	ic->ic_bss->ni_chan = newchan;
+
+	rv = mt7921_set_channel(sc);
+	if (rv != 0) {
+		ic->ic_bss->ni_chan = oldchan;
+		mwx_csa_cancel(sc, 0);
+		printf("%s: could not switch to channel %u\n", DEVNAME(sc),
+		    ieee80211_chan2ieee(ic, newchan));
+		mwx_reset(sc);
+		splx(s);
+		return;
+	}
+
+	if (DEVDEBUG(sc))
+		printf("%s: switched to channel %u\n", DEVNAME(sc),
+		    ieee80211_chan2ieee(ic, newchan));
+
+	sc->sc_flags &= ~(MWX_FLAG_CSA | MWX_FLAG_CSA_BLOCK_TX);
+	sc->sc_csa_chan = NULL;
+	sc->sc_csa_count = 0;
+	if (blocked && !mwx_tx_resources_full(sc)) {
+		ifq_clr_oactive(&ifp->if_snd);
+		(*ifp->if_start)(ifp);
+	}
+	splx(s);
+}
+
 int
 mwx_newstate(struct ieee80211com *ic, enum ieee80211_state nstate, int arg)
 {
@@ -1377,9 +1517,8 @@ mwx_newstate(struct ieee80211com *ic, enum ieee80211_state nstate, int arg)
 	    nstate != IEEE80211_S_AUTH)
 		return 0;
 
-	if (ic->ic_state == IEEE80211_S_RUN) {
-		/* cancel other tasks here */
-	}
+	if (ic->ic_state == IEEE80211_S_RUN && nstate != IEEE80211_S_RUN)
+		mwx_csa_cancel(sc, 0);
 
 	sc->sc_ns_state = nstate;
 	sc->sc_ns_arg = arg;
@@ -2162,6 +2301,7 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	ic->ic_set_key = mwx_set_key;
 	ic->ic_delete_key = mwx_delete_key;
 	ic->ic_updateedca = mwx_updateedca;
+	ic->ic_channel_switch = mwx_channel_switch;
 	ic->ic_ampdu_rx_start = mwx_ampdu_rx_start;
 	ic->ic_ampdu_rx_stop = mwx_ampdu_rx_stop;
 	ic->ic_ampdu_tx_start = mwx_ampdu_tx_start;
@@ -2179,7 +2319,9 @@ mwx_attach(struct device *parent, struct device *self, void *aux)
 	task_set(&sc->sc_ba_task, mwx_ba_task, sc);
 	task_set(&sc->sc_scan_task, mwx_end_scan_task, sc);
 	task_set(&sc->sc_reset_task, mwx_reset_task, sc);
+	task_set(&sc->sc_csa_task, mwx_csa_task, sc);
 	timeout_set(&sc->sc_reset_to, mwx_reset_timeo, sc);
+	timeout_set(&sc->sc_csa_to, mwx_csa_timeo, sc);
 
 	/*
 	 * We cannot read the MAC address without loading the
@@ -3004,6 +3146,8 @@ mwx_tx_restart(struct mwx_softc *sc)
 
 	if (!(ifp->if_flags & IFF_RUNNING) ||
 	    !ifq_is_oactive(&ifp->if_snd))
+		return;
+	if (sc->sc_flags & MWX_FLAG_CSA_BLOCK_TX)
 		return;
 	if (txwi_used > MIN(MWX_TXWI_LOMARK, txwi_capacity / 2) ||
 	    mwx_dma_queued(ring) >= mwx_tx_ring_lowmark(ring_capacity))
