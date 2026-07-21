@@ -7,7 +7,7 @@ device without requiring a softraid header, key metadata, or reserved metadata
 area on the backing device.
 
 The intended use is mapping an existing encrypted payload whose geometry and
-raw AES-XTS key have already been determined by userland, including VeraCrypt
+raw AES-XTS key have already been determined by userland, including LUKS or VeraCrypt
 volumes using Linux-compatible `aes-xts-plain64` sector tweaks.
 
 The mode should reuse softraid's established:
@@ -20,23 +20,7 @@ The mode should reuse softraid's established:
 - device attachment and detachment
 - lower-device error propagation
 
-It should not add another asynchronous engine to `vnd(4)`.
-
-## Non-goals
-
-The first implementation does not provide:
-
-- an on-disk softraid format
-- metadata probing or auto-assembly
-- passphrase derivation in the kernel
-- encrypted or wrapped key storage
-- key disks or passphrase changes
-- boot or hibernation support
-- rebuild, redundancy, or hot-spare support
-- regular-file backing
-- compatibility with native softraid CRYPTO metadata
-
-Userland remains responsible for parsing the container format, deriving or
+Userland is responsible for parsing the container format, deriving or
 recovering the raw XTS key, validating format-specific parameters, and
 destroying its copy of the key after configuration.
 
@@ -218,31 +202,13 @@ The existing native crypto paths require an audit here before they are shared.
 In particular, `sr_crypto_rw()` must not continue to lower submission after
 completing a request for an encryption error.
 
-## Flush and discard
-
-SCSI `SYNCHRONIZE CACHE` must provide a real persistence barrier:
-
-1. stop later work from passing the synchronization command
-2. wait for all older crypto and child writes to complete
-3. issue `DIOCCACHESYNC` to the backing block device
-4. propagate a lower flush failure to the SCSI command
-5. allow later work to proceed only after the flush returns
-
-The current generic softraid sync path drains pending work but does not itself
-forward a lower cache flush. Add a transient-specific sync method or improve
-the shared helper without changing native semantics unintentionally.
-
-Discard is optional for the first implementation. If enabled, it must:
+## Discard
 
 - drain older work and prevent later work from overtaking the discard
 - validate ranges against the exposed volume
 - translate ranges by the data offset
 - preserve sector alignment and overflow checks
 - reject discard on a read-only mapping
-
-Discard reveals allocation patterns and destroys ciphertext without knowing
-the plaintext format. Userland should opt into it explicitly if that policy is
-not already implied by the mapping interface.
 
 ## Creation sequence
 
@@ -282,98 +248,3 @@ Deletion should use the established SCSI and softraid shutdown mechanisms:
 10. free synthetic geometry and discipline state
 
 Transient deletion must never save or clear softraid metadata.
-
-## Native softraid issues to resolve
-
-Reusing the softraid pipeline reduces new concurrency code, but it does not
-make all inherited behavior automatically correct. Before enabling transient
-mode, audit and resolve at least:
-
-- encryption failure followed by continued lower submission
-- `crypto_invoke()` session migration and `EAGAIN`
-- synchronization that drains but does not flush the lower device cache
-- read and write residual handling on short lower transfers
-- XTS IV behavior across crypto providers and big-endian systems
-- work-unit and taskq draining during forced and normal detach
-- direct-I/O backing ownership and buffer-cache aliases
-- bounds checks at the final exposed sector
-- cleanup after partially allocated crypto work units
-
-Prefer fixes in shared helpers only when native CRYPTO can use them without an
-on-disk compatibility change. Otherwise keep transient-specific behavior
-separate.
-
-## Userland
-
-`cryptctl(8)` or a new tool can retain responsibility for:
-
-- parsing VeraCrypt or LUKS metadata
-- prompting for credentials
-- deriving and validating candidate keys
-- choosing data offset, length, sector sizes, and IV offset
-- invoking the transient configuration ioctl
-- clearing all key material before exit
-
-The kernel ABI should describe a generic raw AES-XTS plain64 mapping, not
-VeraCrypt-specific headers. This keeps format parsing out of the kernel and
-permits future LUKS support without changing the data path.
-
-## Implementation stages
-
-1. Add a transient discipline type and a creation stub that cannot touch
-   metadata.
-2. Build synthetic in-memory geometry and attach a read-only identity target.
-3. Factor native crypto descriptor preparation without changing its output.
-4. Add one-key plain64 preparation with configurable XTS data-unit and IV
-   offsets.
-5. Reuse the existing work-unit, CCB, and child-buffer path.
-6. Correct crypto-error and short-I/O completion behavior.
-7. Implement and test a real lower cache flush barrier.
-8. Add read-only transient creation and deletion.
-9. Add writable mappings after backing ownership and flush behavior are
-   demonstrated.
-10. Add optional discard only after ordering tests exist.
-
-Keep the synchronous XTS `vnd(4)` implementation as a compatibility oracle
-during development. Do not remove it until sector-for-sector tests show that
-the transient softraid mapping produces identical ciphertext.
-
-## Correctness tests
-
-At minimum, test:
-
-- sector-for-sector VeraCrypt and Linux `aes-xts-plain64` fixtures
-- non-zero data and IV offsets
-- supported exposed and XTS sector-size combinations
-- first, last, and both sides of the `2^32` sector boundary
-- mappings larger than the native softraid 0.5-TB key interval
-- queue saturation beyond the number of work units
-- mixed concurrent reads and writes
-- lower read, write, short-transfer, crypto, and flush failures
-- immediate lower completion
-- repeated create, I/O, flush, and delete cycles
-- deletion while I/O is active
-- rejection of unaligned backing geometry
-- rejection of mounted, aliased, or already claimed backing devices
-- confirmation that metadata-area bytes are never modified
-- provider migration and big-endian IV behavior where available
-
-Use `DIAGNOSTIC`, `WITNESS`, memory poisoning, and deterministic lower-I/O
-fault injection. Ordering tests must record lower submission, completion, and
-flush events; filesystem stress alone is not proof of a correct barrier.
-
-## Completion criteria
-
-The first implementation is complete when:
-
-- transient creation performs no softraid metadata I/O
-- the mapping attaches as a normal `sd(4)` device
-- all valid data I/O uses the established softraid work-unit path
-- ciphertext matches the synchronous `vnd(4)` reference exactly
-- flush reaches the backing device after all older writes and before later
-  writes
-- no failed or short read exposes ciphertext as successful plaintext
-- no crypto failure submits or completes an upper request twice
-- teardown cannot free a key, session, vnode, CCB, or work unit still in use
-- backing buffer-cache aliases cannot overwrite direct ciphertext I/O
-- native softraid CRYPTO on-disk behavior remains unchanged
