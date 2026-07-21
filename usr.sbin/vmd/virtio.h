@@ -402,7 +402,7 @@ ssize_t virtio_qcow2_get_base(int, char *, size_t, const char *);
 int virtio_qcow2_create(const char *, const char *, uint64_t);
 int virtio_qcow2_init(struct virtio_backing *, off_t *, int*, size_t);
 int virtio_raw_create(const char *, uint64_t);
-int virtio_raw_init(struct virtio_backing *, off_t *, int*, size_t);
+int virtio_raw_init(struct virtio_backing *, off_t *, int *, size_t, off_t);
 
 void vionet_set_hostmac(struct vmd_vm *, unsigned int, uint8_t *);
 

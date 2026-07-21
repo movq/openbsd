@@ -135,7 +135,8 @@ vioblk_main(int fd, int fd_vmm)
 	switch (type) {
 	case VMDF_RAW:
 		ret = virtio_raw_init(&vioblk->file, &szp, vioblk->disk_fd,
-		    vioblk->ndisk_fd);
+		    vioblk->ndisk_fd,
+		    (off_t)vm.vm_params.vmc_disksizes[vioblk->idx]);
 		break;
 	case VMDF_QCOW2:
 		ret = virtio_qcow2_init(&vioblk->file, &szp, vioblk->disk_fd,
@@ -149,7 +150,7 @@ vioblk_main(int fd, int fd_vmm)
 		log_warnx("failed to init disk %s image", disk_type(type));
 		goto fail;
 	}
-	vioblk->capacity = szp / 512;
+	vioblk->capacity = szp / VIRTIO_BLK_SECTOR_SIZE;
 	log_debug("%s: initialized vioblk%d with %s image (capacity=%lld)",
 	    __func__, vioblk->idx, disk_type(type), vioblk->capacity);
 
@@ -319,6 +320,13 @@ vioblk_notifyq(struct virtio_dev *dev, uint16_t vq_idx)
 		case VIRTIO_BLK_T_OUT:
 			/* Read (IN) & Write (OUT) */
 			is_write = (cmd->type == VIRTIO_BLK_T_OUT) ? 1 : 0;
+			if (cmd->sector >
+			    INT64_MAX / VIRTIO_BLK_SECTOR_SIZE) {
+				log_warnx("%s: invalid sector 0x%llx",
+				    __func__, cmd->sector);
+				ds = VIRTIO_BLK_S_IOERR;
+				break;
+			}
 			offset = cmd->sector * VIRTIO_BLK_SECTOR_SIZE;
 			sz = vioblk_io(vioblk, vq_info, is_write, offset, table,
 			    &desc);
@@ -649,6 +657,7 @@ vioblk_io(struct vioblk_dev *dev, struct virtio_vq_info *vq_info, int is_write,
 {
 	struct iovec *iov = NULL;
 	ssize_t sz = 0;
+	uint64_t capacity;
 	size_t io_idx = 0;		/* Index into iovec workqueue. */
 	size_t xfer_sz = 0;		/* Total accumulated io bytes. */
 
@@ -672,6 +681,10 @@ vioblk_io(struct vioblk_dev *dev, struct virtio_vq_info *vq_info, int is_write,
 			return (-1);
 
 		/* Move our counters. */
+		if (iov->iov_len > SIZE_MAX - xfer_sz) {
+			log_warnx("%s: invalid transfer size", __func__);
+			return (-1);
+		}
 		xfer_sz += iov->iov_len;
 		io_idx++;
 
@@ -691,14 +704,22 @@ vioblk_io(struct vioblk_dev *dev, struct virtio_vq_info *vq_info, int is_write,
 	 * Checking offset is just an extra caution as it is derived from
 	 * a disk sector and is done for completeness in bounds checking.
 	 */
-	if (offset % VIRTIO_BLK_SECTOR_SIZE != 0 &&
+	if (offset % VIRTIO_BLK_SECTOR_SIZE != 0 ||
 	    xfer_sz % VIRTIO_BLK_SECTOR_SIZE != 0) {
-		log_warnx("%s: unaligned read", __func__);
+		log_warnx("%s: unaligned %s", __func__,
+		    is_write ? "write" : "read");
 		return (-1);
 	}
 	if (xfer_sz > SSIZE_MAX) {	/* iovec_copyin limit */
 		log_warnx("%s: invalid %s size: %zu", __func__,
 		    is_write ? "write" : "read", xfer_sz);
+		return (-1);
+	}
+	capacity = dev->capacity * VIRTIO_BLK_SECTOR_SIZE;
+	if ((uint64_t)offset > capacity ||
+	    xfer_sz > capacity - (uint64_t)offset) {
+		log_warnx("%s: %s exceeds disk capacity", __func__,
+		    is_write ? "write" : "read");
 		return (-1);
 	}
 

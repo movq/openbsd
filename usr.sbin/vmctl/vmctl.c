@@ -854,7 +854,7 @@ open_imagefile(int type, const char *imgfile_path, int flags,
 		ret = virtio_qcow2_init(file, sz, basefd, nfd);
 		break;
 	default:
-		ret = virtio_raw_init(file, sz, &fd, 1);
+		ret = virtio_raw_init(file, sz, &fd, 1, 0);
 		break;
 	}
 
