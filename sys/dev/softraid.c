@@ -106,6 +106,10 @@ int			sr_ioctl_setstate(struct sr_softc *,
 			    struct bioc_setstate *);
 int			sr_ioctl_createraid(struct sr_softc *,
 			    struct bioc_createraid *, int, void *);
+#ifdef CRYPTO
+int			sr_ioctl_cryptoplain(struct sr_softc *,
+			    struct bioc_crypto_plain *);
+#endif
 int			sr_ioctl_deleteraid(struct sr_softc *,
 			    struct sr_discipline *, struct bioc_deleteraid *);
 int			sr_ioctl_discipline(struct sr_softc *,
@@ -644,6 +648,9 @@ sr_meta_save(struct sr_discipline *sd, u_int32_t flags)
 	struct sr_meta_opt_hdr	*omh;
 	struct sr_meta_opt_item *omi;
 	int			i;
+
+	if (ISSET(sd->sd_flags, SR_DF_TRANSIENT))
+		return (0);
 
 	DNPRINTF(SR_D_META, "%s: sr_meta_save %s\n",
 	    DEVNAME(sc), sd->sd_meta->ssd_devname);
@@ -2533,6 +2540,16 @@ sr_bio_handler(struct sr_softc *sc, struct sr_discipline *sd, u_long cmd,
 		    1, NULL);
 		break;
 
+	case BIOCCRYPTOPLAIN:
+		DNPRINTF(SR_D_IOCTL, "cryptoplain\n");
+#ifdef CRYPTO
+		rv = sr_ioctl_cryptoplain(sc,
+		    (struct bioc_crypto_plain *)bio);
+#else
+		rv = EOPNOTSUPP;
+#endif
+		break;
+
 	case BIOCDELETERAID:
 		DNPRINTF(SR_D_IOCTL, "deleteraid\n");
 		rv = sr_ioctl_deleteraid(sc, sd, (struct bioc_deleteraid *)bio);
@@ -3616,6 +3633,235 @@ unwind:
 	return (rv);
 }
 
+#ifdef CRYPTO
+int
+sr_ioctl_cryptoplain(struct sr_softc *sc, struct bioc_crypto_plain *bcp)
+{
+	struct bioc_crypto_plain cfg;
+	struct sr_discipline	*sd = NULL;
+	struct sr_crypto	*scr;
+	struct sr_metadata	*sm;
+	struct sr_chunk		*chunk;
+	struct disklabel	*label = NULL;
+	struct vnode		*vn;
+	struct scsi_link	*link;
+	struct device		*dev;
+	u_int64_t		 part_blocks, part_bytes;
+	u_int64_t		 data_blocks, data_end;
+	u_int64_t		 data_offset_blocks;
+	int			 error, i, part, rv = EINVAL, target, vol;
+	char			 devname[32];
+
+	memcpy(&cfg, bcp, sizeof(cfg));
+	explicit_bzero(bcp->bcp_key, sizeof(bcp->bcp_key));
+
+	if ((error = suser(curproc)) != 0) {
+		rv = error;
+		goto done;
+	}
+#if BYTE_ORDER != LITTLE_ENDIAN
+	rv = EOPNOTSUPP;
+	sr_error(sc, "plain64 crypto mappings require little-endian");
+	goto done;
+#endif
+	if (cfg.bcp_flags != 0 || cfg.bcp_backing_dev == NODEV)
+		goto done;
+	if (cfg.bcp_data_length == 0 ||
+	    cfg.bcp_data_offset % DEV_BSIZE != 0 ||
+	    cfg.bcp_data_length % DEV_BSIZE != 0)
+		goto done;
+	if (cfg.bcp_data_offset >
+	    UINT64_MAX - cfg.bcp_data_length)
+		goto done;
+
+	data_end = cfg.bcp_data_offset + cfg.bcp_data_length;
+	data_offset_blocks = cfg.bcp_data_offset / DEV_BSIZE;
+	data_blocks = cfg.bcp_data_length / DEV_BSIZE;
+	if (data_offset_blocks > UINT32_MAX || data_blocks > INT64_MAX)
+		goto done;
+	if (cfg.bcp_iv_offset >
+	    UINT64_MAX - (data_blocks - 1))
+		goto done;
+
+	sr_meta_getdevname(sc, cfg.bcp_backing_dev, devname,
+	    sizeof(devname));
+	if (sr_chunk_in_use(sc, cfg.bcp_backing_dev) != BIOC_SDINVALID) {
+		sr_error(sc, "chunk %s already in use", devname);
+		goto done;
+	}
+
+	sd = malloc(sizeof(*sd), M_DEVBUF, M_WAITOK | M_ZERO);
+	sd->sd_sc = sc;
+	SLIST_INIT(&sd->sd_meta_opt);
+	SLIST_INIT(&sd->sd_vol.sv_chunk_list);
+	sd->sd_taskq = taskq_create("srdis", 1, IPL_BIO, 0);
+	if (sd->sd_taskq == NULL) {
+		sr_error(sc, "could not create discipline taskq");
+		goto done;
+	}
+	if (sr_discipline_init(sd, 'C')) {
+		sr_error(sc, "could not initialize CRYPTO discipline");
+		goto done;
+	}
+
+	sd->sd_flags |= SR_DF_TRANSIENT;
+	sd->sd_capabilities &= ~SR_CAP_AUTO_ASSEMBLE;
+	sd->sd_create = NULL;
+	sd->sd_assemble = NULL;
+	sd->sd_ioctl_handler = NULL;
+	sd->sd_discard = NULL;
+	sd->sd_meta_opt_handler = NULL;
+	sd->sd_meta_type = SR_META_F_NATIVE;
+	sd->sd_meta_flags = BIOC_SCNOAUTOASSEMBLE;
+	sd->sd_max_ccb_per_wu = 1;
+
+	chunk = malloc(sizeof(*chunk), M_DEVBUF, M_WAITOK | M_ZERO);
+	chunk->src_dev_mm = cfg.bcp_backing_dev;
+	strlcpy(chunk->src_devname, devname, sizeof(chunk->src_devname));
+	SLIST_INSERT_HEAD(&sd->sd_vol.sv_chunk_list, chunk, src_link);
+
+	if (bdevvp(cfg.bcp_backing_dev, &vn) != 0) {
+		sr_error(sc, "cannot allocate vnode for %s", devname);
+		goto done;
+	}
+	error = VOP_OPEN(vn, FREAD | FWRITE, NOCRED, curproc);
+	if (error != 0) {
+		sr_error(sc, "cannot open %s", devname);
+		vput(vn);
+		rv = error;
+		goto done;
+	}
+	chunk->src_vn = vn;
+
+	label = malloc(sizeof(*label), M_DEVBUF, M_WAITOK | M_ZERO);
+	error = VOP_IOCTL(vn, DIOCGDINFO, (caddr_t)label, FREAD,
+	    NOCRED, curproc);
+	if (error != 0) {
+		sr_error(sc, "cannot obtain disklabel for %s", devname);
+		rv = error;
+		goto done;
+	}
+
+	part = DISKPART(cfg.bcp_backing_dev);
+	if (part >= label->d_npartitions ||
+	    label->d_secsize != DEV_BSIZE) {
+		sr_error(sc, "%s must have a 512-byte sector size", devname);
+		goto done;
+	}
+	part_blocks = DL_GETPSIZE(&label->d_partitions[part]);
+	if (part_blocks == 0 ||
+	    part_blocks > UINT64_MAX / DEV_BSIZE ||
+	    part_blocks > INT64_MAX)
+		goto done;
+	part_bytes = part_blocks * DEV_BSIZE;
+	if (data_end > part_bytes) {
+		sr_error(sc, "crypto range exceeds backing partition %s",
+		    devname);
+		goto done;
+	}
+
+	sd->sd_meta = malloc(SR_META_SIZE * DEV_BSIZE, M_DEVBUF,
+	    M_WAITOK | M_ZERO);
+	sd->sd_vol.sv_chunks = malloc(sizeof(*sd->sd_vol.sv_chunks),
+	    M_DEVBUF, M_WAITOK | M_ZERO);
+	sd->sd_vol.sv_chunks[0] = chunk;
+	sd->sd_vol.sv_chunk_minsz = part_blocks;
+	sd->sd_vol.sv_chunk_maxsz = part_blocks;
+
+	sm = sd->sd_meta;
+	sm->ssdi.ssd_magic = SR_MAGIC;
+	sm->ssdi.ssd_version = SR_META_VERSION;
+	sm->ssdi.ssd_vol_flags = BIOC_SCNOAUTOASSEMBLE;
+	sm->ssdi.ssd_chunk_no = 1;
+	sm->ssdi.ssd_level = 'C';
+	sm->ssdi.ssd_size = data_blocks;
+	sm->ssdi.ssd_secsize = DEV_BSIZE;
+	sm->ssd_data_blkno = data_offset_blocks;
+	sr_uuid_generate(&sm->ssdi.ssd_uuid);
+	strlcpy(sm->ssdi.ssd_vendor, "OPENBSD",
+	    sizeof(sm->ssdi.ssd_vendor));
+	strlcpy(sm->ssdi.ssd_product, "SR CRYPTO PLAIN",
+	    sizeof(sm->ssdi.ssd_product));
+	snprintf(sm->ssdi.ssd_revision, sizeof(sm->ssdi.ssd_revision),
+	    "%03d", sm->ssdi.ssd_version);
+
+	chunk->src_size = part_blocks;
+	chunk->src_secsize = DEV_BSIZE;
+	chunk->src_meta.scmi.scm_size = part_blocks;
+	chunk->src_meta.scmi.scm_coerced_size = part_blocks;
+	chunk->src_meta.scmi.scm_chunk_id = 0;
+	chunk->src_meta.scmi.scm_volid = 0;
+	chunk->src_meta.scm_status = BIOC_SDONLINE;
+	strlcpy(chunk->src_meta.scmi.scm_devname, chunk->src_devname,
+	    sizeof(chunk->src_meta.scmi.scm_devname));
+	memcpy(&chunk->src_meta.scmi.scm_uuid, &sm->ssdi.ssd_uuid,
+	    sizeof(chunk->src_meta.scmi.scm_uuid));
+
+	scr = &sd->mds.mdd_crypto;
+	scr->scr_flags |= SR_CRYPTORF_TRANSIENT;
+	scr->scr_iv_offset = cfg.bcp_iv_offset;
+	memcpy(scr->scr_key[0], cfg.bcp_key, sizeof(cfg.bcp_key));
+
+	TAILQ_INSERT_TAIL(&sc->sc_dis_list, sd, sd_link);
+
+	if ((rv = sd->sd_alloc_resources(sd)) != 0)
+		goto done;
+
+	sd->sd_vol_status = BIOC_SVONLINE;
+	sd->sd_set_vol_state(sd);
+	scsi_iopool_init(&sd->sd_iopool, sd, sr_wu_get, sr_wu_put);
+
+	rv = ENXIO;
+	for (target = 1; target < SR_MAX_LD; target++)
+		if (sc->sc_targets[target] == NULL)
+			break;
+	if (target == SR_MAX_LD) {
+		sr_error(sc, "no free target for transient CRYPTO volume");
+		goto done;
+	}
+
+	bzero(&sd->sd_scsi_sense, sizeof(sd->sd_scsi_sense));
+	sd->sd_target = target;
+	sc->sc_targets[target] = sd;
+	if (scsi_probe_lun(sc->sc_scsibus, target, 0) != 0) {
+		sr_error(sc, "scsi_probe_lun failed");
+		sc->sc_targets[target] = NULL;
+		sd->sd_target = 0;
+		goto done;
+	}
+
+	link = scsi_get_link(sc->sc_scsibus, target, 0);
+	if (link == NULL)
+		goto done;
+	dev = link->device_softc;
+
+	for (i = 0, vol = -1; i <= sd->sd_target; i++)
+		if (sc->sc_targets[i] != NULL)
+			vol++;
+	sm->ssdi.ssd_volid = vol;
+	strlcpy(sm->ssd_devname, dev->dv_xname,
+	    sizeof(sm->ssd_devname));
+
+	sr_info(sc, "%s transient volume attached as %s",
+	    sd->sd_name, sm->ssd_devname);
+#ifndef SMALL_KERNEL
+	if (sr_sensors_create(sd))
+		sr_warn(sc, "unable to create sensor for %s",
+		    dev->dv_xname);
+#endif
+
+	sd->sd_ready = 1;
+	rv = 0;
+
+done:
+	free(label, M_DEVBUF, sizeof(*label));
+	explicit_bzero(&cfg, sizeof(cfg));
+	if (rv != 0)
+		sr_discipline_shutdown(sd, 0, 0);
+	return (rv);
+}
+#endif /* CRYPTO */
+
 int
 sr_ioctl_deleteraid(struct sr_softc *sc, struct sr_discipline *sd,
     struct bioc_deleteraid *bd)
@@ -4596,7 +4842,8 @@ sr_validate_io(struct sr_workunit *wu, daddr_t *blkno, char *func)
 	DNPRINTF(SR_D_DIS, "%s: %s 0x%02x\n", DEVNAME(sd->sd_sc), func,
 	    xs->cmd.opcode);
 
-	if (sd->sd_meta->ssd_data_blkno == 0)
+	if (sd->sd_meta->ssd_data_blkno == 0 &&
+	    !ISSET(sd->sd_flags, SR_DF_TRANSIENT))
 		panic("invalid data blkno");
 
 	if (sd->sd_vol_status == BIOC_SVOFFLINE) {
@@ -4628,7 +4875,9 @@ sr_validate_io(struct sr_workunit *wu, daddr_t *blkno, char *func)
 	wu->swu_blk_start = *blkno;
 	wu->swu_blk_end = *blkno + (xs->datalen >> DEV_BSHIFT) - 1;
 
-	if (wu->swu_blk_end > sd->sd_meta->ssdi.ssd_size) {
+	if (wu->swu_blk_end > sd->sd_meta->ssdi.ssd_size ||
+	    (ISSET(sd->sd_flags, SR_DF_TRANSIENT) &&
+	    wu->swu_blk_end >= sd->sd_meta->ssdi.ssd_size)) {
 		DNPRINTF(SR_D_DIS, "%s: %s out of bounds start: %lld "
 		    "end: %lld length: %d\n",
 		    DEVNAME(sd->sd_sc), func, (long long)wu->swu_blk_start,

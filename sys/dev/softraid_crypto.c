@@ -349,6 +349,7 @@ sr_crypto_prepare(struct sr_workunit *wu, struct sr_crypto *mdd_crypto,
 	struct cryptodesc	*crd;
 	int			flags, i, n;
 	daddr_t			blkno;
+	u_int64_t		tweak_blkno;
 	u_int			keyndx;
 
 	DNPRINTF(SR_D_DIS, "%s: sr_crypto_prepare wu %p encrypt %d\n",
@@ -383,7 +384,10 @@ sr_crypto_prepare(struct sr_workunit *wu, struct sr_crypto *mdd_crypto,
 	 * across a different key blocks (e.g. 0.5TB boundary). Currently
 	 * this is already broken by the use of scr_key[0] below.
 	 */
-	keyndx = blkno >> SR_CRYPTO_KEY_BLKSHIFT;
+	if (ISSET(mdd_crypto->scr_flags, SR_CRYPTORF_TRANSIENT))
+		keyndx = 0;
+	else
+		keyndx = blkno >> SR_CRYPTO_KEY_BLKSHIFT;
 	crwu->cr_crp->crp_sid = mdd_crypto->scr_sid[keyndx];
 
 	crwu->cr_crp->crp_ilen = xs->datalen;
@@ -399,7 +403,14 @@ sr_crypto_prepare(struct sr_workunit *wu, struct sr_crypto *mdd_crypto,
 		crd->crd_alg = mdd_crypto->scr_alg;
 		crd->crd_klen = mdd_crypto->scr_klen;
 		crd->crd_key = mdd_crypto->scr_key[0];
-		memcpy(crd->crd_iv, &blkno, sizeof(blkno));
+		if (ISSET(mdd_crypto->scr_flags, SR_CRYPTORF_TRANSIENT)) {
+			tweak_blkno = mdd_crypto->scr_iv_offset +
+			    (u_int64_t)blkno;
+			bzero(crd->crd_iv, sizeof(crd->crd_iv));
+			memcpy(crd->crd_iv, &tweak_blkno,
+			    sizeof(tweak_blkno));
+		} else
+			memcpy(crd->crd_iv, &blkno, sizeof(blkno));
 	}
 
 	return (crwu);
@@ -1010,16 +1021,20 @@ sr_crypto_alloc_resources_internal(struct sr_discipline *sd,
 	    DEVNAME(sd->sd_sc));
 
 	mdd_crypto->scr_alg = CRYPTO_AES_XTS;
-	switch (mdd_crypto->scr_meta->scm_alg) {
-	case SR_CRYPTOA_AES_XTS_128:
-		mdd_crypto->scr_klen = 256;
-		break;
-	case SR_CRYPTOA_AES_XTS_256:
+	if (ISSET(mdd_crypto->scr_flags, SR_CRYPTORF_TRANSIENT))
 		mdd_crypto->scr_klen = 512;
-		break;
-	default:
-		sr_error(sd->sd_sc, "unknown crypto algorithm");
-		return (EINVAL);
+	else {
+		switch (mdd_crypto->scr_meta->scm_alg) {
+		case SR_CRYPTOA_AES_XTS_128:
+			mdd_crypto->scr_klen = 256;
+			break;
+		case SR_CRYPTOA_AES_XTS_256:
+			mdd_crypto->scr_klen = 512;
+			break;
+		default:
+			sr_error(sd->sd_sc, "unknown crypto algorithm");
+			return (EINVAL);
+		}
 	}
 
 	for (i = 0; i < SR_CRYPTO_MAXKEYS; i++)
@@ -1033,7 +1048,8 @@ sr_crypto_alloc_resources_internal(struct sr_discipline *sd,
 		sr_error(sd->sd_sc, "unable to allocate CCBs");
 		return (ENOMEM);
 	}
-	if (sr_crypto_decrypt_key(sd, mdd_crypto)) {
+	if (!ISSET(mdd_crypto->scr_flags, SR_CRYPTORF_TRANSIENT) &&
+	    sr_crypto_decrypt_key(sd, mdd_crypto)) {
 		sr_error(sd->sd_sc, "incorrect key or passphrase");
 		return (EPERM);
 	}
@@ -1058,8 +1074,11 @@ sr_crypto_alloc_resources_internal(struct sr_discipline *sd,
 	cri.cri_klen = mdd_crypto->scr_klen;
 
 	/* Allocate a session for every 2^SR_CRYPTO_KEY_BLKSHIFT blocks. */
-	num_keys = ((sd->sd_meta->ssdi.ssd_size - 1) >>
-	    SR_CRYPTO_KEY_BLKSHIFT) + 1;
+	if (ISSET(mdd_crypto->scr_flags, SR_CRYPTORF_TRANSIENT))
+		num_keys = 1;
+	else
+		num_keys = ((sd->sd_meta->ssdi.ssd_size - 1) >>
+		    SR_CRYPTO_KEY_BLKSHIFT) + 1;
 	if (num_keys > SR_CRYPTO_MAXKEYS)
 		return (EFBIG);
 	for (i = 0; i < num_keys; i++) {

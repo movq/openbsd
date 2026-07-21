@@ -462,6 +462,10 @@ struct sr_crypto {
 	struct sr_meta_crypto	*scr_meta;
 	struct sr_chunk		*key_disk;
 
+	u_int32_t		scr_flags;
+#define SR_CRYPTORF_TRANSIENT	(1<<0)
+	u_int64_t		scr_iv_offset;
+
 	int			scr_alg;
 	int			scr_klen;
 
@@ -536,6 +540,8 @@ struct sr_discipline {
 #define SR_CAP_REBUILD		0x00000004	/* Supports rebuild. */
 #define SR_CAP_NON_COERCED	0x00000008	/* Uses non-coerced size. */
 #define SR_CAP_REDUNDANT	0x00000010	/* Redundant copies of data. */
+	u_int32_t		sd_flags;
+#define SR_DF_TRANSIENT		(1<<0)
 
 	union {
 	    struct sr_raid0	mdd_raid0;
