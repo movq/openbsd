@@ -354,9 +354,14 @@ main(int argc, char *argv[])
 	blocks = fssize * sectorsize / bsize;
 
 	if (num_inodes == 0) {
-		if (density != 0)
-			num_inodes = fssize / density;
-		else {
+		if (density != 0) {
+			if ((uint64_t)fssize >
+			    (uint64_t)UINT_MAX * density / sectorsize)
+				num_inodes = UINT_MAX;
+			else
+				num_inodes = (uint64_t)fssize * sectorsize /
+				    density;
+		} else {
 			if (fssize < SMALL_FSSIZE)
 				num_inodes = S_DFL_NINODE(blocks);
 			else if (fssize < MEDIUM_FSSIZE)
@@ -490,4 +495,3 @@ getpartition(int fsi, const char *special, char *argv[], struct disklabel **dl)
 	*dl = lp;
 	return pp;
 }
-
