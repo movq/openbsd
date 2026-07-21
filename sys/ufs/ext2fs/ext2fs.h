@@ -398,7 +398,7 @@ void e2fs_cg_bswap(struct ext2_gd *, struct ext2_gd *, int);
  * Turn file system block numbers into disk block addresses.
  * This maps file system blocks to device size blocks.
  */
-#define fsbtodb(fs, b)	((b) << (fs)->e2fs_fsbtodb)
+#define fsbtodb(fs, b)	((daddr_t)(b) << (fs)->e2fs_fsbtodb)
 #define dbtofsb(fs, b)	((b) >> (fs)->e2fs_fsbtodb)
 
 /*
