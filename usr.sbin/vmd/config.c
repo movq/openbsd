@@ -17,6 +17,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/disklabel.h>
 #include <sys/queue.h>
 #include <sys/time.h>
 
@@ -39,6 +40,41 @@
 const char *vmd_descsw[] = { "bridge", "veb", NULL };
 
 static int	 config_init_localprefix(struct vmd_config *);
+static int	 config_disk_inuse(struct vmlist *, struct vmd_vm *,
+		    unsigned int, dev_t);
+
+static int
+config_disk_inuse(struct vmlist *vms, struct vmd_vm *vm,
+    unsigned int disk, dev_t dev)
+{
+	struct vmd_vm	*other;
+	dev_t		 otherdev;
+	unsigned int	 i;
+
+	for (i = 0; i < disk; i++) {
+		if (vm->vm_params.vmc_disksizes[i] == 0)
+			continue;
+		otherdev = vm->vm_params.vmc_diskdevs[i];
+		if (major(dev) == major(otherdev) &&
+		    DISKUNIT(dev) == DISKUNIT(otherdev))
+			return (1);
+	}
+
+	TAILQ_FOREACH(other, vms, vm_entry) {
+		if (other == vm || (other->vm_state & VM_STATE_RUNNING) == 0)
+			continue;
+		for (i = 0; i < other->vm_params.vmc_ndisks; i++) {
+			if (other->vm_params.vmc_disksizes[i] == 0)
+				continue;
+			otherdev = other->vm_params.vmc_diskdevs[i];
+			if (major(dev) == major(otherdev) &&
+			    DISKUNIT(dev) == DISKUNIT(otherdev))
+				return (1);
+		}
+	}
+
+	return (0);
+}
 
 static int
 config_init_localprefix(struct vmd_config *cfg)
@@ -200,6 +236,8 @@ config_setvm(struct privsep *ps, struct vmd_vm *vm, uint32_t peerid, uid_t uid)
 	char			 ifname[IF_NAMESIZE], *s;
 	char			 path[PATH_MAX], base[PATH_MAX];
 	unsigned int		 unit;
+	uint64_t		 disksize;
+	dev_t			 diskdev;
 	struct timeval		 tv, rate, since_last;
 	struct vmop_addr_req	 var;
 	size_t			 bytes = 0;
@@ -326,11 +364,13 @@ config_setvm(struct privsep *ps, struct vmd_vm *vm, uint32_t peerid, uid_t uid)
 	 * Open disk images for child. Don't set O_CLOEXEC as these must be
 	 * explicitly closed by the vm process during virtio subprocess launch.
 	 */
+	memset(vmc->vmc_diskbases, 0, sizeof(vmc->vmc_diskbases));
+	memset(vmc->vmc_disksizes, 0, sizeof(vmc->vmc_disksizes));
+	memset(vmc->vmc_diskdevs, 0, sizeof(vmc->vmc_diskdevs));
 	for (i = 0 ; i < vmc->vmc_ndisks; i++) {
 		if (strlcpy(path, vmc->vmc_disks[i], sizeof(path))
 		   >= sizeof(path))
 			log_warnx("disk path %s too long", vmc->vmc_disks[i]);
-		memset(vmc->vmc_diskbases, 0, sizeof(vmc->vmc_diskbases));
 		oflags = O_RDWR | O_EXLOCK | O_NONBLOCK;
 		aflags = R_OK | W_OK;
 		for (j = 0; j < VM_MAX_BASE_PER_DISK; j++) {
@@ -341,22 +381,42 @@ config_setvm(struct privsep *ps, struct vmd_vm *vm, uint32_t peerid, uid_t uid)
 				goto fail;
 			}
 
-			/*
-			 * Check if it's a regular file and accessible to
-			 * the user starting the vm.
-			 */
-			if (vm_checkaccess(diskfds[i][j],
+			if (vm_checkdisk(diskfds[i][j],
 			    vmc->vmc_checkaccess & VMOP_CREATE_DISK,
-			    uid, aflags) == -1) {
-				log_warnx("vm \"%s\" unable to access "
-				    "disk %s", vmc->vmc_name, path);
-				errno = EPERM;
+			    uid, aflags, &disksize, &diskdev) == -1) {
+				ret = errno;
+				if (errno == EINVAL)
+					log_warnx("vm \"%s\" disk device %s must "
+					    "use 512-byte sectors", vmc->vmc_name,
+					    path);
+				else
+					log_warn("vm \"%s\" unable to use disk %s",
+					    vmc->vmc_name, path);
 				goto fail;
 			}
 
 			/* Identify the disk type if unknown. */
 			type = vmc->vmc_disktypes[i];
-			if (type == VMDF_AUTO) {
+			if (disksize != 0) {
+				if (type == VMDF_QCOW2) {
+					log_warnx("vm \"%s\" disk device %s must "
+					    "use raw format", vmc->vmc_name, path);
+					ret = EINVAL;
+					goto fail;
+				}
+				type = VMDF_RAW;
+				vmc->vmc_disktypes[i] = type;
+				if (config_disk_inuse(
+				    ((struct vmd *)ps->ps_env)->vmd_vms,
+				    vm, i, diskdev)) {
+					log_warnx("vm \"%s\" disk device %s is "
+					    "already in use", vmc->vmc_name, path);
+					ret = EBUSY;
+					goto fail;
+				}
+				vmc->vmc_disksizes[i] = disksize;
+				vmc->vmc_diskdevs[i] = diskdev;
+			} else if (type == VMDF_AUTO) {
 				type = virtio_get_disktype(diskfds[i][j]);
 				vmc->vmc_disktypes[i] = type;
 			}

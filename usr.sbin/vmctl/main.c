@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/queue.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 
 #include <err.h>
@@ -425,6 +426,7 @@ parse_disktype(const char *s, const char **ret)
 	const char	*ext;
 	int		 fd;
 	ssize_t		 len;
+	struct stat	 st;
 
 	*ret = s;
 
@@ -440,7 +442,16 @@ parse_disktype(const char *s, const char **ret)
 
 	/* Or try to derive the format from the file signature */
 	if ((fd = open(s, O_RDONLY)) != -1) {
-		len = read(fd, buf, sizeof(buf));
+		if (fstat(fd, &st) == 0) {
+			if (S_ISCHR(st.st_mode)) {
+				close(fd);
+				return (VMDF_RAW);
+			}
+			len = S_ISREG(st.st_mode) ?
+			    read(fd, buf, sizeof(buf)) : -1;
+		} else {
+			len = -1;
+		}
 		close(fd);
 
 		if (len >= (ssize_t)strlen(VM_MAGIC_QCOW) &&

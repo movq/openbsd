@@ -17,6 +17,8 @@
  */
 
 #include <sys/types.h>
+#include <sys/disklabel.h>
+#include <sys/dkio.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
@@ -61,6 +63,7 @@ int	 vm_claimid(const char *, int, uint32_t *);
 void	 start_vm_batch(int, short, void*);
 
 static inline void vm_terminate(struct vmd_vm *, const char *);
+static int vm_checkaccess_stat(const struct stat *, unsigned int, uid_t, int);
 
 struct vmd	*env;
 
@@ -800,9 +803,10 @@ vmd_configure(void)
 	 * getpw - lookup user or group id by name.
 	 * chown, fattr - change tty ownership
 	 * flock - locking disk files
+	 * disklabel - query raw disk partition metadata
 	 */
 	if (pledge("stdio rpath wpath proc tty recvfd sendfd getpw"
-	    " chown fattr flock", NULL) == -1)
+	    " chown fattr flock disklabel", NULL) == -1)
 		fatal("pledge");
 
 	if ((env->vmd_ptm_fd = getptmfd()) == -1)
@@ -1567,20 +1571,81 @@ vm_checkinsflag(struct vmop_create_params *vmc, unsigned int flag, uid_t uid)
 int
 vm_checkaccess(int fd, unsigned int uflag, uid_t uid, int amode)
 {
-	struct group	*gr;
-	struct passwd	*pw;
-	char		**grmem;
 	struct stat	 st;
-	mode_t		 mode;
 
 	if (fd == -1)
 		return (-1);
 
-	/*
-	 * File has to be accessible and a regular file
-	 */
 	if (fstat(fd, &st) == -1 || !S_ISREG(st.st_mode))
 		return (-1);
+
+	return (vm_checkaccess_stat(&st, uflag, uid, amode));
+}
+
+/*
+ * Check access to a VM disk and obtain metadata for a raw disk device.
+ * Regular image files return a size of zero so the backend derives it.
+ */
+int
+vm_checkdisk(int fd, unsigned int uflag, uid_t uid, int amode,
+    uint64_t *size, dev_t *dev)
+{
+	struct disklabel	 dl;
+	struct stat	 st;
+	struct partition *pp;
+	uint64_t	 sectors;
+	unsigned int	 part;
+
+	*size = 0;
+	*dev = 0;
+
+	if (fd == -1 || fstat(fd, &st) == -1)
+		return (-1);
+	if (S_ISREG(st.st_mode))
+		return (vm_checkaccess_stat(&st, uflag, uid, amode));
+	if (!S_ISCHR(st.st_mode)) {
+		errno = ENOTBLK;
+		return (-1);
+	}
+	if (vm_checkaccess_stat(&st, uflag, uid, amode) == -1)
+		return (-1);
+	if (ioctl(fd, DIOCGDINFO, &dl) == -1)
+		return (-1);
+
+	part = DISKPART(st.st_rdev);
+	if (part >= nitems(dl.d_partitions) || part >= dl.d_npartitions) {
+		errno = ENXIO;
+		return (-1);
+	}
+	if (dl.d_secsize != VM_DISK_SECTOR_SIZE) {
+		errno = EINVAL;
+		return (-1);
+	}
+
+	pp = &dl.d_partitions[part];
+	sectors = DL_GETPSIZE(pp);
+	if (sectors == 0) {
+		errno = ENXIO;
+		return (-1);
+	}
+	if (sectors > INT64_MAX / dl.d_secsize) {
+		errno = EOVERFLOW;
+		return (-1);
+	}
+
+	*size = sectors * dl.d_secsize;
+	*dev = st.st_rdev;
+	return (0);
+}
+
+static int
+vm_checkaccess_stat(const struct stat *st, unsigned int uflag, uid_t uid,
+    int amode)
+{
+	struct group	*gr;
+	struct passwd	*pw;
+	char		**grmem;
+	mode_t		 mode;
 
 	/* root has no restrictions */
 	if (uid == 0 || uflag == 0)
@@ -1589,30 +1654,32 @@ vm_checkaccess(int fd, unsigned int uflag, uid_t uid, int amode)
 	/* check other */
 	mode = amode & W_OK ? S_IWOTH : 0;
 	mode |= amode & R_OK ? S_IROTH : 0;
-	if ((st.st_mode & mode) == mode)
+	if ((st->st_mode & mode) == mode)
 		return (0);
 
 	/* check user */
 	mode = amode & W_OK ? S_IWUSR : 0;
 	mode |= amode & R_OK ? S_IRUSR : 0;
-	if (uid == st.st_uid && (st.st_mode & mode) == mode)
+	if (uid == st->st_uid && (st->st_mode & mode) == mode)
 		return (0);
 
 	/* check groups */
 	mode = amode & W_OK ? S_IWGRP : 0;
 	mode |= amode & R_OK ? S_IRGRP : 0;
-	if ((st.st_mode & mode) != mode)
-		return (-1);
+	if ((st->st_mode & mode) != mode)
+		goto fail;
 	if ((pw = getpwuid(uid)) == NULL)
-		return (-1);
-	if (pw->pw_gid == st.st_gid)
+		goto fail;
+	if (pw->pw_gid == st->st_gid)
 		return (0);
-	if ((gr = getgrgid(st.st_gid)) != NULL) {
+	if ((gr = getgrgid(st->st_gid)) != NULL) {
 		for (grmem = gr->gr_mem; *grmem; grmem++)
 			if (strcmp(*grmem, pw->pw_name) == 0)
 				return (0);
 	}
 
+fail:
+	errno = EACCES;
 	return (-1);
 }
 

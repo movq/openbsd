@@ -122,7 +122,7 @@ vioscsi_main(int fd, int fd_vmm)
 
 	/* Initialize the vioscsi backing file. */
 	ret = virtio_raw_init(&vioscsi->file, &vioscsi->sz,
-	    &vioscsi->cdrom_fd, 1);
+	    &vioscsi->cdrom_fd, 1, 0);
 	if (ret == -1) {
 		log_warnx("%s: unable to determine iso format", __func__);
 		goto fail;
