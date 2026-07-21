@@ -61,6 +61,7 @@ void badsb(int, char *);
 int calcsb(char *, int, struct m_ext2fs *, struct disklabel *);
 static struct disklabel *getdisklabel(char *, int);
 static int readsb(int);
+static int holdblockdev(char *);
 static char rdevname[PATH_MAX];
 
 int
@@ -77,8 +78,11 @@ setup(char *dev)
 	u_int64_t maxfilesize;
 
 	havesb = 0;
-	fswritefd = -1;
+	fswritefd = fsreadfd = -1;
+	ioerror = discardfailed = 0;
 	doskipclean = skipclean;
+	if (Eflag && !holdblockdev(dev))
+		return (0);
 	if ((fsreadfd = opendev(dev, O_RDONLY, 0, &realdev)) == -1) {
 		printf("Can't open %s: %s\n", dev, strerror(errno));
 		return (0);
@@ -109,6 +113,10 @@ setup(char *dev)
 	}
 	if (preen == 0)
 		printf("\n");
+	if (Eflag && fswritefd == -1) {
+		printf("Discard requires write access to %s\n", realdev);
+		return (0);
+	}
 	fsmodified = 0;
 	lfdir = 0;
 	initbarea(&sblk);
@@ -124,10 +132,11 @@ setup(char *dev)
 
 	if (!hotroot()) {
 #ifndef SMALL
-		if (pledge("stdio getpw", NULL) == -1)
+		if (pledge(Eflag ? "stdio getpw disklabel" : "stdio getpw",
+		    NULL) == -1)
 			err(1, "pledge");
 #else
-		if (pledge("stdio", NULL) == -1)
+		if (pledge(Eflag ? "stdio disklabel" : "stdio", NULL) == -1)
 			err(1, "pledge");
 #endif
 	}
@@ -265,6 +274,32 @@ setup(char *dev)
 badsblabel:
 	ckfini(0);
 	return (0);
+}
+
+static int
+holdblockdev(char *dev)
+{
+	struct stat st;
+	char blockdev[PATH_MAX];
+
+	if (strlcpy(blockdev, dev, sizeof(blockdev)) >= sizeof(blockdev)) {
+		printf("Device name is too long: %s\n", dev);
+		return (0);
+	}
+	(void)unrawname(blockdev);
+	if (stat(blockdev, &st) == -1) {
+		printf("Can't stat %s: %s\n", blockdev, strerror(errno));
+		return (0);
+	}
+	if (!S_ISBLK(st.st_mode)) {
+		printf("%s is not a block device\n", blockdev);
+		return (0);
+	}
+	if ((fsblockfd = open(blockdev, O_RDONLY)) == -1) {
+		printf("Can't open %s: %s\n", blockdev, strerror(errno));
+		return (0);
+	}
+	return (1);
 }
 
 /*
