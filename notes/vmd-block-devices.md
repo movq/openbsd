@@ -92,23 +92,3 @@ Validate the partition index, nonzero size, multiplication overflow, off_t
   opening the descriptor to preserve the current anti-TOCTOU design. A policy
   decision is also needed on whether ad hoc device assignment is root-only
   while administrator-defined VMs may use configured devices.
-
-Tests And Documentation
-
-- Extend the regress/usr.sbin/vmd coverage with a disposable vnd(4) image
-  exposed through /dev/rvndNc, avoiding tests against real disks.
-- Verify whole-device and individual-partition capacity, guest read/write
-  correctness, persistence after shutdown, reboot behavior, lock release, and
-  unchanged raw/QCOW2 file behavior.
-- Add negative tests for /dev/null, QCOW2 format on a device, nonexistent or
-  zero-sized partitions, permission denial, duplicate/overlapping device use,
-  out-of-range virtio requests, and sector arithmetic overflow.
-- Test 4K-sector behavior according to the chosen policy, plus short I/O,
-  device removal/error propagation, and cache flushing if implemented.
-- Update vm.conf(5), vmctl(8), and likely vmd(8) to say “raw character disk
-  device,” require exclusive host ownership, and warn that assigning a
-  mounted, swap, boot, or softraid member disk can corrupt the host.
-
-No changes should be required under sys/dev/vmm or in the
-architecture-specific VMM code unless the scope expands beyond the existing
-userland virtio-block emulation.
