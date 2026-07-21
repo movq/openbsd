@@ -52,8 +52,8 @@
 #include <ufs/ext2fs/ext2fs.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
 
-static int ext2fs_indirtrunc(struct inode *, int32_t, int32_t,
-				int32_t, int, long *);
+static int ext2fs_indirtrunc(struct inode *, daddr_t, daddr_t,
+				daddr_t, int, long *);
 
 /*
  * Get the size of an inode.
@@ -207,9 +207,9 @@ int
 ext2fs_truncate(struct inode *oip, off_t length, int flags, struct ucred *cred)
 {
 	struct vnode *ovp = ITOV(oip);
-	int32_t lastblock;
-	int32_t bn, lbn, lastiblock[NIADDR], indir_lbn[NIADDR];
-	int32_t oldblks[NDADDR + NIADDR], newblks[NDADDR + NIADDR];
+	daddr_t lastblock;
+	daddr_t bn, lbn, lastiblock[NIADDR], indir_lbn[NIADDR];
+	u_int32_t oldblks[NDADDR + NIADDR], newblks[NDADDR + NIADDR];
 	struct m_ext2fs *fs;
 	struct buf *bp;
 	int offset, size, level;
@@ -419,14 +419,16 @@ done:
  * NB: triple indirect blocks are untested.
  */
 static int
-ext2fs_indirtrunc(struct inode *ip, int32_t lbn, int32_t dbn, int32_t lastbn, int level, long *countp)
+ext2fs_indirtrunc(struct inode *ip, daddr_t lbn, daddr_t dbn,
+    daddr_t lastbn, int level, long *countp)
 {
 	int i;
 	struct buf *bp;
 	struct m_ext2fs *fs = ip->i_e2fs;
-	int32_t *bap;
+	u_int32_t *bap;
 	struct vnode *vp;
-	int32_t *copy = NULL, nb, nlbn, last;
+	u_int32_t *copy = NULL;
+	daddr_t nb, nlbn, last;
 	long blkcount, factor;
 	int nblocks, blocksreleased = 0;
 	int error = 0, allerror = 0;
@@ -470,7 +472,7 @@ ext2fs_indirtrunc(struct inode *ip, int32_t lbn, int32_t dbn, int32_t lastbn, in
 		return (error);
 	}
 
-	bap = (int32_t *)bp->b_data;
+	bap = (u_int32_t *)bp->b_data;
 	if (lastbn >= 0) {
 		copy = malloc(fs->e2fs_bsize, M_TEMP, M_WAITOK);
 		memcpy(copy, bap, fs->e2fs_bsize);

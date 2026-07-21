@@ -141,8 +141,7 @@ ext2fs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp,
 	struct mount *mp;
 	struct vnode *devvp;
 	struct indir a[NIADDR+1], *xap;
-	int32_t daddr;
-	long metalbn;
+	daddr_t daddr, metalbn;
 	int error, maxrun = 0, num;
 
 	ip = VTOI(vp);
@@ -172,14 +171,15 @@ ext2fs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp,
 
 	num = *nump;
 	if (num == 0) {
-		*bnp = blkptrtodb(ump, letoh32(ip->i_e2fs_blocks[bn]));
+		*bnp = blkptrtodb(ump,
+		    (daddr_t)letoh32(ip->i_e2fs_blocks[bn]));
 		if (*bnp == 0)
 			*bnp = -1;
 		else if (runp)
 			for (++bn; bn < NDADDR && *runp < maxrun &&
 			    is_sequential(ump,
-			    letoh32(ip->i_e2fs_blocks[bn - 1]),
-			    letoh32(ip->i_e2fs_blocks[bn]));
+			    (daddr_t)letoh32(ip->i_e2fs_blocks[bn - 1]),
+			    (daddr_t)letoh32(ip->i_e2fs_blocks[bn]));
 			    ++bn, ++*runp)
 				/* nothing */;
 		return (0);
@@ -235,7 +235,7 @@ ext2fs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp,
 			}
 		}
 
-		daddr = letoh32(((int32_t *)bp->b_data)[xap->in_off]);
+		daddr = letoh32(((u_int32_t *)bp->b_data)[xap->in_off]);
 		if (num == 1 && daddr && runp)
 			for (bn = xap->in_off + 1;
 			    bn < MNINDIR(ump) && *runp < maxrun &&

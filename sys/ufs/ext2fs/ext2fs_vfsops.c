@@ -356,6 +356,10 @@ e2fs_sbfill(struct vnode *devvp, struct m_ext2fs *fs)
 	/* XXX assume hardware block size == 512 */
 	fs->e2fs_ncg = howmany(fs->e2fs.e2fs_bcount - fs->e2fs.e2fs_first_dblock,
 	    fs->e2fs.e2fs_bpg);
+	if (fs->e2fs_ncg == 0) {
+		printf("ext2fs: invalid number of cylinder groups\n");
+		return (EINVAL);
+	}
 	fs->e2fs_fsbtodb = fs->e2fs.e2fs_log_bsize + 1;
 	fs->e2fs_bsize = 1024 << fs->e2fs.e2fs_log_bsize;
 	fs->e2fs_bshift = LOG_MINBSIZE + fs->e2fs.e2fs_log_bsize;
