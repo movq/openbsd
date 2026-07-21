@@ -161,7 +161,8 @@ sr_crypto_discard(struct sr_discipline *sd, struct dk_discard *discard,
 		return EINVAL;
 	if (sd->sd_meta->ssdi.ssd_size < 0 ||
 	    (u_int64_t)sd->sd_meta->ssdi.ssd_size > UINT64_MAX / DEV_BSIZE ||
-	    sd->sd_meta->ssd_data_blkno == 0)
+	    (sd->sd_meta->ssd_data_blkno == 0 &&
+	    !ISSET(sd->sd_flags, SR_DF_TRANSIENT)))
 		return EINVAL;
 
 	volsize = (u_int64_t)sd->sd_meta->ssdi.ssd_size * DEV_BSIZE;
