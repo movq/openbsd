@@ -38,8 +38,9 @@
 	kfpu_begin(); E(s, d, b); kfpu_end(); \
 }
 
-#if defined(__x86_64) || defined(__aarch64__) || defined(__arm__) || \
-    defined(__aarch64__) || defined(__arm__) || defined(__PPC64__)
+#if !defined(ZFS_ASM_DISABLED) && (defined(__x86_64) || \
+    defined(__aarch64__) || defined(__arm__) || \
+    defined(__PPC64__))
 /* some implementation is always okay */
 static inline boolean_t sha2_is_supported(void)
 {
@@ -47,7 +48,7 @@ static inline boolean_t sha2_is_supported(void)
 }
 #endif
 
-#if defined(__x86_64)
+#if defined(__x86_64) && !defined(ZFS_ASM_DISABLED)
 
 /* Users of ASMABI requires all calls to be from wrappers */
 extern void ASMABI
@@ -92,7 +93,8 @@ const sha512_ops_t sha512_avx2_impl = {
 };
 #endif
 
-#elif defined(__aarch64__) || defined(__arm__)
+#elif (defined(__aarch64__) || defined(__arm__)) && \
+    !defined(ZFS_ASM_DISABLED)
 extern void zfs_sha512_block_armv7(uint64_t s[8], const void *, size_t);
 const sha512_ops_t sha512_armv7_impl = {
 	.is_supported = sha2_is_supported,
@@ -128,7 +130,7 @@ const sha512_ops_t sha512_neon_impl = {
 };
 #endif
 
-#elif defined(__PPC64__)
+#elif defined(__PPC64__) && !defined(ZFS_ASM_DISABLED)
 TF(zfs_sha512_ppc, tf_sha512_ppc);
 const sha512_ops_t sha512_ppc_impl = {
 	.is_supported = sha2_is_supported,
@@ -155,16 +157,19 @@ extern const sha512_ops_t sha512_generic_impl;
 /* array with all sha512 implementations */
 static const sha512_ops_t *const sha512_impls[] = {
 	&sha512_generic_impl,
-#if defined(__x86_64)
+#if defined(__x86_64) && !defined(ZFS_ASM_DISABLED)
 	&sha512_x64_impl,
 #endif
-#if defined(__x86_64) && defined(HAVE_AVX)
+#if defined(__x86_64) && defined(HAVE_AVX) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha512_avx_impl,
 #endif
-#if defined(__x86_64) && defined(HAVE_AVX2)
+#if defined(__x86_64) && defined(HAVE_AVX2) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha512_avx2_impl,
 #endif
-#if defined(__aarch64__) || defined(__arm__)
+#if (defined(__aarch64__) || defined(__arm__)) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha512_armv7_impl,
 #if defined(__aarch64__)
 	&sha512_armv8_impl,
@@ -173,7 +178,7 @@ static const sha512_ops_t *const sha512_impls[] = {
 	&sha512_neon_impl,
 #endif
 #endif
-#if defined(__PPC64__)
+#if defined(__PPC64__) && !defined(ZFS_ASM_DISABLED)
 	&sha512_ppc_impl,
 	&sha512_power8_impl,
 #endif /* __PPC64__ */

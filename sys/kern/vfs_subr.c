@@ -470,6 +470,7 @@ getnewvnode(enum vtagtype tag, struct mount *mp, const struct vops *vops,
 	cache_purge(vp);
 	vp->v_type = VNON;
 	vp->v_tag = tag;
+	vp->v_uvn_ops = NULL;
 	vp->v_op = vops;
 	insmntque(vp, mp);
 	*vpp = vp;
@@ -1073,6 +1074,8 @@ vclean(struct vnode *vp, int flags, struct proc *p)
 	 * Clean out any VM data associated with the vnode.
 	 */
 	uvm_vnp_terminate(vp);
+	/* Active mappings now refer to a dead vnode, not its old filesystem. */
+	vp->v_uvn_ops = NULL;
 	/*
 	 * Clean out any buffers associated with the vnode.
 	 */

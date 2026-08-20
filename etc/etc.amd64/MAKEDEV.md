@@ -21,6 +21,8 @@ dnl
 __devitem(apm, apm, Power Management Interface)dnl
 __devitem(nvram, nvram, NVRAM access)dnl
 _mkdev(nvram, nvram, {-M nvram c major_nvram_c 0 440 kmem-})dnl
+__devitem(zfs, zfs, ZFS control device)dnl
+_mkdev(zfs, zfs, {-M zfs c major_zfs_c 0 666-})dnl
 _TITLE(make)
 _DEV(all)
 _DEV(ramdisk)
@@ -101,6 +103,7 @@ _DEV(vscsi, 89)
 _DEV(pvbus, 95)
 _DEV(kstat, 51)
 _DEV(psp, 101)
+_DEV(zfs, 102)
 dnl
 divert(__mddivert)dnl
 dnl
@@ -146,5 +149,6 @@ target(all, dri)dnl
 target(all, ttyVI, 00, 10, 20, 30, 40)dnl
 target(all, ipmi, 0)dnl
 target(all, efi)dnl
+target(all, zfs)dnl
 twrget(ramd, wsdisp, ttyC, 0)dnl
 target(ramd, fd, 0)dnl

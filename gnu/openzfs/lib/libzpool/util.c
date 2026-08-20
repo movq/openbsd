@@ -348,6 +348,40 @@ pool_active(void *unused, const char *name, uint64_t guid, boolean_t *isactive)
 
 	return (0);
 }
+#elif defined(__OpenBSD__)
+
+#include <sys/ioctl.h>
+#include <sys/zfs_ioctl_compat.h>
+
+static int
+pool_active(void *unused, const char *name, uint64_t guid,
+    boolean_t *isactive)
+{
+	zfs_iocparm_t zp = {
+		.zfs_ioctl_version = ZFS_IOCVER_OZFS,
+	};
+	zfs_cmd_t *zc;
+	unsigned long request;
+	int fd, ret;
+
+	(void) unused, (void) guid;
+	fd = open(ZFS_DEV, O_RDWR | O_CLOEXEC);
+	if (fd < 0)
+		return (-1);
+
+	zc = umem_zalloc(sizeof (*zc), UMEM_NOFAIL);
+	(void) strlcpy(zc->zc_name, name, sizeof (zc->zc_name));
+	zp.zfs_cmd = (uint64_t)(uintptr_t)zc;
+	zp.zfs_cmd_size = sizeof (*zc);
+	request = _IOWR('Z', ZFS_IOCREQ(ZFS_IOC_POOL_STATS), zfs_iocparm_t);
+	ret = ioctl(fd, request, &zp);
+
+	free((void *)(uintptr_t)zc->zc_nvlist_dst);
+	umem_free(zc, sizeof (*zc));
+	(void) close(fd);
+	*isactive = (ret == 0);
+	return (0);
+}
 #else
 static int
 pool_active(void *unused, const char *name, uint64_t guid,

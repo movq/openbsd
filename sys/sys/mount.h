@@ -78,6 +78,13 @@ struct ufs_args {
 };
 
 /*
+ * Arguments to mount ZFS datasets.
+ */
+struct zfs_args {
+	char	*fspec;			/* dataset name to mount */
+};
+
+/*
  * Arguments to mount MFS
  */
 struct mfs_args {
@@ -273,6 +280,7 @@ union mount_info {
 	struct msdosfs_args msdosfs_args;
 	struct ntfs_args ntfs_args;
 	struct tmpfs_args tmpfs_args;
+	struct zfs_args zfs_args;
 	char __align[160];	/* 64-bit alignment and room to grow */
 };
 
@@ -325,6 +333,7 @@ struct statfs {
 #define	MOUNT_UDF	"udf"		/* UDF */
 #define	MOUNT_TMPFS	"tmpfs"		/* tmpfs */
 #define	MOUNT_FUSEFS	"fuse"		/* FUSE */
+#define	MOUNT_ZFS	"zfs"		/* ZFS */
 
 /*
  * Structure per mounted file system.  Each mounted file system has an
@@ -555,6 +564,7 @@ extern	const struct vfsops ntfs_vfsops;
 extern	const struct vfsops udf_vfsops;
 extern	const struct vfsops fusefs_vfsops;
 extern	const struct vfsops tmpfs_vfsops;
+extern	const struct vfsops zfs_vfsops;
 
 #include <net/radix.h>
 #include <sys/socket.h>		/* XXX for AF_MAX */

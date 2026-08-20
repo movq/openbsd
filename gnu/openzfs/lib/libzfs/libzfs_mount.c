@@ -212,7 +212,11 @@ dir_is_empty(const char *dirname)
 	 * filesystem, fall back to the slow path which uses readdir.
 	 */
 	if ((statfs64(dirname, &st) != 0) ||
+#ifdef __OpenBSD__
+	    strcmp(st.f_fstypename, MNTTYPE_ZFS) != 0) {
+#else
 	    (st.f_type != ZFS_SUPER_MAGIC)) {
+#endif
 		return (dir_is_empty_readdir(dirname));
 	}
 

@@ -34,7 +34,7 @@
 extern "C" {
 #endif
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
 #define	GLOBAL_ZONEID	0
 #else
 /*

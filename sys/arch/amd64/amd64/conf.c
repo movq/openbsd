@@ -155,6 +155,7 @@ cdev_decl(viocon);
 #include "wsmux.h"
 #include "kexec.h"
 #include "kcov.h"
+#include "zfs.h"
 
 #ifdef USER_PCICONF
 #include "pci.h"
@@ -284,6 +285,7 @@ struct cdevsw	cdevsw[] =
 	cdev_pppx_init(NPPPX,pppac),	/* 99: PPP Access Concentrator */
 	cdev_ujoy_init(NUJOY,ujoy),	/* 100: USB joystick/gamecontroller */
 	cdev_psp_init(NPSP,psp),	/* 101: PSP */
+	cdev_zfs_init(NZFS,zfs),	/* 102: ZFS control device */
 };
 int	nchrdev = nitems(cdevsw);
 

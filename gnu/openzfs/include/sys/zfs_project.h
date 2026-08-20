@@ -26,14 +26,15 @@
 #ifndef	_SYS_ZFS_PROJECT_H
 #define	_SYS_ZFS_PROJECT_H
 
-#ifndef _KERNEL
+#if defined(__OpenBSD__)
+#include <sys/ioctl.h>
+#elif !defined(_KERNEL)
 #ifndef _SYS_MOUNT_H
 /* XXX: some hack to avoid include sys/mount.h */
 #define	_SYS_MOUNT_H
 #endif
-#endif
-
 #include <sys/vfs.h>
+#endif
 
 #ifdef FS_IOC_FSGETXATTR
 typedef struct fsxattr zfsxattr_t;

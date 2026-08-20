@@ -35,7 +35,6 @@
  */
 
 #include <sys/zfs_context.h>
-#include <sys/zio_checksum.h>
 #include <sys/zfs_impl.h>
 
 /* Two default implementations */

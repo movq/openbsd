@@ -7,6 +7,7 @@ SUBDIR+= mmap_noreplace mmap_write_self
 SUBDIR+= mmap0
 SUBDIR+= mmap_hint
 SUBDIR+= vnode
+SUBDIR+= zfs_mmap
 
 install:
 

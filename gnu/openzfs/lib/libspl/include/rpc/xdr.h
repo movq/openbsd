@@ -35,6 +35,13 @@
 
 #include_next <rpc/xdr.h>
 
+#ifdef __OpenBSD__
+#define xdr_longlong_t(xdrs, value) \
+	xdr_int64_t((xdrs), (int64_t *)(value))
+#define xdr_u_longlong_t(xdrs, value) \
+	xdr_u_int64_t((xdrs), (uint64_t *)(value))
+#endif
+
 #ifdef xdr_control /* if e.g. using tirpc */
 #undef xdr_control
 #endif

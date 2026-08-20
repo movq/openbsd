@@ -148,6 +148,7 @@ int		uvm_pseg_reserve_available(void);
  * UNLOCK  unlock the map and try again
  * REFAULT [uvm_fault internal use only!] unable to relock data structures,
  *         thus the mapping needs to be reverified before we can proceed
+ * RETRY   abort this pager cluster without cleaning it and retry later
  */
 #define	VM_PAGER_OK		0
 #define	VM_PAGER_BAD		1
@@ -157,6 +158,7 @@ int		uvm_pseg_reserve_available(void);
 #define VM_PAGER_AGAIN		5
 #define VM_PAGER_UNLOCK		6
 #define VM_PAGER_REFAULT	7
+#define VM_PAGER_RETRY		8
 
 /*
  * XXX

@@ -1833,6 +1833,11 @@ dmu_objset_create_crypt_check(dsl_dir_t *parentdd, dsl_crypto_params_t *dcp,
 		return (0);
 	}
 
+#ifdef __OpenBSD__
+	/* Native ZFS encryption is intentionally outside this port's scope. */
+	return (SET_ERROR(EOPNOTSUPP));
+#endif
+
 	if (will_encrypt != NULL)
 		*will_encrypt = B_TRUE;
 

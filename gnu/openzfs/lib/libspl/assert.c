@@ -43,14 +43,20 @@
 #define	libspl_getprogname()	(program_invocation_short_name)
 #define	libspl_getthreadname(buf, len)	\
 	prctl(PR_GET_NAME, (unsigned long)(buf), 0, 0, 0)
-#elif defined(__FreeBSD__) || defined(__APPLE__)
-#if !defined(__APPLE__)
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#if defined(__OpenBSD__)
+#include <pthread_np.h>
+#define	libspl_gettid()		getthrid()
+#define	libspl_getprogname()	getprogname()
+#define	libspl_getthreadname(buf, len) \
+	pthread_get_name_np(pthread_self(), buf, len)
+#elif !defined(__APPLE__)
 #include <pthread_np.h>
 #define	libspl_gettid()		pthread_getthreadid_np()
-#endif
 #define	libspl_getprogname()	getprogname()
 #define	libspl_getthreadname(buf, len)	\
 	pthread_getname_np(pthread_self(), buf, len);
+#endif
 #endif
 
 #if defined(__APPLE__)

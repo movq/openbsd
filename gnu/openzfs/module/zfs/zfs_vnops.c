@@ -983,6 +983,9 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		 * for writing to a mmap'ed region of a file using Direct I/O.
 		 */
 		if (tx_bytes &&
+#if defined(__OpenBSD__)
+		    (uio->uio_extflg & UIO_PAGER) == 0 &&
+#endif
 		    zn_has_cached_data(zp, woff, woff + tx_bytes - 1)) {
 			update_pages(zp, woff, tx_bytes, zfsvfs->z_os);
 		}
@@ -1347,6 +1350,10 @@ zfs_get_data(void *arg, uint64_t gen, lr_write_t *lr, char *buf,
 	 */
 	if (zfs_zget(zfsvfs, object, &zp) != 0)
 		return (SET_ERROR(ENOENT));
+#ifdef __OpenBSD__
+	/* The indirect-write completion may run on a different thread. */
+	VOP_UNLOCK(ZTOV(zp));
+#endif
 	if (zp->z_unlinked) {
 		/*
 		 * Release the vnode asynchronously as we currently have the

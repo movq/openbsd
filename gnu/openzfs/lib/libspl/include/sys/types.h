@@ -47,6 +47,10 @@
 
 typedef uint_t		zoneid_t;
 typedef int		projid_t;
+#ifdef __OpenBSD__
+typedef off_t		loff_t;
+typedef off_t		off64_t;
+#endif
 
 #include <sys/param.h> /* for NBBY */
 

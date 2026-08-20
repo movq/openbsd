@@ -824,6 +824,7 @@ file kern/vfs_getcwd.c
 file kern/spec_vnops.c
 file miscfs/deadfs/dead_vnops.c
 file miscfs/fifofs/fifo_vnops.c		fifo
+include "zfs/files.zfs"
 file msdosfs/msdosfs_conv.c		msdosfs
 file msdosfs/msdosfs_denode.c		msdosfs
 file msdosfs/msdosfs_fat.c		msdosfs
@@ -1113,14 +1114,14 @@ file lib/libkern/arch/${MACHINE_ARCH}/skpc.S | lib/libkern/skpc.c
 file lib/libkern/arch/${MACHINE_ARCH}/strncasecmp.S | lib/libkern/strncasecmp.c
 
 file lib/libz/adler32.c			ppp_deflate | ipsec | crypto | ddb |
-					    bios
+					    bios | zfs
 file lib/libz/crc32.c
 file lib/libz/infback.c			ppp_deflate | ipsec | crypto | ddb
-file lib/libz/inffast.c			ppp_deflate | ipsec | crypto | ddb
-file lib/libz/inflate.c			ppp_deflate | ipsec | crypto | ddb
-file lib/libz/inftrees.c		ppp_deflate | ipsec | crypto | ddb
-file lib/libz/deflate.c			ppp_deflate | ipsec | crypto | ddb
-file lib/libz/zutil.c			ppp_deflate | ipsec | crypto | ddb
-file lib/libz/zopenbsd.c		ppp_deflate | ipsec | crypto | ddb
-file lib/libz/trees.c			ppp_deflate | ipsec | crypto | ddb
-file lib/libz/compress.c		ppp_deflate | ipsec | crypto | ddb
+file lib/libz/inffast.c			ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/inflate.c			ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/inftrees.c		ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/deflate.c			ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/zutil.c			ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/zopenbsd.c		ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/trees.c			ppp_deflate | ipsec | crypto | ddb | zfs
+file lib/libz/compress.c		ppp_deflate | ipsec | crypto | ddb | zfs
