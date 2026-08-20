@@ -1,4 +1,4 @@
-/*	$OpenBSD: if.c,v 1.763.2.1 2026/08/20 07:21:46 bluhm Exp $	*/
+/*	$OpenBSD: if.c,v 1.763.2.2 2026/08/20 07:56:30 bluhm Exp $	*/
 /*	$NetBSD: if.c,v 1.35 1996/05/07 05:26:04 thorpej Exp $	*/
 
 /*
@@ -2948,8 +2948,6 @@ void
 if_getdata(struct ifnet *ifp, struct if_data *data)
 {
 	unsigned int i;
-
-	memset(data, 0, sizeof(*data));
 
 	data->ifi_type = ifp->if_type;
 	data->ifi_addrlen = ifp->if_addrlen;
