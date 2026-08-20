@@ -1,17 +1,16 @@
-/*
- * Shim <signal.h> — adds BSD extensions missing on glibc Linux.
- */
+#define sigset libc_sigset
 #include_next <signal.h>
+#undef sigset
 
 #ifndef BOOTSTRAP_SIGNAL_H
 #define BOOTSTRAP_SIGNAL_H
 
-/* NSIG is defined on glibc but ensure a reasonable value. */
+#include <sys/cdefs.h>
+
 #ifndef NSIG
 #define NSIG 65
 #endif
 
-/* SIGINFO is BSD-specific.  Use a value that doesn't conflict. */
 #ifndef SIGINFO
 #define SIGINFO 32
 #endif

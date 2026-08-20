@@ -1,7 +1,5 @@
-/*
- * Shim <stdio.h> — adds BSD extensions missing on glibc Linux.
- */
 #include_next <stdio.h>
+#include <sys/cdefs.h>
 
 #ifndef BOOTSTRAP_STDIO_H
 #define BOOTSTRAP_STDIO_H

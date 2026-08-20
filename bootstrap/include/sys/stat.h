@@ -2,7 +2,13 @@
  * Shim <sys/stat.h> - map OpenBSD stat fields used by makefs onto
  * glibc's reserved fields so they default to zero after stat(2).
  */
+
+#ifdef __unused
+#undef __unused
+#endif
+#define _DONT_DEFINE_UNUSED
 #include_next <sys/stat.h>
+#undef _DONT_DEFINE_UNUSED
 
 #ifndef BOOTSTRAP_SYS_STAT_H
 #define BOOTSTRAP_SYS_STAT_H
