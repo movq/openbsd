@@ -43,7 +43,7 @@ export REAL_CXX="${SYSTEM_CXX}"
 export PATH="${WRAPDIR}:${PATH}"
 
 # bmake arguments shared by every invocation
-MAKE_ARGS="-m ${SRCDIR}/share/mk"
+MAKE_ARGS="-m ${SRCDIR}/share/mk -j 16"
 
 # All make variable overrides, passed on the command line and via env.
 #
@@ -138,7 +138,8 @@ echo "    Targets.def:        $(cat ${CONFIG_OBJDIR}/Targets.def | tr '\n' ' ')"
 # =====================================================================
 # 2: Build all of LLVM/clang via subdir recursion
 # =====================================================================
-env ${MAKE_ENV} ${BMAKE} ${MAKE_ARGS} \
+env ${MAKE_ENV} CPPFLAGS="-I/usr/include/bsd -DLIBBSD_OVERLAY" \
+	${BMAKE} ${MAKE_ARGS} \
 	-C "${SRCDIR}/gnu/usr.bin/clang" \
 	all
 

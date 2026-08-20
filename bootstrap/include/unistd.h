@@ -1,7 +1,11 @@
-/*
- * Shim <unistd.h> — adds BSD extensions missing on glibc Linux.
- */
+#ifdef __unused
+#undef __unused
+#endif
+#define _DONT_DEFINE_UNUSED
 #include_next <unistd.h>
+#undef _DONT_DEFINE_UNUSED
+
+#include <sys/cdefs.h>
 
 #ifndef BOOTSTRAP_UNISTD_H
 #define BOOTSTRAP_UNISTD_H

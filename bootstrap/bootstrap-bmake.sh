@@ -37,7 +37,9 @@ compile() {
 	local obj="$2"
 	shift 2
 	echo "  CC      $(basename "$src")"
+	set -x
 	$CC $CFLAGS "$@" -c -o "$obj" "$src"
+	set +x
 }
 
 link() {
@@ -51,7 +53,7 @@ link() {
 # without exposing deprecated XSI interfaces like sigset().
 # The -I bootstrap/include path provides shim headers (using
 # #include_next) that add BSD declarations missing on glibc.
-SHARED_INCLUDES="-I$BOOTSTRAP_INCLUDE -D_DEFAULT_SOURCE"
+SHARED_INCLUDES="-I$BOOTSTRAP_INCLUDE -I/usr/include/bsd -D_DEFAULT_SOURCE -DLIBBSD_OVERLAY"
 
 # Include paths needed by make sources
 MAKE_INCLUDES="$SHARED_INCLUDES
@@ -74,7 +76,7 @@ GENERATE_INCLUDES="$SHARED_INCLUDES
 COMPAT_INCLUDES="$SHARED_INCLUDES"
 
 # Warning flags
-WARNFLAGS="-std=gnu99 -Wno-attributes -Wno-unused-result"
+WARNFLAGS="-std=gnu99 -Wno-attributes -Wno-unused-result -Wno-cpp"
 
 CFLAGS="$CFLAGS $WARNFLAGS"
 
@@ -211,7 +213,7 @@ done
 # Add ohash, compat layer, and getopt
 OBJS="$OBJS $BUILDDIR/ohash.o $GENERATE_COMPAT_OBJS $BUILDDIR/getopt_long.o"
 
-link "$BUILDDIR/bmake" $OBJS -lrt
+link "$BUILDDIR/bmake" $OBJS -lrt -lbsd
 
 mkdir -p "$SCRIPTDIR/tools/bin"
 cp "$BUILDDIR/bmake" "$SCRIPTDIR/tools/bin/bmake"

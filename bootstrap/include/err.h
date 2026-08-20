@@ -1,7 +1,3 @@
-/*
- * Shim <err.h> for systems without BSD <err.h> (e.g. glibc Linux).
- * Provides the err(3) / warn(3) family declarations.
- */
 #ifndef BOOTSTRAP_ERR_H
 #define BOOTSTRAP_ERR_H
 
