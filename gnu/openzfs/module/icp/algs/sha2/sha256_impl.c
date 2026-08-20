@@ -38,8 +38,9 @@
 	kfpu_begin(); E(s, d, b); kfpu_end(); \
 }
 
-#if defined(__x86_64) || defined(__aarch64__) || defined(__arm__) || \
-    defined(__PPC64__)
+#if !defined(ZFS_ASM_DISABLED) && (defined(__x86_64) || \
+    defined(__aarch64__) || defined(__arm__) || \
+    defined(__PPC64__))
 /* some implementation is always okay */
 static inline boolean_t sha2_is_supported(void)
 {
@@ -47,7 +48,7 @@ static inline boolean_t sha2_is_supported(void)
 }
 #endif
 
-#if defined(__x86_64)
+#if defined(__x86_64) && !defined(ZFS_ASM_DISABLED)
 
 /* Users of ASMABI requires all calls to be from wrappers */
 extern void ASMABI
@@ -122,7 +123,8 @@ const sha256_ops_t sha256_shani_impl = {
 };
 #endif
 
-#elif defined(__aarch64__) || defined(__arm__)
+#elif (defined(__aarch64__) || defined(__arm__)) && \
+    !defined(ZFS_ASM_DISABLED)
 extern void zfs_sha256_block_armv7(uint32_t s[8], const void *, size_t);
 const sha256_ops_t sha256_armv7_impl = {
 	.is_supported = sha2_is_supported,
@@ -156,7 +158,7 @@ const sha256_ops_t sha256_armv8_impl = {
 };
 #endif
 
-#elif defined(__PPC64__)
+#elif defined(__PPC64__) && !defined(ZFS_ASM_DISABLED)
 static boolean_t sha256_have_isa207(void)
 {
 	return (kfpu_allowed() && zfs_isa207_available());
@@ -183,29 +185,34 @@ extern const sha256_ops_t sha256_generic_impl;
 /* array with all sha256 implementations */
 static const sha256_ops_t *const sha256_impls[] = {
 	&sha256_generic_impl,
-#if defined(__x86_64)
+#if defined(__x86_64) && !defined(ZFS_ASM_DISABLED)
 	&sha256_x64_impl,
 #endif
-#if defined(__x86_64) && defined(HAVE_SSSE3)
+#if defined(__x86_64) && defined(HAVE_SSSE3) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha256_ssse3_impl,
 #endif
-#if defined(__x86_64) && defined(HAVE_AVX)
+#if defined(__x86_64) && defined(HAVE_AVX) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha256_avx_impl,
 #endif
-#if defined(__x86_64) && defined(HAVE_AVX2)
+#if defined(__x86_64) && defined(HAVE_AVX2) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha256_avx2_impl,
 #endif
-#if defined(__x86_64) && defined(HAVE_SSE4_1)
+#if defined(__x86_64) && defined(HAVE_SSE4_1) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha256_shani_impl,
 #endif
-#if defined(__aarch64__) || defined(__arm__)
+#if (defined(__aarch64__) || defined(__arm__)) && \
+    !defined(ZFS_ASM_DISABLED)
 	&sha256_armv7_impl,
 #if __ARM_ARCH > 6
 	&sha256_neon_impl,
 	&sha256_armv8_impl,
 #endif
 #endif
-#if defined(__PPC64__)
+#if defined(__PPC64__) && !defined(ZFS_ASM_DISABLED)
 	&sha256_ppc_impl,
 	&sha256_power8_impl,
 #endif /* __PPC64__ */

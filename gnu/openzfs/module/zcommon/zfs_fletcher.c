@@ -943,7 +943,7 @@ fletcher_4_param_set(const char *val, zfs_kernel_param_t *unused)
 	return (fletcher_4_impl_set(val));
 }
 
-#else
+#elif defined(__FreeBSD__)
 
 #include <sys/sbuf.h>
 

@@ -30,6 +30,7 @@
 /*	  All Rights Reserved	*/
 
 #include <stdio.h>
+#include <errno.h>
 #include <string.h>
 #include <sys/errno.h>
 #include <sys/mnttab.h>

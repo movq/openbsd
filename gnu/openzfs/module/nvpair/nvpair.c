@@ -47,12 +47,16 @@
 #include <sys/mod.h>
 
 #if defined(_KERNEL)
+#include <sys/kmem.h>
 #include <sys/sunddi.h>
 #include <sys/sysmacros.h>
 #else
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stddef.h>
+#ifdef __OpenBSD__
+#include <sys/sysmacros.h>
+#endif
 #endif
 
 #define	skip_whitespace(p)	while ((*(p) == ' ') || (*(p) == '\t')) (p)++
@@ -3273,7 +3277,7 @@ nvs_xdr_nvl_fini(nvstream_t *nvs)
  */
 
 #if (defined(__FreeBSD_version) && __FreeBSD_version >= 1600010) || \
-    defined(_KERNEL) && defined(__linux__) /* Linux kernel */
+    defined(_KERNEL) && (defined(__linux__) || defined(__OpenBSD__))
 
 #define	NVS_BUILD_XDRPROC_T(type)		\
 static bool_t					\

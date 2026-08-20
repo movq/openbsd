@@ -53,13 +53,11 @@
 #include <sys/zfeature.h>
 
 /*
- * NB: FreeBSD expects to be able to do vnode locking in lookup and
- * hold the locks across all subsequent VOPs until vput is called.
- * This means that its zfs vnops routines can't do any internal locking.
- * In order to have the same contract as the Linux vnops there would
- * needed to be duplicate locked vnops. If the vnops were used more widely
- * in common code this would likely be preferable. However, currently
- * this is the only file where this is the case.
+ * NB: The BSD VFS layers expect to hold vnode locks across operations.
+ * FreeBSD's mutation routines return a locked vnode and explicitly unlock it
+ * below.  OpenBSD's zfs_zget() returns a locked vnode and its zrele() mapping
+ * uses vput(), preserving that native lock-and-reference contract throughout
+ * replay.
  */
 
 /*
@@ -683,6 +681,9 @@ do_zfs_replay_rename(zfsvfs_t *zfsvfs, _lr_rename_t *lr, char *sname,
 {
 	znode_t *sdzp, *tdzp;
 	int error, vflg = 0;
+#ifdef __OpenBSD__
+	boolean_t same_dir;
+#endif
 
 	/* Only Linux currently supports RENAME_* flags. */
 #ifdef __linux__
@@ -697,10 +698,24 @@ do_zfs_replay_rename(zfsvfs_t *zfsvfs, _lr_rename_t *lr, char *sname,
 	if ((error = zfs_zget(zfsvfs, lr->lr_sdoid, &sdzp)) != 0)
 		return (error);
 
+#ifdef __OpenBSD__
+	/* OpenBSD rename takes referenced, unlocked directory znodes. */
+	VOP_UNLOCK(ZTOV(sdzp));
+	same_dir = (lr->lr_sdoid == lr->lr_tdoid);
+	if (same_dir) {
+		tdzp = sdzp;
+	} else if ((error = zfs_zget(zfsvfs, lr->lr_tdoid, &tdzp)) != 0) {
+		vrele(ZTOV(sdzp));
+		return (error);
+	} else {
+		VOP_UNLOCK(ZTOV(tdzp));
+	}
+#else
 	if ((error = zfs_zget(zfsvfs, lr->lr_tdoid, &tdzp)) != 0) {
 		zrele(sdzp);
 		return (error);
 	}
+#endif
 
 	if (lr->lr_common.lrc_txtype & TX_CI)
 		vflg |= FIGNORECASE;
@@ -713,8 +728,14 @@ do_zfs_replay_rename(zfsvfs_t *zfsvfs, _lr_rename_t *lr, char *sname,
 	    wo_vap, NULL);
 #endif
 
+#ifdef __OpenBSD__
+	if (!same_dir)
+		vrele(ZTOV(tdzp));
+	vrele(ZTOV(sdzp));
+#else
 	zrele(tdzp);
 	zrele(sdzp);
+#endif
 	return (error);
 }
 

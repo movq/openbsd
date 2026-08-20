@@ -30,10 +30,16 @@
 #include_next <sys/fcntl.h>
 
 #define	O_LARGEFILE	0
+#ifndef O_RSYNC
 #define	O_RSYNC		0
+#endif
 
 #ifndef O_DSYNC
 #define	O_DSYNC		0
+#endif
+
+#ifndef O_DIRECT
+#define	O_DIRECT	0
 #endif
 
 #endif	/* _LIBSPL_SYS_FCNTL_H_ */

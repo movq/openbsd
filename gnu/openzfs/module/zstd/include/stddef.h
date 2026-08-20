@@ -46,6 +46,8 @@ extern "C" {
 
 #if defined(__FreeBSD__)
 #include <sys/types.h>
+#elif defined(__OpenBSD__)
+#include <sys/param.h>
 #elif defined(__linux__)
 #include <linux/types.h>
 #else

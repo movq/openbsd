@@ -29,14 +29,16 @@
 #ifndef _LIBSPL_SYS_MOUNT_H
 #define	_LIBSPL_SYS_MOUNT_H
 
+#ifndef __OpenBSD__
 #undef _SYS_MOUNT_H_
+#endif
 #include_next <sys/mount.h>
 
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 
-#if !defined(BLKGETSIZE64)
+#if !defined(BLKGETSIZE64) && !defined(__OpenBSD__)
 #define	BLKGETSIZE64		DIOCGMEDIASIZE
 #endif
 

@@ -176,8 +176,9 @@
 #define	M_AGP		144	/* AGP memory */
 
 #define	M_DRM		145	/* Direct Rendering Manager */
+#define	M_ZFS		146	/* ZFS */
 
-#define	M_LAST		146	/* Must be last type + 1 */
+#define	M_LAST		147	/* Must be last type + 1 */
 
 #define	INITKMEMNAMES { \
 	"free",		/* 0 M_FREE */ \
@@ -307,6 +308,7 @@
 	NULL,	/* 143 free */ \
 	"AGP Memory",	/* 144 M_AGP */ \
 	"DRM",	/* 145 M_DRM */ \
+	"ZFS",	/* 146 M_ZFS */ \
 }
 
 struct kmemstats {

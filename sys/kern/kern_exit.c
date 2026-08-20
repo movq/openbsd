@@ -68,6 +68,10 @@
 #if NKCOV > 0
 #include <sys/kcov.h>
 #endif
+#include "zfs.h"
+#if NZFS > 0
+void	zfs_tsd_exit(struct proc *);
+#endif
 
 void	proc_finish_wait(struct proc *, struct process *);
 void	process_clear_orphan(struct process *);
@@ -272,7 +276,12 @@ exit1(struct proc *p, int xexit, int xsig, int flags)
 		lim_free(limit);
 	}
 
-        /*
+#if NZFS > 0
+	/* Release OpenZFS TSD before struct proc may be recycled. */
+	zfs_tsd_exit(p);
+#endif
+
+	/*
 	 * Remove proc from pidhash chain and allproc so looking
 	 * it up won't work.  We will put the proc on the
 	 * deadproc list later (using the p_runq member), and

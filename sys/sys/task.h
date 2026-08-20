@@ -22,6 +22,7 @@
 #include <sys/queue.h>
 
 struct taskq;
+struct proc;
 
 struct task {
 	TAILQ_ENTRY(task) t_entry;
@@ -53,7 +54,9 @@ void		 taskq_del_barrier(struct taskq *, struct task *);
 
 void		 task_set(struct task *, void (*)(void *), void *);
 int		 task_add(struct taskq *, struct task *);
+int		 task_add_front(struct taskq *, struct task *);
 int		 task_del(struct taskq *, struct task *);
+int		 taskq_is_member(struct taskq *, struct proc *);
 
 #define task_pending(_t)	((_t)->t_flags & TASK_ONQUEUE)
 

@@ -78,7 +78,9 @@ extern "C" {
 #else /* _KERNEL || _STANDALONE */
 
 #define	_SYS_MUTEX_H
+#ifndef __OpenBSD__
 #define	_SYS_RWLOCK_H
+#endif
 #define	_SYS_CONDVAR_H
 #define	_SYS_VNODE_H
 #define	_SYS_VFS_H

@@ -28,6 +28,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <errno.h>
+#include <assert.h>
 #include <libshare.h>
 #include <unistd.h>
 #include <libzutil.h>
