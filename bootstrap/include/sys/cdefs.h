@@ -1,6 +1,3 @@
-/*
- * Shim <sys/cdefs.h> — adds BSD attribute macros missing on glibc.
- */
 #include_next <sys/cdefs.h>
 
 #ifndef BOOTSTRAP_SYS_CDEFS_H
@@ -15,8 +12,10 @@
 	__attribute__((__format__(__printf__, fmtarg, firstvararg)))
 #endif
 
+#ifndef _DONT_DEFINE_UNUSED
 #ifndef __unused
 #define __unused __attribute__((__unused__))
+#endif
 #endif
 
 #ifndef __packed

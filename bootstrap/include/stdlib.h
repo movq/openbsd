@@ -1,11 +1,14 @@
-/*
- * Shim <stdlib.h> — adds BSD extensions missing on glibc Linux.
- */
+#ifdef __unused
+#undef __unused
+#endif
+#define _DONT_DEFINE_UNUSED
 #include_next <stdlib.h>
+#undef _DONT_DEFINE_UNUSED
 
 #ifndef BOOTSTRAP_STDLIB_H
 #define BOOTSTRAP_STDLIB_H
 
+#include <sys/cdefs.h>
 #include <sys/types.h>
 
 __BEGIN_DECLS
