@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_pledge.c,v 1.333.2.3 2026/03/13 13:11:24 bluhm Exp $	*/
+/*	$OpenBSD: kern_pledge.c,v 1.333.2.4 2026/08/20 07:26:03 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2015 Nicholas Marriott <nicm@openbsd.org>
@@ -597,7 +597,7 @@ pledge_namei(struct proc *p, struct nameidata *ni, char *path)
 	pledge = p->p_pledge;
 
 	if (ni->ni_pledge == 0)
-		panic("pledge_namei: ni_pledge");
+		return pledge_fail(p, EPERM, 0);
 
 	/*
 	 * We set the BYPASSUNVEIL flag to skip unveil checks
