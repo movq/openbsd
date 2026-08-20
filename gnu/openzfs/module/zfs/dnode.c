@@ -140,7 +140,12 @@ dnode_cons(void *arg, void *unused, int kmflag)
 
 	rw_init(&dn->dn_struct_rwlock, NULL, RW_NOLOCKDEP, NULL);
 	mutex_init(&dn->dn_mtx, NULL, MUTEX_DEFAULT, NULL);
+	/* OpenBSD WITNESS cannot express this lock's per-dnode order. */
+#if defined(__OpenBSD__)
+	mutex_init(&dn->dn_dbufs_mtx, NULL, MUTEX_NOLOCKDEP, NULL);
+#else
 	mutex_init(&dn->dn_dbufs_mtx, NULL, MUTEX_DEFAULT, NULL);
+#endif
 	cv_init(&dn->dn_notxholds, NULL, CV_DEFAULT, NULL);
 	cv_init(&dn->dn_nodnholds, NULL, CV_DEFAULT, NULL);
 

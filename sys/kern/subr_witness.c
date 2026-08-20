@@ -127,8 +127,10 @@
 #define	WITNESS_HASH_SIZE	251	/* Prime, gives load factor < 2 */
 #define	WITNESS_PENDLIST	(1024 + MAXCPUS)
 
-/* Allocate 256 KB of stack data space */
+/* Allocate 256 KB of stack data space by default. */
+#ifndef WITNESS_LO_DATA_COUNT
 #define	WITNESS_LO_DATA_COUNT	2048
+#endif
 
 /* Prime, gives load factor of ~2 at full load */
 #define	WITNESS_LO_HASH_SIZE	1021
@@ -771,6 +773,9 @@ witness_checkorder(struct lock_object *lock, int flags,
 	struct lock_instance *lock1, *lock2, *plock;
 	struct lock_class *class, *iclass;
 	struct witness *w, *w1;
+#ifdef WITNESS_ZFS_ORDER_TRACE
+	struct stacktrace zfs_order_trace;
+#endif
 	int i, j, s;
 
 	if (witness_cold || witness_watch < 1 || panicstr != NULL || db_active)
@@ -1078,6 +1083,18 @@ witness_checkorder(struct lock_object *lock, int flags,
 			}
 			if (witness_watch > 1)
 				witness_print_cycle(printf, w1, w);
+#ifdef WITNESS_ZFS_ORDER_TRACE
+			if (strcmp(w1->w_type->lt_name, "&ip->i_lock") == 0 &&
+			    strcmp(w->w_type->lt_name,
+			      "&spa_namespace_lock") == 0) {
+				stacktrace_save_at(&zfs_order_trace, 1);
+				printf("witness: current inode -> "
+				    "spa_namespace_lock acquisition stack:\n");
+				stacktrace_print(&zfs_order_trace, printf);
+				printf("witness: locks held by the current thread:\n");
+				witness_list_locks(&lock_list, printf);
+			}
+#endif
 			witness_debugger(0);
 			goto out_splx;
 		}
@@ -1930,6 +1947,7 @@ witness_print_cycle_edge(int(*prnt)(const char *fmt, ...),
     struct witness *parent, struct witness *child, int step, int last)
 {
 	struct witness_lock_order_data *wlod;
+	u_int norders;
 	int next;
 
 	if (last)
@@ -1942,13 +1960,16 @@ witness_print_cycle_edge(int(*prnt)(const char *fmt, ...),
 	if (witness_watch > 1) {
 		mtx_enter(&w_mtx);
 		wlod = witness_lock_order_get(parent, child);
+		norders = w_lohash.wloh_count;
 		mtx_leave(&w_mtx);
 
 		if (wlod != NULL)
 			stacktrace_print(&wlod->wlod_stack, printf);
 		else
-			prnt("lock order data %p -> %p is missing\n",
-			    parent->w_type->lt_name, child->w_type->lt_name);
+			prnt("lock order data %p -> %p is missing "
+			    "(%u/%u entries used)\n", parent->w_type->lt_name,
+			    child->w_type->lt_name, norders,
+			    WITNESS_LO_DATA_COUNT);
 	}
 }
 

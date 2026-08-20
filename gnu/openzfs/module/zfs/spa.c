@@ -1318,7 +1318,7 @@ spa_taskqs_fini(spa_t *spa, zio_type_t t, zio_taskq_type_t q)
 	tqs->stqs_taskq = NULL;
 }
 
-#ifdef _KERNEL
+#if defined(_KERNEL) && (defined(__linux__) || defined(__FreeBSD__))
 /*
  * The READ and WRITE rows of zio_taskqs are configurable at module load time
  * by setting zio_taskq_read or zio_taskq_write.
@@ -1640,7 +1640,7 @@ spa_taskq_free_param(ZFS_MODULE_PARAM_ARGS)
 	return (spa_taskq_param_set(ZIO_TYPE_FREE, buf));
 }
 #endif
-#endif /* _KERNEL */
+#endif /* _KERNEL && (__linux__ || __FreeBSD__) */
 
 /*
  * Dispatch a task to the appropriate taskq for the ZFS I/O type and priority.
@@ -8381,10 +8381,11 @@ spa_vdev_attach(spa_t *spa, uint64_t guid, nvlist_t *nvroot, int replacing,
 	 * to make it distinguishable from newvd, and unopenable from now on.
 	 */
 	if (strcmp(oldvdpath, newvdpath) == 0) {
+		size_t oldvdpathlen = strlen(newvdpath) + 5;
+
 		spa_strfree(oldvd->vdev_path);
-		oldvd->vdev_path = kmem_alloc(strlen(newvdpath) + 5,
-		    KM_SLEEP);
-		(void) sprintf(oldvd->vdev_path, "%s/old",
+		oldvd->vdev_path = kmem_alloc(oldvdpathlen, KM_SLEEP);
+		(void) snprintf(oldvd->vdev_path, oldvdpathlen, "%s/old",
 		    newvdpath);
 		if (oldvd->vdev_devid != NULL) {
 			spa_strfree(oldvd->vdev_devid);

@@ -8288,10 +8288,7 @@ zfs_kmod_init(void)
 	spa_init(SPA_MODE_READ | SPA_MODE_WRITE);
 	zfs_init();
 
-	zfs_ioctl_init();
-
-	mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
-	zfsdev_state_listhead.zs_minor = -1;
+	zfsdev_init();
 
 	if ((error = zfsdev_attach()) != 0)
 		goto out;
@@ -8306,6 +8303,18 @@ out:
 	zvol_fini();
 
 	return (error);
+}
+
+/*
+ * Initialize the common /dev/zfs dispatcher independently of module loading.
+ * Statically linked ports use this after their SPA and ZPL runtimes are ready.
+ */
+void
+zfsdev_init(void)
+{
+	zfs_ioctl_init();
+	mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
+	zfsdev_state_listhead.zs_minor = -1;
 }
 
 void

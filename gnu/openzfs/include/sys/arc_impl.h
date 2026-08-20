@@ -1064,6 +1064,7 @@ extern uint64_t zfs_arc_max;
 
 extern uint64_t arc_reduce_target_size(uint64_t to_free);
 extern boolean_t arc_reclaim_needed(void);
+extern void arc_reclaim_async(uint64_t);
 extern void arc_kmem_reap_soon(void);
 extern void arc_wait_for_eviction(uint64_t, boolean_t, boolean_t);
 

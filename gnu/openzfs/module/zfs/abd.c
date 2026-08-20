@@ -101,7 +101,7 @@
 #include <sys/param.h>
 #include <sys/zio.h>
 #include <sys/zfs_context.h>
-#include <sys/zfs_znode.h>
+#include <sys/dmu.h>
 
 /* see block comment above for description */
 int zfs_abd_scatter_enabled = B_TRUE;

@@ -1475,7 +1475,7 @@ typedef enum zfs_ioc {
 	/*
 	 * Core features - 89/128 numbers reserved.
 	 */
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
 	ZFS_IOC_FIRST =	0,
 #else
 	ZFS_IOC_FIRST =	('Z' << 8),
@@ -1683,6 +1683,9 @@ typedef enum {
 	ZFS_ERR_ASHIFT_MISMATCH,
 	ZFS_ERR_STREAM_LARGE_MICROZAP,
 	ZFS_ERR_TOO_MANY_SITOUTS,
+	ZFS_ERR_CKSUM,
+	ZFS_ERR_NOTACTIVE,
+	ZFS_ERR_ACTIVE_POOL,
 } zfs_errno_t;
 
 /*

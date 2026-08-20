@@ -1050,6 +1050,14 @@ uvm_mmapfile(vm_map_t map, vaddr_t *addr, vsize_t size, vm_prot_t prot,
 	unsigned int uvmflag = 0;
 	vsize_t align = 0;	/* userland page size */
 
+	if (vp->v_uvn_ops != NULL && vp->v_uvn_ops->uvp_mmap != NULL) {
+		error = vp->v_uvn_ops->uvp_mmap(vp, prot, &maxprot, flags);
+		if (error != 0)
+			return error;
+		if ((prot & maxprot) != prot)
+			return EACCES;
+	}
+
 	/*
 	 * for non-fixed mappings, round off the suggested address.
 	 * for fixed mappings, check alignment and zap old mappings.

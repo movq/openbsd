@@ -44,7 +44,7 @@ extern "C" {
 
 #ifdef _KERNEL
 
-#if defined(__FreeBSD__)
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
 #include <sys/stdint.h>
 #elif defined(__linux__)
 #include <linux/types.h>

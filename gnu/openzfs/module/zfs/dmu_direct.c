@@ -355,7 +355,7 @@ error:
 	return (err);
 }
 
-#ifdef _KERNEL
+#if defined(_KERNEL) && !defined(__OpenBSD__)
 int
 dmu_read_uio_direct(dnode_t *dn, zfs_uio_t *uio, uint64_t size,
     dmu_flags_t flags)
@@ -399,7 +399,7 @@ dmu_write_uio_direct(dnode_t *dn, zfs_uio_t *uio, uint64_t size,
 
 	return (err);
 }
-#endif /* _KERNEL */
+#endif /* _KERNEL && !__OpenBSD__ */
 
 EXPORT_SYMBOL(dmu_read_abd);
 EXPORT_SYMBOL(dmu_write_abd);

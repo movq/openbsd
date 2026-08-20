@@ -45,6 +45,19 @@
  */
 
 struct vnode;
+struct uio;
+
+/*
+ * Optional filesystem backend for vnode pager I/O.  UVM continues to own
+ * page allocation, busy state, KVA mappings, and vnode lifetime.  A backend
+ * is used where a filesystem cannot safely re-enter its ordinary vnode read
+ * path while servicing a page fault.
+ */
+struct uvn_pagerops {
+	int	(*uvp_mmap)(struct vnode *, vm_prot_t, vm_prot_t *, int);
+	int	(*uvp_read)(struct vnode *, struct uio *);
+	int	(*uvp_write)(struct vnode *, struct uio *, int);
+};
 
 /*
  * the uvm_vnode structure.
@@ -94,6 +107,7 @@ struct uvm_vnode {
 #define UVM_VNODE_BLOCKED (UVM_VNODE_DYING|UVM_VNODE_RELKILL)
 
 struct uvm_object	*uvn_attach(struct vnode *, vm_prot_t);
+boolean_t		 uvm_vnp_flush(struct vnode *, voff_t, voff_t, int);
 void			uvm_vnp_terminate(struct vnode *);
 
 #endif /* _UVM_UVM_VNODE_H_ */

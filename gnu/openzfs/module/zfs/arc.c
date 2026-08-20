@@ -324,6 +324,7 @@ boolean_t arc_watch = B_FALSE;
  * arc_available_memory().
  */
 static zthr_t *arc_reap_zthr;
+static volatile uint64_t arc_reap_requested;
 
 /*
  * This thread's job is to keep arc_size under arc_c, by calling
@@ -4768,6 +4769,34 @@ arc_reclaim_needed(void)
 	return (arc_available_memory() < 0);
 }
 
+/*
+ * Request ARC reclamation without doing any of the reclaim work in the
+ * caller.  Keep the largest outstanding request: pressure notifications are
+ * observations of the current deficit, not independent amounts to add up.
+ */
+void
+arc_reclaim_async(uint64_t to_free)
+{
+	uint64_t old;
+
+	if (to_free == 0)
+		return;
+
+	old = atomic_load_64(&arc_reap_requested);
+	while (old < to_free) {
+		uint64_t observed;
+
+		observed = atomic_cas_64(&arc_reap_requested, old, to_free);
+		if (observed == old)
+			break;
+		old = observed;
+	}
+
+	/* arc_lowmem_init() precedes creation of the reap thread. */
+	if (arc_reap_zthr != NULL)
+		zthr_wakeup(arc_reap_zthr);
+}
+
 void
 arc_kmem_reap_soon(void)
 {
@@ -4915,6 +4944,7 @@ arc_reap_cb_check(void *arg, zthr_t *zthr)
 	(void) arg, (void) zthr;
 
 	int64_t free_memory = arc_available_memory();
+	uint64_t requested = atomic_load_64(&arc_reap_requested);
 	static int reap_cb_check_counter = 0;
 
 	/*
@@ -4924,7 +4954,8 @@ arc_reap_cb_check(void *arg, zthr_t *zthr)
 	 * becoming implicitly blocked by a system-wide kmem reap -- which,
 	 * on a system with many, many full magazines, can take minutes).
 	 */
-	if (!kmem_cache_reap_active() && free_memory < 0) {
+	if (requested != 0 ||
+	    (!kmem_cache_reap_active() && free_memory < 0)) {
 
 		arc_no_grow = B_TRUE;
 		arc_warm = B_TRUE;
@@ -4961,9 +4992,23 @@ static void
 arc_reap_cb(void *arg, zthr_t *zthr)
 {
 	int64_t can_free, free_memory, to_free;
+	uint64_t requested;
 
 	(void) arg, (void) zthr;
 	fstrans_cookie_t cookie = spl_fstrans_mark();
+	requested = atomic_swap_64(&arc_reap_requested, 0);
+
+	/*
+	 * A page-daemon notification should start eviction immediately.  Add
+	 * the usual fractional reduction to the reported deficit so that ARC
+	 * leaves UVM some headroom rather than aiming exactly at freetarg.
+	 */
+	if (requested != 0) {
+		ARCSTAT_BUMP(arcstat_memory_indirect_count);
+		can_free = arc_c - arc_c_min;
+		arc_reduce_target_size(requested +
+		    (MAX(can_free, 0) >> arc_shrink_shift));
+	}
 
 	/*
 	 * Kick off asynchronous kmem_reap()'s of all our caches.
@@ -7996,6 +8041,7 @@ arc_init(void)
 
 	arc_min_prefetch = MSEC_TO_TICK(1000);
 	arc_min_prescient_prefetch = MSEC_TO_TICK(6000);
+	atomic_store_64(&arc_reap_requested, 0);
 
 #if defined(_KERNEL)
 	arc_lowmem_init();

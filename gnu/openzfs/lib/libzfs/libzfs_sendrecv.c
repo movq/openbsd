@@ -935,9 +935,15 @@ static void
 send_progress_thread_act(int sig, siginfo_t *info, void *ucontext)
 {
 	(void) sig, (void) ucontext;
+#ifdef __OpenBSD__
+	(void) info;
+	send_progress_thread_signal_duetotimer = B_FALSE;
+#else
 	send_progress_thread_signal_duetotimer = info->si_code == SI_TIMER;
+#endif
 }
 
+#ifndef __OpenBSD__
 struct timer_desirability {
 	timer_t timer;
 	boolean_t desired;
@@ -949,6 +955,7 @@ timer_delete_cleanup(void *timer)
 	if (td->desired)
 		timer_delete(td->timer);
 }
+#endif
 
 #ifdef SIGINFO
 #define	SEND_PROGRESS_THREAD_PARENT_BLOCK_SIGINFO sigaddset(&new, SIGINFO)
@@ -978,23 +985,27 @@ send_progress_thread(void *arg)
 
 	const struct sigaction signal_action =
 	    {.sa_sigaction = send_progress_thread_act, .sa_flags = SA_SIGINFO};
+#ifndef __OpenBSD__
 	struct sigevent timer_cfg =
 	    {.sigev_notify = SIGEV_SIGNAL, .sigev_signo = SIGUSR1};
 	const struct itimerspec timer_time =
 	    {.it_value = {.tv_sec = 1}, .it_interval = {.tv_sec = 1}};
 	struct timer_desirability timer = {};
+#endif
 
 	sigaction(SIGUSR1, &signal_action, NULL);
 #ifdef SIGINFO
 	sigaction(SIGINFO, &signal_action, NULL);
 #endif
 
+#ifndef __OpenBSD__
 	if ((timer.desired = pa->pa_progress || pa->pa_astitle)) {
 		if (timer_create(CLOCK_MONOTONIC, &timer_cfg, &timer.timer))
 			return ((void *)(uintptr_t)errno);
 		(void) timer_settime(timer.timer, 0, &timer_time, NULL);
 	}
 	pthread_cleanup_push(timer_delete_cleanup, &timer);
+#endif
 
 	if (!pa->pa_parsable && pa->pa_progress) {
 		(void) fprintf(stderr,
@@ -1008,7 +1019,18 @@ send_progress_thread(void *arg)
 	 * Print the progress from ZFS_IOC_SEND_PROGRESS every second.
 	 */
 	for (;;) {
+#ifdef __OpenBSD__
+		if (pa->pa_progress || pa->pa_astitle) {
+			const struct timespec delay = { .tv_sec = 1 };
+
+			send_progress_thread_signal_duetotimer = B_TRUE;
+			(void) nanosleep(&delay, NULL);
+		} else {
+			pause();
+		}
+#else
 		pause();
+#endif
 		if ((err = zfs_send_progress(zhp, pa->pa_fd, &bytes,
 		    &blocks)) != 0) {
 			if (err == EINTR || err == ENOENT)
@@ -1055,7 +1077,9 @@ send_progress_thread(void *arg)
 			    buf, zhp->zfs_name);
 		}
 	}
+#ifndef __OpenBSD__
 	pthread_cleanup_pop(B_TRUE);
+#endif
 	pthread_exit(((void *)(uintptr_t)err));
 }
 

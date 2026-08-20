@@ -93,7 +93,7 @@ optadd(char *mntopts, size_t size, const char *opt)
 static __thread char gfstypename[MFSNAMELEN];
 static __thread char gmntfromname[MNAMELEN];
 static __thread char gmntonname[MNAMELEN];
-static __thread char gmntopts[MNTMAXSTR];
+static __thread char gmntopts[MNT_LINE_MAX];
 
 void
 statfs2mnttab(struct statfs *sfs, struct mnttab *mp)

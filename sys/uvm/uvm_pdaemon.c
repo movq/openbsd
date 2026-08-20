@@ -109,6 +109,36 @@ void		uvmpd_tune(void);
 void		uvmpd_drop(struct pglist *);
 int		uvmpd_dropswap(struct vm_page *);
 
+static uvm_reclaim_cb *uvm_reclaim_callback;
+static void *uvm_reclaim_arg;
+
+/*
+ * Register an external cache for page-daemon pressure notifications.
+ * There is currently one such cache, the ZFS ARC.  Both registration and
+ * callback invocation are serialized by the kernel lock.
+ */
+void
+uvm_reclaim_register(uvm_reclaim_cb *callback, void *arg)
+{
+	KERNEL_ASSERT_LOCKED();
+	KASSERT(callback != NULL);
+	KASSERT(uvm_reclaim_callback == NULL);
+
+	uvm_reclaim_arg = arg;
+	uvm_reclaim_callback = callback;
+}
+
+void
+uvm_reclaim_unregister(uvm_reclaim_cb *callback, void *arg)
+{
+	KERNEL_ASSERT_LOCKED();
+	KASSERT(uvm_reclaim_callback == callback);
+	KASSERT(uvm_reclaim_arg == arg);
+
+	uvm_reclaim_callback = NULL;
+	uvm_reclaim_arg = NULL;
+}
+
 /*
  * uvm_wait: wait (sleep) for the page daemon to free some pages
  *
@@ -257,6 +287,15 @@ uvm_pageout(void *arg)
 #endif
 		if (shortage > 0)
 			shortage -= uvm_pmr_cache_drain();
+
+		/*
+		 * Native caches could not satisfy the request.  Give an external
+		 * cache an opportunity to start asynchronous reclamation before we
+		 * scan UVM pages.  The callback must neither allocate nor wait for
+		 * reclamation; it is invoked with the UVM page locks dropped.
+		 */
+		if (shortage > 0 && uvm_reclaim_callback != NULL)
+			uvm_reclaim_callback(uvm_reclaim_arg, shortage);
 
 		shortage = MAX(shortage, size);
 		inactive_shortage = MAX(inactive_shortage, shortage);

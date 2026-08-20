@@ -24,7 +24,9 @@
 .Nm taskq_del_barrier ,
 .Nm task_set ,
 .Nm task_add ,
+.Nm task_add_front ,
 .Nm task_del ,
+.Nm taskq_is_member ,
 .Nm task_pending ,
 .Nm TASK_INITIALIZER
 .Nd task queues
@@ -48,7 +50,11 @@
 .Ft int
 .Fn task_add "struct taskq *tq" "struct task *t"
 .Ft int
+.Fn task_add_front "struct taskq *tq" "struct task *t"
+.Ft int
 .Fn task_del "struct taskq *tq" "struct task *t"
+.Ft int
+.Fn taskq_is_member "struct taskq *tq" "struct proc *p"
 .Ft int
 .Fn task_pending "struct task *t"
 .Vt extern struct taskq *const systq;
@@ -153,6 +159,11 @@ taskq.
 The task structure must already be initialised by
 .Fn task_set .
 .Pp
+.Fn task_add_front
+is equivalent to
+.Fn task_add ,
+except that newly scheduled work is inserted at the front of the queue.
+.Pp
 .Fn task_del
 will remove the task structure
 .Fa t
@@ -165,6 +176,12 @@ Calling
 against a different taskq than the one given in a previous call to
 .Fn task_add
 is an error and will lead to undefined behaviour.
+.Pp
+.Fn taskq_is_member
+returns non-zero if
+.Fa p
+is one of the threads servicing
+.Fa tq .
 .Pp
 The kernel provides two system taskqs:
 .Va systq ,
@@ -200,7 +217,9 @@ and
 can be called from process context.
 .Fn task_set ,
 .Fn task_add ,
+.Fn task_add_front ,
 .Fn task_del ,
+.Fn taskq_is_member ,
 and
 .Fn task_pending
 can be called during autoconf, from process context, or from interrupt context.
@@ -217,12 +236,19 @@ was added to the taskq
 .Fa tq
 or 0 if the task was already queued.
 .Pp
+.Fn task_add_front
+has the same return values as
+.Fn task_add .
+.Pp
 .Fn task_del
 will return 1 if the task
 .Fa t
 was removed from the taskq
 .Fa tq
 or 0 if the task was not already on the queue.
+.Pp
+.Fn taskq_is_member
+returns non-zero if the process is a taskq member and zero otherwise.
 .Pp
 .Fn task_pending
 will return non-zero if the task is queued to run, or 0 if the task

@@ -715,6 +715,22 @@ ReTry:
 		uvm_lock_pageq();
 
 		/*
+		 * A filesystem-specific pager can ask us to abort a cluster
+		 * without cleaning it when cache-coherency lock ordering would
+		 * otherwise deadlock against a VOP waiting for this busy page.
+		 * uvm_pager_put() has already dropped and unbusied the cluster.
+		 */
+		if (result == VM_PAGER_RETRY) {
+			uvm_unlock_pageq();
+			rw_exit(uobj->vmobjlock);
+			tsleep_nsec(uobj, PVM, "uvnretry", MSEC_TO_NSEC(1));
+			rw_enter(uobj->vmobjlock, RW_WRITE);
+			uvm_lock_pageq();
+			curoff -= PAGE_SIZE;
+			continue;
+		}
+
+		/*
 		 * VM_PAGER_AGAIN: given the structure of this pager, this
 		 * can only happen when we are doing async I/O and can't
 		 * map the pages into kernel memory (pager_map) due to lack
@@ -1135,6 +1151,7 @@ uvn_io(struct uvm_vnode *uvn, vm_page_t *pps, int npages, int flags, int rw)
 	int waitf, result, mapinflags;
 	size_t got, wanted;
 	int vnlocked, netunlocked = 0;
+	int customread, customwrite;
 	int lkflags = (flags & PGO_NOWAIT) ? LK_NOWAIT : 0;
 	voff_t uvnsize;
 
@@ -1143,6 +1160,10 @@ uvn_io(struct uvm_vnode *uvn, vm_page_t *pps, int npages, int flags, int rw)
 	/* init values */
 	waitf = (flags & PGO_SYNCIO) ? M_WAITOK : M_NOWAIT;
 	vn = uvn->u_vnode;
+	customread = rw == UIO_READ && vn->v_uvn_ops != NULL &&
+	    vn->v_uvn_ops->uvp_read != NULL;
+	customwrite = rw == UIO_WRITE && vn->v_uvn_ops != NULL &&
+	    vn->v_uvn_ops->uvp_write != NULL;
 	file_offset = pps[0]->offset;
 
 	/* check for sync'ing I/O. */
@@ -1222,20 +1243,32 @@ uvn_io(struct uvm_vnode *uvn, vm_page_t *pps, int npages, int flags, int rw)
 	 */
 	result = 0;
 	KERNEL_LOCK();
-	if (!vnlocked)
-		result = vn_lock(vn, LK_EXCLUSIVE | LK_RECURSEFAIL | lkflags);
-	if (result == 0) {
-		/* NOTE: vnode now locked! */
-		if (rw == UIO_READ)
-			result = VOP_READ(vn, &uio, 0, curproc->p_ucred);
-		else
-			result = VOP_WRITE(vn, &uio,
-			    (flags & PGO_PDFREECLUST) ? IO_NOCACHE : 0,
-			    curproc->p_ucred);
-
+	/*
+	 * A filesystem pager callback owns its locking contract.  In
+	 * particular, do not acquire the vnode lock after making its pages
+	 * busy: a concurrent VOP may hold that lock while waiting for one of
+	 * those pages, and neither side could then make progress.
+	 */
+	if (customwrite) {
+		result = vn->v_uvn_ops->uvp_write(vn, &uio, flags);
+	} else if (customread) {
+		result = vn->v_uvn_ops->uvp_read(vn, &uio);
+	} else {
 		if (!vnlocked)
-			VOP_UNLOCK(vn);
+			result = vn_lock(vn,
+			    LK_EXCLUSIVE | LK_RECURSEFAIL | lkflags);
+		if (result == 0) {
+			/* NOTE: vnode now locked! */
+			if (rw == UIO_READ)
+				result = VOP_READ(vn, &uio, 0, curproc->p_ucred);
+			else
+				result = VOP_WRITE(vn, &uio,
+				    (flags & PGO_PDFREECLUST) ? IO_NOCACHE : 0,
+				    curproc->p_ucred);
 
+			if (!vnlocked)
+				VOP_UNLOCK(vn);
+		}
 	}
 	KERNEL_UNLOCK();
 
@@ -1272,6 +1305,8 @@ uvn_io(struct uvm_vnode *uvn, vm_page_t *pps, int npages, int flags, int rw)
 
 	if (result == 0) {
 		return VM_PAGER_OK;
+	} else if (result == EBUSY && customwrite) {
+		return VM_PAGER_RETRY;
 	} else if (result == EBUSY) {
 		KASSERT(flags & PGO_NOWAIT);
 		return VM_PAGER_AGAIN;
@@ -1284,6 +1319,27 @@ uvn_io(struct uvm_vnode *uvn, vm_page_t *pps, int npages, int flags, int rw)
 		}
 		return VM_PAGER_ERROR;
 	}
+}
+
+/*
+ * Flush a range from a vnode's VM object.  The caller supplies the normal
+ * PGO_* flags and must obey uvn_flush()'s sleeping rules.
+ */
+boolean_t
+uvm_vnp_flush(struct vnode *vp, voff_t start, voff_t stop, int flags)
+{
+	struct uvm_vnode *uvn = vp->v_uvm;
+	boolean_t result = TRUE;
+
+	KERNEL_ASSERT_LOCKED();
+	if (uvn == NULL)
+		return TRUE;
+
+	rw_enter(uvn->u_obj.vmobjlock, RW_WRITE);
+	if ((uvn->u_flags & UVM_VNODE_VALID) != 0)
+		result = uvn_flush(&uvn->u_obj, start, stop, flags);
+	rw_exit(uvn->u_obj.vmobjlock);
+	return result;
 }
 
 /*

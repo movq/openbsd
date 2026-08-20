@@ -103,6 +103,7 @@
 #	pvbus*	paravirtual device tree root
 #	kstat	Kernel Statistics
 #	psp	Platform Security Processor
+#	zfs	ZFS control device
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 UNITMULT=64
 MAKEDEV_PARTITIONS=${MAKEDEV_PARTITIONS:-`sysctl -n kern.maxpartitions`}
@@ -270,6 +271,10 @@ std)
 ttyc*)
 	M ttyc$U c 38 $U 660 dialer root
 	M cuac$U c 38 $(($U+128)) 660 dialer root
+	;;
+
+zfs)
+	M zfs c 102 0 666
 	;;
 
 psp)
@@ -623,7 +628,7 @@ local)
 	;;
 
 all)
-	R efi ipmi0 ttyVI00 ttyVI10 ttyVI20 ttyVI30 ttyVI40 dri nvram
+	R zfs efi ipmi0 ttyVI00 ttyVI10 ttyVI20 ttyVI30 ttyVI40 dri nvram
 	R gpio0 gpio1 gpio2 bktr0 vnd0 vnd1 vnd2 vnd3 sd0 sd1 sd2 sd3
 	R sd4 sd5 sd6 sd7 sd8 sd9 cd0 cd1 rd0 tap0 tap1 tap2 tap3 tun0
 	R tun1 tun2 tun3 bio pty0 fd1 fd1B fd1C fd1D fd1E fd1F fd1G
