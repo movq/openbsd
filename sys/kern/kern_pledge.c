@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_pledge.c,v 1.356 2026/03/27 05:15:25 dgl Exp $	*/
+/*	$OpenBSD: kern_pledge.c,v 1.356.2.1 2026/08/20 07:26:20 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2015 Nicholas Marriott <nicm@openbsd.org>
@@ -652,7 +652,7 @@ pledge_namei(struct proc *p, struct nameidata *ni, char *path)
 	ple = p->p_pledge;
 	nip = ni->ni_pledge;
 	if (nip == 0)
-		panic("pledge_namei: ni_pledge");
+		return pledge_fail(p, EPERM, 0);
 
 	/* Doing a permitted execve() */
 	if ((nip & PLEDGE_EXEC) && (ple & PLEDGE_EXEC))
