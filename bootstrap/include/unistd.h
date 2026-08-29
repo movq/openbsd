@@ -5,7 +5,7 @@
 #include_next <unistd.h>
 #undef _DONT_DEFINE_UNUSED
 
-#include <sys/cdefs.h>
+#define __unused __attribute__((__unused__))
 
 #ifndef BOOTSTRAP_UNISTD_H
 #define BOOTSTRAP_UNISTD_H
