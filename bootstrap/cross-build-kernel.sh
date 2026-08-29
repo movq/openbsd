@@ -44,6 +44,7 @@ BUILDGROUP="${BUILDGROUP:-$(id -gn)}"
 
 WRAPDIR="${SCRIPTDIR}/wrap"
 KERNEL_BINDIR="${SCRIPTDIR}/kernel-tools/bin"
+MAKEGAP_SRC="${SCRIPTDIR}/makegap-linux.sh"
 
 need_tool() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -86,6 +87,7 @@ need_exec "${BMAKE}"
 need_exec "${CLANG}"
 need_exec "${LLD}"
 need_exec "${CONFIG_BIN}"
+need_file "${MAKEGAP_SRC}"
 need_tool install
 need_tool sort
 need_tool mktemp
@@ -199,7 +201,7 @@ KERNEL_MKCONF="${KERNEL_BUILDDIR}/Makefile.mk.conf"
 # ------------------------------------------------------------------
 # bmake arguments
 # ------------------------------------------------------------------
-MAKE_ARGS="-m ${SRCDIR}/share/mk"
+MAKE_ARGS="-m ${SRCDIR}/share/mk -j 16"
 
 # All make variable overrides passed as environment variables.
 # Most mirror what cross-build-userland.sh uses, with a few
@@ -270,96 +272,14 @@ fi
 #
 # The kernel build uses makegap.sh to insert randomised padding into
 # the gap.o linker section for KARL (Kernel Address Randomised Link).
-# The script uses sysctl(8) and jot(1), neither of which is portable
-# to Linux.  Replace the generated copy with a portable version that
-# uses getconf(1) and $RANDOM, and arrange for the Makefile's
+# Install the Linux-hosted implementation and arrange for the Makefile's
 # "makegap.sh" target to be satisfied by the pre-existing file.
 #
 MAKEGAP_TMP="$(mktemp "${KERNEL_BUILDDIR}/makegap.sh.XXXXXX")"
-cat > "${MAKEGAP_TMP}" <<'MAKEGAP_EOF'
-#!/bin/sh -
-random_uniform() {
-	local _upper_bound
-	if [ "$1" -gt 0 ]; then
-		_upper_bound=$(($1 - 1))
-	else
-		_upper_bound=0
-	fi
-	if [ "$1" -gt 0 ]; then
-		echo $((RANDOM % $1))
-	else
-		echo 0
-	fi
-}
-
-umask 007
-
-if PAGE_SIZE=$(getconf PAGESIZE 2>/dev/null) && [ -n "$PAGE_SIZE" ]; then
-	:
-elif PAGE_SIZE=$(sysctl -n hw.pagesize 2>/dev/null) && [ -n "$PAGE_SIZE" ]; then
-	:
-else
-	PAGE_SIZE=4096
-fi
-PAD=$1
-GAPDUMMY=$2
-
-RANDOM1=`random_uniform $((3 * PAGE_SIZE))`
-RANDOM2=`random_uniform $PAGE_SIZE`
-RANDOM3=`random_uniform $PAGE_SIZE`
-RANDOM4=`random_uniform $PAGE_SIZE`
-RANDOM5=`random_uniform $PAGE_SIZE`
-
-cat > gap.link << __EOF__
-
-PHDRS {
-	text PT_LOAD FILEHDR PHDRS;
-	rodata PT_LOAD;
-	data PT_LOAD;
-	bss PT_LOAD;
-}
-
-SECTIONS {
-	.text : ALIGN($PAGE_SIZE) {
-		LONG($PAD);
-		. += $RANDOM1;
-		. = ALIGN($PAGE_SIZE);
-		endboot = .;
-		PROVIDE (endboot = .);
-		. = ALIGN($PAGE_SIZE);
-		. += $RANDOM2;
-		. = ALIGN(16);
-		*(.text .text.*)
-	} :text =$PAD
-
-	.rodata : {
-		LONG($PAD);
-		. += $RANDOM3;
-		. = ALIGN(16);
-		*(.rodata .rodata.*)
-	} :rodata =$PAD
-
-	.data : {
-		LONG($PAD);
-		. = . + $RANDOM4;	/* fragment of page */
-		. = ALIGN(16);
-		*(.data .data.*)
-	} :data =$PAD
-
-	.bss : {
-		. = . + $RANDOM5;	/* fragment of page */
-		. = ALIGN(16);
-		*(.bss .bss.*)
-	} :bss
-}
-__EOF__
-
-$LD $LDFLAGS -r gap.link $GAPDUMMY -o gap.o
-MAKEGAP_EOF
+cp "${MAKEGAP_SRC}" "${MAKEGAP_TMP}"
 if install_if_changed "${MAKEGAP_TMP}" "${KERNEL_BUILDDIR}/makegap.sh"; then
 	echo "    Installed Linux-compatible makegap.sh"
 fi
-chmod +x "${KERNEL_BUILDDIR}/makegap.sh"
 
 # Prevent the Makefile's "makegap.sh:" target from overwriting our
 # patched version by adding a no-op override via MAKECONF.
