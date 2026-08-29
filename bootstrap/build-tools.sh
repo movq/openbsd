@@ -109,14 +109,20 @@ echo "    TOOLDIR      = ${TOOLDIR}"
 echo "    OBJROOT      = ${OBJROOT}"
 echo ""
 
-echo "==> Selecting OpenBSD branches in lld ELF backend"
-find "${SRCDIR}/gnu/llvm/lld/ELF" -type f \( -name '*.cpp' -o -name '*.h' \) \
-	-exec sed -i \
-		-e 's/#ifdef __OpenBSD__/#if 1/' \
-		-e 's/#ifndef __OpenBSD__/#if 0/' \
-		-e 's/defined(__OpenBSD__)/1/g' \
-		{} +
-echo ""
+#echo "==> Selecting OpenBSD branches in lld ELF backend"
+#find "${SRCDIR}/gnu/llvm/lld/ELF" -type f \( -name '*.cpp' -o -name '*.h' \) \
+#	-exec sed -i \
+#		-e 's/#ifdef __OpenBSD__/#if 1/' \
+#		-e 's/#ifndef __OpenBSD__/#if 0/' \
+#		-e 's/defined(__OpenBSD__)/1/g' \
+#		{} +
+#echo ""
+
+# fwrapv...
+sed -i -e 's/#ifdef __OpenBSD__/#if 1/' \
+	-e 's/#ifndef __OpenBSD__/#if 0/' \
+	-e 's/defined(__OpenBSD__)/1/g' \
+	${SRCDIR}/gnu/llvm/clang/lib/Driver/ToolChains/CommonArgs.cpp
 
 # =====================================================================
 # 1: Generate LLVM config headers (.def files, llvm-config.h)

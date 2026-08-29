@@ -10,6 +10,8 @@
 #include_next <sys/stat.h>
 #undef _DONT_DEFINE_UNUSED
 
+#define __unused __attribute__((__unused__))
+
 #ifndef BOOTSTRAP_SYS_STAT_H
 #define BOOTSTRAP_SYS_STAT_H
 

@@ -5,6 +5,8 @@
 #include_next <stdlib.h>
 #undef _DONT_DEFINE_UNUSED
 
+#define __unused __attribute__((__unused__))
+
 #ifndef BOOTSTRAP_STDLIB_H
 #define BOOTSTRAP_STDLIB_H
 

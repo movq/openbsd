@@ -234,7 +234,7 @@ ln -sf openbsd-install "${CROSS_BINDIR}/install"
 export PATH="${CROSS_BINDIR}:${TOOLDIR}/bin:${WRAPDIR}:${PATH}"
 export MACHINE MACHINE_ARCH MACHINE_CPU
 
-MAKE_ARGS="-m ${SRCDIR}/share/mk"
+MAKE_ARGS="-m ${SRCDIR}/share/mk -j 16"
 MAKEOBJDIR="obj.linux.${MACHINE}"
 
 MAKE_ENV="
