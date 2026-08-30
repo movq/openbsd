@@ -155,6 +155,9 @@ Linux)
 NetBSD)
 	HOST_PLATFORM=netbsd
 	;;
+FreeBSD)
+	HOST_PLATFORM=freebsd
+	;;
 *)
 	bootstrap_die "unsupported host operating system: ${HOST_OS}"
 	;;
