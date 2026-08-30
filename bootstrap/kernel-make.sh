@@ -29,7 +29,7 @@ JOBS="${JOBS:-16}"
 KERNEL_BINDIR="${SCRIPTDIR}/kernel-tools/bin"
 KERNEL_CC="${CC:-${KERNEL_BINDIR}/openbsd-kernel-cc}"
 LD="${LD:-${TOOLDIR}/bin/ld.lld}"
-MAKEGAP_SRC="${SCRIPTDIR}/makegap-linux.sh"
+MAKEGAP_SRC="${SCRIPTDIR}/makegap-host.sh"
 
 if [ -n "${HOSTCC:-}" ]; then
 	HOST_CC="${HOSTCC}"
@@ -55,7 +55,7 @@ for tool in "${BMAKE}" "${CONFIG_BIN}" "${KERNEL_CC}" "${LD}"; do
 done
 
 if [ ! -f "${MAKEGAP_SRC}" ]; then
-	echo "missing Linux-compatible makegap script: ${MAKEGAP_SRC}" >&2
+	echo "missing host-compatible makegap script: ${MAKEGAP_SRC}" >&2
 	exit 1
 fi
 
@@ -72,7 +72,7 @@ if [ "${KERNEL_RECONFIG:-yes}" != no ] || \
 fi
 
 # Native makegap.sh relies on OpenBSD's sysctl(8) and jot(1).  Install the
-# Linux-hosted replacement in every configuration's build directory, not just
+# Host-compatible replacement in every configuration's build directory, not just
 # the one initially created by cross-build-kernel.sh.
 if [ ! -f "${KERNEL_BUILDDIR}/makegap.sh" ] ||
     ! cmp -s "${MAKEGAP_SRC}" "${KERNEL_BUILDDIR}/makegap.sh"; then

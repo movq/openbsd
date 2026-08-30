@@ -1,36 +1,36 @@
 #!/bin/sh
 #
-# build.sh - bootstrap OpenBSD's make(1) on a GNU/Linux host.
+# bootstrap-bmake.sh - bootstrap OpenBSD's make(1) on a supported host.
 #
 # Produces a "bmake" binary in the current directory.
 #
-# Uses an include shim tree (bootstrap/include/) to provide BSD
-# declarations missing on glibc, without patching OpenBSD sources
-# or force-including a compat header.
-#
-# Usage: ./build.sh [CC=cc]
+# Usage: ./bootstrap/bootstrap-bmake.sh [OBJDIR=/path] [HOST_CC=cc]
 #
 set -e
 
-CC="${CC:-cc}"
-CFLAGS="${CFLAGS:--O2 -g}"
-
-# Resolve paths relative to this script's location
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 SRCDIR="$(cd "$SCRIPTDIR/.." && pwd)"
 
+[ -n "${CC:-}" ] && HOST_CC="${HOST_CC:-${CC}}"
+. "${SCRIPTDIR}/lib.sh"
+
+CFLAGS="${CFLAGS:--O2 -g}"
 MAKEDIR="$SRCDIR/usr.bin/make"
 LSTDIR="$MAKEDIR/lst.lib"
 UTILDIR="$SRCDIR/lib/libutil"
 LIBCSTDLIBDIR="$SRCDIR/lib/libc/stdlib"
 
-BOOTSTRAP_INCLUDE="$SCRIPTDIR/include"
-BOOTSTRAP_COMPAT="$SCRIPTDIR/compat"
-
-# Build output directory
-BUILDDIR="$SCRIPTDIR/build"
+BUILDDIR="${BMAKE_OBJDIR:-${OBJROOT:-${HOST_OBJDIR}/bmake}}"
 rm -rf "$BUILDDIR"
 mkdir -p "$BUILDDIR"
+
+# OpenBSD make intentionally hard-codes _PATH_BSHELL.  Override the host
+# paths.h value so OpenBSD makefiles can use their expected ksh syntax.
+cat > "${BUILDDIR}/paths.h" <<EOF
+#include_next <paths.h>
+#undef _PATH_BSHELL
+#define _PATH_BSHELL "${HOST_SHELL}"
+EOF
 
 compile() {
 	local src="$1"
@@ -38,7 +38,7 @@ compile() {
 	shift 2
 	echo "  CC      $(basename "$src")"
 	set -x
-	$CC $CFLAGS "$@" -c -o "$obj" "$src"
+	${HOST_CC} ${CFLAGS} "$@" -c -o "$obj" "$src"
 	set +x
 }
 
@@ -46,14 +46,10 @@ link() {
 	local out="$1"
 	shift
 	echo "  LINK    $(basename "$out")"
-	$CC $CFLAGS "$@" -o "$out" $LDFLAGS
+	${HOST_CC} ${CFLAGS} "$@" -o "$out" ${LDFLAGS:-}
 }
 
-# _DEFAULT_SOURCE gives us setenv, strdup, strnlen, etc. on glibc
-# without exposing deprecated XSI interfaces like sigset().
-# The -I bootstrap/include path provides shim headers (using
-# #include_next) that add BSD declarations missing on glibc.
-SHARED_INCLUDES="-I$BOOTSTRAP_INCLUDE -I/usr/include/bsd -D_DEFAULT_SOURCE -DLIBBSD_OVERLAY"
+SHARED_INCLUDES="${HOST_FEATURE_CPPFLAGS}"
 
 # Include paths needed by make sources
 MAKE_INCLUDES="$SHARED_INCLUDES
@@ -81,7 +77,8 @@ WARNFLAGS="-std=gnu99 -Wno-attributes -Wno-unused-result -Wno-cpp"
 CFLAGS="$CFLAGS $WARNFLAGS"
 
 echo "==> Building bmake from $SRCDIR"
-echo "    CC       = $CC"
+echo "    HOST_OS  = ${HOST_OS}"
+echo "    HOST_CC  = ${HOST_CC}"
 echo "    CFLAGS   = $CFLAGS"
 echo "    BUILDDIR = $BUILDDIR"
 echo ""
@@ -89,20 +86,18 @@ echo ""
 
 # 1. Compat
 #
-# Each compat .c file provides one BSD function missing on glibc.
-# They include standard headers (e.g. <err.h>, <stdlib.h>) which
-# resolve via the shim tree at bootstrap/include/.
-COMPAT_SRCS="err.c reallocarray.c strtonum.c fgetln.c pledge.c sys_signame.c"
-for src in $COMPAT_SRCS; do
+# Each host configuration supplies only the interfaces missing from its libc.
+for src in ${BMAKE_COMPAT_SRCS}; do
 	obj="$(basename "$src" .c).o"
-	compile "$BOOTSTRAP_COMPAT/$src" "$BUILDDIR/$obj" \
+	compile "$HOST_COMPAT/$src" "$BUILDDIR/$obj" \
 		$COMPAT_INCLUDES -Wno-missing-prototypes
 done
 
-# Compile OpenBSD's getopt to replace glibc's getopt (which permutes
-# arguments and ignores optreset, breaking MainParseArgs).
-compile "$LIBCSTDLIBDIR/getopt_long.c" "$BUILDDIR/getopt_long.o" \
-	$MAKE_INCLUDES
+if [ "${BMAKE_USE_OPENBSD_GETOPT}" = yes ]; then
+	# glibc getopt permutes arguments and ignores optreset.
+	compile "$LIBCSTDLIBDIR/getopt_long.c" "$BUILDDIR/getopt_long.o" \
+		$MAKE_INCLUDES
+fi
 
 # 2. ohash
 compile "$UTILDIR/ohash.c" "$BUILDDIR/ohash.o" \
@@ -124,7 +119,7 @@ compile "$MAKEDIR/generate.c" "$BUILDDIR/generate.o" \
 
 # Collect compat objects needed for the generate tool
 GENERATE_COMPAT_OBJS=""
-for src in $COMPAT_SRCS; do
+for src in ${BMAKE_COMPAT_SRCS}; do
 	obj="$(basename "$src" .c).o"
 	GENERATE_COMPAT_OBJS="$GENERATE_COMPAT_OBJS $BUILDDIR/$obj"
 done
@@ -210,10 +205,13 @@ for src in $LST_SRCS; do
 	OBJS="$OBJS $BUILDDIR/$obj"
 done
 
-# Add ohash, compat layer, and getopt
-OBJS="$OBJS $BUILDDIR/ohash.o $GENERATE_COMPAT_OBJS $BUILDDIR/getopt_long.o"
+# Add ohash, the host compatibility layer, and the Linux getopt replacement.
+OBJS="$OBJS $BUILDDIR/ohash.o $GENERATE_COMPAT_OBJS"
+if [ "${BMAKE_USE_OPENBSD_GETOPT}" = yes ]; then
+	OBJS="$OBJS $BUILDDIR/getopt_long.o"
+fi
 
-link "$BUILDDIR/bmake" $OBJS -lrt -lbsd
+link "$BUILDDIR/bmake" $OBJS ${BMAKE_LDLIBS}
 
 mkdir -p "$SCRIPTDIR/tools/bin"
 cp "$BUILDDIR/bmake" "$SCRIPTDIR/tools/bin/bmake"

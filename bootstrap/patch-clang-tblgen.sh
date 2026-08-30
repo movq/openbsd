@@ -26,11 +26,19 @@ fi
 
 echo "Patching tblgen paths in ${CLANGDIR}..."
 
-find "$CLANGDIR" -name Makefile -exec sed -i \
-	-e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}llvm-tblgen/llvm-tblgen|\${LLVM_TBLGEN}|g' \
-	-e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}llvm-min-tblgen/llvm-min-tblgen|\${LLVM_MIN_TBLGEN}|g' \
-	-e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}clang-tblgen/clang-tblgen|\${CLANG_TBLGEN}|g' \
-	-e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}lldb-tblgen/lldb-tblgen|\${LLDB_TBLGEN}|g' \
-	{} +
+find "$CLANGDIR" -name Makefile -print | while IFS= read -r makefile; do
+	tmp="${makefile}.bootstrap.$$"
+	sed \
+	    -e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}llvm-tblgen/llvm-tblgen|\${LLVM_TBLGEN}|g' \
+	    -e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}llvm-min-tblgen/llvm-min-tblgen|\${LLVM_MIN_TBLGEN}|g' \
+	    -e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}clang-tblgen/clang-tblgen|\${CLANG_TBLGEN}|g' \
+	    -e 's|\${\.OBJDIR}/\(\.\./\)\{1,\}lldb-tblgen/lldb-tblgen|\${LLDB_TBLGEN}|g' \
+	    "${makefile}" > "${tmp}"
+	if cmp -s "${makefile}" "${tmp}"; then
+		rm -f "${tmp}"
+	else
+		mv "${tmp}" "${makefile}"
+	fi
+done
 
 echo "Done patching tblgen paths."

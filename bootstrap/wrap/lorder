@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Minimal lorder replacement for bootstrap builds on Linux.
+# Minimal lorder replacement for bootstrap builds on non-OpenBSD hosts.
 #
 # OpenBSD's lorder(1) reads .o symbol tables via nm(1) and emits
 # dependency pairs for tsort(1).  Since we don't need topological
