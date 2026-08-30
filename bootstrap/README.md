@@ -1,8 +1,9 @@
 # Cross-building OpenBSD
 
-These scripts build OpenBSD/amd64 on Linux or NetBSD without modifying the
-host system. In this directory, **host** always means the machine running the
-build and **target** always means the OpenBSD system being produced.
+These scripts build OpenBSD/amd64 on FreeBSD, Linux, or NetBSD without
+modifying the host system. In this directory, **host** always means the
+machine running the build and **target** always means the OpenBSD system being
+produced.
 
 ## Complete build
 
@@ -67,11 +68,12 @@ host/target terminology.
 ## Host support
 
 Host-specific declarations, compatibility implementations, and settings live
-under `bootstrap/platform/linux/` and `bootstrap/platform/netbsd/`. Linux uses
-libbsd in addition to its compatibility sources. NetBSD uses its native BSD
-libc interfaces and supplies only the OpenBSD interfaces it lacks.
+under `bootstrap/platform/`. Linux uses libbsd in addition to its compatibility
+sources. FreeBSD and NetBSD use their native BSD libc interfaces and supply
+only the OpenBSD interfaces they lack.
 
 The host needs a C/C++ compiler, flex, Perl, pax, and standard archive and
-binary utilities. Linux additionally needs clang and libbsd development
-headers for the existing Linux bootstrap path. The host tool stage builds the
-OpenBSD clang/lld used for all target compilation.
+binary utilities. FreeBSD additionally needs bash, installed under
+`/usr/local/bin`. Linux additionally needs clang and libbsd development headers
+for the existing Linux bootstrap path. The host tool stage builds the OpenBSD
+clang/lld used for all target compilation.
