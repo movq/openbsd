@@ -1,18 +1,34 @@
-#!/bin/sh
+#!/usr/bin/env perl
 #
 # Compiler wrapper that filters out OpenBSD-specific flags unknown to
 # upstream clang.  Set REAL_CC in the environment to override the
 # default compiler path.
 #
-: ${REAL_CC:=clang}
+use strict;
+use warnings;
+use Cwd qw(abs_path);
 
-for arg; do
-	case "$arg" in
-		-fno-ret-protector) ;;
-		-nopie) set -- "$@" "-no-pie" ;;
-		*) set -- "$@" "$arg" ;;
-	esac
-	shift
-done
+my $compiler = $ENV{REAL_CC} || "clang";
+if ($compiler !~ m{/}) {
+	for my $dir (split /:/, $ENV{PATH} || "") {
+		my $candidate = "$dir/$compiler";
+		if (-x $candidate) {
+			$compiler = $candidate;
+			last;
+		}
+	}
+}
+my $self = abs_path($0);
+my $real = abs_path($compiler);
+die "$0: REAL_CC resolves to the wrapper itself\n"
+    if defined($self) && defined($real) && $self eq $real;
 
-exec "${REAL_CC}" "$@"
+my @args;
+
+for my $arg (@ARGV) {
+	next if $arg eq "-fno-ret-protector";
+	push @args, $arg eq "-nopie" ? "-no-pie" : $arg;
+}
+
+exec {$compiler} $compiler, @args;
+die "exec $compiler: $!\n";

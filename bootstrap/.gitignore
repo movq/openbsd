@@ -1,6 +1,7 @@
 /build/
 /bmake
 /tools
+/obj
 /dest
 /obj-build
 /obj-host

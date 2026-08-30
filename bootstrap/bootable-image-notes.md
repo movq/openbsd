@@ -102,7 +102,7 @@ therefore patches `makefs rdroot=1` labels to include non-zero synthetic
 geometry.
 
 The named `disklabel=...` makefs option is not useful in the current host
-tool build because `bootstrap/compat/getdiskbyname.c` is a stub.
+tool build because `bootstrap/platform/linux/compat/getdiskbyname.c` is a stub.
 
 ## Kernel And Loader Files
 

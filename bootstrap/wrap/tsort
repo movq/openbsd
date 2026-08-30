@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# tsort wrapper — strips -q flag unknown to GNU tsort.
+# tsort wrapper - strips -q for hosts whose tsort does not support it.
 # OpenBSD's tsort uses -q for "quiet" (suppress cycle warnings).
 #
 for arg; do
