@@ -1,75 +1,42 @@
 #!/bin/sh
 #
-# cross-build-kernel.sh - cross-build an OpenBSD kernel on GNU/Linux.
+# cross-build-kernel.sh - cross-build an OpenBSD kernel.
 #
 # Uses bootstrap/tools/bin/config (already built by build-tools.sh) to
 # generate a kernel build directory from a config file, then invokes
 # bmake with the cross-compiler toolchain.
 #
-# Usage:
-#   ./bootstrap/cross-build-kernel.sh [MACHINE=amd64] [CONFIG=GENERIC.MP]
+# Usage: OBJDIR=/path KERNEL_CONFIG=GENERIC.MP \
+#   ./bootstrap/cross-build-kernel.sh
 #
 set -e
 
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 SRCDIR="$(cd "${SCRIPTDIR}/.." && pwd)"
 
-BMAKE="${BMAKE:-${SCRIPTDIR}/tools/bin/bmake}"
-TOOLDIR="${TOOLDIR:-${SCRIPTDIR}/tools}"
-CONFIG_BIN="${CONFIG_BIN:-${TOOLDIR}/bin/config}"
-OBJROOT="${OBJROOT:-${SCRIPTDIR}/obj-host}"
-
 MACHINE="${MACHINE:-amd64}"
 MACHINE_ARCH="${MACHINE_ARCH:-amd64}"
 MACHINE_CPU="${MACHINE_CPU:-${MACHINE_ARCH}}"
+. "${SCRIPTDIR}/lib.sh"
+
+OBJROOT="${OBJROOT:-${TARGET_OBJDIR}}"
+OBJROOT="$(bootstrap_real_dir "${OBJROOT}")"
+CONFIG_BIN="${CONFIG_BIN:-${TOOLDIR}/bin/config}"
+
 TARGET_CANON="${TARGET_CANON:-${MACHINE_ARCH}-unknown-openbsd7.9}"
 KERNEL_CONFIG="${KERNEL_CONFIG:-GENERIC.MP}"
 
 CLANG="${CLANG:-${TOOLDIR}/bin/clang}"
 LLD="${LLD:-${TOOLDIR}/bin/ld.lld}"
-if [ -n "${HOSTCC:-}" ]; then
-	HOST_CC="${HOSTCC}"
-elif [ -x /usr/bin/cc ]; then
-	HOST_CC="/usr/bin/cc"
-else
-	HOST_CC="cc"
-fi
-HOST_OBJCOPY="${HOST_OBJCOPY:-}"
-if [ -z "${HOST_OBJCOPY}" ]; then
-	HOST_OBJCOPY="$(command -v objcopy 2>/dev/null || true)"
-fi
+SIZE="${SIZE:-size}"
 
-BUILDUSER="${BUILDUSER:-$(id -un)}"
-BUILDGROUP="${BUILDGROUP:-$(id -gn)}"
-
-WRAPDIR="${SCRIPTDIR}/wrap"
-KERNEL_BINDIR="${SCRIPTDIR}/kernel-tools/bin"
-MAKEGAP_SRC="${SCRIPTDIR}/makegap-linux.sh"
-
-need_tool() {
-	if ! command -v "$1" >/dev/null 2>&1; then
-		echo "missing required host tool: $1" >&2
-		exit 1
-	fi
-}
-
-need_file() {
-	if [ ! -f "$1" ]; then
-		echo "missing required file: $1" >&2
-		exit 1
-	fi
-}
-
-need_exec() {
-	if [ ! -x "$1" ]; then
-		echo "missing required executable: $1" >&2
-		exit 1
-	fi
-}
+TARGET_TOOLDIR="${TARGET_TOOLDIR:-${OBJDIR}/target-tools-${MACHINE}}"
+KERNEL_BINDIR="${TARGET_TOOLDIR}/bin"
+MAKEGAP_SRC="${SCRIPTDIR}/makegap-host.sh"
 
 install_if_changed() {
-	local src="$1"
-	local dst="$2"
+	src="$1"
+	dst="$2"
 
 	if [ -f "${dst}" ] && cmp -s "${src}" "${dst}"; then
 		rm -f "${src}"
@@ -83,21 +50,14 @@ install_if_changed() {
 # ------------------------------------------------------------------
 # Pre-flight checks
 # ------------------------------------------------------------------
-need_exec "${BMAKE}"
-need_exec "${CLANG}"
-need_exec "${LLD}"
-need_exec "${CONFIG_BIN}"
-need_file "${MAKEGAP_SRC}"
-need_tool install
-need_tool sort
-need_tool mktemp
-if [ -z "${OBJCOPY:-}" ]; then
-	if [ -z "${HOST_OBJCOPY}" ]; then
-		echo "missing required host tool: objcopy" >&2
-		exit 1
-	fi
-	need_exec "${HOST_OBJCOPY}"
-fi
+bootstrap_need_exec "${BMAKE}"
+bootstrap_need_exec "${CLANG}"
+bootstrap_need_exec "${LLD}"
+bootstrap_need_exec "${CONFIG_BIN}"
+bootstrap_need_file "${MAKEGAP_SRC}"
+bootstrap_need_tool sort
+bootstrap_need_tool mktemp
+bootstrap_need_tool "${SIZE}"
 
 # ------------------------------------------------------------------
 # Create tool wrappers
@@ -107,23 +67,11 @@ mkdir -p "${KERNEL_BINDIR}"
 # Cross-compiler wrapper: kernel compilation uses -nostdinc and
 # -ffreestanding already, so --sysroot is unnecessary.  Just set
 # the target triple so clang emits amd64 machine code.
-cat > "${KERNEL_BINDIR}/openbsd-kernel-cc" <<EOF
-#!/bin/sh
-compile_only=no
-for arg do
-	case "\$arg" in
-		-c|-S|-E|-M|-MM) compile_only=yes ;;
-	esac
-done
-if [ "\$compile_only" = yes ]; then
-	exec "${CLANG}" --target="${TARGET_CANON}" "\$@"
-fi
-exec "${CLANG}" --target="${TARGET_CANON}" -fuse-ld="${LLD}" "\$@"
-EOF
-chmod +x "${KERNEL_BINDIR}/openbsd-kernel-cc"
+bootstrap_write_cross_cc "${KERNEL_BINDIR}/openbsd-kernel-cc" \
+	"${CLANG}" "${TARGET_CANON}" "" "${LLD}"
 
 # OpenBSD kernels use ctfstrip(1) to convert debug info into CTF.
-# That tool does not exist on Linux.  Replace it with a no-op so the
+# A compatible host ctfstrip is not assumed.  Replace it with a no-op so the
 # unstripped bsd.gdb is kept and bsd is a copy of it.
 cat > "${KERNEL_BINDIR}/openbsd-strip-noop" <<'EOF'
 #!/bin/sh
@@ -148,47 +96,6 @@ fi
 EOF
 chmod +x "${KERNEL_BINDIR}/openbsd-strip-noop"
 
-if [ -z "${OBJCOPY:-}" ]; then
-	cat > "${KERNEL_BINDIR}/openbsd-efi-objcopy" <<'EOF'
-#!/bin/sh
-
-if [ -n "${HOST_OBJCOPY:-}" ]; then
-	real_objcopy="${HOST_OBJCOPY}"
-elif [ -x /usr/bin/objcopy ]; then
-	real_objcopy=/usr/bin/objcopy
-elif [ -x /bin/objcopy ]; then
-	real_objcopy=/bin/objcopy
-else
-	real_objcopy=objcopy
-fi
-
-efi_format=
-for arg do
-	case "${arg}" in
-	--target=efi-app-x86_64|--target=efi-app-ia32)
-		efi_format="${arg#--target=}"
-		;;
-	efi-app-x86_64|efi-app-ia32)
-		efi_format="${arg}"
-		;;
-	esac
-done
-
-if [ -n "${efi_format}" ]; then
-	while [ $# -gt 2 ]; do
-		shift
-	done
-	exec "${real_objcopy}" \
-	    -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel \
-	    -j .rel.dyn -j .rela -j .rela.dyn -j .reloc \
-	    -O "${efi_format}" "$1" "$2"
-fi
-
-exec "${real_objcopy}" "$@"
-EOF
-	chmod +x "${KERNEL_BINDIR}/openbsd-efi-objcopy"
-fi
-
 # Prepend kernel wrapper directory to PATH.
 export PATH="${KERNEL_BINDIR}:${TOOLDIR}/bin:${WRAPDIR}:${PATH}"
 export MACHINE MACHINE_ARCH MACHINE_CPU
@@ -199,10 +106,6 @@ KERNEL_BUILDDIR="${OBJROOT}/sys/arch/${MACHINE}/compile/${KERNEL_CONFIG}"
 KERNEL_MKCONF="${KERNEL_BUILDDIR}/Makefile.mk.conf"
 
 # ------------------------------------------------------------------
-# bmake arguments
-# ------------------------------------------------------------------
-MAKE_ARGS="-m ${SRCDIR}/share/mk -j 16"
-
 # All make variable overrides passed as environment variables.
 # Most mirror what cross-build-userland.sh uses, with a few
 # kernel-specific additions (STRIP, SIZE).
@@ -222,26 +125,28 @@ MAKE_ENV="
 	CC=${KERNEL_BINDIR}/openbsd-kernel-cc
 	LD=${LLD}
 	STRIP=${KERNEL_BINDIR}/openbsd-strip-noop
-	SIZE=size
+	SIZE=${SIZE}
 	HOSTCC=${HOST_CC}
-	BINOWN=${BUILDUSER}
-	BINGRP=${BUILDGROUP}
-	LIBOWN=${BUILDUSER}
-	LIBGRP=${BUILDGROUP}
-	SHAREOWN=${BUILDUSER}
-	SHAREGRP=${BUILDGROUP}
-	MANOWN=${BUILDUSER}
-	MANGRP=${BUILDGROUP}
+	BUILDUSER=${HOST_USER}
+	BINOWN=${HOST_USER}
+	BINGRP=${HOST_GROUP}
+	LIBOWN=${HOST_USER}
+	LIBGRP=${HOST_GROUP}
+	SHAREOWN=${HOST_USER}
+	SHAREGRP=${HOST_GROUP}
+	MANOWN=${HOST_USER}
+	MANGRP=${HOST_GROUP}
 "
 
 # ------------------------------------------------------------------
 # Run config to generate the kernel build directory
 # ------------------------------------------------------------------
-need_file "${CONFIG_SRC}"
+bootstrap_need_file "${CONFIG_SRC}"
 
 echo "==> Cross-building OpenBSD kernel"
 echo "    SRCDIR        = ${SRCDIR}"
 echo "    BMAKE         = ${BMAKE}"
+echo "    HOST_OS       = ${HOST_OS}"
 echo "    CONFIG        = ${CONFIG_BIN}"
 echo "    TARGET        = ${TARGET_CANON}"
 echo "    MACHINE       = ${MACHINE}"
@@ -250,6 +155,7 @@ echo "    KERNEL_CONFIG = ${KERNEL_CONFIG}"
 echo "    BUILDDIR      = ${KERNEL_BUILDDIR}"
 echo "    CC            = ${KERNEL_BINDIR}/openbsd-kernel-cc"
 echo "    LD            = ${LLD}"
+echo "    JOBS          = ${JOBS}"
 echo ""
 
 if [ "${KERNEL_RECONFIG:-no}" = yes ] || [ ! -f "${KERNEL_BUILDDIR}/Makefile" ]; then
@@ -267,18 +173,18 @@ else
 fi
 
 # ------------------------------------------------------------------
-# Patch makegap.sh for Linux compatibility
+# Install a makegap.sh that can run on the host
 # ------------------------------------------------------------------
 #
-# The kernel build uses makegap.sh to insert randomised padding into
+# The kernel build uses makegap.sh to insert randomized padding into
 # the gap.o linker section for KARL (Kernel Address Randomised Link).
-# Install the Linux-hosted implementation and arrange for the Makefile's
+# Install the portable implementation and arrange for the Makefile's
 # "makegap.sh" target to be satisfied by the pre-existing file.
 #
 MAKEGAP_TMP="$(mktemp "${KERNEL_BUILDDIR}/makegap.sh.XXXXXX")"
 cp "${MAKEGAP_SRC}" "${MAKEGAP_TMP}"
 if install_if_changed "${MAKEGAP_TMP}" "${KERNEL_BUILDDIR}/makegap.sh"; then
-	echo "    Installed Linux-compatible makegap.sh"
+	echo "    Installed host-compatible makegap.sh"
 fi
 
 # Prevent the Makefile's "makegap.sh:" target from overwriting our
@@ -320,195 +226,3 @@ if [ -n "${KERNEL_DBG:-}" ]; then
 fi
 ls -lh "${KERNEL_BIN}"
 file "${KERNEL_BIN}" 2>/dev/null || true
-
-# ------------------------------------------------------------------
-# Build bootloaders (stand/)
-# ------------------------------------------------------------------
-#
-# The stand/ tree builds BIOS and EFI bootloaders.  Most use -m32
-# (32-bit x86) and link with ld -melf_i386.  The existing cross-clang
-# handles -m32 natively; ld.lld handles -melf_i386.
-#
-# We skip:
-#   rdboot  – needs -lutil -lz (OpenBSD host libraries)
-#   vmboot  – needs rdboot + VMBOOT kernel + makefs + rdsetroot
-#
-# The boot Makefile keeps the ELF around and can also produce a
-# companion boot.bin raw binary.  We request that explicitly for boot.
-#
-# check-boot.pl (used by boot/) invokes /usr/bin/objdump; on Linux
-# this is the host objdump which can read OpenBSD ELF headers fine.
-#
-
-need_tool perl
-need_tool objdump
-need_tool size
-
-OBJCOPY="${OBJCOPY:-${KERNEL_BINDIR}/openbsd-efi-objcopy}"
-case "${OBJCOPY}" in
-*/*) need_exec "${OBJCOPY}" ;;
-*) need_tool "${OBJCOPY}" ;;
-esac
-OBJDUMP="objdump"
-SIZE="size"
-
-STAND_S="${SRCDIR}/sys"
-STAND_SADIR="${SRCDIR}/sys/arch/amd64/stand"
-STAND_MAKEOBJDIR="obj.linux.${MACHINE}"
-
-# Stand build uses the same CC wrapper as the kernel (it adds
-# --target=${TARGET_CANON} and -fuse-ld=${LLD} for linking).
-# For genassym.sh invocations, the CC must be the raw clang binary
-# rather than the kernel wrapper (since genassym.sh runs it as a
-# plain compiler, not a linker).  We use the kernel CC wrapper for
-# normal compilation and let Makefile rules drive it.
-#
-# Override LD to use ld.lld for all linking (the Makefiles default
-# to "ld" which is OpenBSD's ld.lld on native builds).
-
-STAND_MAKE_ENV="
-	BSDSRCDIR=${SRCDIR}
-	BSDOBJDIR=${OBJROOT}
-	MAKEOBJDIR=${STAND_MAKEOBJDIR}
-	MACHINE=${MACHINE}
-	MACHINE_ARCH=${MACHINE_ARCH}
-	MACHINE_CPU=${MACHINE_CPU}
-	COMPILER_VERSION=clang
-	LINKER_VERSION=lld
-	WARNINGS=no
-	NOMAN=1
-	NOPROFILE=1
-	LIBCRT0=
-	CRTBEGIN=
-	CRTEND=
-	SOFTRAID=yes
-	S=${STAND_S}
-	SADIR=${STAND_SADIR}
-	MAKE=${BMAKE}
-	CC=${KERNEL_BINDIR}/openbsd-kernel-cc
-	LD=${LLD}
-	OBJCOPY=${OBJCOPY}
-	SIZE=${SIZE}
-	HOSTCC=${HOST_CC}
-	BINOWN=${BUILDUSER}
-	BINGRP=${BUILDGROUP}
-	LIBOWN=${BUILDUSER}
-	LIBGRP=${BUILDGROUP}
-"
-
-build_stand_dir() {
-	local dir="$1"
-	local target="${2:-all}"
-
-	echo ""
-	echo "==> Building stand/${dir}"
-	env ${STAND_MAKE_ENV} "${BMAKE}" ${MAKE_ARGS} \
-		-C "${STAND_SADIR}/${dir}" \
-		obj
-	env ${STAND_MAKE_ENV} "${BMAKE}" ${MAKE_ARGS} \
-		-C "${STAND_SADIR}/${dir}" \
-		"LD=${LLD}" "SIZE=${SIZE}" "OBJCOPY=${OBJCOPY}" \
-		${target}
-}
-
-echo ""
-echo "==> Cross-building OpenBSD bootloaders (stand/)"
-echo "    MACHINE       = ${MACHINE}"
-echo "    CC            = ${KERNEL_BINDIR}/openbsd-kernel-cc"
-echo "    LD            = ${LLD}"
-echo "    OBJCOPY       = ${OBJCOPY}"
-echo ""
-
-# mbr – Master Boot Record (assembly + objcopy -O binary)
-build_stand_dir mbr
-
-# cdbr – El Torito CD boot record (assembly + objcopy -O binary)
-build_stand_dir cdbr
-
-# biosboot – BIOS bootstrap block (assembly, linked with ld.script)
-build_stand_dir biosboot
-
-# boot – Second-stage BIOS bootloader (C + assembly, 32-bit).
-# Also build boot.bin (raw binary companion).
-build_stand_dir boot "all boot.bin"
-
-# cdboot – CD bootloader (32-bit, produces raw binary inline)
-build_stand_dir cdboot
-
-# fdboot – Floppy-disk variant of boot(8).  Same sources, -DFDBOOT.
-# Do not request boot.bin here: the inherited rule depends on a literal
-# target named "boot", which triggers sys.mk's generic boot.c link rule.
-build_stand_dir fdboot
-
-# pxeboot – PXE network bootloader (32-bit, raw binary inline)
-build_stand_dir pxeboot
-
-# efiboot – EFI bootloaders: bootx64 (BOOTX64.EFI) and bootia32
-# (BOOTIA32.EFI).  Linked as shared objects, then objcopy'd
-# to PE/EFI images.  Subdir recursion handles both variants.
-build_stand_dir efiboot
-
-# ------------------------------------------------------------------
-# Collect bootloader outputs
-# ------------------------------------------------------------------
-
-STAND_OUTDIR="${OBJROOT}/sys/arch/amd64/stand"
-STAND_COLLECT="${SCRIPTDIR}/obj-host/stand"
-mkdir -p "${STAND_COLLECT}"
-
-collect_stand_output() {
-	local src="$1"
-	local dst="$2"
-	local fullsrc="${STAND_OUTDIR}/${src}/${src}"
-	local fullsrc2=""
-
-	case "${src}" in
-	boot)
-		# ELF + binary pair
-		if [ -f "${fullsrc}" ]; then
-			cp "${fullsrc}" "${STAND_COLLECT}/${dst}.elf"
-			echo "    ${dst}.elf"
-		fi
-		fullsrc2="${STAND_OUTDIR}/${src}/boot.bin"
-		if [ -f "${fullsrc2}" ]; then
-			cp "${fullsrc2}" "${STAND_COLLECT}/${dst}"
-			echo "    ${dst} (raw binary)"
-		fi
-		;;
-	efiboot)
-		for efi in bootx64 bootia32; do
-			local efidir="${STAND_OUTDIR}/${src}/${efi}"
-			local efiname=""
-			case "${efi}" in
-				bootx64) efiname="BOOTX64.EFI" ;;
-				bootia32) efiname="BOOTIA32.EFI" ;;
-			esac
-			if [ -f "${efidir}/${efiname}" ]; then
-				cp "${efidir}/${efiname}" "${STAND_COLLECT}/${efiname}"
-				echo "    ${efiname}"
-			fi
-		done
-		;;
-	*)
-		if [ -f "${fullsrc}" ]; then
-			cp "${fullsrc}" "${STAND_COLLECT}/${src}"
-			echo "    ${src}"
-		fi
-		;;
-	esac
-}
-
-echo ""
-echo "==> Collecting bootloader outputs to ${STAND_COLLECT}"
-collect_stand_output mbr mbr
-collect_stand_output cdbr cdbr
-collect_stand_output biosboot biosboot
-collect_stand_output boot boot
-collect_stand_output cdboot cdboot
-collect_stand_output fdboot fdboot
-collect_stand_output pxeboot pxeboot
-collect_stand_output efiboot ""
-
-echo ""
-echo "==> Bootloader build complete"
-ls -lh "${STAND_COLLECT}/" 2>/dev/null || true

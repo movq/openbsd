@@ -1,49 +1,47 @@
 #!/bin/sh
 #
-# build-tools.sh - build OpenBSD host tools on a GNU/Linux host using the
-#                  bootstrapped bmake and OpenBSD's own Makefiles.
+# build-tools.sh - build OpenBSD tools that run on the host.
 #
-# Usage: ./build-tools.sh [MACHINE_ARCH=amd64] [CC=clang] [CXX=clang++]
+# Usage: ./bootstrap/build-tools.sh [OBJDIR=/path] [MACHINE_ARCH=amd64]
 #
 set -e
 
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 SRCDIR="$(cd "$SCRIPTDIR/.." && pwd)"
 
-BMAKE="${BMAKE:-${SCRIPTDIR}/tools/bin/bmake}"
-if [ ! -x "${BMAKE}" ] && [ -x "${SCRIPTDIR}/build/bmake" ]; then
-	BMAKE="${SCRIPTDIR}/build/bmake"
-fi
-TOOLDIR="${SCRIPTDIR}/tools"
-OBJROOT="${OBJROOT:-${SCRIPTDIR}/obj-build}"
-OBJROOT="$(mkdir -p "${OBJROOT}" && cd "${OBJROOT}" && pwd)"
-
 MACHINE="${MACHINE:-${MACHINE_ARCH:-amd64}}"
 MACHINE_ARCH="${MACHINE_ARCH:-amd64}"
-SYSTEM_CC="${CC:-clang}"
-SYSTEM_CXX="${CXX:-clang++}"
-BUILDUSER="${BUILDUSER:-$(id -un)}"
-BUILDGROUP="${BUILDGROUP:-$(id -gn)}"
+[ -n "${CC:-}" ] && HOST_CC="${HOST_CC:-${CC}}"
+[ -n "${CXX:-}" ] && HOST_CXX="${HOST_CXX:-${CXX}}"
+. "${SCRIPTDIR}/lib.sh"
 
-WRAPDIR="${SCRIPTDIR}/wrap"
+BMAKE="${BMAKE:-${SCRIPTDIR}/tools/bin/bmake}"
+if [ ! -x "${BMAKE}" ] && [ -x "${HOST_OBJDIR}/bmake/bmake" ]; then
+	BMAKE="${HOST_OBJDIR}/bmake/bmake"
+fi
+OBJROOT="${OBJROOT:-${HOST_OBJDIR}}"
+OBJROOT="$(mkdir -p "${OBJROOT}" && cd "${OBJROOT}" && pwd)"
+
 WRAP_CC="${WRAPDIR}/cc"
 WRAP_CXX="${WRAPDIR}/c++"
-BOOTSTRAP_INCLUDE="${SCRIPTDIR}/include"
-BOOTSTRAP_COMPAT="${SCRIPTDIR}/compat"
+LEX="${LEX:-flex}"
+
+bootstrap_need_exec "${BMAKE}"
+bootstrap_need_tool "${HOST_CC}"
+bootstrap_need_tool "${HOST_CXX}"
+bootstrap_need_tool "${LEX}"
+bootstrap_need_tool perl
 
 # Variables that must reach bmake (and its sub-makes) are exported.
 export MACHINE_ARCH
 export MACHINE
-export REAL_CC="${SYSTEM_CC}"
-export REAL_CXX="${SYSTEM_CXX}"
+export REAL_CC="${HOST_CC}"
+export REAL_CXX="${HOST_CXX}"
 
 # Prepend wrap directory to PATH so that our lorder/tsort wrappers
 # are found before system tools.  bmake runs shell commands using
 # the invoking environment's PATH.
 export PATH="${WRAPDIR}:${PATH}"
-
-# bmake arguments shared by every invocation
-MAKE_ARGS="-m ${SRCDIR}/share/mk -j 16"
 
 # All make variable overrides, passed on the command line and via env.
 #
@@ -55,15 +53,13 @@ MAKE_ARGS="-m ${SRCDIR}/share/mk -j 16"
 #   NOPIE=yes          - skip PIE flags for host tools
 #   WARNINGS=no        - skip CXXDIAGFLAGS (may contain OpenBSD-isms)
 #   COMPILER_VERSION=clang - prevents Makefile.inc from overriding CC/CXX
-#   BUILD_LLDB=no      - lldb host support won't compile on Linux
+#   BUILD_LLDB=no      - lldb is not needed for the cross-build
 #   PATH               - prepended with wrap/ for lorder/tsort wrappers
 #   LD=ld              - use system linker for partial (relocatable) links
 #   AR=ar              - use system ar
 #   RANLIB=ranlib      - use system ranlib
 #   AR_VERSION=binutils - skip llvm-ar build
-#   LIBCRT0=           - crt0.o doesn't exist on Linux (not needed for host tools)
-#   CRTBEGIN=          - crtbegin.o doesn't exist on Linux
-#   CRTEND=            - crtend.o doesn't exist on Linux
+#   LIBCRT0/CRTBEGIN/CRTEND - target startup objects are not host inputs
 #   MAKE=              - set to bmake for sub-make recursion
 #   CC=                - compiler wrapper (strips -fno-ret-protector)
 #   CXX=               - C++ compiler wrapper
@@ -86,27 +82,30 @@ MAKE_ENV="
 	LIBCRT0=
 	CRTBEGIN=
 	CRTEND=
-	BINOWN=${BUILDUSER}
-	BINGRP=${BUILDGROUP}
-	LIBOWN=${BUILDUSER}
-	LIBGRP=${BUILDGROUP}
+	BUILDUSER=${HOST_USER}
+	BINOWN=${HOST_USER}
+	BINGRP=${HOST_GROUP}
+	LIBOWN=${HOST_USER}
+	LIBGRP=${HOST_GROUP}
 	MAKE=${BMAKE}
 	CC=${WRAP_CC}
 	CXX=${WRAP_CXX}
 "
 
-HOST_TOOL_CPPFLAGS="-I${BOOTSTRAP_INCLUDE} -D_DEFAULT_SOURCE -idirafter ${SRCDIR}/include"
-HOST_TOOL_LDADD="${BOOTSTRAP_COMPAT}/pledge.c ${BOOTSTRAP_COMPAT}/unveil.c ${BOOTSTRAP_COMPAT}/strlcpy.c ${BOOTSTRAP_COMPAT}/strlcat.c"
-HOST_TOOL_LDADD_ALLOC="${HOST_TOOL_LDADD} ${BOOTSTRAP_COMPAT}/reallocarray.c"
+HOST_TOOL_LDADD="$(bootstrap_source_list "${HOST_COMPAT}" ${HOST_TOOL_COMPAT_SRCS})"
+HOST_TOOL_LDADD_ALLOC="$(bootstrap_source_list "${HOST_COMPAT}" ${HOST_TOOL_ALLOC_COMPAT_SRCS})"
 
 echo "==> Building OpenBSD LLVM/clang toolchain"
 echo "    SRCDIR       = ${SRCDIR}"
 echo "    BMAKE        = ${BMAKE}"
+echo "    HOST_OS      = ${HOST_OS}"
 echo "    MACHINE_ARCH = ${MACHINE_ARCH}"
-echo "    CC           = ${SYSTEM_CC}"
-echo "    CXX          = ${SYSTEM_CXX}"
+echo "    HOST_CC      = ${HOST_CC}"
+echo "    HOST_CXX     = ${HOST_CXX}"
+echo "    HOST_SHELL   = ${HOST_SHELL}"
 echo "    TOOLDIR      = ${TOOLDIR}"
 echo "    OBJROOT      = ${OBJROOT}"
+echo "    JOBS         = ${JOBS}"
 echo ""
 
 #echo "==> Selecting OpenBSD branches in lld ELF backend"
@@ -118,11 +117,29 @@ echo ""
 #		{} +
 #echo ""
 
-# fwrapv...
-sed -i -e 's/#ifdef __OpenBSD__/#if 1/' \
+# This compiler is built specifically for OpenBSD targets.  Select the
+# OpenBSD signed-overflow default without relying on the host preprocessor.
+COMMON_ARGS="${SRCDIR}/gnu/llvm/clang/lib/Driver/ToolChains/CommonArgs.cpp"
+COMMON_ARGS_TMP="${OBJROOT}/CommonArgs.cpp.tmp"
+COMMON_ARGS_BACKUP="${OBJROOT}/CommonArgs.cpp.orig"
+cp -p "${COMMON_ARGS}" "${COMMON_ARGS_BACKUP}"
+restore_common_args()
+{
+	if [ -f "${COMMON_ARGS_BACKUP}" ]; then
+		cp -p "${COMMON_ARGS_BACKUP}" "${COMMON_ARGS}"
+		rm -f "${COMMON_ARGS_BACKUP}"
+	fi
+}
+trap restore_common_args EXIT HUP INT TERM
+sed -e 's/#ifdef __OpenBSD__/#if 1/' \
 	-e 's/#ifndef __OpenBSD__/#if 0/' \
 	-e 's/defined(__OpenBSD__)/1/g' \
-	${SRCDIR}/gnu/llvm/clang/lib/Driver/ToolChains/CommonArgs.cpp
+	"${COMMON_ARGS}" > "${COMMON_ARGS_TMP}"
+if ! cmp -s "${COMMON_ARGS}" "${COMMON_ARGS_TMP}"; then
+	mv "${COMMON_ARGS_TMP}" "${COMMON_ARGS}"
+else
+	rm -f "${COMMON_ARGS_TMP}"
+fi
 
 # =====================================================================
 # 1: Generate LLVM config headers (.def files, llvm-config.h)
@@ -144,7 +161,8 @@ echo "    Targets.def:        $(cat ${CONFIG_OBJDIR}/Targets.def | tr '\n' ' ')"
 # =====================================================================
 # 2: Build all of LLVM/clang via subdir recursion
 # =====================================================================
-env ${MAKE_ENV} CPPFLAGS="-I/usr/include/bsd -DLIBBSD_OVERLAY" \
+env ${MAKE_ENV} CPPFLAGS="${LLVM_HOST_CPPFLAGS}" \
+	LDADD="${LLVM_HOST_LDADD}" \
 	${BMAKE} ${MAKE_ARGS} \
 	-C "${SRCDIR}/gnu/usr.bin/clang" \
 	all
@@ -285,7 +303,7 @@ mkdir -p "${CONFIG_DIR}"
 ln -sf gram.tab.h "${CONFIG_DIR}/gram.h"
 
 # 6.2: Generate lexer (scan.l -> lex.yy.c)
-flex -o "${CONFIG_DIR}/lex.yy.c" "${CONFIG_SRC}/scan.l"
+"${LEX}" -o "${CONFIG_DIR}/lex.yy.c" "${CONFIG_SRC}/scan.l"
 
 # 6.3: Compile everything and link
 # Source files from usr.sbin/config/ (non-UKC subset)
@@ -295,13 +313,10 @@ CONFIG_CORE="files.c hash.c main.c mkheaders.c mkioconf.c mkmakefile.c \
 # Generated files (yacc + flex)
 CONFIG_GEN="gram.tab.c lex.yy.c"
 
-# Compat shims (bootstrap/compat/)
-CONFIG_COMPAT="err.c pledge.c reallocarray.c strlcpy.c strlcat.c progname.c"
-
 # Build CPPFLAGS: bootstrap shim headers, OpenBSD system includes,
 # the config source dir (for local .h), the build dir (for gram.tab.h),
 # and -DMAKE_BOOTSTRAP to skip UKC/elf code.
-CONFIG_CPPFLAGS="-I${BOOTSTRAP_INCLUDE} ${HOST_TOOL_CPPFLAGS} \
+CONFIG_CPPFLAGS="${HOST_TOOL_CPPFLAGS} \
 	-DMAKE_BOOTSTRAP -I${CONFIG_SRC} -I${CONFIG_DIR}"
 
 cd "${CONFIG_DIR}"
@@ -309,23 +324,23 @@ cd "${CONFIG_DIR}"
 OBJS=""
 for src in ${CONFIG_CORE}; do
 	obj="$(basename "${src}" .c).o"
-	${SYSTEM_CC} ${CONFIG_CPPFLAGS} -c "${CONFIG_SRC}/${src}" -o "${obj}"
+	${HOST_CC} ${CONFIG_CPPFLAGS} -c "${CONFIG_SRC}/${src}" -o "${obj}"
 	OBJS="${OBJS} ${obj}"
 done
 
 for src in ${CONFIG_GEN}; do
 	obj="$(basename "${src}" .c).o"
-	${SYSTEM_CC} ${CONFIG_CPPFLAGS} -c "${CONFIG_DIR}/${src}" -o "${obj}"
+	${HOST_CC} ${CONFIG_CPPFLAGS} -c "${CONFIG_DIR}/${src}" -o "${obj}"
 	OBJS="${OBJS} ${obj}"
 done
 
-for src in ${CONFIG_COMPAT}; do
+for src in ${CONFIG_COMPAT_SRCS}; do
 	obj="$(basename "${src}" .c).o"
-	${SYSTEM_CC} ${CONFIG_CPPFLAGS} -c "${BOOTSTRAP_COMPAT}/${src}" -o "${obj}"
+	${HOST_CC} ${CONFIG_CPPFLAGS} -c "${HOST_COMPAT}/${src}" -o "${obj}"
 	OBJS="${OBJS} ${obj}"
 done
 
-${SYSTEM_CC} -o config ${OBJS}
+${HOST_CC} -o config ${OBJS}
 echo "    config"
 
 cp config "${TOOLDIR}/bin/"
@@ -340,7 +355,7 @@ set -e
 if [ ${CONFIG_SMOKE_RC} -ne 0 ]; then
 	echo "    WARNING: config smoke-test failed (may be harmless)" >&2
 else
-echo "    smoke-test: config runs OK"
+	echo "    smoke-test: config runs OK"
 fi
 
 # =====================================================================
@@ -359,9 +374,7 @@ MAKEFS_CPPFLAGS="${HOST_TOOL_CPPFLAGS} -include stdint.h -include time.h \
 	-I${SRCDIR}/usr.sbin/makefs -I${SRCDIR}/lib/libutil \
 	-idirafter ${SRCDIR}/sys \
 	-idirafter ${MAKEFS_INCDIR}"
-MAKEFS_LDADD="${HOST_TOOL_LDADD_ALLOC} ${BOOTSTRAP_COMPAT}/err.c \
-	${BOOTSTRAP_COMPAT}/progname.c ${BOOTSTRAP_COMPAT}/random.c \
-	${BOOTSTRAP_COMPAT}/scan_scaled.c ${BOOTSTRAP_COMPAT}/getdiskbyname.c"
+MAKEFS_LDADD="$(bootstrap_source_list "${HOST_COMPAT}" ${MAKEFS_COMPAT_SRCS})"
 
 env ${MAKE_ENV} LIBC= LIBUTIL= ${BMAKE} ${MAKE_ARGS} \
 	-C "${SRCDIR}/usr.sbin/makefs" \
@@ -390,3 +403,6 @@ echo "    smoke-test: makefs builds an ffs image"
 echo ""
 echo "==> Success: toolchain installed to ${TOOLDIR}"
 echo "    Add to PATH: export PATH=\"${TOOLDIR}/bin:\$PATH\""
+
+restore_common_args
+trap - EXIT HUP INT TERM

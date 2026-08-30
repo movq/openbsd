@@ -1,18 +1,43 @@
-#!/bin/sh
+#!/usr/bin/env perl
 #
 # Compiler wrapper that filters out OpenBSD-specific flags unknown to
 # upstream clang.  Set REAL_CXX in the environment to override the
 # default compiler path.
 #
-: ${REAL_CXX:=clang++}
+use strict;
+use warnings;
+use Cwd qw(abs_path);
 
-for arg; do
-	case "$arg" in
-		-fno-ret-protector) ;;
-		-nopie) set -- "$@" "-no-pie" ;;
-		*) set -- "$@" "$arg" ;;
-	esac
-	shift
-done
+my $compiler = $ENV{REAL_CXX} || "clang++";
+if ($compiler !~ m{/}) {
+	for my $dir (split /:/, $ENV{PATH} || "") {
+		my $candidate = "$dir/$compiler";
+		if (-x $candidate) {
+			$compiler = $candidate;
+			last;
+		}
+	}
+}
+my $self = abs_path($0);
+my $real = abs_path($compiler);
+die "$0: REAL_CXX resolves to the wrapper itself\n"
+    if defined($self) && defined($real) && $self eq $real;
 
-exec "${REAL_CXX}" "$@"
+my %drop = map { $_ => 1 } qw(
+    -fno-ret-protector
+    -mno-retpoline
+    -Wc++98-compat-extra-semi
+    -Wcovered-switch-default
+    -Wctad-maybe-unsupported
+    -Werror=unguarded-availability-new
+    -Wstring-conversion
+);
+my @args;
+
+for my $arg (@ARGV) {
+	next if $drop{$arg};
+	push @args, $arg eq "-nopie" ? "-no-pie" : $arg;
+}
+
+exec {$compiler} $compiler, @args;
+die "exec $compiler: $!\n";
