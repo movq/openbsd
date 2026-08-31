@@ -74,7 +74,7 @@ SRCS+=	${f}.S
 GENERATED+=${f}.S
 ${f}.S: ${LCRYPTO_SRC}/${dir}/asm/${f}.pl ${EXTRA_PL}
 	(cd ${LCRYPTO_SRC}/${dir} ; \
-		/usr/bin/perl ./asm/${f}.pl openbsd) > ${.TARGET}
+		${PERL} ./asm/${f}.pl openbsd) > ${.TARGET}
 .endfor
 
 CFLAGS+=-fret-clean

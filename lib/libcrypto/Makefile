@@ -725,13 +725,14 @@ CFLAGS+= -I${.OBJDIR}
 GENERATED=obj_mac.h obj_dat.h
 CLEANFILES+=${GENERATED} obj_mac.num.tmp
 SSL_OBJECTS=${LCRYPTO_SRC}/objects
+PERL?=	perl
 
 obj_mac.h: ${SSL_OBJECTS}/objects.h ${SSL_OBJECTS}/obj_mac.num ${SSL_OBJECTS}/objects.txt ${SSL_OBJECTS}/objects.pl
 	cat ${SSL_OBJECTS}/obj_mac.num > obj_mac.num.tmp
-	/usr/bin/perl ${SSL_OBJECTS}/objects.pl ${SSL_OBJECTS}/objects.txt obj_mac.num.tmp obj_mac.h
+	${PERL} ${SSL_OBJECTS}/objects.pl ${SSL_OBJECTS}/objects.txt obj_mac.num.tmp obj_mac.h
 
 obj_dat.h: obj_mac.h ${SSL_OBJECTS}/obj_dat.pl
-	/usr/bin/perl ${SSL_OBJECTS}/obj_dat.pl obj_mac.h obj_dat.h
+	${PERL} ${SSL_OBJECTS}/obj_dat.pl obj_mac.h obj_dat.h
 
 .if exists (${.CURDIR}/arch/${MACHINE_CPU}/Makefile.inc)
 .include "${.CURDIR}/arch/${MACHINE_CPU}/Makefile.inc"
