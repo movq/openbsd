@@ -47,7 +47,6 @@
 
 #include <ufs/ext2fs/ext2fs.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
-#include <ufs/ext2fs/ext2fs_extents.h>
 
 #ifdef _KERNEL
 
@@ -62,42 +61,13 @@ ext2fs_bufatoff(struct inode *ip, off_t offset, char **res, struct buf **bpp)
 	struct vnode *vp;
 	struct m_ext2fs *fs;
 	struct buf *bp;
-	daddr_t lbn, pos;
+	daddr_t lbn;
 	int error;
 
 	vp = ITOV(ip);
 	fs = ip->i_e2fs;
 	lbn = lblkno(fs, offset);
 
-	if (ip->i_e2din->e2di_flags & EXT4_EXTENTS) {
-		struct ext4_extent_path path;
-		struct ext4_extent *ep;
-
-		memset(&path, 0, sizeof path);
-		if (ext4_ext_find_extent(fs, ip, lbn, &path) == NULL ||
-		    (ep = path.ep_ext) == NULL)
-			goto normal;
-
-		if (path.ep_bp != NULL) {
-			brelse(path.ep_bp);
-			path.ep_bp = NULL;
-		}
-		pos = lbn - ep->e_blk + (((daddr_t)ep->e_start_hi << 32) | ep->e_start_lo);
-		error = bread(ip->i_devvp, fsbtodb(fs, pos), fs->e2fs_bsize, &bp);
-		if (error) {
-			brelse(bp);
-			return (error);
-		}
-
-		if (res)
-			*res = (char *)bp->b_data + blkoff(fs, offset);
-
-		*bpp = bp;
-
-		return (0);
-	}
-
- normal:
 	*bpp = NULL;
 	if ((error = bread(vp, lbn, fs->e2fs_bsize, &bp)) != 0) {
 		brelse(bp);

@@ -47,6 +47,7 @@
 #include <ufs/ufs/ufs_extern.h>
 
 #include <ufs/ext2fs/ext2fs.h>
+#include <ufs/ext2fs/ext2fs_extents.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
 
 u_long ext2gennumber;
@@ -166,6 +167,9 @@ ext2fs_inode_alloc(struct inode *pip, mode_t mode, struct ucred *cred,
 	}
 
 	memset(ip->i_e2din, 0, sizeof(struct ext2fs_dinode));
+	if ((fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_EXTENTS) &&
+	    ((mode & IFMT) == IFREG || (mode & IFMT) == IFDIR))
+		ext4_ext_tree_init(ip);
 
 	/*
 	 * Set up a new generation number for this inode.

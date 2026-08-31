@@ -50,6 +50,7 @@
 #include <ufs/ufs/ufs_extern.h>
 
 #include <ufs/ext2fs/ext2fs.h>
+#include <ufs/ext2fs/ext2fs_extents.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
 
 static int ext2fs_indirtrunc(struct inode *, daddr_t, daddr_t,
@@ -301,6 +302,23 @@ ext2fs_truncate(struct inode *oip, off_t length, int flags, struct ucred *cred)
 			bwrite(bp);
 		else
 			bawrite(bp);
+	}
+
+	if (oip->i_e2fs_flags & EXT4_EXTENTS) {
+		lastblock = (length + fs->e2fs_bsize - 1) /
+		    fs->e2fs_bsize;
+		uvm_vnp_setsize(ovp, length);
+		uvm_vnp_uncache(ovp);
+		vflags = ((length > 0) ? V_SAVE : 0) | V_SAVEMETA;
+		error = vinvalbuf(ovp, vflags, cred, curproc, 0, INFSLP);
+		if (error)
+			return (error);
+		error = ext4_ext_remove_space(oip, lastblock);
+		if (error)
+			return (error);
+		(void)ext2fs_setsize(oip, length);
+		oip->i_flag |= IN_CHANGE | IN_UPDATE;
+		return (ext2fs_update(oip, 1));
 	}
 	/*
 	 * Calculate index into inode's block list of

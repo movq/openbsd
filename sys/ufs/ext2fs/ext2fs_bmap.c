@@ -96,24 +96,67 @@ ext4_bmapext(struct vnode *vp, daddr_t bn, daddr_t *bnp, struct indir *ap, int *
 	struct inode *ip;
 	struct m_ext2fs *fs;
 	struct ext4_extent *ep;
-	struct ext4_extent_path path;
-	daddr_t pos;
+	struct ext4_extent_header *eh;
+	struct ext4_extent_path *path = NULL;
+	uint64_t pos;
+	uint32_t eblk;
+	uint16_t elen, rawlen;
+	int depth, error, maxrun;
 
 	ip = VTOI(vp);
 	fs = ip->i_e2fs;
+	*bnp = -1;
 
 	if (runp != NULL)
 		*runp = 0;
 	if (nump != NULL)
 		*nump = 0;
+	if (bn < 0)
+		return (EFBIG);
 
-	ext4_ext_find_extent(fs, ip, bn, &path);
-	if ((ep = path.ep_ext) == NULL)
-		return (EIO);
+	error = ext4_ext_find_extent(ip, bn, &path);
+	if (error)
+		return (error);
+	eh = (struct ext4_extent_header *)(char *)ip->i_e2fs_blocks;
+	depth = letoh16(eh->eh_depth);
+	ep = path[depth].ep_ext;
+	if (ep == NULL)
+		goto out;
 
-	pos = bn - ep->e_blk + (((daddr_t)ep->e_start_hi << 32) | ep->e_start_lo);
-	if ((*bnp = fsbtodb(fs, pos)) == 0)
-		*bnp = -1;
+	eblk = letoh32(ep->e_blk);
+	rawlen = letoh16(ep->e_len);
+	elen = rawlen;
+	if (rawlen > EXT_INIT_MAX_LEN)
+		elen = rawlen - EXT_INIT_MAX_LEN;
+	if (bn < eblk) {
+		if (runp != NULL) {
+			maxrun = MAXBSIZE /
+			    vp->v_mount->mnt_stat.f_iosize - 1;
+			*runp = MIN(maxrun, eblk - bn - 1);
+		}
+		goto out;
+	}
+	if ((uint64_t)bn >= (uint64_t)eblk + elen)
+		goto out;
+	if (rawlen > EXT_INIT_MAX_LEN) {
+		if (runp != NULL) {
+			maxrun = MAXBSIZE /
+			    vp->v_mount->mnt_stat.f_iosize - 1;
+			*runp = MIN(maxrun, elen - (bn - eblk) - 1);
+		}
+		goto out;
+	}
+
+	pos = ((uint64_t)letoh16(ep->e_start_hi) << 32) |
+	    letoh32(ep->e_start_lo);
+	pos += bn - eblk;
+	*bnp = fsbtodb(fs, pos);
+	if (runp != NULL) {
+		maxrun = MAXBSIZE / vp->v_mount->mnt_stat.f_iosize - 1;
+		*runp = MIN(maxrun, elen - (bn - eblk) - 1);
+	}
+out:
+	ext4_ext_path_free(path);
 	return (0);
 }
 
