@@ -44,7 +44,39 @@
 #include <ufs/ufs/ufs_extern.h>
 
 #include <ufs/ext2fs/ext2fs.h>
+#include <ufs/ext2fs/ext2fs_extents.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
+
+static int
+ext4_ext_buf_alloc(struct inode *ip, u_int32_t lbn, int size,
+    struct ucred *cred, struct buf **bpp, int flags)
+{
+	struct m_ext2fs *fs = ip->i_e2fs;
+	struct vnode *vp = ITOV(ip);
+	struct buf *bp;
+	daddr_t newblk;
+	int allocated, error;
+
+	error = ext4_ext_get_blocks(ip, lbn, howmany(size, fs->e2fs_bsize),
+	    cred, &allocated, &newblk);
+	if (error)
+		return (error);
+
+	if (allocated) {
+		bp = getblk(vp, lbn, fs->e2fs_bsize, 0, INFSLP);
+		if (flags & B_CLRBUF)
+			clrbuf(bp);
+	} else {
+		error = bread(vp, lbn, fs->e2fs_bsize, &bp);
+		if (error) {
+			brelse(bp);
+			return (error);
+		}
+	}
+	bp->b_blkno = fsbtodb(fs, newblk);
+	*bpp = bp;
+	return (0);
+}
 
 /*
  * Balloc defines the structure of file system storage
@@ -69,6 +101,9 @@ ext2fs_buf_alloc(struct inode *ip, u_int32_t bn, int size, struct ucred *cred,
 	*bpp = NULL;
 	fs = ip->i_e2fs;
 	lbn = bn;
+
+	if (ip->i_e2fs_flags & EXT4_EXTENTS)
+		return (ext4_ext_buf_alloc(ip, lbn, size, cred, bpp, flags));
 
 	/*
 	 * The first NDADDR blocks are direct blocks

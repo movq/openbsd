@@ -1099,7 +1099,8 @@ e2fs_sbcheck(struct ext2fs *fs, int ronly)
 	}
 
 	tmp = letoh32(fs->e2fs_features_incompat);
-	mask = tmp & ~(EXT2F_INCOMPAT_SUPP | EXT4F_RO_INCOMPAT_SUPP);
+	mask = tmp & ~(EXT2F_INCOMPAT_SUPP | EXT4F_RW_INCOMPAT_SUPP |
+	    EXT4F_RO_INCOMPAT_SUPP);
 	if (mask) {
 		printf("ext2fs: unsupported incompat features: ");
 		for (i = 0; i < nitems(incompat); i++)

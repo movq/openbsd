@@ -31,6 +31,10 @@
 #include <sys/types.h>
 
 #define	EXT4_EXT_MAGIC  0xf30a
+#define	EXT4_MAX_BLOCKS	0xffffffffU
+#define	EXT_INIT_MAX_LEN	(1U << 15)
+#define	EXT4_MAX_LEN	(EXT_INIT_MAX_LEN - 1)
+#define	EXT4_EXT_DEPTH_MAX	5
 
 #define	EXT4_EXT_CACHE_NO	0
 #define	EXT4_EXT_CACHE_GAP	1
@@ -83,17 +87,41 @@ struct ext4_extent_cache {
  */
 struct ext4_extent_path {
 	uint16_t ep_depth;
-	struct buf *ep_bp;
+	uint64_t ep_blk;
+	size_t ep_size;
+	char *ep_data;
 	struct ext4_extent *ep_ext;
 	struct ext4_extent_index *ep_index;
 	struct ext4_extent_header *ep_header;
 };
 
+#define	EXT_FIRST_EXTENT(eh) \
+	((struct ext4_extent *)((char *)(eh) + sizeof(*(eh))))
+#define	EXT_FIRST_INDEX(eh) \
+	((struct ext4_extent_index *)((char *)(eh) + sizeof(*(eh))))
+#define	EXT_LAST_EXTENT(eh) \
+	(EXT_FIRST_EXTENT(eh) + letoh16((eh)->eh_ecount) - 1)
+#define	EXT_LAST_INDEX(eh) \
+	(EXT_FIRST_INDEX(eh) + letoh16((eh)->eh_ecount) - 1)
+#define	EXT_MAX_EXTENT(eh) \
+	(EXT_FIRST_EXTENT(eh) + letoh16((eh)->eh_max) - 1)
+#define	EXT_MAX_INDEX(eh) \
+	(EXT_FIRST_INDEX(eh) + letoh16((eh)->eh_max) - 1)
+#define	EXT_HAS_FREE_INDEX(path) \
+	(letoh16((path)->ep_header->eh_ecount) < \
+	    letoh16((path)->ep_header->eh_max))
+
 struct inode;
 struct m_ext2fs;
+struct ucred;
+void	ext4_ext_tree_init(struct inode *);
 int	ext4_ext_in_cache(struct inode *, daddr_t, struct ext4_extent *);
 void	ext4_ext_put_cache(struct inode *, struct ext4_extent *, int);
-struct ext4_extent_path *ext4_ext_find_extent(struct m_ext2fs *fs,
-    struct inode *, daddr_t, struct ext4_extent_path *);
+int	ext4_ext_find_extent(struct inode *, daddr_t,
+	    struct ext4_extent_path **);
+void	ext4_ext_path_free(struct ext4_extent_path *);
+int	ext4_ext_get_blocks(struct inode *, daddr_t, u_long, struct ucred *,
+	    int *, daddr_t *);
+int	ext4_ext_remove_space(struct inode *, daddr_t);
 
 #endif /* !_FS_EXT2FS_EXT2_EXTENTS_H_ */
