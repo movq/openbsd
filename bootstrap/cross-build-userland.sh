@@ -230,6 +230,10 @@ echo "    CLANG_TBLGEN = ${CLANG_TBLGEN}"
 echo "    LLDB_TBLGEN  = ${LLDB_TBLGEN}"
 echo ""
 
+echo "==> Preparing object directories"
+run_make . obj
+
+echo ""
 echo "==> Installing headers"
 run_make include prereq
 run_make include DESTDIR="${DESTDIR}" includes
