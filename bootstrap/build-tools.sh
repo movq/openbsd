@@ -108,29 +108,49 @@ echo "    OBJROOT      = ${OBJROOT}"
 echo "    JOBS         = ${JOBS}"
 echo ""
 
-#echo "==> Selecting OpenBSD branches in lld ELF backend"
-#find "${SRCDIR}/gnu/llvm/lld/ELF" -type f \( -name '*.cpp' -o -name '*.h' \) \
-#	-exec sed -i \
-#		-e 's/#ifdef __OpenBSD__/#if 1/' \
-#		-e 's/#ifndef __OpenBSD__/#if 0/' \
-#		-e 's/defined(__OpenBSD__)/1/g' \
-#		{} +
-#echo ""
-
-# This compiler is built specifically for OpenBSD targets.  Select the
-# OpenBSD signed-overflow default without relying on the host preprocessor.
+# These tools are built specifically for OpenBSD targets.  Select OpenBSD
+# behavior without relying on the host preprocessor, then restore the sources.
+LLD_ELF_DIR="${SRCDIR}/gnu/llvm/lld/ELF"
+LLD_ELF_BACKUP="${OBJROOT}/lld-elf-openbsd.orig"
 COMMON_ARGS="${SRCDIR}/gnu/llvm/clang/lib/Driver/ToolChains/CommonArgs.cpp"
 COMMON_ARGS_TMP="${OBJROOT}/CommonArgs.cpp.tmp"
 COMMON_ARGS_BACKUP="${OBJROOT}/CommonArgs.cpp.orig"
-cp -p "${COMMON_ARGS}" "${COMMON_ARGS_BACKUP}"
-restore_common_args()
+
+restore_llvm_sources()
 {
 	if [ -f "${COMMON_ARGS_BACKUP}" ]; then
 		cp -p "${COMMON_ARGS_BACKUP}" "${COMMON_ARGS}"
 		rm -f "${COMMON_ARGS_BACKUP}"
 	fi
+	if [ -d "${LLD_ELF_BACKUP}" ]; then
+		find "${LLD_ELF_BACKUP}" -type f | while IFS= read -r backup; do
+			relative="${backup#${LLD_ELF_BACKUP}/}"
+			cp -p "${backup}" "${LLD_ELF_DIR}/${relative}"
+		done
+		rm -rf "${LLD_ELF_BACKUP}"
+	fi
 }
-trap restore_common_args EXIT HUP INT TERM
+
+# Recover first if a previous build was killed before its trap completed.
+restore_llvm_sources
+trap restore_llvm_sources EXIT HUP INT TERM
+
+echo "==> Selecting OpenBSD branches in lld ELF backend"
+find "${LLD_ELF_DIR}" -type f \( -name '*.cpp' -o -name '*.h' \) |
+while IFS= read -r src; do
+	grep -q '__OpenBSD__' "${src}" || continue
+	relative="${src#${LLD_ELF_DIR}/}"
+	mkdir -p "${LLD_ELF_BACKUP}/$(dirname "${relative}")"
+	cp -p "${src}" "${LLD_ELF_BACKUP}/${relative}"
+	sed -e 's/#ifdef __OpenBSD__/#if 1/' \
+		-e 's/#ifndef __OpenBSD__/#if 0/' \
+		-e 's/defined(__OpenBSD__)/1/g' \
+		"${src}" > "${src}.tmp"
+	mv "${src}.tmp" "${src}"
+done
+echo ""
+
+cp -p "${COMMON_ARGS}" "${COMMON_ARGS_BACKUP}"
 sed -e 's/#ifdef __OpenBSD__/#if 1/' \
 	-e 's/#ifndef __OpenBSD__/#if 0/' \
 	-e 's/defined(__OpenBSD__)/1/g' \
@@ -404,5 +424,5 @@ echo ""
 echo "==> Success: toolchain installed to ${TOOLDIR}"
 echo "    Add to PATH: export PATH=\"${TOOLDIR}/bin:\$PATH\""
 
-restore_common_args
+restore_llvm_sources
 trap - EXIT HUP INT TERM

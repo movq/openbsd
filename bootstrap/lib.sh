@@ -122,12 +122,17 @@ bootstrap_write_install()
 
 	cat > "${output}" <<EOF
 #!/bin/sh
-# Ignore target ownership metadata in an unprivileged staging directory.
+# Adapt OpenBSD install flags for an unprivileged staging directory.
 exec perl -e '
 	my \$install = shift;
 	my @filtered;
+	my \$create_dest = 0;
 	while (@ARGV) {
 		my \$arg = shift;
+		if (\$arg eq "-D") {
+			\$create_dest = 1;
+			next;
+		}
 		if (\$arg eq "-o" || \$arg eq "-g" ||
 		    \$arg eq "--owner" || \$arg eq "--group") {
 			shift if @ARGV;
@@ -135,6 +140,12 @@ exec perl -e '
 		}
 		next if \$arg =~ /^(?:-[og].+|--(?:owner|group)=)/;
 		push @filtered, \$arg;
+	}
+	if (\$create_dest) {
+		require File::Basename;
+		require File::Path;
+		my \$dir = File::Basename::dirname(\$filtered[-1]);
+		File::Path::make_path(\$dir);
 	}
 	exec {\$install} \$install, @filtered;
 	die "exec \$install: \$!\\n";
