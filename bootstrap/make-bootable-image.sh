@@ -189,6 +189,13 @@ w
 EOF
 }
 
+if [ "$1" = "makedevspec" ]; then
+	STAGING=bootstrap/obj/dest-amd64
+	DEV_SPEC=bootstrap/obj/dev.spec
+	write_dev_spec
+	exit 0
+fi
+
 if [ "$(id -u)" -ne 0 ]; then
 	die "this script must be run as root"
 fi
