@@ -52,12 +52,12 @@
 
 u_long ext2gennumber;
 
-static u_int32_t	ext2fs_alloccg(struct inode *, int, u_int32_t, int);
+static daddr_t		ext2fs_alloccg(struct inode *, int, daddr_t, int);
 static int		ext2fs_dirpref(struct m_ext2fs *);
 static void		ext2fs_fserr(struct m_ext2fs *, uid_t, char *);
-static u_int32_t	ext2fs_hashalloc(struct inode *, int, u_int32_t, int,
-			    u_int32_t (*)(struct inode *, int, u_int32_t, int));
-static ufsino_t		ext2fs_nodealloccg(struct inode *, int, ufsino_t, int);
+static daddr_t		ext2fs_hashalloc(struct inode *, int, daddr_t, int,
+				    daddr_t (*)(struct inode *, int, daddr_t, int));
+static daddr_t		ext2fs_nodealloccg(struct inode *, int, daddr_t, int);
 static u_int32_t	ext2fs_mapsearch(struct m_ext2fs *, char *, u_int32_t);
 
 /*
@@ -78,11 +78,11 @@ static u_int32_t	ext2fs_mapsearch(struct m_ext2fs *, char *, u_int32_t);
  *	  available block is located.
  */
 int
-ext2fs_alloc(struct inode *ip, u_int32_t lbn, u_int32_t bpref,
-    struct ucred *cred, u_int32_t *bnp)
+ext2fs_alloc(struct inode *ip, daddr_t lbn, daddr_t bpref,
+    struct ucred *cred, daddr_t *bnp)
 {
 	struct m_ext2fs *fs;
-	u_int32_t bno;
+	daddr_t bno;
 	int cg;
 
 	*bnp = 0;
@@ -91,11 +91,11 @@ ext2fs_alloc(struct inode *ip, u_int32_t lbn, u_int32_t bpref,
 	if (cred == NOCRED)
 		panic("ext2fs_alloc: missing credential");
 #endif /* DIAGNOSTIC */
-	if (fs->e2fs.e2fs_fbcount == 0)
+	if (fs->e2fs_fbcount == 0)
 		goto nospace;
-	if (cred->cr_uid != 0 && freespace(fs) <= 0)
+	if (cred->cr_uid != 0 && fs->e2fs_fbcount <= fs->e2fs_rbcount)
 		goto nospace;
-	if (bpref >= fs->e2fs.e2fs_bcount)
+	if (bpref >= fs->e2fs_bcount)
 		bpref = 0;
 	if (bpref == 0)
 		cg = ino_to_cg(fs, ip->i_number);
@@ -194,16 +194,19 @@ ext2fs_inode_alloc(struct inode *pip, mode_t mode, struct ucred *cred,
 static int
 ext2fs_dirpref(struct m_ext2fs *fs)
 {
-	int cg, maxspace, mincg, avgifree;
+	u_int32_t maxspace;
+	int cg, mincg, avgifree;
 
 	avgifree = fs->e2fs.e2fs_ficount / fs->e2fs_ncg;
 	maxspace = 0;
 	mincg = -1;
 	for (cg = 0; cg < fs->e2fs_ncg; cg++)
-		if ( fs->e2fs_gd[cg].ext2bgd_nifree >= avgifree) {
-			if (mincg == -1 || fs->e2fs_gd[cg].ext2bgd_nbfree > maxspace) {
+		if (e2fs_gd_get_nifree(&fs->e2fs_gd[cg]) >= avgifree) {
+			if (mincg == -1 ||
+			    e2fs_gd_get_nbfree(&fs->e2fs_gd[cg]) > maxspace) {
 				mincg = cg;
-				maxspace = fs->e2fs_gd[cg].ext2bgd_nbfree;
+				maxspace =
+				    e2fs_gd_get_nbfree(&fs->e2fs_gd[cg]);
 			}
 		}
 	return mincg;
@@ -252,7 +255,8 @@ ext2fs_blkpref(struct inode *ip, u_int32_t lbn, int baps, u_int32_t *bap)
 	/* fall back to the first block of the cylinder containing the inode */
 
 	cg = ino_to_cg(fs, ip->i_number);
-	return fs->e2fs.e2fs_bpg * cg + fs->e2fs.e2fs_first_dblock + 1;
+	return ((daddr_t)fs->e2fs.e2fs_bpg * cg +
+	    fs->e2fs.e2fs_first_dblock + 1);
 }
 
 /*
@@ -263,12 +267,12 @@ ext2fs_blkpref(struct inode *ip, u_int32_t lbn, int baps, u_int32_t *bap)
  *   2) quadratically rehash on the cylinder group number.
  *   3) brute force search for a free block.
  */
-static u_int32_t
-ext2fs_hashalloc(struct inode *ip, int cg, u_int32_t pref, int size,
-    u_int32_t (*allocator)(struct inode *, int, u_int32_t, int))
+static daddr_t
+ext2fs_hashalloc(struct inode *ip, int cg, daddr_t pref, int size,
+    daddr_t (*allocator)(struct inode *, int, daddr_t, int))
 {
 	struct m_ext2fs *fs;
-	long result;
+	daddr_t result;
 	int i, icg = cg;
 
 	fs = ip->i_e2fs;
@@ -312,8 +316,8 @@ ext2fs_hashalloc(struct inode *ip, int cg, u_int32_t pref, int size,
  * Check to see if a block of the appropriate size is available,
  * and if it is, allocate it.
  */
-static u_int32_t
-ext2fs_alloccg(struct inode *ip, int cg, u_int32_t bpref, int size)
+static daddr_t
+ext2fs_alloccg(struct inode *ip, int cg, daddr_t bpref, int size)
 {
 	struct m_ext2fs *fs;
 	char *bbp;
@@ -322,11 +326,12 @@ ext2fs_alloccg(struct inode *ip, int cg, u_int32_t bpref, int size)
 	int error, start, end, loc;
 
 	fs = ip->i_e2fs;
-	if (fs->e2fs_gd[cg].ext2bgd_nbfree == 0)
+	if (e2fs_gd_get_nbfree(&fs->e2fs_gd[cg]) == 0)
 		return (0);
 	error = bread(ip->i_devvp, fsbtodb(fs,
-	    fs->e2fs_gd[cg].ext2bgd_b_bitmap), (int)fs->e2fs_bsize, &bp);
-	if (error || fs->e2fs_gd[cg].ext2bgd_nbfree == 0) {
+	    e2fs_gd_get_b_bitmap(&fs->e2fs_gd[cg])),
+	    (int)fs->e2fs_bsize, &bp);
+	if (error || e2fs_gd_get_nbfree(&fs->e2fs_gd[cg]) == 0) {
 		brelse(bp);
 		return (0);
 	}
@@ -377,11 +382,13 @@ ext2fs_alloccg(struct inode *ip, int cg, u_int32_t bpref, int size)
 	}
 #endif
 	setbit(bbp, bno);
-	fs->e2fs.e2fs_fbcount--;
-	fs->e2fs_gd[cg].ext2bgd_nbfree--;
+	fs->e2fs_fbcount--;
+	e2fs_gd_set_nbfree(&fs->e2fs_gd[cg],
+	    e2fs_gd_get_nbfree(&fs->e2fs_gd[cg]) - 1);
 	fs->e2fs_fmod = 1;
 	bdwrite(bp);
-	return (cg * fs->e2fs.e2fs_fpg + fs->e2fs.e2fs_first_dblock + bno);
+	return ((daddr_t)cg * fs->e2fs.e2fs_fpg +
+	    fs->e2fs.e2fs_first_dblock + bno);
 }
 
 /*
@@ -393,8 +400,8 @@ ext2fs_alloccg(struct inode *ip, int cg, u_int32_t bpref, int size)
  *   2) allocate the next available inode after the requested
  *	  inode in the specified cylinder group.
  */
-static ufsino_t
-ext2fs_nodealloccg(struct inode *ip, int cg, ufsino_t ipref, int mode)
+static daddr_t
+ext2fs_nodealloccg(struct inode *ip, int cg, daddr_t ipref, int mode)
 {
 	struct m_ext2fs *fs;
 	char *ibp;
@@ -403,10 +410,11 @@ ext2fs_nodealloccg(struct inode *ip, int cg, ufsino_t ipref, int mode)
 
 	ipref--; /* to avoid a lot of (ipref -1) */
 	fs = ip->i_e2fs;
-	if (fs->e2fs_gd[cg].ext2bgd_nifree == 0)
+	if (e2fs_gd_get_nifree(&fs->e2fs_gd[cg]) == 0)
 		return (0);
 	error = bread(ip->i_devvp, fsbtodb(fs,
-	    fs->e2fs_gd[cg].ext2bgd_i_bitmap), (int)fs->e2fs_bsize, &bp);
+	    e2fs_gd_get_i_bitmap(&fs->e2fs_gd[cg])),
+	    (int)fs->e2fs_bsize, &bp);
 	if (error) {
 		brelse(bp);
 		return (0);
@@ -425,8 +433,8 @@ ext2fs_nodealloccg(struct inode *ip, int cg, ufsino_t ipref, int mode)
 		start = 0;
 		loc = skpc(0xff, len, &ibp[0]);
 		if (loc == 0) {
-			printf("cg = %d, ipref = %u, fs = %s\n",
-			    cg, ipref, fs->e2fs_fsmnt);
+			printf("cg = %d, ipref = %lld, fs = %s\n",
+			    cg, (long long)ipref, fs->e2fs_fsmnt);
 			panic("ext2fs_nodealloccg: map corrupted");
 			/* NOTREACHED */
 		}
@@ -445,13 +453,14 @@ ext2fs_nodealloccg(struct inode *ip, int cg, ufsino_t ipref, int mode)
  gotit:
 	setbit(ibp, ipref);
 	fs->e2fs.e2fs_ficount--;
-	fs->e2fs_gd[cg].ext2bgd_nifree--;
+	e2fs_gd_set_nifree(&fs->e2fs_gd[cg],
+	    e2fs_gd_get_nifree(&fs->e2fs_gd[cg]) - 1);
 	fs->e2fs_fmod = 1;
-	if ((mode & IFMT) == IFDIR) {
-		fs->e2fs_gd[cg].ext2bgd_ndirs++;
-	}
+	if ((mode & IFMT) == IFDIR)
+		e2fs_gd_set_ndirs(&fs->e2fs_gd[cg],
+		    e2fs_gd_get_ndirs(&fs->e2fs_gd[cg]) + 1);
 	bdwrite(bp);
-	return (cg * fs->e2fs.e2fs_ipg + ipref + 1);
+	return ((daddr_t)cg * fs->e2fs.e2fs_ipg + ipref + 1);
 }
 
 /*
@@ -461,7 +470,7 @@ ext2fs_nodealloccg(struct inode *ip, int cg, ufsino_t ipref, int mode)
  * free map.
  */
 void
-ext2fs_blkfree(struct inode *ip, u_int32_t bno)
+ext2fs_blkfree(struct inode *ip, daddr_t bno)
 {
 	struct m_ext2fs *fs;
 	char *bbp;
@@ -469,14 +478,15 @@ ext2fs_blkfree(struct inode *ip, u_int32_t bno)
 	int error, cg;
 
 	fs = ip->i_e2fs;
-	cg = dtog(fs, bno);
-	if (bno >= fs->e2fs.e2fs_bcount) {
-		printf("bad block %u, ino %u\n", bno, ip->i_number);
+	if (bno < fs->e2fs.e2fs_first_dblock || bno >= fs->e2fs_bcount) {
+		printf("bad block %lld, ino %u\n", (long long)bno,
+		    ip->i_number);
 		ext2fs_fserr(fs, ip->i_e2fs_uid, "bad block");
 		return;
 	}
+	cg = dtog(fs, bno);
 	error = bread(ip->i_devvp,
-	    fsbtodb(fs, fs->e2fs_gd[cg].ext2bgd_b_bitmap),
+	    fsbtodb(fs, e2fs_gd_get_b_bitmap(&fs->e2fs_gd[cg])),
 	    (int)fs->e2fs_bsize, &bp);
 	if (error) {
 		brelse(bp);
@@ -485,12 +495,14 @@ ext2fs_blkfree(struct inode *ip, u_int32_t bno)
 	bbp = (char *)bp->b_data;
 	bno = dtogd(fs, bno);
 	if (isclr(bbp, bno))
-		panic("%s: freeing free block: dev = 0x%x, block = %u, fs = %s",
-		    __func__, ip->i_dev, bno, fs->e2fs_fsmnt);
+		panic("%s: freeing free block: dev = 0x%x, block = %lld, "
+		    "fs = %s", __func__, ip->i_dev, (long long)bno,
+		    fs->e2fs_fsmnt);
 
 	clrbit(bbp, bno);
-	fs->e2fs.e2fs_fbcount++;
-	fs->e2fs_gd[cg].ext2bgd_nbfree++;
+	fs->e2fs_fbcount++;
+	e2fs_gd_set_nbfree(&fs->e2fs_gd[cg],
+	    e2fs_gd_get_nbfree(&fs->e2fs_gd[cg]) + 1);
 
 	fs->e2fs_fmod = 1;
 	bdwrite(bp);
@@ -515,7 +527,7 @@ ext2fs_inode_free(struct inode *pip, ufsino_t ino, mode_t mode)
 		    pip->i_dev, ino, fs->e2fs_fsmnt);
 	cg = ino_to_cg(fs, ino);
 	error = bread(pip->i_devvp,
-	    fsbtodb(fs, fs->e2fs_gd[cg].ext2bgd_i_bitmap),
+	    fsbtodb(fs, e2fs_gd_get_i_bitmap(&fs->e2fs_gd[cg])),
 	    (int)fs->e2fs_bsize, &bp);
 	if (error) {
 		brelse(bp);
@@ -531,10 +543,11 @@ ext2fs_inode_free(struct inode *pip, ufsino_t ino, mode_t mode)
 	}
 	clrbit(ibp, ino);
 	fs->e2fs.e2fs_ficount++;
-	fs->e2fs_gd[cg].ext2bgd_nifree++;
-	if ((mode & IFMT) == IFDIR) {
-		fs->e2fs_gd[cg].ext2bgd_ndirs--;
-	}
+	e2fs_gd_set_nifree(&fs->e2fs_gd[cg],
+	    e2fs_gd_get_nifree(&fs->e2fs_gd[cg]) + 1);
+	if ((mode & IFMT) == IFDIR)
+		e2fs_gd_set_ndirs(&fs->e2fs_gd[cg],
+		    e2fs_gd_get_ndirs(&fs->e2fs_gd[cg]) - 1);
 	fs->e2fs_fmod = 1;
 	bdwrite(bp);
 }
