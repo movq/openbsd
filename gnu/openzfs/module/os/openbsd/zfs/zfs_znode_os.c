@@ -93,17 +93,17 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	mutex_init(&zp->z_acl_lock, NULL, MUTEX_DEFAULT, NULL);
 	rw_init(&zp->z_xattr_lock, NULL, RW_DEFAULT, NULL);
 	/*
-	 * Vnode operations may fault on userspace buffers while this lock is
+	 * Vnode operations may fault on userspace buffers while these locks are
 	 * held.  Conversely, physio(9) keeps a process map read-locked while
 	 * vnd(4) enters its backing vnode.  Both orders are valid (the map
 	 * acquisitions are shared), but WITNESS does not retain acquisition
-	 * modes in its class graph and reports a false reversal.  Keep the
-	 * native ownership checks, but omit this instance-dependent order from
-	 * the WITNESS graph.
+	 * modes in its class graph and reports false reversals.  Keep the native
+	 * ownership checks, but omit these instance-dependent orders from the
+	 * WITNESS graph.
 	 */
 	rrw_init_flags(&zp->z_vlock, "znode",
 	    RWL_DUPOK | RWL_IS_VNODE | RWL_NOWITNESS);
-	mutex_init(&zp->z_map_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&zp->z_map_lock, NULL, MUTEX_NOLOCKDEP, NULL);
 	zfs_rangelock_init(&zp->z_rangelock, zfs_rangelock_cb, zp);
 
 	return (0);

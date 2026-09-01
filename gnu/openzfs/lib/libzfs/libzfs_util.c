@@ -480,6 +480,11 @@ zfs_standard_error_fmt(libzfs_handle_t *hdl, int error, const char *fmt, ...)
 	case ENAMETOOLONG:
 		zfs_verror(hdl, EZFS_NAMETOOLONG, fmt, ap);
 		break;
+#if EOPNOTSUPP != ENOTSUP
+	case EOPNOTSUPP:
+		zfs_verror(hdl, EZFS_IOC_NOTSUPPORTED, fmt, ap);
+		break;
+#endif
 	case ENOTSUP:
 		zfs_verror(hdl, EZFS_BADVERSION, fmt, ap);
 		break;

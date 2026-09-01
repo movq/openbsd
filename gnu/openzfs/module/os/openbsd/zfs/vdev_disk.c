@@ -255,6 +255,11 @@ vdev_disk_io_submit(void *arg)
 		struct buf *bp = &dio->vdi_bufs[i].vdb_buf;
 		int error;
 
+		KERNEL_LOCK();
+		/*
+		 * Non-MPSAFE disk interrupts call biodone() with the kernel lock
+		 * held.  Serialize the matching output count increment with them.
+		 */
 		if (!ISSET(bp->b_flags, B_READ)) {
 			s = splbio();
 			bp->b_vp->v_numoutput++;
@@ -267,9 +272,7 @@ vdev_disk_io_submit(void *arg)
 		 * worker so that acquiring the backing vnode cannot happen while
 		 * the ZIO caller holds an arbitrary OpenZFS lock.
 		 */
-		KERNEL_LOCK();
 		error = VOP_STRATEGY(bp->b_vp, bp);
-		KERNEL_UNLOCK();
 		if (error != 0) {
 			bp->b_error = error;
 			SET(bp->b_flags, B_ERROR);
@@ -277,6 +280,7 @@ vdev_disk_io_submit(void *arg)
 			biodone(bp);
 			splx(s);
 		}
+		KERNEL_UNLOCK();
 	}
 
 	/* Drop the submission reference after every child is in flight. */
