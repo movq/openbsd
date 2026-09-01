@@ -21,7 +21,7 @@ void
 zfs_kmem_free(void *buf, size_t size)
 {
 
-	ASSERT3P(buf, !=, NULL);
+	/* OpenZFS callers rely on the native free(9) NULL-pointer no-op. */
 	free(buf, M_ZFS, MAX(size, 1));
 }
 
