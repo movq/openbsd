@@ -15,8 +15,8 @@ set -e
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 SRCDIR="$(cd "${SCRIPTDIR}/.." && pwd)"
 
-DESTDIR="${DESTDIR:-${SCRIPTDIR}/dest}"
 MACHINE="${MACHINE:-amd64}"
+DESTDIR="${DESTDIR:-${SCRIPTDIR}/obj/dest-${MACHINE}}"
 BOOTSTRAP_HOSTNAME="${BOOTSTRAP_HOSTNAME:-openbsd-bootstrap}"
 FSTAB_ROOT="${FSTAB_ROOT:-/dev/wd0a}"
 

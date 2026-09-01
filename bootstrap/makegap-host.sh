@@ -4,16 +4,16 @@
 
 random_uniform()
 {
-	if [ "$1" -le 0 ]; then
+	upper_bound=$1
+	if [ "${upper_bound}" -le 0 ]; then
 		echo 0
 		return
 	fi
 
-	random_value=$(od -An -N4 -tu4 /dev/urandom 2>/dev/null)
-	if [ -z "${random_value}" ]; then
-		random_value=0
-	fi
-	echo $((random_value % $1))
+	# Field splitting removes padding emitted by some implementations of od.
+	set -- $(od -An -N4 -tu4 /dev/urandom 2>/dev/null)
+	random_value=${1:-0}
+	echo $((random_value % upper_bound))
 }
 
 umask 007

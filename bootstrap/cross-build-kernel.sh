@@ -26,9 +26,32 @@ CONFIG_BIN="${CONFIG_BIN:-${TOOLDIR}/bin/config}"
 TARGET_CANON="${TARGET_CANON:-${MACHINE_ARCH}-unknown-openbsd7.9}"
 KERNEL_CONFIG="${KERNEL_CONFIG:-GENERIC.MP}"
 
+find_gnu_binutil() {
+	requested="$1"
+	name="$2"
+
+	for candidate in "${requested}" \
+	    "$(command -v "g${name}" 2>/dev/null || true)" \
+	    "/usr/local/bin/${name}" \
+	    "$(command -v "${name}" 2>/dev/null || true)" \
+	    "/usr/bin/${name}"; do
+		[ -x "${candidate}" ] || continue
+		case "$("${candidate}" --version 2>/dev/null | sed -n '1p')" in
+		"GNU ${name}"*)
+			echo "${candidate}"
+			return
+			;;
+		esac
+	done
+	bootstrap_die "missing required GNU-compatible host tool: ${name}"
+}
+
 CLANG="${CLANG:-${TOOLDIR}/bin/clang}"
 LLD="${LLD:-${TOOLDIR}/bin/ld.lld}"
 SIZE="${SIZE:-size}"
+HOST_OBJCOPY="$(find_gnu_binutil "${HOST_OBJCOPY:-}" objcopy)"
+HOST_OBJDUMP="$(find_gnu_binutil "${HOST_OBJDUMP:-}" objdump)"
+HOST_PERL="$(bootstrap_resolve_tool "${HOST_PERL:-perl}")"
 
 TARGET_TOOLDIR="${TARGET_TOOLDIR:-${OBJDIR}/target-tools-${MACHINE}}"
 KERNEL_BINDIR="${TARGET_TOOLDIR}/bin"
@@ -58,6 +81,13 @@ bootstrap_need_file "${MAKEGAP_SRC}"
 bootstrap_need_tool sort
 bootstrap_need_tool mktemp
 bootstrap_need_tool "${SIZE}"
+if [ -z "${OBJCOPY:-}" ]; then
+	[ -n "${HOST_OBJCOPY}" ] ||
+	    bootstrap_die "missing required host tool: objcopy"
+	bootstrap_need_exec "${HOST_OBJCOPY}"
+fi
+bootstrap_need_exec "${HOST_OBJDUMP}"
+bootstrap_need_exec "${HOST_PERL}"
 
 # ------------------------------------------------------------------
 # Create tool wrappers
@@ -95,6 +125,61 @@ if [ -n "$src" ] && [ -n "$dst" ]; then
 fi
 EOF
 chmod +x "${KERNEL_BINDIR}/openbsd-strip-noop"
+
+if [ -z "${OBJCOPY:-}" ]; then
+	cat > "${KERNEL_BINDIR}/openbsd-efi-objcopy" <<EOF
+#!/bin/sh
+
+real_objcopy="${HOST_OBJCOPY}"
+efi_format=
+for arg do
+	case "\${arg}" in
+	--target=efi-app-x86_64|--target=efi-app-ia32)
+		efi_format="\${arg#--target=}"
+		;;
+	efi-app-x86_64|efi-app-ia32)
+		efi_format="\${arg}"
+		;;
+	esac
+done
+
+if [ -n "\${efi_format}" ]; then
+	while [ "\$#" -gt 2 ]; do
+		shift
+	done
+	exec "\${real_objcopy}" \
+	    -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel \
+	    -j .rel.dyn -j .rela -j .rela.dyn -j .reloc \
+	    -O "\${efi_format}" "\$1" "\$2"
+fi
+
+exec "\${real_objcopy}" "\$@"
+EOF
+	chmod +x "${KERNEL_BINDIR}/openbsd-efi-objcopy"
+fi
+
+# check-boot.pl hardcodes /usr/bin/objdump and parses GNU objdump output.
+# Route only that script through the host objdump selected before PATH changes.
+cat > "${KERNEL_BINDIR}/perl" <<EOF
+#!/bin/sh
+case "\${1##*/}" in
+check-boot.pl)
+	checker="\$1"
+	shift
+	tmp="\$(mktemp "\${TMPDIR:-/tmp}/check-boot.pl.XXXXXXXXXX")" ||
+	    exit 1
+	trap 'rm -f "\${tmp}"' EXIT HUP INT TERM
+	sed 's|/usr/bin/objdump|${HOST_OBJDUMP}|g' "\${checker}" > "\${tmp}"
+	"${HOST_PERL}" -w "\${tmp}" "\$@"
+	status=\$?
+	rm -f "\${tmp}"
+	trap - EXIT HUP INT TERM
+	exit "\${status}"
+	;;
+esac
+exec "${HOST_PERL}" "\$@"
+EOF
+chmod +x "${KERNEL_BINDIR}/perl"
 
 # Prepend kernel wrapper directory to PATH.
 export PATH="${KERNEL_BINDIR}:${TOOLDIR}/bin:${WRAPDIR}:${PATH}"
@@ -226,3 +311,151 @@ if [ -n "${KERNEL_DBG:-}" ]; then
 fi
 ls -lh "${KERNEL_BIN}"
 file "${KERNEL_BIN}" 2>/dev/null || true
+
+# ------------------------------------------------------------------
+# Build bootloaders (stand/)
+# ------------------------------------------------------------------
+#
+# rdboot needs OpenBSD host libraries, while vmboot additionally needs
+# rdsetroot and makefs.  Build the remaining BIOS, CD, PXE, and EFI loaders.
+OBJCOPY="${OBJCOPY:-${KERNEL_BINDIR}/openbsd-efi-objcopy}"
+case "${OBJCOPY}" in
+*/*)
+	bootstrap_need_exec "${OBJCOPY}"
+	;;
+*)
+	bootstrap_need_tool "${OBJCOPY}"
+	;;
+esac
+
+STAND_S="${SRCDIR}/sys"
+STAND_SADIR="${SRCDIR}/sys/arch/${MACHINE}/stand"
+STAND_MAKEOBJDIR="${STAND_MAKEOBJDIR:-obj.cross.${MACHINE}}"
+STAND_MAKE_ENV="
+	BSDSRCDIR=${SRCDIR}
+	BSDOBJDIR=${OBJROOT}
+	MAKEOBJDIR=${STAND_MAKEOBJDIR}
+	MACHINE=${MACHINE}
+	MACHINE_ARCH=${MACHINE_ARCH}
+	MACHINE_CPU=${MACHINE_CPU}
+	COMPILER_VERSION=clang
+	LINKER_VERSION=lld
+	WARNINGS=no
+	NOMAN=1
+	NOPROFILE=1
+	LIBCRT0=
+	CRTBEGIN=
+	CRTEND=
+	SOFTRAID=yes
+	S=${STAND_S}
+	SADIR=${STAND_SADIR}
+	MAKECONF=/dev/null
+	MAKE=${BMAKE}
+	CC=${KERNEL_BINDIR}/openbsd-kernel-cc
+	LD=${LLD}
+	OBJCOPY=${OBJCOPY}
+	SIZE=${SIZE}
+	HOSTCC=${HOST_CC}
+	BUILDUSER=${HOST_USER}
+	BINOWN=${HOST_USER}
+	BINGRP=${HOST_GROUP}
+	LIBOWN=${HOST_USER}
+	LIBGRP=${HOST_GROUP}
+"
+
+build_stand_dir() {
+	dir="$1"
+	shift
+	if [ "$#" -eq 0 ]; then
+		set -- all
+	fi
+
+	echo ""
+	echo "==> Building stand/${dir}"
+	env ${STAND_MAKE_ENV} "${BMAKE}" ${MAKE_ARGS} \
+		-C "${STAND_SADIR}/${dir}" obj
+	env ${STAND_MAKE_ENV} "${BMAKE}" ${MAKE_ARGS} \
+		-C "${STAND_SADIR}/${dir}" \
+		"LD=${LLD}" "SIZE=${SIZE}" "OBJCOPY=${OBJCOPY}" "$@"
+}
+
+echo ""
+echo "==> Cross-building OpenBSD bootloaders (stand/)"
+echo "    CC            = ${KERNEL_BINDIR}/openbsd-kernel-cc"
+echo "    LD            = ${LLD}"
+echo "    OBJCOPY       = ${OBJCOPY}"
+
+build_stand_dir mbr
+build_stand_dir cdbr
+build_stand_dir biosboot
+build_stand_dir boot all boot.bin
+build_stand_dir cdboot
+build_stand_dir fdboot
+build_stand_dir pxeboot
+build_stand_dir efiboot
+
+# ------------------------------------------------------------------
+# Collect bootloader outputs
+# ------------------------------------------------------------------
+STAND_OUTDIR="${OBJROOT}/sys/arch/${MACHINE}/stand"
+STAND_COLLECT="${OBJDIR}/stand-${MACHINE}"
+mkdir -p "${STAND_COLLECT}"
+
+collect_stand_output() {
+	src="$1"
+	dst="$2"
+	fullsrc="${STAND_OUTDIR}/${src}/${src}"
+
+	case "${src}" in
+	boot)
+		if [ -f "${fullsrc}" ]; then
+			cp "${fullsrc}" "${STAND_COLLECT}/${dst}.elf"
+			echo "    ${dst}.elf"
+		fi
+		if [ -f "${STAND_OUTDIR}/${src}/boot.bin" ]; then
+			cp "${STAND_OUTDIR}/${src}/boot.bin" \
+			    "${STAND_COLLECT}/${dst}"
+			echo "    ${dst} (raw binary)"
+		fi
+		;;
+	efiboot)
+		for efi in bootx64 bootia32; do
+			case "${efi}" in
+			bootx64)
+				efiname=BOOTX64.EFI
+				;;
+			bootia32)
+				efiname=BOOTIA32.EFI
+				;;
+			esac
+			efidir="${STAND_OUTDIR}/${src}/${efi}"
+			if [ -f "${efidir}/${efiname}" ]; then
+				cp "${efidir}/${efiname}" \
+				    "${STAND_COLLECT}/${efiname}"
+				echo "    ${efiname}"
+			fi
+		done
+		;;
+	*)
+		if [ -f "${fullsrc}" ]; then
+			cp "${fullsrc}" "${STAND_COLLECT}/${dst}"
+			echo "    ${dst}"
+		fi
+		;;
+	esac
+}
+
+echo ""
+echo "==> Collecting bootloader outputs to ${STAND_COLLECT}"
+collect_stand_output mbr mbr
+collect_stand_output cdbr cdbr
+collect_stand_output biosboot biosboot
+collect_stand_output boot boot
+collect_stand_output cdboot cdboot
+collect_stand_output fdboot fdboot
+collect_stand_output pxeboot pxeboot
+collect_stand_output efiboot ""
+
+echo ""
+echo "==> Bootloader build complete"
+ls -lh "${STAND_COLLECT}/"
