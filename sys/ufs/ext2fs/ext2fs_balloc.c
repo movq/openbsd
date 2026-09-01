@@ -48,6 +48,25 @@
 #include <ufs/ext2fs/ext2fs_extern.h>
 
 static int
+ext2fs_alloc_32(struct inode *ip, daddr_t lbn, daddr_t pref,
+    struct ucred *cred, u_int32_t *bnp)
+{
+	daddr_t bno;
+	int error;
+
+	error = ext2fs_alloc(ip, lbn, pref, cred, &bno);
+	if (error)
+		return (error);
+	if (bno > UINT_MAX) {
+		ext2fs_blkfree(ip, bno);
+		ip->i_e2fs_nblock -= btodb(ip->i_e2fs->e2fs_bsize);
+		return (EFBIG);
+	}
+	*bnp = bno;
+	return (0);
+}
+
+static int
 ext4_ext_buf_alloc(struct inode *ip, u_int32_t lbn, int size,
     struct ucred *cred, struct buf **bpp, int flags)
 {
@@ -123,7 +142,7 @@ ext2fs_buf_alloc(struct inode *ip, u_int32_t bn, int size, struct ucred *cred,
 		/*
 		 * allocate a new direct block.
 		 */
-		error = ext2fs_alloc(ip, bn,
+		error = ext2fs_alloc_32(ip, bn,
 		    ext2fs_blkpref(ip, bn, (int)bn, &ip->i_e2fs_blocks[0]),
 		    cred, &newb);
 		if (error)
@@ -158,7 +177,7 @@ ext2fs_buf_alloc(struct inode *ip, u_int32_t bn, int size, struct ucred *cred,
 	allocblk = allociblk;
 	if (nb == 0) {
 		pref = ext2fs_blkpref(ip, lbn, 0, NULL);
-		error = ext2fs_alloc(ip, lbn, pref, cred, &newb);
+		error = ext2fs_alloc_32(ip, lbn, pref, cred, &newb);
 		if (error)
 			return (error);
 		nb = newb;
@@ -197,7 +216,7 @@ ext2fs_buf_alloc(struct inode *ip, u_int32_t bn, int size, struct ucred *cred,
 			continue;
 		}
 		pref = ext2fs_blkpref(ip, lbn, 0, NULL);
-		error = ext2fs_alloc(ip, lbn, pref, cred, &newb);
+		error = ext2fs_alloc_32(ip, lbn, pref, cred, &newb);
 		if (error) {
 			brelse(bp);
 			goto fail;
@@ -234,7 +253,7 @@ ext2fs_buf_alloc(struct inode *ip, u_int32_t bn, int size, struct ucred *cred,
 	 */
 	if (nb == 0) {
 		pref = ext2fs_blkpref(ip, lbn, indirs[num].in_off, bap);
-		error = ext2fs_alloc(ip, lbn, pref, cred, &newb);
+		error = ext2fs_alloc_32(ip, lbn, pref, cred, &newb);
 		if (error) {
 			brelse(bp);
 			goto fail;

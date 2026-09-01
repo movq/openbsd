@@ -93,6 +93,11 @@ e2fs_sb_bswap(struct ext2fs *old, struct ext2fs *new)
 	new->e2fs_default_mount_opts	=	swap32(old->e2fs_default_mount_opts);
 	new->e2fs_first_meta_bg	=	swap32(old->e2fs_first_meta_bg);
 	new->e2fs_mkfs_time	=	swap32(old->e2fs_mkfs_time);
+	new->e2fs_bcount_hi	=	swap32(old->e2fs_bcount_hi);
+	new->e2fs_rbcount_hi	=	swap32(old->e2fs_rbcount_hi);
+	new->e2fs_fbcount_hi	=	swap32(old->e2fs_fbcount_hi);
+	new->e2fs_backup_bgs[0] =	swap32(old->e2fs_backup_bgs[0]);
+	new->e2fs_backup_bgs[1] =	swap32(old->e2fs_backup_bgs[1]);
 }
 
 void

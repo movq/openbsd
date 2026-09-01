@@ -64,6 +64,9 @@
 #include <ufs/ext2fs/ext2fs.h>
 #include <ufs/ext2fs/ext2fs_extern.h>
 
+CTASSERT(sizeof(struct ext2_gd) == E2FS_REV0_GD_SIZE);
+CTASSERT(sizeof(struct ext2_gd64) == E2FS_64BIT_GD_SIZE);
+
 int ext2fs_sbupdate(struct ufsmount *, int);
 static int	e2fs_sbcheck(struct ext2fs *, int);
 
@@ -348,18 +351,77 @@ ext2fs_maxfilesize(struct m_ext2fs *fs)
 }
 
 static int
+e2fs_cg_has_sb(struct m_ext2fs *fs, int cg)
+{
+	if (cg == 0)
+		return (1);
+
+	if (fs->e2fs.e2fs_features_compat & EXT2F_COMPAT_SPARSE_SUPER2)
+		return (cg == fs->e2fs.e2fs_backup_bgs[0] ||
+		    cg == fs->e2fs.e2fs_backup_bgs[1]);
+
+	if (cg <= 1 ||
+	    !(fs->e2fs.e2fs_features_rocompat & EXT2F_ROCOMPAT_SPARSE_SUPER))
+		return (1);
+
+	return (cg_has_sb(cg));
+}
+
+static daddr_t
+e2fs_cg_location(struct m_ext2fs *fs, int number)
+{
+	int cg, descpb, logical_sb;
+
+	logical_sb = fs->e2fs_bsize > 1024 ? 0 : 1;
+	if (!(fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_META_BG) ||
+	    number < fs->e2fs.e2fs_first_meta_bg)
+		return (logical_sb + number + 1);
+
+	descpb = fs->e2fs_bsize /
+	    ((fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_64BIT) ?
+	    E2FS_64BIT_GD_SIZE : E2FS_REV0_GD_SIZE);
+	cg = descpb * number;
+
+	return (e2fs_cg_has_sb(fs, cg) +
+	    (daddr_t)cg * fs->e2fs.e2fs_bpg +
+	    fs->e2fs.e2fs_first_dblock);
+}
+
+static int
 e2fs_sbfill(struct vnode *devvp, struct m_ext2fs *fs)
 {
 	struct buf *bp = NULL;
-	int i, error;
+	char *gd;
+	u_int64_t ncg;
+	size_t gdescs_space;
+	int descpb, gcount, i, j, ndesc, error;
+
+	fs->e2fs_bcount = fs->e2fs.e2fs_bcount;
+	fs->e2fs_rbcount = fs->e2fs.e2fs_rbcount;
+	fs->e2fs_fbcount = fs->e2fs.e2fs_fbcount;
+	if (fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_64BIT) {
+		fs->e2fs_bcount |=
+		    (u_int64_t)fs->e2fs.e2fs_bcount_hi << 32;
+		fs->e2fs_rbcount |=
+		    (u_int64_t)fs->e2fs.e2fs_rbcount_hi << 32;
+		fs->e2fs_fbcount |=
+		    (u_int64_t)fs->e2fs.e2fs_fbcount_hi << 32;
+	}
+	if (fs->e2fs_rbcount > fs->e2fs_bcount ||
+	    fs->e2fs_fbcount > fs->e2fs_bcount ||
+	    fs->e2fs.e2fs_first_dblock >= fs->e2fs_bcount) {
+		printf("ext2fs: invalid block count\n");
+		return (EINVAL);
+	}
 
 	/* XXX assume hardware block size == 512 */
-	fs->e2fs_ncg = howmany(fs->e2fs.e2fs_bcount - fs->e2fs.e2fs_first_dblock,
-	    fs->e2fs.e2fs_bpg);
-	if (fs->e2fs_ncg == 0) {
+	ncg = fs->e2fs_bcount - fs->e2fs.e2fs_first_dblock;
+	ncg = (ncg - 1) / fs->e2fs.e2fs_bpg + 1;
+	if (ncg == 0 || ncg > INT_MAX) {
 		printf("ext2fs: invalid number of cylinder groups\n");
 		return (EINVAL);
 	}
+	fs->e2fs_ncg = ncg;
 	fs->e2fs_fsbtodb = fs->e2fs.e2fs_log_bsize + 1;
 	fs->e2fs_bsize = 1024 << fs->e2fs.e2fs_log_bsize;
 	fs->e2fs_bshift = LOG_MINBSIZE + fs->e2fs.e2fs_log_bsize;
@@ -372,28 +434,36 @@ e2fs_sbfill(struct vnode *devvp, struct m_ext2fs *fs)
 	fs->e2fs_itpg = fs->e2fs.e2fs_ipg / fs->e2fs_ipb;
 
 	/* Re-read group descriptors from the disk. */
-	fs->e2fs_ngdb = howmany(fs->e2fs_ncg,
-	    fs->e2fs_bsize / sizeof(struct ext2_gd));
-	fs->e2fs_gd = mallocarray(fs->e2fs_ngdb, fs->e2fs_bsize,
-	    M_UFSMNT, M_WAITOK);
+	descpb = fs->e2fs_bsize /
+	    ((fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_64BIT) ?
+	    E2FS_64BIT_GD_SIZE : E2FS_REV0_GD_SIZE);
+	fs->e2fs_ngdb = (fs->e2fs_ncg - 1) / descpb + 1;
+	gdescs_space = fs->e2fs_ncg * sizeof(*fs->e2fs_gd);
+	fs->e2fs_gd = mallocarray(fs->e2fs_ncg, sizeof(*fs->e2fs_gd),
+	    M_UFSMNT, M_WAITOK | M_ZERO);
 
-	for (i = 0; i < fs->e2fs_ngdb; ++i) {
-		daddr_t dblk = ((fs->e2fs_bsize > 1024) ? 0 : 1) + i + 1;
-		size_t gdesc = i * fs->e2fs_bsize / sizeof(struct ext2_gd);
-		struct ext2_gd *gd;
-
-		error = bread(devvp, fsbtodb(fs, dblk), fs->e2fs_bsize, &bp);
+	for (i = 0, gcount = 0; i < fs->e2fs_ngdb; ++i) {
+		error = bread(devvp, fsbtodb(fs, e2fs_cg_location(fs, i)),
+		    fs->e2fs_bsize, &bp);
 		if (error) {
-			size_t gdescs_space = fs->e2fs_ngdb * fs->e2fs_bsize;
-
 			free(fs->e2fs_gd, M_UFSMNT, gdescs_space);
 			fs->e2fs_gd = NULL;
 			brelse(bp);
 			return (error);
 		}
 
-		gd = (struct ext2_gd *) bp->b_data;
-		e2fs_cgload(gd, fs->e2fs_gd + gdesc, fs->e2fs_bsize);
+		gd = bp->b_data;
+		ndesc = MIN(descpb, fs->e2fs_ncg - gcount);
+		if (fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_64BIT) {
+			memcpy(&fs->e2fs_gd[gcount], gd,
+			    ndesc * E2FS_64BIT_GD_SIZE);
+			gcount += ndesc;
+		} else {
+			for (j = 0; j < ndesc; j++, gcount++)
+				memcpy(&fs->e2fs_gd[gcount],
+				    gd + j * E2FS_REV0_GD_SIZE,
+				    E2FS_REV0_GD_SIZE);
+		}
 		brelse(bp);
 		bp = NULL;
 	}
@@ -429,6 +499,7 @@ ext2fs_reload(struct mount *mountp, struct ucred *cred, struct proc *p)
 	struct vnode *devvp;
 	struct buf *bp;
 	struct m_ext2fs *fs;
+	struct m_ext2fs oldfs;
 	struct ext2fs *newfs;
 	int error;
 	struct ext2fs_reload_args era;
@@ -465,9 +536,16 @@ ext2fs_reload(struct mount *mountp, struct ucred *cred, struct proc *p)
 	 * Copy in the new superblock, compute in-memory values
 	 * and load group descriptors.
 	 */
+	oldfs = *fs;
 	e2fs_sbload(newfs, &fs->e2fs);
-	if ((error = e2fs_sbfill(devvp, fs)) != 0)
+	error = e2fs_sbfill(devvp, fs);
+	brelse(bp);
+	if (error) {
+		*fs = oldfs;
 		return (error);
+	}
+	free(oldfs.e2fs_gd, M_UFSMNT,
+	    oldfs.e2fs_ncg * sizeof(*oldfs.e2fs_gd));
 
 	era.p = p;
 	era.cred = cred;
@@ -602,7 +680,7 @@ ext2fs_unmount(struct mount *mp, int mntflags, struct proc *p)
 		return (error);
 	ump = VFSTOUFS(mp);
 	fs = ump->um_e2fs;
-	gdescs_space = fs->e2fs_ngdb * fs->e2fs_bsize;
+	gdescs_space = fs->e2fs_ncg * sizeof(*fs->e2fs_gd);
 
 	if (!fs->e2fs_ronly && ext2fs_cgupdate(ump, MNT_WAIT) == 0 &&
 	    (fs->e2fs.e2fs_state & E2FS_ERRORS) == 0) {
@@ -656,7 +734,8 @@ ext2fs_statfs(struct mount *mp, struct statfs *sbp, struct proc *p)
 {
 	struct ufsmount *ump;
 	struct m_ext2fs *fs;
-	u_int32_t overhead, overhead_per_group;
+	u_int64_t overhead;
+	u_int32_t overhead_per_group;
 	int i, ngroups;
 
 	ump = VFSTOUFS(mp);
@@ -670,23 +749,25 @@ ext2fs_statfs(struct mount *mp, struct statfs *sbp, struct proc *p)
 	overhead_per_group = 1 /* block bitmap */ + 1 /* inode bitmap */ +
 	    fs->e2fs_itpg;
 	overhead = fs->e2fs.e2fs_first_dblock +
-	    fs->e2fs_ncg * overhead_per_group;
-	if (fs->e2fs.e2fs_rev > E2FS_REV0 &&
-	    fs->e2fs.e2fs_features_rocompat & EXT2F_ROCOMPAT_SPARSE_SUPER) {
+	    (u_int64_t)fs->e2fs_ncg * overhead_per_group;
+	if ((fs->e2fs.e2fs_features_compat &
+	    EXT2F_COMPAT_SPARSE_SUPER2) ||
+	    (fs->e2fs.e2fs_rev > E2FS_REV0 &&
+	    fs->e2fs.e2fs_features_rocompat & EXT2F_ROCOMPAT_SPARSE_SUPER)) {
 		for (i = 0, ngroups = 0; i < fs->e2fs_ncg; i++) {
-			if (cg_has_sb(i))
+			if (e2fs_cg_has_sb(fs, i))
 				ngroups++;
 		}
 	} else {
 		ngroups = fs->e2fs_ncg;
 	}
-	overhead += ngroups * (1 + fs->e2fs_ngdb);
+	overhead += (u_int64_t)ngroups * (1 + fs->e2fs_ngdb);
 
 	sbp->f_bsize = fs->e2fs_bsize;
 	sbp->f_iosize = fs->e2fs_bsize;
-	sbp->f_blocks = fs->e2fs.e2fs_bcount - overhead;
-	sbp->f_bfree = fs->e2fs.e2fs_fbcount;
-	sbp->f_bavail = sbp->f_bfree - fs->e2fs.e2fs_rbcount;
+	sbp->f_blocks = fs->e2fs_bcount - overhead;
+	sbp->f_bfree = fs->e2fs_fbcount;
+	sbp->f_bavail = sbp->f_bfree - fs->e2fs_rbcount;
 	sbp->f_files =  fs->e2fs.e2fs_icount;
 	sbp->f_favail = sbp->f_ffree = fs->e2fs.e2fs_ficount;
 	copy_statfs_info(sbp, mp);
@@ -980,7 +1061,7 @@ ext2fs_fhtovp(struct mount *mp, struct fid *fhp, struct vnode **vpp)
 	ufhp = (struct ufid *)fhp;
 	fs = VFSTOUFS(mp)->um_e2fs;
 	if ((ufhp->ufid_ino < EXT2_FIRSTINO && ufhp->ufid_ino != EXT2_ROOTINO) ||
-	    ufhp->ufid_ino > fs->e2fs_ncg * fs->e2fs.e2fs_ipg)
+	    ufhp->ufid_ino > fs->e2fs.e2fs_icount)
 		return (ESTALE);
 
 	if ((error = VFS_VGET(mp, ufhp->ufid_ino, &nvp)) != 0) {
@@ -1025,6 +1106,15 @@ ext2fs_sbupdate(struct ufsmount *mp, int waitfor)
 	struct buf *bp;
 	int error = 0;
 
+	fs->e2fs.e2fs_bcount = fs->e2fs_bcount;
+	fs->e2fs.e2fs_rbcount = fs->e2fs_rbcount;
+	fs->e2fs.e2fs_fbcount = fs->e2fs_fbcount;
+	if (fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_64BIT) {
+		fs->e2fs.e2fs_bcount_hi = fs->e2fs_bcount >> 32;
+		fs->e2fs.e2fs_rbcount_hi = fs->e2fs_rbcount >> 32;
+		fs->e2fs.e2fs_fbcount_hi = fs->e2fs_fbcount >> 32;
+	}
+
 	bp = getblk(mp->um_devvp, SBLOCK, SBSIZE, 0, INFSLP);
 	e2fs_sbsave(&fs->e2fs, (struct ext2fs *) bp->b_data);
 	if (waitfor == MNT_WAIT)
@@ -1040,13 +1130,24 @@ ext2fs_cgupdate(struct ufsmount *mp, int waitfor)
 {
 	struct m_ext2fs *fs = mp->um_e2fs;
 	struct buf *bp;
-	int i, error = 0, allerror = 0;
+	char *gd;
+	int descsize, gcount, i, j, ndesc;
+	int error = 0, allerror = 0;
 
 	allerror = ext2fs_sbupdate(mp, waitfor);
-	for (i = 0; i < fs->e2fs_ngdb; i++) {
-		bp = getblk(mp->um_devvp, fsbtodb(fs, ((fs->e2fs_bsize>1024)?0:1)+i+1),
-		    fs->e2fs_bsize, 0, INFSLP);
-		e2fs_cgsave(&fs->e2fs_gd[i* fs->e2fs_bsize / sizeof(struct ext2_gd)], (struct ext2_gd*)bp->b_data, fs->e2fs_bsize);
+	descsize = (fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_64BIT) ?
+	    E2FS_64BIT_GD_SIZE : E2FS_REV0_GD_SIZE;
+	for (i = 0, gcount = 0; i < fs->e2fs_ngdb; i++) {
+		bp = getblk(mp->um_devvp,
+		    fsbtodb(fs, e2fs_cg_location(fs, i)), fs->e2fs_bsize,
+		    0, INFSLP);
+		gd = bp->b_data;
+		memset(gd, 0, fs->e2fs_bsize);
+		ndesc = MIN(fs->e2fs_bsize / descsize,
+		    fs->e2fs_ncg - gcount);
+		for (j = 0; j < ndesc; j++, gcount++)
+			memcpy(gd + j * descsize, &fs->e2fs_gd[gcount],
+			    descsize);
 		if (waitfor == MNT_WAIT)
 			error = bwrite(bp);
 		else
@@ -1108,6 +1209,12 @@ e2fs_sbcheck(struct ext2fs *fs, int ronly)
 				printf("%s ", incompat[i].name);
 		printf("\n");
 		return (EINVAL);      /* XXX needs translation */
+	}
+
+	if ((tmp & EXT2F_INCOMPAT_64BIT) &&
+	    letoh16(fs->e2fs_gdesc_size) != E2FS_64BIT_GD_SIZE) {
+		printf("ext2fs: unsupported 64bit descriptor size\n");
+		return (EINVAL);
 	}
 
 	if (!ronly && (tmp & EXT4F_RO_INCOMPAT_SUPP)) {
