@@ -3030,28 +3030,6 @@ if ((${#_KERNV[*]} == 1)); then
 fi
 __EOT
 
-	if [[ -x /mnt/usr/sbin/fw_update ]]; then
-		DESTDIR=/mnt /mnt/usr/sbin/fw_update
-		# Rerun installboot(8) to pick up just fetched boot firmware.
-		typeset -f md_fw >/dev/null && md_fw $ROOTDISK apple-boot
-	fi
-
-	if [[ -f $_kernel_dir.tgz ]]; then
-		echo -n "Relinking to create unique kernel..."
-		(
-		set -e
-		rm -rf $_kernel_dir
-		mkdir -m 700 -p $_kernel_dir
-		tar -C $_kernel_dir -xzf $_kernel_dir.tgz $_kernel
-		rm -f $_kernel_dir.tgz
-		chroot /mnt /bin/ksh -e -c "cd ${_kernel_dir#/mnt}/$_kernel
-			make newbsd
-			[ -f /etc/bsd.re-config ] &&
-				config -e -c /etc/bsd.re-config -f bsd
-			make newinstall"
-		) >/dev/null 2>&1 && echo " done." || echo " failed."
-	fi
-
 	# Email installer questions and their answers to root on next boot.
 	prep_root_mail /tmp/i/$MODE.resp "$(hostname) $MODE response file"
 
