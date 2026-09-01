@@ -22,8 +22,8 @@ Or run the same sequence through the driver:
 ./bootstrap/cross-build.sh
 ```
 
-The build stops after staging userland and producing the kernel. Creating
-bootloaders, a disk image, or installation media is deliberately out of scope.
+The build stages userland and produces the kernel and amd64 bootloaders.
+Creating a disk image or installation media is deliberately out of scope.
 
 ## Output paths
 
@@ -34,6 +34,7 @@ bootstrap/obj/host/                 host LLVM and other host tools
 bootstrap/obj/target-amd64/         OpenBSD target objects
 bootstrap/obj/dest-amd64/           staged OpenBSD target userland
 bootstrap/obj/target-tools-amd64/   generated cross-build wrappers
+bootstrap/obj/stand-amd64/          collected bootloaders
 ```
 
 `bootstrap/tools/` contains host executables shared by the later stages.
@@ -72,8 +73,8 @@ under `bootstrap/platform/`. Linux uses libbsd in addition to its compatibility
 sources. FreeBSD and NetBSD use their native BSD libc interfaces and supply
 only the OpenBSD interfaces they lack.
 
-The host needs a C/C++ compiler, flex, Perl, pax, and standard archive and
-binary utilities. FreeBSD additionally needs bash, installed under
-`/usr/local/bin`. Linux additionally needs clang and libbsd development headers
-for the existing Linux bootstrap path. The host tool stage builds the OpenBSD
-clang/lld used for all target compilation.
+The host needs a C/C++ compiler, flex, Perl, pax, and GNU-compatible
+`objcopy`/`objdump` utilities. FreeBSD additionally needs bash and GNU binutils,
+normally installed under `/usr/local/bin`. Linux additionally needs clang and
+libbsd development headers for the existing Linux bootstrap path. The host tool
+stage builds the OpenBSD clang/lld used for all target compilation.
