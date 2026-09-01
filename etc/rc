@@ -696,9 +696,5 @@ echo -n 'starting local daemons:'
 start_daemon apmd sensorsd hotplugd watchdogd cron wsmoused xenodm
 echo '.'
 
-# Re-link the kernel, placing the objects in a random order.
-# Replace current with relinked kernel and inform root about it.
-/usr/libexec/reorder_kernel &
-
 date
 exit 0
