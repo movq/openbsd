@@ -118,7 +118,7 @@ ext4_ext_validate_block(struct inode *ip, uint64_t pblk, uint32_t count)
 
 	if (pblk <= fs->e2fs.e2fs_first_dblock ||
 	    pblk + count < pblk ||
-	    pblk + count > fs->e2fs.e2fs_bcount)
+	    pblk + count > fs->e2fs_bcount)
 		return (EIO);
 	return (0);
 }
@@ -436,10 +436,8 @@ ext4_ext_insert_index(struct inode *ip, struct ext4_extent_path *path,
 
 static int
 ext4_ext_alloc_meta(struct inode *ip, daddr_t lbn, uint64_t pref,
-    struct ucred *cred, uint32_t *pblk)
+    struct ucred *cred, daddr_t *pblk)
 {
-	if (pref > EXT4_MAX_BLOCKS)
-		pref = 0;
 	return (ext2fs_alloc(ip, lbn, pref, cred, pblk));
 }
 
@@ -468,7 +466,8 @@ ext4_ext_split(struct inode *ip, struct ext4_extent_path *path,
 	struct ext4_extent *extent;
 	struct m_ext2fs *fs = ip->i_e2fs;
 	struct buf *bp = NULL;
-	uint32_t *blocks, border, newblk, oldblk;
+	daddr_t *blocks, newblk, oldblk;
+	uint32_t border;
 	int depth, error, i, k, moved, nalloc, total;
 
 	depth = ext4_ext_inode_depth(ip);
@@ -572,7 +571,8 @@ ext4_ext_grow_indepth(struct inode *ip, struct ext4_extent_path *path,
 	struct ext4_extent_header *eh, *neh;
 	struct ext4_extent_index *index;
 	struct buf *bp;
-	uint32_t first_lbn, newblk;
+	daddr_t newblk;
+	uint32_t first_lbn;
 	int depth, error;
 
 	depth = ext4_ext_inode_depth(ip);
@@ -821,7 +821,7 @@ ext4_ext_get_blocks(struct inode *ip, daddr_t lbn, u_long max_blocks,
 	struct ext4_extent_path *path = NULL;
 	struct ext4_extent cached, newext, *extent;
 	uint64_t block, pref;
-	uint32_t newblk;
+	daddr_t newblk;
 	uint16_t len, rawlen;
 	int depth, error, type;
 

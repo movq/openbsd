@@ -50,7 +50,7 @@
  */
 struct ext2fs_inode_ext {
 	u_int32_t	ext2fs_last_lblk;	/* last logical blk allocated */
-	u_int32_t	ext2fs_last_blk;	/* last blk allocated on disk */
+	daddr_t		ext2fs_last_blk;	/* last blk allocated on disk */
 	u_int32_t	ext2fs_effective_uid;	/* effective inode uid */
 	u_int32_t	ext2fs_effective_gid;	/* effective inode gid */
 	struct ext4_extent_cache	ext2fs_extent_cache;

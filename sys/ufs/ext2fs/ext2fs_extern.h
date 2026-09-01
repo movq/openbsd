@@ -57,12 +57,12 @@ extern struct pool ext2fs_dinode_pool;	/* memory pool for dinodes */
 __BEGIN_DECLS
 
 /* ext2fs_alloc.c */
-int	ext2fs_alloc(struct inode *, u_int32_t, u_int32_t , struct ucred *,
-	    u_int32_t *);
+int	ext2fs_alloc(struct inode *, daddr_t, daddr_t, struct ucred *,
+	    daddr_t *);
 int	ext2fs_inode_alloc(struct inode *, mode_t mode, struct ucred *,
 	    struct vnode **);
 daddr_t	ext2fs_blkpref(struct inode *, u_int32_t, int, u_int32_t *);
-void	ext2fs_blkfree(struct inode *, u_int32_t);
+void	ext2fs_blkfree(struct inode *, daddr_t);
 void	ext2fs_inode_free(struct inode *, ufsino_t, mode_t);
 
 /* ext2fs_balloc.c */

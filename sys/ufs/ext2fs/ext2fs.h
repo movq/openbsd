@@ -60,10 +60,7 @@
 
 /*
  * Inodes are, like in UFS, 32-bit unsigned integers and therefore ufsino_t.
- * Disk blocks are 32-bit, if the filesystem isn't operating in 64-bit mode
- * (the incompatible ext4 64BIT flag).  More work is needed to properly use
- * daddr_t as the disk block data type on both BE and LE architectures.
- * XXX disk blocks are simply u_int32_t for now.
+ * Disk blocks are 64-bit when the incompatible ext4 64BIT flag is set.
  */
 
 /*
@@ -200,6 +197,10 @@ struct ext2fs {
 	u_int32_t  e2fs_sbchksum;	/* superblock checksum */
 };
 
+struct ext2_gd;
+#ifdef _KERNEL
+struct ext2_gd64;
+#endif
 
 /* in-memory data for ext2fs */
 struct m_ext2fs {
@@ -207,6 +208,9 @@ struct m_ext2fs {
 	u_char	e2fs_fsmnt[MAXMNTLEN];	/* name mounted on */
 	int8_t	e2fs_ronly;	/* mounted read-only flag */
 	int8_t	e2fs_fmod;	/* super block modified flag */
+	u_int64_t e2fs_bcount;	/* blocks count */
+	u_int64_t e2fs_rbcount;	/* reserved blocks count */
+	u_int64_t e2fs_fbcount;	/* free blocks count */
 	int32_t e2fs_fsize;	/* fragment size */
 	int32_t	e2fs_bsize;	/* block size */
 	int32_t e2fs_bshift;	/* ``lblkno'' calc of logical blkno */
@@ -218,7 +222,11 @@ struct m_ext2fs {
 	int32_t	e2fs_ipb;	/* number of inodes per block */
 	int32_t	e2fs_itpg;	/* number of inode table per group */
 	off_t	e2fs_maxfilesize;	/* depends on LARGE/HUGE flags */
+#ifdef _KERNEL
+	struct	ext2_gd64 *e2fs_gd; /* group descriptors */
+#else
 	struct	ext2_gd *e2fs_gd; /* group descriptors */
+#endif
 };
 
 static inline int
@@ -315,7 +323,8 @@ static const struct ext2_feature incompat[] = {
 #define EXT2F_ROCOMPAT_SUPP		(EXT2F_ROCOMPAT_SPARSE_SUPER | \
 					 EXT2F_ROCOMPAT_LARGE_FILE)
 #define EXT2F_INCOMPAT_SUPP		(EXT2F_INCOMPAT_FTYPE)
-#define EXT4F_RW_INCOMPAT_SUPP		(EXT2F_INCOMPAT_EXTENTS)
+#define EXT4F_RW_INCOMPAT_SUPP		(EXT2F_INCOMPAT_EXTENTS | \
+					 EXT2F_INCOMPAT_64BIT)
 #define EXT4F_RO_INCOMPAT_SUPP		(EXT2F_INCOMPAT_FLEX_BG | \
 					 EXT2F_INCOMPAT_META_BG | \
 					 EXT2F_INCOMPAT_RECOVER)
@@ -353,6 +362,101 @@ struct ext2_gd {
 	u_int16_t reserved;
 	u_int32_t reserved2[3];
 };
+
+#define E2FS_REV0_GD_SIZE	32
+
+#ifdef _KERNEL
+struct ext2_gd64 {
+	u_int32_t ext2bgd_b_bitmap;	/* blocks bitmap block */
+	u_int32_t ext2bgd_i_bitmap;	/* inodes bitmap block */
+	u_int32_t ext2bgd_i_tables;	/* inodes table block */
+	u_int16_t ext2bgd_nbfree;	/* number of free blocks */
+	u_int16_t ext2bgd_nifree;	/* number of free inodes */
+	u_int16_t ext2bgd_ndirs;	/* number of directories */
+	u_int16_t ext4bgd_flags;	/* block group flags */
+	u_int32_t ext4bgd_x_bitmap;	/* snapshot exclusion bitmap */
+	u_int16_t ext4bgd_b_bmap_csum;	/* block bitmap checksum */
+	u_int16_t ext4bgd_i_bmap_csum;	/* inode bitmap checksum */
+	u_int16_t ext4bgd_i_unused;	/* unused inode count */
+	u_int16_t ext4bgd_csum;		/* group descriptor checksum */
+	u_int32_t ext4bgd_b_bitmap_hi;	/* high bits of blocks bitmap */
+	u_int32_t ext4bgd_i_bitmap_hi;	/* high bits of inodes bitmap */
+	u_int32_t ext4bgd_i_tables_hi;	/* high bits of inode table */
+	u_int16_t ext4bgd_nbfree_hi;	/* high bits of free blocks */
+	u_int16_t ext4bgd_nifree_hi;	/* high bits of free inodes */
+	u_int16_t ext4bgd_ndirs_hi;	/* high bits of directories */
+	u_int16_t ext4bgd_i_unused_hi;	/* high bits of unused inodes */
+	u_int32_t ext4bgd_x_bitmap_hi;	/* high bits of exclusion bitmap */
+	u_int16_t ext4bgd_b_bmap_csum_hi; /* high block bitmap checksum */
+	u_int16_t ext4bgd_i_bmap_csum_hi; /* high inode bitmap checksum */
+	u_int32_t ext4bgd_reserved;
+};
+
+#define E2FS_64BIT_GD_SIZE	64
+
+static inline u_int64_t
+e2fs_gd_get_b_bitmap(struct ext2_gd64 *gd)
+{
+	return ((u_int64_t)letoh32(gd->ext4bgd_b_bitmap_hi) << 32 |
+	    letoh32(gd->ext2bgd_b_bitmap));
+}
+
+static inline u_int64_t
+e2fs_gd_get_i_bitmap(struct ext2_gd64 *gd)
+{
+	return ((u_int64_t)letoh32(gd->ext4bgd_i_bitmap_hi) << 32 |
+	    letoh32(gd->ext2bgd_i_bitmap));
+}
+
+static inline u_int64_t
+e2fs_gd_get_i_tables(struct ext2_gd64 *gd)
+{
+	return ((u_int64_t)letoh32(gd->ext4bgd_i_tables_hi) << 32 |
+	    letoh32(gd->ext2bgd_i_tables));
+}
+
+static inline u_int32_t
+e2fs_gd_get_nbfree(struct ext2_gd64 *gd)
+{
+	return ((u_int32_t)letoh16(gd->ext4bgd_nbfree_hi) << 16 |
+	    letoh16(gd->ext2bgd_nbfree));
+}
+
+static inline void
+e2fs_gd_set_nbfree(struct ext2_gd64 *gd, u_int32_t value)
+{
+	gd->ext2bgd_nbfree = htole16(value & 0xffff);
+	gd->ext4bgd_nbfree_hi = htole16(value >> 16);
+}
+
+static inline u_int32_t
+e2fs_gd_get_nifree(struct ext2_gd64 *gd)
+{
+	return ((u_int32_t)letoh16(gd->ext4bgd_nifree_hi) << 16 |
+	    letoh16(gd->ext2bgd_nifree));
+}
+
+static inline void
+e2fs_gd_set_nifree(struct ext2_gd64 *gd, u_int32_t value)
+{
+	gd->ext2bgd_nifree = htole16(value & 0xffff);
+	gd->ext4bgd_nifree_hi = htole16(value >> 16);
+}
+
+static inline u_int32_t
+e2fs_gd_get_ndirs(struct ext2_gd64 *gd)
+{
+	return ((u_int32_t)letoh16(gd->ext4bgd_ndirs_hi) << 16 |
+	    letoh16(gd->ext2bgd_ndirs));
+}
+
+static inline void
+e2fs_gd_set_ndirs(struct ext2_gd64 *gd, u_int32_t value)
+{
+	gd->ext2bgd_ndirs = htole16(value & 0xffff);
+	gd->ext4bgd_ndirs_hi = htole16(value >> 16);
+}
+#endif
 
 /*
  * If the EXT2F_ROCOMPAT_SPARSE_SUPER flag is set, the cylinder group has a
@@ -408,9 +512,15 @@ void e2fs_cg_bswap(struct ext2_gd *, struct ext2_gd *, int);
  *	 inode number to file system block address.
  */
 #define	ino_to_cg(fs, x)	(((x) - 1) / (fs)->e2fs.e2fs_ipg)
+#ifdef _KERNEL
+#define	ino_to_fsba(fs, x)						\
+	(e2fs_gd_get_i_tables(&(fs)->e2fs_gd[ino_to_cg(fs, x)]) + \
+	(((x)-1) % (fs)->e2fs.e2fs_ipg)/(fs)->e2fs_ipb)
+#else
 #define	ino_to_fsba(fs, x)						\
 	((fs)->e2fs_gd[ino_to_cg(fs, x)].ext2bgd_i_tables + \
 	(((x)-1) % (fs)->e2fs.e2fs_ipg)/(fs)->e2fs_ipb)
+#endif
 #define	ino_to_fsbo(fs, x)	(((x)-1) % (fs)->e2fs_ipb)
 
 /*
@@ -441,7 +551,7 @@ void e2fs_cg_bswap(struct ext2_gd *, struct ext2_gd *, int);
  * percentage to hold in reserve.
  */
 #define freespace(fs) \
-   ((fs)->e2fs.e2fs_fbcount - (fs)->e2fs.e2fs_rbcount)
+   ((fs)->e2fs_fbcount - (fs)->e2fs_rbcount)
 
 /*
  * Number of indirects in a file system block.
