@@ -26,6 +26,13 @@ typedef struct abd_stats {
 	kstat_named_t abdstat_scatter_chunk_waste;
 	kstat_named_t abdstat_linear_cnt;
 	kstat_named_t abdstat_linear_data_size;
+	kstat_named_t abdstat_chunk_pages;
+	kstat_named_t abdstat_chunk_cached;
+	kstat_named_t abdstat_reap_runs;
+	kstat_named_t abdstat_reap_items;
+	kstat_named_t abdstat_reap_pages;
+	kstat_named_t abdstat_reap_last_ns;
+	kstat_named_t abdstat_reap_max_ns;
 } abd_stats_t;
 
 static abd_stats_t abd_stats = {
@@ -35,6 +42,13 @@ static abd_stats_t abd_stats = {
 	{ "scatter_chunk_waste", KSTAT_DATA_UINT64 },
 	{ "linear_cnt", KSTAT_DATA_UINT64 },
 	{ "linear_data_size", KSTAT_DATA_UINT64 },
+	{ "chunk_pages", KSTAT_DATA_UINT64 },
+	{ "chunk_cached", KSTAT_DATA_UINT64 },
+	{ "reap_runs", KSTAT_DATA_UINT64 },
+	{ "reap_items", KSTAT_DATA_UINT64 },
+	{ "reap_pages", KSTAT_DATA_UINT64 },
+	{ "reap_last_ns", KSTAT_DATA_UINT64 },
+	{ "reap_max_ns", KSTAT_DATA_UINT64 },
 };
 
 struct {
@@ -225,6 +239,19 @@ abd_kstats_update(kstat_t *ksp, int rw)
 	    wmsum_value(&abd_sums.abdstat_linear_cnt);
 	as->abdstat_linear_data_size.value.ui64 =
 	    wmsum_value(&abd_sums.abdstat_linear_data_size);
+	as->abdstat_chunk_pages.value.ui64 = abd_chunk_cache->kc_pool.pr_npages;
+	as->abdstat_chunk_cached.value.ui64 =
+	    abd_chunk_cache->kc_pool.pr_cache_nitems;
+	as->abdstat_reap_runs.value.ui64 =
+	    atomic_load_64(&abd_chunk_cache->kc_reap_runs);
+	as->abdstat_reap_items.value.ui64 =
+	    atomic_load_64(&abd_chunk_cache->kc_reap_items);
+	as->abdstat_reap_pages.value.ui64 =
+	    atomic_load_64(&abd_chunk_cache->kc_reap_pages);
+	as->abdstat_reap_last_ns.value.ui64 =
+	    atomic_load_64(&abd_chunk_cache->kc_reap_last_ns);
+	as->abdstat_reap_max_ns.value.ui64 =
+	    atomic_load_64(&abd_chunk_cache->kc_reap_max_ns);
 	return (0);
 }
 

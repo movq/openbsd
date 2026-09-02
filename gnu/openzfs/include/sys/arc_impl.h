@@ -1075,6 +1075,8 @@ extern void arc_lowmem_fini(void);
 extern void arc_pressure_init(void);
 extern void arc_pressure_fini(void);
 extern void arc_pressure_processed(void);
+extern void arc_pressure_evicted(uint64_t, hrtime_t);
+extern void arc_pressure_evict_round(void);
 extern int arc_memory_throttle(spa_t *spa, uint64_t reserve, uint64_t txg);
 extern uint64_t arc_free_memory(void);
 extern int64_t arc_available_memory(void);

@@ -205,6 +205,17 @@ arc_pressure_processed(void)
 }
 
 void
+arc_pressure_evicted(uint64_t bytes, hrtime_t elapsed)
+{
+	(void) bytes, (void) elapsed;
+}
+
+void
+arc_pressure_evict_round(void)
+{
+}
+
+void
 arc_register_hotplug(void)
 {
 }

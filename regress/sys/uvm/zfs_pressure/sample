@@ -9,6 +9,9 @@ fi
 
 seconds=$1
 output=$2
+scriptdir=${0%/*}
+
+[[ $scriptdir != "$0" ]] || scriptdir=.
 
 [[ $seconds = +([0-9]) && $seconds -gt 0 ]] || exit 2
 
@@ -16,7 +19,10 @@ print -r -- \
     "time,arc_sec,uvm_sec,notify,req_bytes,last_pages,max_pages,"\
 "wake_ok,wake_miss,"\
 "processed,pending_b,arc_size,arc_target,avail_bytes,free_bytes,"\
-"evict_bytes,no_grow,uvm_free,swap_used,pdwoke,pdscans,pdfreed" >"$output"
+"evict_bytes,no_grow,first_notify,first_process,first_evict,evict_runs,"\
+"evict_rounds,evict_last_b,evict_last_ns,evict_max_ns,chunk_pages,"\
+"chunk_cached,reap_runs,reap_items,reap_pages,reap_last_ns,reap_max_ns,uvm_free,"\
+"swap_used,pdwoke,pdscans,pdfreed" >"$output"
 
 origin=$(date +%s)
 i=0
@@ -27,6 +33,9 @@ while (( i < seconds )); do
 		keys = "notify req_bytes last_pages max_pages wake_ok wake_miss"
 		keys = keys " processed pending_b arc_size arc_target"
 		keys = keys " avail_bytes free_bytes evict_bytes no_grow"
+		keys = keys " first_notify first_process first_evict"
+		keys = keys " evict_runs evict_rounds evict_last_b"
+		keys = keys " evict_last_ns evict_max_ns"
 		split(keys, names)
 	    }
 	    {
@@ -35,9 +44,27 @@ while (( i < seconds )); do
 		value[key] = $2
 	    }
 	    END {
-		for (i = 1; i <= 14; i++) {
+		for (i = 1; i <= 22; i++) {
 			printf "%s", value[names[i]]
-			if (i != 14)
+			if (i != 22)
+				printf ","
+		    }
+	    }')
+	abd=$("$scriptdir/decode_abdstats" | awk '
+	    BEGIN {
+		keys = "chunk_pages chunk_cached reap_runs reap_items"
+		keys = keys " reap_pages reap_last_ns reap_max_ns"
+		split(keys, names)
+	    }
+	    {
+		key = $1
+		sub(/:$/, "", key)
+		value[key] = $2
+	    }
+	    END {
+		for (i = 1; i <= 7; i++) {
+			printf "%s", value[names[i]]
+			if (i != 7)
 				printf ","
 		}
 	    }')
@@ -56,7 +83,7 @@ while (( i < seconds )); do
 	uvm_done=$SECONDS
 
 	print -r -- "$((origin + start)),$((arc_done - start)),"\
-"$((uvm_done - arc_done)),$arc,$uvm" >>"$output"
+"$((uvm_done - arc_done)),$arc,$abd,$uvm" >>"$output"
 
 	i=$((i + 1))
 	sleep 1
