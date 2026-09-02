@@ -77,7 +77,9 @@ sys/freebsd_crypto.h     sys/pcpu.h               sys/sbuf.h
   payloads are accepted but ignored by the mode-only authorization layer.
 - Native ZFS encryption fails closed with `EOPNOTSUPP`; unencrypted datasets
   retain the common on-disk feature handling.  Channel programs are likewise
-  unavailable in the initial port.
+  unavailable in the initial port.  Snapshot destruction, which upstream
+  implements with an internal channel program, uses an OpenBSD-native atomic
+  DSL batch sync task instead.
 - Disk vdevs open absolute `/dev` paths with `KERNELPATH`, take capacity and
   logical sector size from the disklabel, and conservatively use at least 4K
   physical ashift.  Ordinary discard is supported; secure discard is not.
@@ -106,6 +108,9 @@ sys/freebsd_crypto.h     sys/pcpu.h               sys/sbuf.h
   by OpenBSD's static WITNESS classes; DIAGNOSTIC ownership assertions remain
   active for them.  The dnode dbuf-list lock uses this facility because a
   ZPL dnode may precede a metaslab lock while a distinct MOS dnode follows it.
+  Main ZAP locks remain fully witnessed, but MOS and dataset ZAPs use separate
+  classes: only dataset ZAP growth enters DSL directory space accounting,
+  while MOS ZAP updates may already hold a DSL directory lock.
   Znode vnode locks likewise retain ownership checking but not WITNESS order:
   ordinary VOP user-buffer faults and `vnd(4)` backing I/O establish opposite
   shared-lock class edges with process maps.
