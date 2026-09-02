@@ -344,7 +344,7 @@ static struct evict_arg *arc_evict_arg;
 /*
  * Count of bytes evicted since boot.
  */
-static uint64_t arc_evict_count;
+static volatile uint64_t arc_evict_count;
 
 /*
  * List of arc_evict_waiter_t's, representing threads waiting for the
@@ -4008,7 +4008,7 @@ arc_evict_state_impl(multilist_t *ml, int idx, arc_buf_hdr_t *marker,
 	 * 1/64th of RAM).  See the comments in arc_wait_for_eviction().
 	 */
 	mutex_enter(&arc_evict_lock);
-	arc_evict_count += real_evicted;
+	atomic_add_64(&arc_evict_count, real_evicted);
 
 	if (arc_free_memory() > arc_sys_free / 2) {
 		arc_evict_waiter_t *aw;
@@ -4774,13 +4774,13 @@ arc_reclaim_needed(void)
  * caller.  Keep the largest outstanding request: pressure notifications are
  * observations of the current deficit, not independent amounts to add up.
  */
-void
+boolean_t
 arc_reclaim_async(uint64_t to_free)
 {
 	uint64_t old;
 
 	if (to_free == 0)
-		return;
+		return (B_FALSE);
 
 	old = atomic_load_64(&arc_reap_requested);
 	while (old < to_free) {
@@ -4792,9 +4792,27 @@ arc_reclaim_async(uint64_t to_free)
 		old = observed;
 	}
 
-	/* arc_lowmem_init() precedes creation of the reap thread. */
+	/*
+	 * arc_lowmem_init() precedes creation of the reap thread.  Do not wait
+	 * for the zthr state lock here: this path may run in the page daemon,
+	 * and the recorded request remains visible to the periodic check if
+	 * the wakeup races with the worker.
+	 */
 	if (arc_reap_zthr != NULL)
-		zthr_wakeup(arc_reap_zthr);
+		return (zthr_wakeup_nowait(arc_reap_zthr));
+	return (B_FALSE);
+}
+
+uint64_t
+arc_reclaim_pending(void)
+{
+	return (atomic_load_64(&arc_reap_requested));
+}
+
+uint64_t
+arc_evict_bytes(void)
+{
+	return (atomic_load_64(&arc_evict_count));
 }
 
 void
@@ -5005,6 +5023,7 @@ arc_reap_cb(void *arg, zthr_t *zthr)
 	 */
 	if (requested != 0) {
 		ARCSTAT_BUMP(arcstat_memory_indirect_count);
+		arc_pressure_processed();
 		can_free = arc_c - arc_c_min;
 		arc_reduce_target_size(requested +
 		    (MAX(can_free, 0) >> arc_shrink_shift));
@@ -8132,6 +8151,9 @@ arc_init(void)
 	    arc_evict_cb_check, arc_evict_cb, NULL, SEC2NSEC(1), defclsyspri);
 	arc_reap_zthr = zthr_create_timer("arc_reap",
 	    arc_reap_cb_check, arc_reap_cb, NULL, SEC2NSEC(1), minclsyspri);
+#ifdef _KERNEL
+	arc_pressure_init();
+#endif
 
 	arc_warm = B_FALSE;
 
@@ -8180,6 +8202,7 @@ arc_fini(void)
 
 #ifdef _KERNEL
 	arc_lowmem_fini();
+	arc_pressure_fini();
 #endif /* _KERNEL */
 
 	/* Wait for any background flushes */

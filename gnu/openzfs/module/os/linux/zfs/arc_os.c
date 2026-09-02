@@ -370,6 +370,21 @@ arc_lowmem_fini(void)
 	arc_shrinker = NULL;
 }
 
+void
+arc_pressure_init(void)
+{
+}
+
+void
+arc_pressure_fini(void)
+{
+}
+
+void
+arc_pressure_processed(void)
+{
+}
+
 int
 param_set_arc_u64(const char *buf, zfs_kernel_param_t *kp)
 {

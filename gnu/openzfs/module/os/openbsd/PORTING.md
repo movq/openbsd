@@ -47,7 +47,12 @@ sys/freebsd_crypto.h     sys/pcpu.h               sys/sbuf.h
   backoff, the UVM page daemon sends any remaining deficit to ARC without
   waiting for reclamation.  ARC coalesces these notifications and wakes its
   reap thread to reduce the target and start eviction; the common one-second
-  pressure poll remains as a fallback.
+  pressure poll remains as a fallback.  The native
+  `zfs.misc:0:arcpressure:0` kstat exposes notification, wakeup, ARC target,
+  eviction, and UVM availability data using short native keys.
+  Its pressure-path counters and eviction total are read atomically, and
+  `arc_size` reports the aggregate upper bound so sampling does not allocate
+  or wait on ARC accounting and eviction locks.
 - ZFS is statically registered as local filesystem type `zfs`, type number 20,
   with a fixed `struct zfs_args` containing the dataset name.  The SPA hostname
   adapter is named `zfs_utsname()` because the kernel already defines an
