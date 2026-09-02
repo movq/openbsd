@@ -1,0 +1,636 @@
+#!/bin/ksh
+#
+# Exercise an already imported test pool.  This deliberately does not create,
+# import, export, or destroy the pool itself.
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+export PATH
+
+PROG=${0##*/}
+POOL=
+DURATION=8h
+CHECKPOINT_INTERVAL=15m
+STATUS_INTERVAL=60s
+LOG_ROOT=/var/log/zfs-soak
+MOUNT_ROOT=/mnt
+FIO_SIZE=512m
+FIO_JOBS=4
+PATH_WORKERS=2
+MMAP_ITERATIONS=500
+MMAP_BIN=/usr/obj/regress/sys/uvm/zfs_mmap/zfs_mmap
+KEEP=0
+DO_SCRUB=1
+
+CREATED=0
+SUCCESS=0
+STOPPING=0
+INTERRUPTED=0
+WORKERS=
+ACTIVE_SNAP=
+ACTIVE_CLONE=
+LOGDIR=
+DMESG_PREVIOUS=
+
+usage()
+{
+	cat >&2 <<-EOF
+	usage: $PROG -p pool [-t duration] [-i interval] [-s interval]
+	    [-l log-root] [-M mount-root] [-f fio-size] [-j fio-jobs]
+	    [-w pathname-workers] [-n mmap-iterations] [-m mmap-binary]
+	    [-k] [-S]
+
+	    -p pool       already imported, healthy test pool (required)
+	    -t duration   workload duration; suffix s, m, h, or d (default: 8h)
+	    -i interval   snapshot checkpoint interval (default: 15m)
+	    -s interval   pool status interval (default: 60s)
+	    -l directory  root for logs on non-ZFS storage
+	    -M directory  root for the temporary mountpoint (default: /mnt)
+	    -f size       size of each fio job file (default: 512m)
+	    -j jobs       number of parallel fio jobs (default: 4)
+	    -w workers    number of pathname churn workers (default: 2)
+	    -n iterations zfs_mmap race iterations per pass (default: 500)
+	    -m path       zfs_mmap executable
+	    -k            keep datasets after a successful run
+	    -S            skip the final pool scrub
+	EOF
+	exit 2
+}
+
+log()
+{
+	typeset line
+
+	line="$(date '+%Y-%m-%d %H:%M:%S') $*"
+	print -r -- "$line"
+	if [[ -n $LOGDIR ]]; then
+		print -r -- "$line" >>"$LOGDIR/run.log"
+	fi
+}
+
+die()
+{
+	log "FAIL: $*"
+	exit 1
+}
+
+duration_seconds()
+{
+	typeset value=$1 number suffix multiplier
+
+	case $value in
+	''|*[!0-9smhd]*)
+		return 1
+		;;
+	esac
+	case $value in
+	*[smhd])
+		suffix=${value#${value%?}}
+		number=${value%?}
+		;;
+	*)
+		suffix=s
+		number=$value
+		;;
+	esac
+	[[ -n $number && $number != *[!0-9]* ]] || return 1
+	case $suffix in
+	s)	multiplier=1 ;;
+	m)	multiplier=60 ;;
+	h)	multiplier=3600 ;;
+	d)	multiplier=86400 ;;
+	*)	return 1 ;;
+	esac
+	(( number > 0 )) || return 1
+	print $((number * multiplier))
+}
+
+positive_integer()
+{
+	[[ -n $1 && $1 != *[!0-9]* ]] && (( $1 > 0 ))
+}
+
+fio_size_valid()
+{
+	typeset value=$1 number
+
+	case $value in
+	*[kKmMgGtT])
+		number=${value%?}
+		;;
+	*)
+		number=$value
+		;;
+	esac
+	[[ -n $number && $number != *[!0-9]* ]] && (( number > 0 ))
+}
+
+kill_descendants()
+{
+	typeset parent=$1 child
+
+	for child in $(pgrep -P "$parent" 2>/dev/null); do
+		kill_descendants "$child"
+		kill -TERM "$child" 2>/dev/null
+	done
+}
+
+stop_workers()
+{
+	typeset entry pid
+
+	(( STOPPING )) && return
+	STOPPING=1
+	rm -f "$RUNFLAG"
+	for entry in $WORKERS; do
+		pid=${entry%%:*}
+		kill_descendants "$pid"
+		kill -TERM "$pid" 2>/dev/null
+	done
+	sleep 2
+	for entry in $WORKERS; do
+		pid=${entry%%:*}
+		kill_descendants "$pid"
+		kill -KILL "$pid" 2>/dev/null
+	done
+	for entry in $WORKERS; do
+		pid=${entry%%:*}
+		wait "$pid" 2>/dev/null
+	done
+}
+
+cleanup()
+{
+	typeset status=$?
+
+	trap - EXIT INT TERM HUP
+	stop_workers
+
+	if (( CREATED )); then
+		if (( status == 0 && SUCCESS )); then
+			if (( KEEP )); then
+				log "retained successful dataset: $ROOT_DS"
+				log "retained mountpoint: $MOUNTPOINT"
+			else
+				if zfs destroy -r "$ROOT_DS" >>"$LOGDIR/cleanup.log" 2>&1;
+				    then
+					rmdir "$MOUNTPOINT" 2>/dev/null
+					log "destroyed successful run dataset: $ROOT_DS"
+				else
+					log "WARNING: could not destroy $ROOT_DS; retained for cleanup"
+					status=1
+				fi
+			fi
+		else
+			log "preserving failed or interrupted dataset: $ROOT_DS"
+			log "preserving mountpoint: $MOUNTPOINT"
+			[[ -n $ACTIVE_SNAP ]] &&
+			    log "preserving checkpoint snapshot: $ROOT_DS@$ACTIVE_SNAP"
+			[[ -n $ACTIVE_CLONE ]] &&
+			    log "preserving checkpoint clone: $ACTIVE_CLONE"
+		fi
+	elif [[ -n $MOUNTPOINT ]]; then
+		rmdir "$MOUNTPOINT" 2>/dev/null
+	fi
+	log "logs: $LOGDIR"
+	exit "$status"
+}
+
+interrupted()
+{
+	INTERRUPTED=1
+	log "received signal; stopping and preserving the run"
+	exit 130
+}
+
+capture_pool_status()
+{
+	typeset seq=$1 status_file dmesg_file kernel_new health
+
+	status_file="$LOGDIR/status/zpool-status-$seq"
+	dmesg_file="$LOGDIR/status/dmesg-$seq"
+	kernel_new="$LOGDIR/status/dmesg-new-$seq"
+	zpool status -p "$POOL" >"$status_file" 2>&1 || return 1
+	zpool iostat -p "$POOL" >"$LOGDIR/status/zpool-iostat-$seq" 2>&1 ||
+	    return 1
+	dmesg >"$dmesg_file" 2>&1 || return 1
+
+	if [[ -n $DMESG_PREVIOUS ]]; then
+		diff -u "$DMESG_PREVIOUS" "$dmesg_file" 2>/dev/null |
+		    awk '/^\+[^+]/ { sub(/^\+/, ""); print }' >"$kernel_new"
+	else
+		: >"$kernel_new" || return 1
+	fi
+	DMESG_PREVIOUS=$dmesg_file
+	if grep -Eq 'panic:|^Stopped at |VERIFY|ASSERT' "$kernel_new"; then
+		log "new kernel diagnostic (see $kernel_new)"
+		return 1
+	fi
+
+	health=$(zpool list -H -o health "$POOL" 2>/dev/null) || return 1
+	[[ $health == ONLINE ]] || {
+		log "pool health is $health (see $status_file)"
+		return 1
+	}
+	awk '
+	    $1 == "NAME" { config = 1; next }
+	    config && $1 == "errors:" { exit }
+	    config && NF >= 5 &&
+	        $(NF - 2) ~ /^[0-9]+$/ &&
+	        $(NF - 1) ~ /^[0-9]+$/ &&
+	        $NF ~ /^[0-9]+$/ {
+		    if ($(NF - 2) != 0 || $(NF - 1) != 0 || $NF != 0)
+			    bad = 1
+	    }
+	    END { exit bad }
+	' "$status_file" || {
+		log "non-zero pool or vdev error counter (see $status_file)"
+		return 1
+	}
+	grep -q 'errors: No known data errors' "$status_file" || {
+		log "pool reports known data errors (see $status_file)"
+		return 1
+	}
+	return 0
+}
+
+create_canary()
+{
+	typeset i count mode offset
+
+	mkdir -p "$CANARY_MOUNT/manifest/ordinary" \
+	    "$CANARY_MOUNT/manifest/links" || return 1
+	i=0
+	while (( i < 16 )); do
+		count=$((i % 8 + 1))
+		dd if=/dev/urandom \
+		    of="$CANARY_MOUNT/manifest/ordinary/file $i.bin" \
+		    bs=131072 count="$count" 2>/dev/null || return 1
+		mode=$(printf '%o' $((0600 + i % 4 * 011)))
+		chmod "$mode" \
+		    "$CANARY_MOUNT/manifest/ordinary/file $i.bin" || return 1
+		(( i += 1 ))
+	done
+	ln "$CANARY_MOUNT/manifest/ordinary/file 0.bin" \
+	    "$CANARY_MOUNT/manifest/links/hard link" || return 1
+	ln -s "../ordinary/file 1.bin" \
+	    "$CANARY_MOUNT/manifest/links/symbolic link" || return 1
+	mkfifo "$CANARY_MOUNT/manifest/links/named pipe" || return 1
+	chmod 0440 "$CANARY_MOUNT/manifest/links/named pipe" || return 1
+
+	dd if=/dev/urandom of="$SPARSE_SAMPLE" bs=4096 count=1 2>/dev/null ||
+	    return 1
+	dd if=/dev/zero of="$ZERO_SAMPLE" bs=4096 count=1 2>/dev/null ||
+	    return 1
+	SPARSE_HASH=$(sha256 -q "$SPARSE_SAMPLE") || return 1
+	ZERO_HASH=$(sha256 -q "$ZERO_SAMPLE") || return 1
+	dd if=/dev/zero of="$CANARY_MOUNT/sparse-4g" bs=4096 count=0 \
+	    seek=1048576 2>/dev/null || return 1
+	for offset in 0 257 65537 524287 1048575; do
+		dd if="$SPARSE_SAMPLE" of="$CANARY_MOUNT/sparse-4g" bs=4096 \
+		    seek="$offset" count=1 conv=notrunc 2>/dev/null || return 1
+	done
+	chmod -R a-w "$CANARY_MOUNT/manifest" || return 1
+	mtree -c -n \
+	    -k type,mode,uid,gid,nlink,size,link,sha256digest \
+	    -p "$CANARY_MOUNT/manifest" >"$CANARY_SPEC" || return 1
+	return 0
+}
+
+validate_canary()
+{
+	typeset root=$1 tag=$2 size blocks offset hash
+
+	mtree -f "$CANARY_SPEC" -p "$root/manifest" \
+	    >"$LOGDIR/checkpoints/mtree-$tag.log" 2>&1 || return 1
+	set -- $(stat -f '%z %b' "$root/sparse-4g") || return 1
+	size=$1
+	blocks=$2
+	[[ $size == 4294967296 ]] || {
+		log "$tag sparse size is $size, expected 4294967296"
+		return 1
+	}
+	(( blocks > 0 && blocks < 131072 )) || {
+		log "$tag sparse allocation is $blocks blocks, expected 1..131071"
+		return 1
+	}
+	for offset in 0 257 65537 524287 1048575; do
+		hash=$(dd if="$root/sparse-4g" bs=4096 skip="$offset" count=1 \
+		    2>/dev/null | sha256 -q) || return 1
+		[[ $hash == "$SPARSE_HASH" ]] || {
+			log "$tag sparse data mismatch at block $offset"
+			return 1
+		}
+	done
+	for offset in 1 1024 700000; do
+		hash=$(dd if="$root/sparse-4g" bs=4096 skip="$offset" count=1 \
+		    2>/dev/null | sha256 -q) || return 1
+		[[ $hash == "$ZERO_HASH" ]] || {
+			log "$tag sparse hole mismatch at block $offset"
+			return 1
+		}
+	done
+	return 0
+}
+
+fio_worker()
+{
+	typeset cycle=0
+
+	while [[ -f $RUNFLAG ]]; do
+		print -r -- "fio cycle $cycle started $(date)"
+		fio --name=zfs-soak --directory="$FIO_MOUNT" \
+		    --filename_format='fio.$jobnum' --rw=randwrite \
+		    --ioengine=psync --thread=1 --numjobs="$FIO_JOBS" \
+		    --size="$FIO_SIZE" \
+		    --bssplit=4k/35:16k/25:128k/25:1m/15 \
+		    --verify=crc32c --do_verify=1 --verify_fatal=1 \
+		    --verify_dump=1 --verify_state_save=0 \
+		    --randrepeat=0 --refill_buffers=1 \
+		    --fsync=64 --end_fsync=1 --unlink=1 \
+		    --group_reporting --eta=never || return 1
+		(( cycle += 1 ))
+		print "$cycle" >"$LOGDIR/fio.completed"
+	done
+	return 0
+}
+
+path_worker()
+{
+	typeset worker=$1 cycle=0 tree moved spec i count mode
+
+	while [[ -f $RUNFLAG ]]; do
+		tree="$PATH_MOUNT/work $worker.$cycle"
+		moved="$PATH_MOUNT/renamed $worker.$cycle"
+		spec="$PATH_MOUNT/.mtree.$worker.$cycle"
+		mkdir -p "$tree" || return 1
+		i=0
+		while (( i < 12 )); do
+			mkdir -p "$tree/directory $i/nested" || return 1
+			count=$((i % 6 + 1))
+			dd if=/dev/urandom \
+			    of="$tree/directory $i/payload $i.bin" \
+			    bs=4096 count="$count" 2>/dev/null || return 1
+			mode=$(printf '%o' $((0600 + i % 4 * 011)))
+			chmod "$mode" \
+			    "$tree/directory $i/payload $i.bin" || return 1
+			ln "$tree/directory $i/payload $i.bin" \
+			    "$tree/directory $i/nested/hard link $i" || return 1
+			ln -s "../payload $i.bin" \
+			    "$tree/directory $i/nested/symbolic link $i" ||
+			    return 1
+			mkfifo "$tree/directory $i/nested/fifo $i" || return 1
+			(( i += 1 ))
+		done
+		mtree -c -n \
+		    -k type,mode,uid,gid,nlink,size,link,sha256digest \
+		    -p "$tree" >"$spec" || return 1
+		mtree -f "$spec" -p "$tree" || return 1
+		mv "$tree" "$moved" || return 1
+		mtree -f "$spec" -p "$moved" || return 1
+		rm -rf "$moved" || return 1
+		rm -f "$spec" || return 1
+		(( cycle += 1 ))
+		print "$cycle" >"$LOGDIR/path-$worker.completed"
+	done
+	return 0
+}
+
+mmap_worker()
+{
+	typeset cycle=0
+
+	while [[ -f $RUNFLAG ]]; do
+		"$MMAP_BIN" -d "$MMAP_MOUNT" -n "$MMAP_ITERATIONS" || return 1
+		(( cycle += 1 ))
+		print "$cycle" >"$LOGDIR/mmap.completed"
+	done
+	return 0
+}
+
+start_workers()
+{
+	typeset worker pid
+
+	: >"$RUNFLAG" || return 1
+	fio_worker >"$LOGDIR/worker-fio.log" 2>&1 &
+	pid=$!
+	WORKERS="$WORKERS $pid:fio"
+	worker=1
+	while (( worker <= PATH_WORKERS )); do
+		path_worker "$worker" >"$LOGDIR/worker-path-$worker.log" 2>&1 &
+		pid=$!
+		WORKERS="$WORKERS $pid:path-$worker"
+		(( worker += 1 ))
+	done
+	mmap_worker >"$LOGDIR/worker-mmap.log" 2>&1 &
+	pid=$!
+	WORKERS="$WORKERS $pid:mmap"
+	return 0
+}
+
+check_workers()
+{
+	typeset entry pid name status
+
+	for entry in $WORKERS; do
+		pid=${entry%%:*}
+		name=${entry#*:}
+		if ! kill -0 "$pid" 2>/dev/null; then
+			wait "$pid"
+			status=$?
+			log "worker $name exited unexpectedly with status $status"
+			return 1
+		fi
+	done
+	return 0
+}
+
+checkpoint()
+{
+	typeset seq=$1 snap clone clone_mount tag
+
+	snap=$(printf 'checkpoint-%06d' "$seq")
+	clone="$ROOT_DS/check-$seq"
+	clone_mount="$MOUNTPOINT/.check-$seq"
+	tag=$(printf '%06d' "$seq")
+	ACTIVE_SNAP=$snap
+	ACTIVE_CLONE=
+
+	log "checkpoint $seq: taking recursive snapshot"
+	zfs snapshot -r "$ROOT_DS@$snap" \
+	    >>"$LOGDIR/checkpoints/zfs-$tag.log" 2>&1 || return 1
+	ACTIVE_CLONE=$clone
+	zfs clone -o mountpoint="$clone_mount" "$CANARY_DS@$snap" "$clone" \
+	    >>"$LOGDIR/checkpoints/zfs-$tag.log" 2>&1 || return 1
+	validate_canary "$clone_mount" "clone-$tag" || return 1
+	zfs list -r -t filesystem,snapshot -o name,used,refer,mountpoint \
+	    "$ROOT_DS" >"$LOGDIR/checkpoints/zfs-list-$tag" 2>&1 || return 1
+	zfs destroy "$clone" >>"$LOGDIR/checkpoints/zfs-$tag.log" 2>&1 ||
+	    return 1
+	ACTIVE_CLONE=
+	rmdir "$clone_mount" 2>/dev/null
+	zfs destroy -r "$ROOT_DS@$snap" \
+	    >>"$LOGDIR/checkpoints/zfs-$tag.log" 2>&1 || return 1
+	ACTIVE_SNAP=
+	log "checkpoint $seq: canary clone verified"
+	return 0
+}
+
+while getopts "p:t:i:s:l:M:f:j:w:n:m:kS" option; do
+	case $option in
+	p)	POOL=$OPTARG ;;
+	t)	DURATION=$OPTARG ;;
+	i)	CHECKPOINT_INTERVAL=$OPTARG ;;
+	s)	STATUS_INTERVAL=$OPTARG ;;
+	l)	LOG_ROOT=$OPTARG ;;
+	M)	MOUNT_ROOT=$OPTARG ;;
+	f)	FIO_SIZE=$OPTARG ;;
+	j)	FIO_JOBS=$OPTARG ;;
+	w)	PATH_WORKERS=$OPTARG ;;
+	n)	MMAP_ITERATIONS=$OPTARG ;;
+	m)	MMAP_BIN=$OPTARG ;;
+	k)	KEEP=1 ;;
+	S)	DO_SCRUB=0 ;;
+	*)	usage ;;
+	esac
+done
+shift $((OPTIND - 1))
+(( $# == 0 )) || usage
+[[ -n $POOL ]] || usage
+
+DURATION_SECONDS=$(duration_seconds "$DURATION") ||
+	die "invalid duration: $DURATION"
+CHECKPOINT_SECONDS=$(duration_seconds "$CHECKPOINT_INTERVAL") ||
+	die "invalid checkpoint interval: $CHECKPOINT_INTERVAL"
+STATUS_SECONDS=$(duration_seconds "$STATUS_INTERVAL") ||
+	die "invalid status interval: $STATUS_INTERVAL"
+positive_integer "$FIO_JOBS" || die "invalid fio job count: $FIO_JOBS"
+positive_integer "$PATH_WORKERS" ||
+	die "invalid pathname worker count: $PATH_WORKERS"
+positive_integer "$MMAP_ITERATIONS" ||
+	die "invalid mmap iteration count: $MMAP_ITERATIONS"
+fio_size_valid "$FIO_SIZE" || die "invalid fio size: $FIO_SIZE"
+case $POOL in
+-*|*/*|*@*|*' '*)
+	die "pool must be a pool name, not a dataset or option: $POOL"
+	;;
+esac
+
+[[ $(id -u) == 0 ]] || die "must be run as root"
+for command in fio zfs zpool mtree sha256 stat dd awk grep pgrep dmesg \
+    diff; do
+	command -v "$command" >/dev/null 2>&1 ||
+	    die "required command not found: $command"
+done
+[[ -x $MMAP_BIN ]] || die "zfs_mmap executable not found: $MMAP_BIN"
+
+listed_pool=$(zpool list -H -o name "$POOL" 2>/dev/null) ||
+	die "pool is not imported: $POOL"
+[[ $listed_pool == "$POOL" ]] || die "pool name mismatch: $listed_pool"
+zpool status -p "$POOL" 2>/dev/null | grep -Eq \
+    'scan: .* (in progress|resilvering)' &&
+    die "pool already has a scrub or resilver in progress"
+
+RUN_ID="$(date '+%Y%m%d-%H%M%S').$$"
+ROOT_DS="$POOL/zfs-soak-$RUN_ID"
+MOUNTPOINT="$MOUNT_ROOT/zfs-soak-$RUN_ID"
+CANARY_DS="$ROOT_DS/canary"
+FIO_DS="$ROOT_DS/fio"
+PATH_DS="$ROOT_DS/pathnames"
+MMAP_DS="$ROOT_DS/mmap"
+CANARY_MOUNT="$MOUNTPOINT/canary"
+FIO_MOUNT="$MOUNTPOINT/fio"
+PATH_MOUNT="$MOUNTPOINT/pathnames"
+MMAP_MOUNT="$MOUNTPOINT/mmap"
+LOGDIR="$LOG_ROOT/$RUN_ID"
+RUNFLAG="$LOGDIR/running"
+CANARY_SPEC="$LOGDIR/canary.mtree"
+SPARSE_SAMPLE="$LOGDIR/sparse.sample"
+ZERO_SAMPLE="$LOGDIR/zero.sample"
+
+umask 077
+mkdir -p "$LOGDIR/status" "$LOGDIR/checkpoints" "$MOUNT_ROOT" ||
+	die "cannot create log or mount directory"
+trap cleanup EXIT
+trap interrupted INT TERM HUP
+
+log "run id: $RUN_ID"
+log "pool: $POOL"
+log "dataset: $ROOT_DS"
+log "mountpoint: $MOUNTPOINT"
+log "duration: $DURATION_SECONDS seconds"
+log "fio: $FIO_JOBS jobs of $FIO_SIZE"
+
+capture_pool_status preflight || die "pool is not initially healthy"
+
+mkdir "$MOUNTPOINT" || die "cannot create mountpoint: $MOUNTPOINT"
+zfs create -o mountpoint="$MOUNTPOINT" -o atime=off "$ROOT_DS" \
+    >>"$LOGDIR/setup.log" 2>&1 || die "cannot create root dataset"
+CREATED=1
+zfs create -o mountpoint="$CANARY_MOUNT" -o compression=on "$CANARY_DS" \
+    >>"$LOGDIR/setup.log" 2>&1 || die "cannot create canary dataset"
+zfs create -o mountpoint="$FIO_MOUNT" -o compression=on "$FIO_DS" \
+    >>"$LOGDIR/setup.log" 2>&1 || die "cannot create fio dataset"
+zfs create -o mountpoint="$PATH_MOUNT" -o recordsize=16K "$PATH_DS" \
+    >>"$LOGDIR/setup.log" 2>&1 || die "cannot create pathname dataset"
+zfs create -o mountpoint="$MMAP_MOUNT" -o recordsize=16K "$MMAP_DS" \
+    >>"$LOGDIR/setup.log" 2>&1 || die "cannot create mmap dataset"
+
+create_canary || die "cannot create static canary"
+validate_canary "$CANARY_MOUNT" live-initial ||
+	die "initial canary validation failed"
+start_workers || die "cannot start workload workers"
+
+START_SECONDS=$SECONDS
+NEXT_STATUS=0
+NEXT_CHECKPOINT=0
+STATUS_SEQ=0
+CHECKPOINT_SEQ=0
+
+while :; do
+	ELAPSED=$((SECONDS - START_SECONDS))
+	(( ELAPSED >= DURATION_SECONDS )) && break
+	check_workers || die "workload worker failed"
+	if (( ELAPSED >= NEXT_STATUS )); then
+		STATUS_SEQ=$((STATUS_SEQ + 1))
+		capture_pool_status "$(printf '%06d' "$STATUS_SEQ")" ||
+		    die "pool health check failed"
+		NEXT_STATUS=$((ELAPSED + STATUS_SECONDS))
+	fi
+	if (( ELAPSED >= NEXT_CHECKPOINT )); then
+		CHECKPOINT_SEQ=$((CHECKPOINT_SEQ + 1))
+		checkpoint "$CHECKPOINT_SEQ" || die "checkpoint validation failed"
+		NEXT_CHECKPOINT=$((ELAPSED + CHECKPOINT_SECONDS))
+	fi
+	sleep 5
+done
+
+log "workload duration reached; stopping workers"
+stop_workers
+for marker in "$LOGDIR/fio.completed" "$LOGDIR/mmap.completed"; do
+	[[ -s $marker ]] || die "worker completed no verified cycle: ${marker##*/}"
+done
+worker=1
+while (( worker <= PATH_WORKERS )); do
+	[[ -s "$LOGDIR/path-$worker.completed" ]] ||
+	    die "pathname worker $worker completed no verified cycle"
+	(( worker += 1 ))
+done
+
+capture_pool_status final-workload || die "final workload health check failed"
+CHECKPOINT_SEQ=$((CHECKPOINT_SEQ + 1))
+checkpoint "$CHECKPOINT_SEQ" || die "final checkpoint validation failed"
+
+if (( DO_SCRUB )); then
+	log "starting final scrub; this may extend the total run time"
+	zpool scrub -w "$POOL" >>"$LOGDIR/scrub.log" 2>&1 ||
+	    die "final scrub failed"
+	capture_pool_status final-scrub || die "post-scrub health check failed"
+	log "final scrub completed with no reported errors"
+else
+	log "final scrub skipped by request"
+fi
+
+SUCCESS=1
+log "PASS: all workers, checkpoints, pool checks, and requested scrub passed"
+exit 0

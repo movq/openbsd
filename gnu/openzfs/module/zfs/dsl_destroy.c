@@ -586,6 +586,79 @@ dsl_destroy_snapshot_sync(void *arg, dmu_tx_t *tx)
 	dsl_dataset_rele(ds, FTAG);
 }
 
+#ifdef __OpenBSD__
+typedef struct dsl_destroy_snapshots_arg {
+	nvlist_t	*ddsa_snaps;
+	nvlist_t	*ddsa_errors;
+	boolean_t	ddsa_defer;
+} dsl_destroy_snapshots_arg_t;
+
+static int
+dsl_destroy_snapshots_check(void *arg, dmu_tx_t *tx)
+{
+	dsl_destroy_snapshots_arg_t *ddsa = arg;
+	nvpair_t *pair;
+	int error, rv = 0;
+
+	for (pair = nvlist_next_nvpair(ddsa->ddsa_snaps, NULL);
+	    pair != NULL; pair = nvlist_next_nvpair(ddsa->ddsa_snaps, pair)) {
+		dsl_destroy_snapshot_arg_t snap = {
+			.ddsa_name = nvpair_name(pair),
+			.ddsa_defer = ddsa->ddsa_defer,
+		};
+
+		error = dsl_destroy_snapshot_check(&snap, tx);
+		if (error != 0) {
+			fnvlist_add_int32(ddsa->ddsa_errors,
+			    nvpair_name(pair), error);
+			if (rv == 0)
+				rv = error;
+		}
+	}
+	return (rv);
+}
+
+static void
+dsl_destroy_snapshots_sync(void *arg, dmu_tx_t *tx)
+{
+	dsl_destroy_snapshots_arg_t *ddsa = arg;
+	nvpair_t *pair;
+
+	for (pair = nvlist_next_nvpair(ddsa->ddsa_snaps, NULL);
+	    pair != NULL; pair = nvlist_next_nvpair(ddsa->ddsa_snaps, pair)) {
+		dsl_destroy_snapshot_arg_t snap = {
+			.ddsa_name = nvpair_name(pair),
+			.ddsa_defer = ddsa->ddsa_defer,
+		};
+
+		dsl_destroy_snapshot_sync(&snap, tx);
+	}
+}
+
+/*
+ * Snapshot destruction normally uses a channel program to atomically check
+ * and destroy the requested set.  OpenBSD does not yet include the in-kernel
+ * Lua runtime, so perform the same check-then-sync sequence as one DSL task.
+ */
+static int
+dsl_destroy_snapshots_nvl_native(nvlist_t *snaps, boolean_t defer,
+    nvlist_t *errlist)
+{
+	dsl_destroy_snapshots_arg_t ddsa = {
+		.ddsa_snaps = snaps,
+		.ddsa_errors = errlist,
+		.ddsa_defer = defer,
+	};
+	nvpair_t *first = nvlist_next_nvpair(snaps, NULL);
+
+	if (first == NULL)
+		return (0);
+	return (dsl_sync_task(nvpair_name(first),
+	    dsl_destroy_snapshots_check, dsl_destroy_snapshots_sync, &ddsa,
+	    0, ZFS_SPACE_CHECK_DESTROY));
+}
+#endif
+
 /*
  * The semantics of this function are described in the comment above
  * lzc_destroy_snaps().  To summarize:
@@ -606,6 +679,9 @@ dsl_destroy_snapshots_nvl(nvlist_t *snaps, boolean_t defer,
 	if (nvlist_next_nvpair(snaps, NULL) == NULL)
 		return (0);
 
+#ifdef __OpenBSD__
+	return (dsl_destroy_snapshots_nvl_native(snaps, defer, errlist));
+#else
 	/*
 	 * lzc_destroy_snaps() is documented to take an nvlist whose
 	 * values "don't matter".  We need to convert that nvlist to
@@ -687,6 +763,7 @@ dsl_destroy_snapshots_nvl(nvlist_t *snaps, boolean_t defer,
 	}
 	fnvlist_free(result);
 	return (rv);
+#endif
 }
 
 int

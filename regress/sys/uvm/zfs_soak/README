@@ -1,0 +1,134 @@
+ZFS SOAK TEST
+=============
+
+This directory contains a standalone, destructive stress test for the OpenBSD
+OpenZFS port.  It is intentionally not included in regress/sys/uvm/Makefile:
+recursive regression runs must never start an hours-long storage test.
+
+Safety
+------
+
+zfs_soak requires the name of an already imported pool.  It does not create,
+import, export, destroy, attach, detach, online, or offline pools or devices.
+It creates and normally destroys only a uniquely named dataset below:
+
+    POOL/zfs-soak-YYYYMMDD-HHMMSS.PID
+
+Use it only with a disposable test pool.  Before starting, use "zpool status"
+to confirm that every device in the selected pool is one of the dedicated test
+disks.  For the current test host, the only permitted destructive targets are
+sd1 and sd2.  Do not pass a pool containing sd0 or any production data.
+
+The test must run as root.  Logs should be placed on the root FFS filesystem,
+not in the pool under test.  A failed or interrupted run is deliberately
+preserved for diagnosis.  A successful run is destroyed unless -k is used.
+
+Requirements
+------------
+
+Install fio from packages and build the adjacent mmap regression:
+
+    pkg_add fio
+    make -C /usr/src/regress/sys/uvm/zfs_mmap obj
+    make -C /usr/src/regress/sys/uvm/zfs_mmap
+
+The default mmap executable is:
+
+    /usr/obj/regress/sys/uvm/zfs_mmap/zfs_mmap
+
+The selected pool must already be imported, ONLINE, free of known data errors
+and non-zero vdev error counters, and not scrubbing or resilvering.  The script
+will not import it.  For example, after independently confirming that
+obzmirror is the disposable sd1/sd2 pool:
+
+    zpool import obzmirror
+    zpool status -p obzmirror
+
+Workload
+--------
+
+The script creates separate child datasets for:
+
+* Static ordinary-file, link, FIFO, metadata, hash, and sparse-file canaries.
+* Parallel fio random writes with crc32c verification and periodic fsync.
+* Repeated pathname, rename, hard-link, symlink, FIFO, and mtree churn.
+* Repeated zfs_mmap semantic and race tests.
+
+Workers remain active while recursive snapshots are taken.  At each checkpoint
+the static canary snapshot is cloned, its mtree SHA-256 manifest and sampled
+4 GiB sparse-file invariants are checked, and the clone and snapshots are
+removed.  Pool status, vdev counters, iostat, and dmesg are captured
+periodically.  Newly reported panics, VERIFY failures, and ASSERT failures
+stop and preserve the run.  WITNESS reports remain in the captures for manual
+analysis because OpenZFS object classes can produce false-positive cycles.  At
+the end, workers are stopped, the canary is checked once more through a
+snapshot clone, and a blocking pool scrub is run by default.
+
+Running
+-------
+
+An all-day run using the defaults except for an explicit ten-hour duration is:
+
+    /usr/src/regress/sys/uvm/zfs_soak/zfs_soak \
+        -p obzmirror -t 10h -l /var/log/zfs-soak
+
+Defaults are an eight-hour workload, checkpoints every 15 minutes, pool-health
+captures every 60 seconds, four 512 MiB fio jobs, two pathname workers, 500
+mmap race iterations per pass, and a final scrub.  The scrub can extend the
+wall-clock run beyond the requested workload duration.
+
+Useful options:
+
+    -i 5m       change the recursive snapshot/clone checkpoint interval
+    -s 30s      change the pool-health capture interval
+    -f 1g       change each fio job's file size
+    -j 8        change the number of parallel fio jobs
+    -w 4        change the number of pathname workers
+    -n 1000     change mmap race iterations per pass
+    -m path     use a different zfs_mmap executable
+    -M path     put the temporary mountpoint below another directory
+    -k          retain a successful run dataset
+    -S          skip the final scrub
+
+Durations and intervals accept a positive integer with an optional s, m, h, or
+d suffix.  Run with no arguments to display the complete usage.
+
+Monitoring
+----------
+
+The script prints its run ID, dataset, mountpoint, and log directory at startup.
+From another terminal, select the newest run and follow its main log:
+
+    logdir=$(ls -td /var/log/zfs-soak/* | head -1)
+    tail -f "$logdir/run.log"
+
+Monitor the pool and kernel independently:
+
+    zpool status -p obzmirror
+    zpool iostat -v obzmirror 10
+    dmesg
+
+Worker output is in worker-fio.log, worker-mmap.log, and worker-path-N.log.
+Periodic observations are below status/, checkpoint details are below
+checkpoints/, and final scrub output is in scrub.log.  Files named
+*.completed contain the number of fully verified worker cycles.
+
+Stopping And Cleanup
+--------------------
+
+Send TERM or INT to the top-level zfs_soak process to stop it:
+
+    kill -TERM PID
+
+The signal handler terminates worker descendants and preserves the entire run
+dataset, any active checkpoint snapshot or clone, the mountpoint, and all logs.
+Do not use "kill -9" for normal stopping because it bypasses this handling.
+
+After investigation, destroy only the exact dataset printed in run.log:
+
+    zfs destroy -r obzmirror/zfs-soak-RUN-ID
+    rmdir /mnt/zfs-soak-RUN-ID
+
+Logs are never automatically removed.  Confirm the exact dataset name with
+"zfs list -r obzmirror" before cleanup.  Never destroy the pool as part of
+routine soak cleanup.

@@ -519,6 +519,7 @@ static zap_t *
 mzap_open(dmu_buf_t *db)
 {
 	zap_t *winner;
+	objset_t *os = dmu_buf_get_objset(db);
 	uint64_t *zap_hdr = (uint64_t *)db->db_data;
 	uint64_t zap_block_type = zap_hdr[0];
 	uint64_t zap_magic = zap_hdr[1];
@@ -526,9 +527,19 @@ mzap_open(dmu_buf_t *db)
 	ASSERT3U(MZAP_ENT_LEN, ==, sizeof (mzap_ent_phys_t));
 
 	zap_t *zap = kmem_zalloc(sizeof (zap_t), KM_SLEEP);
-	rw_init(&zap->zap_rwlock, NULL, RW_DEFAULT, NULL);
+	/*
+	 * Dataset ZAP growth can enter DSL space accounting, while MOS ZAPs
+	 * can be updated with DSL accounting locks already held.  Separate
+	 * lockdep classes prevent those distinct object graphs being combined
+	 * into an impossible cycle.
+	 */
+	if (dmu_objset_ds(os) == NULL) {
+		rw_init(&zap->zap_rwlock, NULL, RW_DEFAULT, NULL);
+	} else {
+		rw_init(&zap->zap_rwlock, NULL, RW_DEFAULT, NULL);
+	}
 	rw_enter(&zap->zap_rwlock, RW_WRITER);
-	zap->zap_objset = dmu_buf_get_objset(db);
+	zap->zap_objset = os;
 	zap->zap_object = db->db_object;
 	zap->zap_dbuf = db;
 
