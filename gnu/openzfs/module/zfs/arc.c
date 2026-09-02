@@ -376,7 +376,16 @@ static uint_t zfs_arc_evict_batch_limit = 10;
  * Number batches to process per parallel eviction task under heavy load to
  * reduce number of context switches.
  */
+#if defined(__OpenBSD__)
+/*
+ * OpenBSD's taskq_wait() uses a full native taskq barrier.  Amortize that
+ * substantially higher synchronization cost while retaining the ten-header
+ * sublist lock batch and periodic scheduler yields.
+ */
+static uint_t zfs_arc_evict_batches_limit = 64;
+#else
 static uint_t zfs_arc_evict_batches_limit = 5;
+#endif
 
 /* number of seconds before growing cache again */
 uint_t arc_grow_retry = 5;
@@ -4090,7 +4099,12 @@ arc_evict_task(void *arg)
 		total_evicted += arc_evict_state_impl(eva->eva_ml,
 		    eva->eva_idx, eva->eva_marker, eva->eva_spa,
 		    eva->eva_bytes - total_evicted, &more);
-	} while (total_evicted < eva->eva_bytes && --batches > 0 && more);
+		batches--;
+#if defined(__OpenBSD__)
+		if (batches != 0 && (batches % 8) == 0)
+			kpreempt(KPREEMPT_SYNC);
+#endif
+	} while (total_evicted < eva->eva_bytes && batches > 0 && more);
 
 	eva->eva_evicted = total_evicted;
 }
@@ -4281,6 +4295,7 @@ arc_evict_state(arc_state_t *state, arc_buf_contents_t type, uint64_t spa,
 		}
 
 		if (use_evcttq) {
+			arc_pressure_evict_round();
 			taskq_wait(arc_evict_taskq);
 
 			for (int i = 0; i < ntasks; i++) {
@@ -4911,6 +4926,7 @@ arc_evict_cb(void *arg, zthr_t *zthr)
 	(void) arg;
 
 	uint64_t evicted = 0;
+	hrtime_t start_time = gethrtime();
 	fstrans_cookie_t cookie = spl_fstrans_mark();
 
 	/* Always try to evict from uncached state. */
@@ -4954,6 +4970,16 @@ arc_evict_cb(void *arg, zthr_t *zthr)
 	}
 	mutex_exit(&arc_evict_lock);
 	spl_fstrans_unmark(cookie);
+	arc_pressure_evicted(evicted, gethrtime() - start_time);
+#if defined(__OpenBSD__)
+	/*
+	 * The native pool cache can retain ABD chunks freed after the reap
+	 * worker's first pass.  Drain that bounded depot snapshot once the
+	 * eviction pass completes while memory growth is still suppressed.
+	 */
+	if (evicted != 0 && arc_no_grow)
+		abd_cache_reap_now();
+#endif
 }
 
 static boolean_t

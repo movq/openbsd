@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/malloc.h>
 #include <sys/pool.h>
 #include <sys/kmem.h>
@@ -119,8 +120,34 @@ kmem_cache_reap_active(void)
 void
 kmem_cache_reap_soon(kmem_cache_t *cache)
 {
+	uint64_t elapsed, maximum, observed, start;
+	unsigned int before, items;
 
+	if (atomic_cas_32(&cache->kc_reaping, 0, 1) != 0)
+		return;
+
+	start = getnsecuptime();
+	before = cache->kc_pool.pr_npages;
+	items = pool_cache_reclaim(&cache->kc_pool);
 	(void)pool_reclaim(&cache->kc_pool);
+	elapsed = getnsecuptime() - start;
+
+	atomic_inc_64(&cache->kc_reap_runs);
+	atomic_add_64(&cache->kc_reap_items, items);
+	if (before > cache->kc_pool.pr_npages) {
+		atomic_add_64(&cache->kc_reap_pages,
+		    before - cache->kc_pool.pr_npages);
+	}
+	atomic_store_64(&cache->kc_reap_last_ns, elapsed);
+	maximum = atomic_load_64(&cache->kc_reap_max_ns);
+	while (maximum < elapsed) {
+		observed = atomic_cas_64(&cache->kc_reap_max_ns, maximum,
+		    elapsed);
+		if (observed == maximum)
+			break;
+		maximum = observed;
+	}
+	atomic_store_32(&cache->kc_reaping, 0);
 }
 
 void
