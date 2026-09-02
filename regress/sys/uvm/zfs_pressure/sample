@@ -1,0 +1,63 @@
+#!/bin/ksh
+
+set -eu
+
+if [[ $# -ne 2 ]]; then
+	print -u2 "usage: ${0##*/} seconds output.csv"
+	exit 2
+fi
+
+seconds=$1
+output=$2
+
+[[ $seconds = +([0-9]) && $seconds -gt 0 ]] || exit 2
+
+print -r -- \
+    "time,arc_sec,uvm_sec,notify,req_bytes,last_pages,max_pages,"\
+"wake_ok,wake_miss,"\
+"processed,pending_b,arc_size,arc_target,avail_bytes,free_bytes,"\
+"evict_bytes,no_grow,uvm_free,swap_used,pdwoke,pdscans,pdfreed" >"$output"
+
+origin=$(date +%s)
+i=0
+while (( i < seconds )); do
+	start=$SECONDS
+	arc=$(kstat zfs.misc:0:arcpressure:0 | awk '
+	    BEGIN {
+		keys = "notify req_bytes last_pages max_pages wake_ok wake_miss"
+		keys = keys " processed pending_b arc_size arc_target"
+		keys = keys " avail_bytes free_bytes evict_bytes no_grow"
+		split(keys, names)
+	    }
+	    {
+		key = $1
+		sub(/:$/, "", key)
+		value[key] = $2
+	    }
+	    END {
+		for (i = 1; i <= 14; i++) {
+			printf "%s", value[names[i]]
+			if (i != 14)
+				printf ","
+		}
+	    }')
+	arc_done=$SECONDS
+	uvm=$(vmstat -s | awk '
+	    $2 == "pages" && $3 == "free" { free = $1 }
+	    /swap pages in use/ { swap = $1 }
+	    /number of times the pagedaemon woke up/ { woke = $1 }
+	    /number of times the pagedaemon scanned for free pages/ {
+		scans = $1
+	    }
+	    /pages freed by pagedaemon/ { freed = $1 }
+	    END {
+		printf "%s,%s,%s,%s,%s", free, swap, woke, scans, freed
+	    }')
+	uvm_done=$SECONDS
+
+	print -r -- "$((origin + start)),$((arc_done - start)),"\
+"$((uvm_done - arc_done)),$arc,$uvm" >>"$output"
+
+	i=$((i + 1))
+	sleep 1
+done
