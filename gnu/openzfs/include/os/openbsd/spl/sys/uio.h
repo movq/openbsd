@@ -11,6 +11,7 @@
 
 #define UIO_DIRECT 0x0001
 #define UIO_PAGER  0x0002
+#define UIO_ZIL_DEFER 0x0004	/* Defer and report a required ZIL commit. */
 
 typedef struct iovec iovec_t;
 typedef enum uio_seg zfs_uio_seg_t;
