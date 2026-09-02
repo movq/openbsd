@@ -33,6 +33,7 @@ typedef struct proc proc_t;
 
 kthread_t *zfs_thread_create(const char *, caddr_t, size_t,
     void (*)(void *), void *, size_t, proc_t *, int, pri_t);
+void	zfs_thread_exit(void) __attribute__((__noreturn__));
 
 #define	thread_create_named(name, stk, stksize, func, arg, len, pp, state, \
     pri)	zfs_thread_create((name), (stk), (stksize), (func), (arg), \
@@ -40,7 +41,7 @@ kthread_t *zfs_thread_create(const char *, caddr_t, size_t,
 #define	thread_create(stk, stksize, func, arg, len, pp, state, pri) \
 	zfs_thread_create(#func, (stk), (stksize), (func), (arg), (len), \
     (pp), (state), (pri))
-#define	thread_exit()	kthread_exit(0)
+#define	thread_exit()	zfs_thread_exit()
 
 static inline boolean_t
 zfs_proc_is_caller(proc_t *p)
