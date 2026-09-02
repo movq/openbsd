@@ -1,0 +1,33 @@
+#!/bin/ksh
+
+set -eu
+
+kstat zfs.misc:0:abdstats:0 | awk '
+    /^[[:space:]]*[0-9]+:/ {
+	for (i = 2; i <= 17; i++)
+	    if ($i ~ /^[0-9a-f][0-9a-f]$/)
+		printf "%s", $i
+    }
+    END {
+	printf "\n"
+    }' | perl -e '
+    $hex = <STDIN>;
+    $data = pack("H*", $hex);
+    ($version, $count) = unpack("V2", substr($data, 0, 8));
+    die "unsupported named-raw version $version\n" if $version != 1;
+    $offset = 8;
+    for (1 .. $count) {
+	($name_size, $type, $reserved, $data_size) =
+	    unpack("vCCV", substr($data, $offset, 8));
+	$offset += 8;
+	die "invalid named-raw record\n"
+	    if $reserved != 0 || $name_size == 0 ||
+	    $offset + $name_size + $data_size > length($data);
+	$name = unpack("Z*", substr($data, $offset, $name_size));
+	$offset += $name_size;
+	$value = substr($data, $offset, $data_size);
+	$offset += $data_size;
+	next if $type != 4 || $data_size != 8;
+	printf "%s %s\n", $name, unpack("Q<", $value);
+    }
+'

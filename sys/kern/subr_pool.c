@@ -195,6 +195,7 @@ void	*pool_cache_get(struct pool *);
 void	 pool_cache_put(struct pool *, void *);
 void	 pool_cache_destroy(struct pool *);
 void	 pool_cache_gc(struct pool *);
+unsigned int pool_cache_reclaim(struct pool *);
 #endif
 void	 pool_cache_pool_info(struct pool *, struct kinfo_pool *);
 int	 pool_cache_info(struct pool *, void *, size_t *);
@@ -2057,6 +2058,36 @@ pool_cache_gc(struct pool *pp)
 	pp->pr_cache_contention_prev = contention;
 }
 
+/*
+ * Return a snapshot of the global cache depot to the underlying pool.
+ * Producers can continue filling a new depot while the detached lists are
+ * processed, so reclaim is bounded by the amount cached on entry.
+ */
+unsigned int
+pool_cache_reclaim(struct pool *pp)
+{
+	struct pool_cache_lists pls = TAILQ_HEAD_INITIALIZER(pls);
+	struct pool_cache_item *pl;
+	unsigned int nitems;
+
+	if (pp->pr_cache == NULL)
+		return (0);
+
+	pool_list_enter(pp);
+	nitems = pp->pr_cache_nitems;
+	TAILQ_CONCAT(&pls, &pp->pr_cache_lists, ci_nextl);
+	pp->pr_cache_nitems = 0;
+	pp->pr_cache_timestamp = getnsecuptime();
+	pool_list_leave(pp);
+
+	while ((pl = TAILQ_FIRST(&pls)) != NULL) {
+		TAILQ_REMOVE(&pls, pl, ci_nextl);
+		(void)pool_cache_list_put(pp, pl);
+	}
+
+	return (nitems);
+}
+
 void
 pool_cache_pool_info(struct pool *pp, struct kinfo_pool *pi)
 {
@@ -2172,6 +2203,13 @@ void
 pool_cache_init(struct pool *pp)
 {
 	/* nop */
+}
+
+unsigned int
+pool_cache_reclaim(struct pool *pp)
+{
+	(void)pp;
+	return (0);
 }
 
 void

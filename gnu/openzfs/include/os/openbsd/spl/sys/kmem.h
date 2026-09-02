@@ -31,6 +31,12 @@ typedef struct kmem_cache {
 	int		(*kc_constructor)(void *, void *, int);
 	void		(*kc_destructor)(void *, void *);
 	void		*kc_private;
+	volatile uint32_t kc_reaping;
+	volatile uint64_t kc_reap_runs;
+	volatile uint64_t kc_reap_items;
+	volatile uint64_t kc_reap_pages;
+	volatile uint64_t kc_reap_last_ns;
+	volatile uint64_t kc_reap_max_ns;
 } kmem_cache_t;
 
 void	*zfs_kmem_alloc(size_t, int)

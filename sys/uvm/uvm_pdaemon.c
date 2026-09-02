@@ -112,6 +112,8 @@ int		uvmpd_dropswap(struct vm_page *);
 static uvm_reclaim_cb *uvm_reclaim_callback;
 static void *uvm_reclaim_arg;
 
+#define	UVM_RECLAIM_GRACE	MSEC_TO_NSEC(250)
+
 /*
  * Register an external cache for page-daemon pressure notifications.
  * There is currently one such cache, the ZFS ARC.  Both registration and
@@ -238,6 +240,7 @@ void
 uvm_pageout(void *arg)
 {
 	int shortage, inactive_shortage;
+	uint64_t deadline, now;
 
 	/* ensure correct priority and set paging parameters... */
 	uvm.pagedaemon_proc = curproc;
@@ -294,8 +297,32 @@ uvm_pageout(void *arg)
 		 * scan UVM pages.  The callback must neither allocate nor wait for
 		 * reclamation; it is invoked with the UVM page locks dropped.
 		 */
-		if (shortage > 0 && uvm_reclaim_callback != NULL)
+		if (shortage > 0 && uvm_reclaim_callback != NULL) {
 			uvm_reclaim_callback(uvm_reclaim_arg, shortage);
+			/*
+			 * Drop the kernel lock while an asynchronous reclaimer
+			 * returns physical pages.  Page returns wake
+			 * &uvmexp.free; recheck after each wake and stop as soon
+			 * as the deficit is satisfied.  The deadline bounds the
+			 * delay if the external cache cannot make progress.
+			 */
+			deadline = getnsecuptime() + UVM_RECLAIM_GRACE;
+			for (;;) {
+				now = getnsecuptime();
+				uvm_lock_fpageq();
+				shortage = uvmexp.freetarg -
+				    atomic_load_sint(&uvmexp.free) +
+				    BUFPAGES_DEFICIT;
+				if (shortage <= 0 || now >= deadline) {
+					uvm_unlock_fpageq();
+					break;
+				}
+				(void)msleep_nsec(&uvmexp.free,
+				    &uvm.fpageqlock, PVM, "extrecl",
+				    deadline - now);
+				uvm_unlock_fpageq();
+			}
+		}
 
 		shortage = MAX(shortage, size);
 		inactive_shortage = MAX(inactive_shortage, shortage);
