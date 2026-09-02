@@ -633,6 +633,7 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 	    (uio->uio_extflg & UIO_ZIL_DEFER) != 0;
 
 	uio->uio_extflg &= ~UIO_ZIL_DEFER;
+	uio->uio_txg = 0;
 #endif
 
 	/*
@@ -1044,6 +1045,10 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		    uio->uio_extflg & UIO_DIRECT ? B_TRUE : B_FALSE, NULL,
 		    NULL);
 
+#ifdef __OpenBSD__
+		if (defer_commit)
+			uio->uio_txg = MAX(uio->uio_txg, dmu_tx_get_txg(tx));
+#endif
 		dmu_tx_commit(tx);
 
 		/*
@@ -1090,7 +1095,9 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 	}
 
 #ifdef __OpenBSD__
-	if (commit && defer_commit) {
+	if (commit && defer_commit &&
+	    zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED) {
+		ASSERT3U(uio->uio_txg, !=, 0);
 		uio->uio_extflg |= UIO_ZIL_DEFER;
 	} else
 #endif

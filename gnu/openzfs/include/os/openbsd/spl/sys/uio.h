@@ -9,9 +9,9 @@
 #include <sys/param.h>
 #include <sys/string.h>
 
-#define UIO_DIRECT 0x0001
-#define UIO_PAGER  0x0002
-#define UIO_ZIL_DEFER 0x0004	/* Defer and report a required ZIL commit. */
+#define UIO_DIRECT	0x0001
+#define UIO_PAGER	0x0002
+#define UIO_ZIL_DEFER	0x0004	/* Defer ZIL commit; report txg sync. */
 
 typedef struct iovec iovec_t;
 typedef enum uio_seg zfs_uio_seg_t;
@@ -25,6 +25,7 @@ typedef struct zfs_uio_dio {
 typedef struct zfs_uio {
 	struct uio	*uio;
 	offset_t	uio_soffset;
+	uint64_t	uio_txg;
 	uint16_t	uio_extflg;
 	zfs_uio_dio_t	uio_dio;
 } zfs_uio_t;

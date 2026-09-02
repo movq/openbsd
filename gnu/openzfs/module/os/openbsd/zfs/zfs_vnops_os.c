@@ -23,7 +23,9 @@
 #include <sys/zap.h>
 #include <sys/dataset_kstats.h>
 #include <sys/dsl_pool.h>
+#include <sys/spa.h>
 #include <sys/taskq.h>
+#include <sys/txg.h>
 #include <sys/zfs_dir.h>
 #include <sys/zfs_fuid.h>
 #include <sys/zfs_quota.h>
@@ -1141,9 +1143,9 @@ zfs_openbsd_uvp_write(vnode_t *vp, struct uio *uio, int flags)
 	/*
 	 * The pages supplied by UVM are already busy and mapped in the
 	 * kernel.  Mark this as pager I/O so zfs_write() does not try to
-	 * reconcile the very same pages through update_pages().  Defer any
-	 * ZIL commit until after dropping z_map_lock because zfs_get_data()
-	 * may acquire this vnode.
+	 * reconcile the very same pages through update_pages().  A synchronous
+	 * pager write waits for its exact data txg instead of committing the
+	 * ZIL, which could acquire a vnode while these pages remain busy.
 	 */
 	zfs_uio_init(&zuio, uio);
 	zuio.uio_extflg |= UIO_PAGER | UIO_ZIL_DEFER;
@@ -1157,8 +1159,19 @@ zfs_openbsd_uvp_write(vnode_t *vp, struct uio *uio, int flags)
 		return (EBUSY);
 	error = zfs_write(zp, &zuio, ioflag, kcred);
 	mutex_exit(&zp->z_map_lock);
-	if (error == 0 && (zuio.uio_extflg & UIO_ZIL_DEFER) != 0)
-		error = zfs_fsync(zp, 0, kcred);
+	if (error == 0 && (zuio.uio_extflg & UIO_ZIL_DEFER) != 0) {
+		objset_t *os = zp->z_zfsvfs->z_os;
+		txg_wait_flag_t wait_flags =
+		    spa_get_failmode(dmu_objset_spa(os)) ==
+		    ZIO_FAILURE_MODE_CONTINUE ? TXG_WAIT_SUSPEND : 0;
+
+		error = txg_wait_synced_flags(dmu_objset_pool(os),
+		    zuio.uio_txg, wait_flags);
+		if (error != 0) {
+			ASSERT3U(error, ==, ESHUTDOWN);
+			error = SET_ERROR(EIO);
+		}
+	}
 	return (error);
 }
 
