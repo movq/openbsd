@@ -34,6 +34,7 @@ extern zthr_t *zthr_create_timer(const char *zthr_name,
 extern void zthr_destroy(zthr_t *t);
 
 extern void zthr_wakeup(zthr_t *t);
+extern boolean_t zthr_wakeup_nowait(zthr_t *t);
 extern void zthr_cancel(zthr_t *t);
 extern void zthr_resume(zthr_t *t);
 extern void zthr_wait_cycle_done(zthr_t *t);
