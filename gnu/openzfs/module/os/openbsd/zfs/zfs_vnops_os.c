@@ -1128,6 +1128,7 @@ zfs_openbsd_uvp_write(vnode_t *vp, struct uio *uio, int flags)
 {
 	znode_t *zp = VTOZ(vp);
 	zfs_uio_t zuio;
+	int ioflag;
 	int error;
 
 	KERNEL_ASSERT_LOCKED();
@@ -1136,13 +1137,16 @@ zfs_openbsd_uvp_write(vnode_t *vp, struct uio *uio, int flags)
 	if (uio->uio_resid == 0)
 		return (0);
 
+	ioflag = (flags & PGO_SYNCIO) != 0 ? O_SYNC : 0;
 	/*
 	 * The pages supplied by UVM are already busy and mapped in the
 	 * kernel.  Mark this as pager I/O so zfs_write() does not try to
-	 * reconcile the very same pages through update_pages().
+	 * reconcile the very same pages through update_pages().  Defer any
+	 * ZIL commit until after dropping z_map_lock because zfs_get_data()
+	 * may acquire this vnode.
 	 */
 	zfs_uio_init(&zuio, uio);
-	zuio.uio_extflg |= UIO_PAGER;
+	zuio.uio_extflg |= UIO_PAGER | UIO_ZIL_DEFER;
 	/*
 	 * A regular write may hold z_map_lock while waiting for one of these
 	 * busy pages.  Never wait for it here: async pageout can retry, while
@@ -1151,9 +1155,10 @@ zfs_openbsd_uvp_write(vnode_t *vp, struct uio *uio, int flags)
 	 */
 	if (!mutex_tryenter(&zp->z_map_lock))
 		return (EBUSY);
-	error = zfs_write(zp, &zuio,
-	    (flags & PGO_SYNCIO) != 0 ? O_SYNC : 0, kcred);
+	error = zfs_write(zp, &zuio, ioflag, kcred);
 	mutex_exit(&zp->z_map_lock);
+	if (error == 0 && (zuio.uio_extflg & UIO_ZIL_DEFER) != 0)
+		error = zfs_fsync(zp, 0, kcred);
 	return (error);
 }
 
@@ -1472,20 +1477,22 @@ zfs_openbsd_fsync(void *v)
 {
 	struct vop_fsync_args *ap = v;
 	vnode_t *vp = ap->a_vp;
+	znode_t *zp = VTOZ(vp);
 	boolean_t flushed;
 	int error;
 
 	KERNEL_ASSERT_LOCKED();
 	KASSERT(VOP_ISLOCKED(vp));
+	/* zil_commit() may acquire another vnode through zfs_get_data(). */
 	VOP_UNLOCK(vp);
 	flushed = uvm_vnp_flush(vp, 0, 0,
 	    PGO_CLEANIT | PGO_SYNCIO | PGO_ALLPAGES);
-	error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
-	if (error != 0)
-		return (error);
 	if (!flushed)
-		return (EIO);
-	return (zfs_fsync(VTOZ(vp), ap->a_waitfor, ap->a_cred));
+		error = EIO;
+	else
+		error = zfs_fsync(zp, ap->a_waitfor, ap->a_cred);
+	VERIFY0(vn_lock(vp, LK_EXCLUSIVE | LK_RETRY));
+	return (error);
 }
 
 /* Legacy znodes keep short links after the fixed znode bonus structure. */

@@ -628,6 +628,12 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 	ssize_t start_resid = zfs_uio_resid(uio);
 	uint64_t clear_setid_bits_txg = 0;
 	boolean_t o_direct_defer = B_FALSE;
+#ifdef __OpenBSD__
+	boolean_t defer_commit =
+	    (uio->uio_extflg & UIO_ZIL_DEFER) != 0;
+
+	uio->uio_extflg &= ~UIO_ZIL_DEFER;
+#endif
 
 	/*
 	 * Fasttrack empty write
@@ -1083,6 +1089,11 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		return (error);
 	}
 
+#ifdef __OpenBSD__
+	if (commit && defer_commit) {
+		uio->uio_extflg |= UIO_ZIL_DEFER;
+	} else
+#endif
 	if (commit) {
 		error = zil_commit(zilog, zp->z_id);
 		if (error != 0) {
