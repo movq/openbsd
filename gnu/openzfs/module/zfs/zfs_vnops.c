@@ -989,13 +989,12 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		 * the Direct I/O write has completed, but this is the penality
 		 * for writing to a mmap'ed region of a file using Direct I/O.
 		 */
+#if !defined(__OpenBSD__)
 		if (tx_bytes &&
-#if defined(__OpenBSD__)
-		    (uio->uio_extflg & UIO_PAGER) == 0 &&
-#endif
 		    zn_has_cached_data(zp, woff, woff + tx_bytes - 1)) {
 			update_pages(zp, woff, tx_bytes, zfsvfs->z_os);
 		}
+#endif
 
 		/*
 		 * If we made no progress, we're done.  If we made even
@@ -1050,6 +1049,18 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 			uio->uio_txg = MAX(uio->uio_txg, dmu_tx_get_txg(tx));
 #endif
 		dmu_tx_commit(tx);
+
+#ifdef __OpenBSD__
+		/*
+		 * Do not hold a txg open while waiting for a busy UVM page.
+		 * A synchronous pager may own that page while waiting for
+		 * this txg to sync.
+		 */
+		if (tx_bytes && (uio->uio_extflg & UIO_PAGER) == 0 &&
+		    zn_has_cached_data(zp, woff, woff + tx_bytes - 1)) {
+			update_pages(zp, woff, tx_bytes, zfsvfs->z_os);
+		}
+#endif
 
 		/*
 		 * Direct I/O was deferred in order to grow the first block.
@@ -1927,9 +1938,11 @@ zfs_clone_range(znode_t *inzp, uint64_t *inoffp, znode_t *outzp,
 			break;
 		}
 
+#if !defined(__OpenBSD__)
 		if (zn_has_cached_data(outzp, outoff, outoff + size - 1)) {
 			update_pages(outzp, outoff, size, outos);
 		}
+#endif
 
 		zfs_clear_setid_bits_if_necessary(outzfsvfs, outzp, cr,
 		    &clear_setid_bits_txg, tx);
@@ -1951,6 +1964,13 @@ zfs_clone_range(znode_t *inzp, uint64_t *inoffp, znode_t *outzp,
 		    size, inblksz, bps, nbps);
 
 		dmu_tx_commit(tx);
+
+#ifdef __OpenBSD__
+		/* Match zfs_write(): release the txg before waiting on UVM. */
+		if (zn_has_cached_data(outzp, outoff, outoff + size - 1)) {
+			update_pages(outzp, outoff, size, outos);
+		}
+#endif
 
 		if (error != 0)
 			break;
