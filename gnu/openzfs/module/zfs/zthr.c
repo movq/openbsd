@@ -356,6 +356,22 @@ zthr_wakeup(zthr_t *t)
 }
 
 /*
+ * Try to wake a zthr without waiting for its state lock.  Callers which use
+ * this interface must arrange for the requested work to remain observable if
+ * the wakeup is skipped.
+ */
+boolean_t
+zthr_wakeup_nowait(zthr_t *t)
+{
+	if (!mutex_tryenter(&t->zthr_state_lock))
+		return (B_FALSE);
+
+	cv_broadcast(&t->zthr_cv);
+	mutex_exit(&t->zthr_state_lock);
+	return (B_TRUE);
+}
+
+/*
  * Sends a cancel request to the zthr and blocks until the zthr is
  * cancelled. If the zthr is not running (e.g. has been cancelled
  * already), this is a no-op. Note that this function should not be

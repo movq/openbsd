@@ -190,6 +190,21 @@ arc_lowmem_fini(void)
 }
 
 void
+arc_pressure_init(void)
+{
+}
+
+void
+arc_pressure_fini(void)
+{
+}
+
+void
+arc_pressure_processed(void)
+{
+}
+
+void
 arc_register_hotplug(void)
 {
 }

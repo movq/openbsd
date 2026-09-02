@@ -1064,12 +1064,17 @@ extern uint64_t zfs_arc_max;
 
 extern uint64_t arc_reduce_target_size(uint64_t to_free);
 extern boolean_t arc_reclaim_needed(void);
-extern void arc_reclaim_async(uint64_t);
+extern boolean_t arc_reclaim_async(uint64_t);
+extern uint64_t arc_reclaim_pending(void);
+extern uint64_t arc_evict_bytes(void);
 extern void arc_kmem_reap_soon(void);
 extern void arc_wait_for_eviction(uint64_t, boolean_t, boolean_t);
 
 extern void arc_lowmem_init(void);
 extern void arc_lowmem_fini(void);
+extern void arc_pressure_init(void);
+extern void arc_pressure_fini(void);
+extern void arc_pressure_processed(void);
 extern int arc_memory_throttle(spa_t *spa, uint64_t reserve, uint64_t txg);
 extern uint64_t arc_free_memory(void);
 extern int64_t arc_available_memory(void);
