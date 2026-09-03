@@ -112,7 +112,8 @@ int		uvmpd_dropswap(struct vm_page *);
 static uvm_reclaim_cb *uvm_reclaim_callback;
 static void *uvm_reclaim_arg;
 
-#define	UVM_RECLAIM_GRACE	MSEC_TO_NSEC(250)
+#define	UVM_RECLAIM_STALL	MSEC_TO_NSEC(250)
+#define	UVM_RECLAIM_LIMIT	SEC_TO_NSEC(2)
 
 /*
  * Register an external cache for page-daemon pressure notifications.
@@ -239,8 +240,8 @@ uvmpd_tune(void)
 void
 uvm_pageout(void *arg)
 {
-	int shortage, inactive_shortage;
-	uint64_t deadline, now;
+	int error, shortage, inactive_shortage;
+	uint64_t limit, now, timeout;
 
 	/* ensure correct priority and set paging parameters... */
 	uvm.pagedaemon_proc = curproc;
@@ -303,25 +304,31 @@ uvm_pageout(void *arg)
 			 * Drop the kernel lock while an asynchronous reclaimer
 			 * returns physical pages.  Page returns wake
 			 * &uvmexp.free; recheck after each wake and stop as soon
-			 * as the deficit is satisfied.  The deadline bounds the
-			 * delay if the external cache cannot make progress.
+			 * as the deficit is satisfied.  Stop after one interval
+			 * without progress, and enforce an absolute time limit
+			 * while pages continue to arrive.
 			 */
-			deadline = getnsecuptime() + UVM_RECLAIM_GRACE;
+			limit = getnsecuptime() + UVM_RECLAIM_LIMIT;
 			for (;;) {
 				now = getnsecuptime();
 				uvm_lock_fpageq();
 				shortage = uvmexp.freetarg -
 				    atomic_load_sint(&uvmexp.free) +
 				    BUFPAGES_DEFICIT;
-				if (shortage <= 0 || now >= deadline) {
+				if (shortage <= 0 || now >= limit) {
 					uvm_unlock_fpageq();
 					break;
 				}
-				(void)msleep_nsec(&uvmexp.free,
+				timeout = MIN(UVM_RECLAIM_STALL, limit - now);
+				error = msleep_nsec(&uvmexp.free,
 				    &uvm.fpageqlock, PVM, "extrecl",
-				    deadline - now);
+				    timeout);
 				uvm_unlock_fpageq();
+				if (error != 0)
+					break;
 			}
+			if (shortage <= 0)
+				size = 128;
 		}
 
 		shortage = MAX(shortage, size);
