@@ -64,8 +64,11 @@ struct btrfs_mount {
 	uint64_t			 bm_treeid;
 	uint64_t			 bm_fs_root;
 	uint64_t			 bm_fs_root_generation;
+	uint64_t			 bm_csum_root;
+	uint64_t			 bm_csum_root_generation;
 	uint64_t			 bm_root_dirid;
 	uint8_t				 bm_fs_root_level;
+	uint8_t				 bm_csum_root_level;
 	struct btrfs_node_list		 bm_nodes;
 	struct mutex			 bm_nodemtx;
 };
@@ -88,7 +91,11 @@ extern const struct vops btrfs_vops;
 
 int	btrfs_iterate_directory(const struct btrfs_super_block *,
 	    const struct btrfs_header *, uint64_t, btrfs_dir_iter_fn, void *);
-int	btrfs_read_data_block(struct btrfs_mount *, uint64_t, struct buf **);
+int	btrfs_lookup_data_csum(struct btrfs_mount *,
+	    const struct btrfs_header *, uint64_t, uint32_t *);
+int	btrfs_read_csum_tree_root(struct btrfs_mount *, struct buf **);
+int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
+	    const uint32_t *, struct buf **);
 int	btrfs_read_fs_tree_root(struct btrfs_mount *, struct buf **);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 
