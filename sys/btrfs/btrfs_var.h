@@ -88,6 +88,7 @@ extern const struct vops btrfs_vops;
 
 int	btrfs_iterate_directory(const struct btrfs_super_block *,
 	    const struct btrfs_header *, uint64_t, btrfs_dir_iter_fn, void *);
+int	btrfs_read_data_block(struct btrfs_mount *, uint64_t, struct buf **);
 int	btrfs_read_fs_tree_root(struct btrfs_mount *, struct buf **);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 

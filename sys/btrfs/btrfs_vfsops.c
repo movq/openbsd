@@ -49,6 +49,7 @@
 
 struct btrfs_io_map {
 	uint64_t	physical[2];
+	uint64_t	type;
 	unsigned int	nmirrors;
 };
 
@@ -723,6 +724,7 @@ btrfs_map_logical(const struct btrfs_chunk_map *chunk, uint64_t logical,
 		return (ENOENT);
 
 	memset(map, 0, sizeof(*map));
+	map->type = chunk->type;
 	map->nmirrors = chunk->nmirrors;
 	for (i = 0; i < chunk->nmirrors; i++) {
 		if (chunk->physical[i] > UINT64_MAX - delta)
@@ -778,6 +780,44 @@ btrfs_read_tree_block(struct vnode *devvp,
 		}
 		if (bp != NULL)
 			brelse(bp);
+	}
+
+	return (error);
+}
+
+int
+btrfs_read_data_block(struct btrfs_mount *bmp, uint64_t logical,
+    struct buf **bpp)
+{
+	struct btrfs_io_map map;
+	struct buf *bp;
+	uint32_t sectorsize;
+	unsigned int i;
+	int error = EIO;
+
+	*bpp = NULL;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if ((logical & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	error = btrfs_lookup_logical(bmp->bm_chunks, bmp->bm_nchunks,
+	    logical, sectorsize, &map);
+	if (error != 0)
+		return (error == ENOENT ? EINVAL : error);
+	if ((map.type & BTRFS_BLOCK_GROUP_DATA) == 0)
+		return (EINVAL);
+
+	for (i = 0; i < map.nmirrors; i++) {
+		bp = NULL;
+		error = bread(bmp->bm_devvp, map.physical[i] / DEV_BSIZE,
+		    sectorsize, &bp);
+		if (error == 0 && bp->b_resid == 0) {
+			*bpp = bp;
+			return (0);
+		}
+		if (bp != NULL)
+			brelse(bp);
+		if (error == 0)
+			error = EIO;
 	}
 
 	return (error);
