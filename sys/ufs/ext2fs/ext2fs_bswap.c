@@ -96,6 +96,10 @@ e2fs_sb_bswap(struct ext2fs *old, struct ext2fs *new)
 	new->e2fs_bcount_hi	=	swap32(old->e2fs_bcount_hi);
 	new->e2fs_rbcount_hi	=	swap32(old->e2fs_rbcount_hi);
 	new->e2fs_fbcount_hi	=	swap32(old->e2fs_fbcount_hi);
+	new->e2fs_min_extra_isize =
+	    swap16(old->e2fs_min_extra_isize);
+	new->e2fs_want_extra_isize =
+	    swap16(old->e2fs_want_extra_isize);
 	new->e2fs_backup_bgs[0] =	swap32(old->e2fs_backup_bgs[0]);
 	new->e2fs_backup_bgs[1] =	swap32(old->e2fs_backup_bgs[1]);
 }
@@ -116,8 +120,11 @@ e2fs_cg_bswap(struct ext2_gd *old, struct ext2_gd *new, int size)
 
 void
 e2fs_i_bswap(struct m_ext2fs *fs, struct ext2fs_dinode *old,
-    struct ext2fs_dinode *new)
+    struct ext2fs_dinode *new, int save)
 {
+	u_int16_t isize;
+
+	memcpy(new, old, MIN(EXT2_DINODE_SIZE(fs), sizeof(*new)));
 	new->e2di_mode		=	swap16(old->e2di_mode);
 	new->e2di_uid_low	=	swap16(old->e2di_uid_low);
 	new->e2di_gid_low	=	swap16(old->e2di_gid_low);
@@ -142,6 +149,23 @@ e2fs_i_bswap(struct m_ext2fs *fs, struct ext2fs_dinode *old,
 
 	if (EXT2_DINODE_SIZE(fs) <= EXT2_REV0_DINODE_SIZE)
 		return;
-	new->e2di_isize		=	swap16(old->e2di_isize);
+	isize = save ? old->e2di_extra_isize :
+	    swap16(old->e2di_extra_isize);
+	new->e2di_extra_isize	=	swap16(old->e2di_extra_isize);
+	if (offsetof(struct ext2fs_dinode, e2di_ctime_extra) +
+	    sizeof(new->e2di_ctime_extra) <= EXT2_REV0_DINODE_SIZE + isize)
+		new->e2di_ctime_extra = swap32(old->e2di_ctime_extra);
+	if (offsetof(struct ext2fs_dinode, e2di_mtime_extra) +
+	    sizeof(new->e2di_mtime_extra) <= EXT2_REV0_DINODE_SIZE + isize)
+		new->e2di_mtime_extra = swap32(old->e2di_mtime_extra);
+	if (offsetof(struct ext2fs_dinode, e2di_atime_extra) +
+	    sizeof(new->e2di_atime_extra) <= EXT2_REV0_DINODE_SIZE + isize)
+		new->e2di_atime_extra = swap32(old->e2di_atime_extra);
+	if (offsetof(struct ext2fs_dinode, e2di_crtime) +
+	    sizeof(new->e2di_crtime) <= EXT2_REV0_DINODE_SIZE + isize)
+		new->e2di_crtime = swap32(old->e2di_crtime);
+	if (offsetof(struct ext2fs_dinode, e2di_crtime_extra) +
+	    sizeof(new->e2di_crtime_extra) <= EXT2_REV0_DINODE_SIZE + isize)
+		new->e2di_crtime_extra = swap32(old->e2di_crtime_extra);
 }
 #endif

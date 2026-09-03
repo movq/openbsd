@@ -167,6 +167,8 @@ ext2fs_inode_alloc(struct inode *pip, mode_t mode, struct ucred *cred,
 	}
 
 	memset(ip->i_e2din, 0, sizeof(struct ext2fs_dinode));
+	ip->i_flag |= IN_E2FS_NEW;
+	ext2fs_inode_init(ip);
 	if ((fs->e2fs.e2fs_features_incompat & EXT2F_INCOMPAT_EXTENTS) &&
 	    ((mode & IFMT) == IFREG || (mode & IFMT) == IFDIR))
 		ext4_ext_tree_init(ip);
