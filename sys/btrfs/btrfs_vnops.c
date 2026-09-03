@@ -501,16 +501,23 @@ btrfs_uiomove_zeros(size_t size, struct uio *uio)
 }
 
 static int
-btrfs_read_regular_extent(struct btrfs_mount *bmp,
-    const struct btrfs_file_extent *extent, size_t size, struct uio *uio)
+btrfs_read_regular_extent(struct btrfs_node *node,
+    const struct btrfs_file_extent *extent, size_t size, struct uio *uio,
+    struct buf **csumbpp)
 {
+	struct btrfs_mount *bmp = node->bn_mount;
+	const struct btrfs_header *csum_header;
 	struct buf *bp = NULL;
 	uint64_t block, logical, relative;
+	uint64_t inode_flags;
+	const uint32_t *expectedp;
+	uint32_t expected;
 	uint32_t sectorsize;
 	size_t chunk, offset;
 	int error = 0;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	inode_flags = letoh64(node->bn_inode.flags);
 	relative = uio->uio_offset - extent->bfe_logical;
 	logical = extent->bfe_disk_bytenr + extent->bfe_disk_offset + relative;
 
@@ -518,7 +525,25 @@ btrfs_read_regular_extent(struct btrfs_mount *bmp,
 		block = logical & ~((uint64_t)sectorsize - 1);
 		offset = logical - block;
 		chunk = MIN(size, sectorsize - offset);
-		error = btrfs_read_data_block(bmp, block, &bp);
+		expectedp = NULL;
+		if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
+			if (*csumbpp == NULL) {
+				error = btrfs_read_csum_tree_root(bmp, csumbpp);
+				if (error != 0)
+					break;
+			}
+			csum_header =
+			    (const struct btrfs_header *)(*csumbpp)->b_data;
+			error = btrfs_lookup_data_csum(bmp, csum_header,
+			    block, &expected);
+			if (error != 0) {
+				if (error == ENOENT)
+					error = EINVAL;
+				break;
+			}
+			expectedp = &expected;
+		}
+		error = btrfs_read_data_block(bmp, block, expectedp, &bp);
 		if (error != 0)
 			break;
 		error = uiomove((uint8_t *)bp->b_data + offset, chunk, uio);
@@ -544,7 +569,7 @@ btrfs_read(void *v)
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
 	const struct btrfs_header *header;
-	struct buf *bp = NULL;
+	struct buf *bp = NULL, *csumbp = NULL;
 	struct uio *uio = ap->a_uio;
 	uint64_t available, file_size, offset;
 	size_t size;
@@ -599,8 +624,8 @@ btrfs_read(void *v)
 			    offset - extent.bfe_logical), size, uio);
 			break;
 		case BTRFS_FILE_EXTENT_REG:
-			error = btrfs_read_regular_extent(bmp, &extent, size,
-			    uio);
+			error = btrfs_read_regular_extent(node, &extent, size,
+			    uio, &csumbp);
 			break;
 		case BTRFS_FILE_EXTENT_PREALLOC:
 		case BTRFS_FILE_EXTENT_HOLE:
@@ -612,6 +637,8 @@ btrfs_read(void *v)
 		}
 	}
 
+	if (csumbp != NULL)
+		brelse(csumbp);
 	brelse(bp);
 	return (error);
 }
