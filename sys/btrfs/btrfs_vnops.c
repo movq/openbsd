@@ -325,68 +325,214 @@ btrfs_getattr(void *v)
 	return (0);
 }
 
+#define BTRFS_FILE_EXTENT_HOLE	3
+
+struct btrfs_file_extent {
+	const uint8_t	*bfe_inline_data;
+	uint64_t	 bfe_logical;
+	uint64_t	 bfe_length;
+	uint64_t	 bfe_disk_bytenr;
+	uint64_t	 bfe_disk_num_bytes;
+	uint64_t	 bfe_disk_offset;
+	size_t		 bfe_inline_size;
+	uint16_t	 bfe_other_encoding;
+	uint8_t		 bfe_compression;
+	uint8_t		 bfe_encryption;
+	uint8_t		 bfe_type;
+};
+
+static const uint8_t btrfs_zeros[DEV_BSIZE];
+
 static int
-btrfs_find_inline_extent(const struct btrfs_mount *bmp,
-    const struct btrfs_header *header, uint64_t objectid, uint64_t file_size,
-    const uint8_t **datap, size_t *sizep)
+btrfs_decode_file_extent(const struct btrfs_mount *bmp,
+    const struct btrfs_key *key, const uint8_t *data, uint32_t item_size,
+    struct btrfs_file_extent *decoded)
 {
 	const struct btrfs_file_extent_item *extent;
+	uint64_t disk_end, extent_end, generation, ram_bytes;
+	uint32_t sectorsize;
+	size_t prefix_size;
+
+	memset(decoded, 0, sizeof(*decoded));
+	prefix_size = offsetof(struct btrfs_file_extent_item, disk_bytenr);
+	if (item_size < prefix_size)
+		return (EINVAL);
+
+	extent = (const struct btrfs_file_extent_item *)data;
+	generation = letoh64(extent->generation);
+	ram_bytes = letoh64(extent->ram_bytes);
+	if (generation == 0 ||
+	    generation > letoh64(bmp->bm_super.generation) ||
+	    extent->compression > BTRFS_COMPRESS_ZSTD ||
+	    extent->type > BTRFS_FILE_EXTENT_PREALLOC)
+		return (EINVAL);
+
+	decoded->bfe_logical = letoh64(key->offset);
+	decoded->bfe_compression = extent->compression;
+	decoded->bfe_encryption = extent->encryption;
+	decoded->bfe_other_encoding = letoh16(extent->other_encoding);
+	decoded->bfe_type = extent->type;
+
+	if (extent->type == BTRFS_FILE_EXTENT_INLINE) {
+		if (decoded->bfe_logical != 0 || ram_bytes == 0)
+			return (EINVAL);
+		decoded->bfe_length = ram_bytes;
+		decoded->bfe_inline_data = data + prefix_size;
+		decoded->bfe_inline_size = item_size - prefix_size;
+		return (0);
+	}
+	if (item_size != sizeof(*extent))
+		return (EINVAL);
+
+	decoded->bfe_length = letoh64(extent->num_bytes);
+	decoded->bfe_disk_bytenr = letoh64(extent->disk_bytenr);
+	decoded->bfe_disk_num_bytes = letoh64(extent->disk_num_bytes);
+	decoded->bfe_disk_offset = letoh64(extent->offset);
+	if (decoded->bfe_length == 0 ||
+	    decoded->bfe_logical > UINT64_MAX - decoded->bfe_length)
+		return (EINVAL);
+
+	if (decoded->bfe_disk_bytenr == 0) {
+		if (extent->type != BTRFS_FILE_EXTENT_REG ||
+		    decoded->bfe_disk_num_bytes != 0 ||
+		    decoded->bfe_disk_offset != 0 ||
+		    decoded->bfe_compression != BTRFS_COMPRESS_NONE ||
+		    decoded->bfe_encryption != 0 ||
+		    decoded->bfe_other_encoding != 0)
+			return (EINVAL);
+		decoded->bfe_type = BTRFS_FILE_EXTENT_HOLE;
+		return (0);
+	}
+
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if ((decoded->bfe_disk_bytenr & (sectorsize - 1)) != 0 ||
+	    decoded->bfe_disk_num_bytes == 0 ||
+	    (decoded->bfe_disk_num_bytes & (sectorsize - 1)) != 0 ||
+	    (decoded->bfe_disk_offset & (sectorsize - 1)) != 0 ||
+	    decoded->bfe_disk_bytenr >
+	    UINT64_MAX - decoded->bfe_disk_num_bytes ||
+	    decoded->bfe_disk_offset > ram_bytes ||
+	    decoded->bfe_length > ram_bytes - decoded->bfe_disk_offset)
+		return (EINVAL);
+
+	if (decoded->bfe_compression == BTRFS_COMPRESS_NONE) {
+		disk_end = decoded->bfe_disk_num_bytes;
+		extent_end = decoded->bfe_disk_offset + decoded->bfe_length;
+		if (extent_end > disk_end)
+			return (EINVAL);
+	}
+	return (0);
+}
+
+static int
+btrfs_find_file_extent(const struct btrfs_mount *bmp,
+    const struct btrfs_header *header, uint64_t objectid, uint64_t position,
+    uint64_t file_size, struct btrfs_file_extent *extent)
+{
 	const struct btrfs_item *items;
 	const struct btrfs_key *key;
 	const uint8_t *data;
-	uint64_t generation, ram_bytes;
+	struct btrfs_file_extent decoded;
+	uint64_t end, object, previous_end = 0;
 	uint32_t i, item_offset, item_size, nritems;
-	size_t inline_size, prefix_size;
+	int error;
 
-	*datap = NULL;
-	*sizep = 0;
+	memset(extent, 0, sizeof(*extent));
 	if (header->level != 0)
 		return (EOPNOTSUPP);
 
-	prefix_size = offsetof(struct btrfs_file_extent_item, disk_bytenr);
 	nritems = letoh32(header->nritems);
 	items = (const struct btrfs_item *)(header + 1);
 	for (i = 0; i < nritems; i++) {
 		key = &items[i].key;
-		if (letoh64(key->objectid) < objectid)
+		object = letoh64(key->objectid);
+		if (object < objectid)
 			continue;
-		if (letoh64(key->objectid) > objectid ||
-		    key->type > BTRFS_EXTENT_DATA_KEY)
+		if (object > objectid || key->type > BTRFS_EXTENT_DATA_KEY)
 			break;
 		if (key->type < BTRFS_EXTENT_DATA_KEY)
 			continue;
-		if (*datap != NULL)
-			return (EOPNOTSUPP);
 
 		item_offset = letoh32(items[i].offset);
 		item_size = letoh32(items[i].size);
-		if (item_size < prefix_size)
-			return (EINVAL);
 		data = (const uint8_t *)(header + 1) + item_offset;
-		extent = (const struct btrfs_file_extent_item *)data;
-		generation = letoh64(extent->generation);
-		ram_bytes = letoh64(extent->ram_bytes);
-		if (generation == 0 ||
-		    generation > letoh64(bmp->bm_super.generation) ||
-		    letoh64(key->offset) != 0 ||
-		    extent->type > BTRFS_FILE_EXTENT_PREALLOC)
+		error = btrfs_decode_file_extent(bmp, key, data, item_size,
+		    &decoded);
+		if (error != 0)
+			return (error);
+		if (decoded.bfe_logical < previous_end)
 			return (EINVAL);
-		if (extent->compression != BTRFS_COMPRESS_NONE ||
-		    extent->encryption != 0 ||
-		    letoh16(extent->other_encoding) != 0 ||
-		    extent->type != BTRFS_FILE_EXTENT_INLINE)
-			return (EOPNOTSUPP);
+		end = decoded.bfe_logical + decoded.bfe_length;
+		previous_end = end;
 
-		inline_size = item_size - prefix_size;
-		if (ram_bytes != file_size || inline_size != file_size)
-			return (EINVAL);
-		*datap = data + prefix_size;
-		*sizep = inline_size;
+		if (position < decoded.bfe_logical) {
+			extent->bfe_logical = position;
+			extent->bfe_length =
+			    MIN(decoded.bfe_logical, file_size) - position;
+			extent->bfe_type = BTRFS_FILE_EXTENT_HOLE;
+			return (0);
+		}
+		if (position < end) {
+			*extent = decoded;
+			return (0);
+		}
 	}
 
-	if (*datap == NULL)
-		return (EOPNOTSUPP);
+	extent->bfe_logical = position;
+	extent->bfe_length = file_size - position;
+	extent->bfe_type = BTRFS_FILE_EXTENT_HOLE;
 	return (0);
+}
+
+static int
+btrfs_uiomove_zeros(size_t size, struct uio *uio)
+{
+	size_t chunk;
+	int error;
+
+	while (size != 0) {
+		chunk = MIN(size, sizeof(btrfs_zeros));
+		error = uiomove((void *)btrfs_zeros, chunk, uio);
+		if (error != 0)
+			return (error);
+		size -= chunk;
+	}
+	return (0);
+}
+
+static int
+btrfs_read_regular_extent(struct btrfs_mount *bmp,
+    const struct btrfs_file_extent *extent, size_t size, struct uio *uio)
+{
+	struct buf *bp = NULL;
+	uint64_t block, logical, relative;
+	uint32_t sectorsize;
+	size_t chunk, offset;
+	int error = 0;
+
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	relative = uio->uio_offset - extent->bfe_logical;
+	logical = extent->bfe_disk_bytenr + extent->bfe_disk_offset + relative;
+
+	while (size != 0) {
+		block = logical & ~((uint64_t)sectorsize - 1);
+		offset = logical - block;
+		chunk = MIN(size, sectorsize - offset);
+		error = btrfs_read_data_block(bmp, block, &bp);
+		if (error != 0)
+			break;
+		error = uiomove((uint8_t *)bp->b_data + offset, chunk, uio);
+		brelse(bp);
+		bp = NULL;
+		if (error != 0)
+			break;
+		logical += chunk;
+		size -= chunk;
+	}
+
+	if (bp != NULL)
+		brelse(bp);
+	return (error);
 }
 
 static int
@@ -396,13 +542,13 @@ btrfs_read(void *v)
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
 	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_file_extent extent;
 	const struct btrfs_header *header;
-	const uint8_t *data;
 	struct buf *bp = NULL;
 	struct uio *uio = ap->a_uio;
-	uint64_t file_size, offset;
-	size_t extent_size, size;
-	int error;
+	uint64_t available, file_size, offset;
+	size_t size;
+	int error = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
 	if (vp->v_type != VREG)
@@ -421,17 +567,51 @@ btrfs_read(void *v)
 	if (error != 0)
 		return (error);
 	header = (const struct btrfs_header *)bp->b_data;
-	error = btrfs_find_inline_extent(bmp, header, node->bn_ino,
-	    file_size, &data, &extent_size);
-	if (error != 0)
-		goto out;
-	KASSERT(extent_size == file_size);
 
-	size = uio->uio_resid;
-	if (size > file_size - offset)
-		size = file_size - offset;
-	error = uiomove((void *)(data + offset), size, uio);
-out:
+	while (error == 0 && uio->uio_resid != 0 &&
+	    (uint64_t)uio->uio_offset < file_size) {
+		offset = uio->uio_offset;
+		error = btrfs_find_file_extent(bmp, header, node->bn_ino,
+		    offset, file_size, &extent);
+		if (error != 0)
+			break;
+		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+		    extent.bfe_encryption != 0 ||
+		    extent.bfe_other_encoding != 0) {
+			error = EOPNOTSUPP;
+			break;
+		}
+
+		available = extent.bfe_logical + extent.bfe_length - offset;
+		size = uio->uio_resid;
+		if (size > file_size - offset)
+			size = file_size - offset;
+		if (size > available)
+			size = available;
+
+		switch (extent.bfe_type) {
+		case BTRFS_FILE_EXTENT_INLINE:
+			if (extent.bfe_inline_size != extent.bfe_length) {
+				error = EINVAL;
+				break;
+			}
+			error = uiomove((void *)(extent.bfe_inline_data +
+			    offset - extent.bfe_logical), size, uio);
+			break;
+		case BTRFS_FILE_EXTENT_REG:
+			error = btrfs_read_regular_extent(bmp, &extent, size,
+			    uio);
+			break;
+		case BTRFS_FILE_EXTENT_PREALLOC:
+		case BTRFS_FILE_EXTENT_HOLE:
+			error = btrfs_uiomove_zeros(size, uio);
+			break;
+		default:
+			error = EINVAL;
+			break;
+		}
+	}
+
 	brelse(bp);
 	return (error);
 }
