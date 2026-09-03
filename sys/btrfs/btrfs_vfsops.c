@@ -275,7 +275,6 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	bmp->bm_fs_root_generation = fs_root_generation;
 	bmp->bm_fs_root_level = root_item->level;
 	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
-	memcpy(&bmp->bm_root_inode, inode_item, sizeof(bmp->bm_root_inode));
 	LIST_INIT(&bmp->bm_nodes);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
 
@@ -448,17 +447,37 @@ int
 btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 {
 	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	const struct btrfs_header *header;
+	const struct btrfs_inode_item *inode_item;
+	struct btrfs_inode_item inode;
 	struct btrfs_node *node;
+	struct buf *bp = NULL;
 	struct vnode *vp;
+	enum vtype type;
 	int error;
 
-	if (ino != bmp->bm_root_dirid)
-		return (EOPNOTSUPP);
+	if (ino < BTRFS_FIRST_FREE_OBJECTID ||
+	    ino > BTRFS_LAST_FREE_OBJECTID)
+		return (ENOENT);
 
 again:
 	error = btrfs_node_lookup(bmp, bmp->bm_treeid, ino, vpp);
 	if (error != 0 || *vpp != NULL)
 		return (error);
+
+	error = btrfs_read_fs_tree_root(bmp, &bp);
+	if (error != 0)
+		return (error);
+	header = (const struct btrfs_header *)bp->b_data;
+	error = btrfs_find_inode_item(&bmp->bm_super, header, ino,
+	    &inode_item);
+	if (error == 0)
+		memcpy(&inode, inode_item, sizeof(inode));
+	brelse(bp);
+	bp = NULL;
+	if (error != 0)
+		return (error);
+	type = IFTOVT(letoh32(inode.mode));
 
 	node = malloc(sizeof(*node), M_BTRFS, M_WAITOK | M_ZERO);
 	error = getnewvnode(VT_BTRFS, mp, &btrfs_vops, &vp);
@@ -471,12 +490,13 @@ again:
 	node->bn_mount = bmp;
 	node->bn_treeid = bmp->bm_treeid;
 	node->bn_ino = ino;
-	memcpy(&node->bn_inode, &bmp->bm_root_inode, sizeof(node->bn_inode));
+	memcpy(&node->bn_inode, &inode, sizeof(node->bn_inode));
 	rrw_init_flags(&node->bn_lock, "btrfsnode",
 	    RWL_DUPOK | RWL_IS_VNODE);
 	vp->v_data = node;
-	vp->v_type = VDIR;
-	vp->v_flag |= VROOT;
+	vp->v_type = type;
+	if (ino == bmp->bm_root_dirid)
+		vp->v_flag |= VROOT;
 
 	error = btrfs_node_insert(node);
 	if (error == EEXIST) {
@@ -980,7 +1000,7 @@ btrfs_find_inode_item(const struct btrfs_super_block *sb,
 	nlink = letoh32(inode_item->nlink);
 	if (generation == 0 || generation > letoh64(sb->generation) ||
 	    transid > letoh64(sb->generation) ||
-	    (mode & S_IFMT) != S_IFDIR || nlink == 0 ||
+	    IFTOVT(mode) == VNON || IFTOVT(mode) == VBAD || nlink == 0 ||
 	    letoh32(inode_item->atime.nsec) >= 1000000000 ||
 	    letoh32(inode_item->ctime.nsec) >= 1000000000 ||
 	    letoh32(inode_item->mtime.nsec) >= 1000000000 ||
