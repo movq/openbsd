@@ -18,6 +18,8 @@ option		USER_PCICONF	# user-space PCI configuration
 option		APERTURE	# in-kernel aperture driver for XFree86
 option		MTRR		# CPU memory range attributes control
 
+option		BTRFS
+
 option		NTFS		# NTFS support
 option		SUSPEND
 option		HIBERNATE

@@ -255,6 +255,9 @@ struct btrfs_super_block {
     uint8_t padding[565];
 } __packed;
 
+_Static_assert(sizeof(struct btrfs_super_block) == 0x1000,
+    "btrfs_super_block has wrong size");
+
 #define BTRFS_FT_UNKNOWN    0
 #define BTRFS_FT_REG_FILE   1
 #define BTRFS_FT_DIR        2
@@ -298,7 +301,8 @@ struct btrfs_inode_item {
     struct btrfs_timespec otime;
 } __packed;
 
-static_assert(sizeof(struct btrfs_inode_item) == 0xa0, "btrfs_inode_item has wrong size");
+_Static_assert(sizeof(struct btrfs_inode_item) == 0xa0,
+    "btrfs_inode_item has wrong size");
 
 struct btrfs_root_item {
     struct btrfs_inode_item inode;

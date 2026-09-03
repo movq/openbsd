@@ -100,6 +100,11 @@ static struct vfsconf vfsconflist[] = {
 	{ &tmpfs_vfsops, MOUNT_TMPFS, 19, 0, MNT_LOCAL,
 	    sizeof(struct tmpfs_args) },
 #endif
+
+#ifdef BTRFS
+	{ &btrfs_vfsops, MOUNT_BTRFS, 20, 0, MNT_LOCAL,
+	    sizeof(struct btrfs_args) },
+#endif
 };
 
 
