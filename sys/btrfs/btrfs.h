@@ -41,6 +41,7 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 #define BTRFS_UUID_KEY_RECEIVED_SUBVOL  0xFC
 
 #define BTRFS_ROOT_TREE_OBJECTID         1
+#define BTRFS_DEV_ITEMS_OBJECTID          1
 #define BTRFS_EXTENT_TREE_OBJECTID       2
 #define BTRFS_CHUNK_TREE_OBJECTID        3
 #define BTRFS_DEV_TREE_OBJECTID          4
