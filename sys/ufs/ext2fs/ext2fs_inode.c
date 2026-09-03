@@ -43,6 +43,7 @@
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/resourcevar.h>
+#include <sys/stdint.h>
 
 #include <ufs/ufs/quota.h>
 #include <ufs/ufs/inode.h>
@@ -55,6 +56,197 @@
 
 static int ext2fs_indirtrunc(struct inode *, daddr_t, daddr_t,
 				daddr_t, int, long *);
+
+#define EXT2FS_HAS_FIELD(ip, field)					\
+	(((ip)->i_e2fs->e2fs.e2fs_features_rocompat &			\
+	    EXT2F_ROCOMPAT_EXTRA_ISIZE) != 0 &&				\
+	    EXT2_DINODE_SIZE((ip)->i_e2fs) > EXT2_REV0_DINODE_SIZE &&	\
+	    EXT2_DINODE_FITS((ip)->i_e2din, field))
+
+static u_int16_t
+ext2fs_default_extra_isize(struct m_ext2fs *fs)
+{
+	u_int16_t isize, max;
+
+	if ((fs->e2fs.e2fs_features_rocompat &
+	    EXT2F_ROCOMPAT_EXTRA_ISIZE) == 0 ||
+	    EXT2_DINODE_SIZE(fs) <= EXT2_REV0_DINODE_SIZE)
+		return (0);
+
+	max = EXT2_DINODE_SIZE(fs) - EXT2_REV0_DINODE_SIZE;
+	isize = sizeof(struct ext2fs_dinode) - EXT2_REV0_DINODE_SIZE;
+	if (isize < fs->e2fs.e2fs_min_extra_isize)
+		isize = fs->e2fs.e2fs_min_extra_isize;
+	if (isize < fs->e2fs.e2fs_want_extra_isize)
+		isize = fs->e2fs.e2fs_want_extra_isize;
+	if (isize > max)
+		isize = max;
+	return (isize & ~3);
+}
+
+static void
+ext2fs_decode_time(struct timespec *ts, u_int32_t base, u_int32_t extra)
+{
+	ts->tv_sec = (int32_t)base;
+	if (extra & EXT2_EPOCH_MASK)
+		ts->tv_sec += (int64_t)(extra & EXT2_EPOCH_MASK) << 32;
+	ts->tv_nsec = (extra & EXT2_NSEC_MASK) >> EXT2_EPOCH_BITS;
+}
+
+static int64_t
+ext2fs_clamp_time(time_t sec, int extended)
+{
+	int64_t max;
+
+	max = INT32_MAX;
+	if (extended)
+		max += (int64_t)EXT2_EPOCH_MASK << 32;
+	if (sec < INT32_MIN)
+		return (INT32_MIN);
+	if (sec > max)
+		return (max);
+	return (sec);
+}
+
+static u_int32_t
+ext2fs_encode_extra_time(int64_t sec, long nsec)
+{
+	u_int32_t extra;
+
+	/* Epoch bits compensate for the signed low 32-bit seconds field. */
+	extra = ((sec - (int64_t)(int32_t)sec) >> 32) &
+	    EXT2_EPOCH_MASK;
+	return (extra | ((u_int32_t)nsec << EXT2_EPOCH_BITS));
+}
+
+int
+ext2fs_inode_load(struct inode *ip, struct ext2fs_dinode *dip)
+{
+	struct m_ext2fs *fs = ip->i_e2fs;
+	u_int16_t isize;
+
+	if (EXT2_DINODE_SIZE(fs) > EXT2_REV0_DINODE_SIZE) {
+		isize = letoh16(dip->e2di_extra_isize);
+		if (isize & 3 ||
+		    isize > EXT2_DINODE_SIZE(fs) - EXT2_REV0_DINODE_SIZE)
+			return (EINVAL);
+	}
+
+	e2fs_iload(fs, dip, ip->i_e2din);
+
+	if (EXT2_DINODE_SIZE(fs) > EXT2_REV0_DINODE_SIZE) {
+		if (isize == 0 && (fs->e2fs.e2fs_features_rocompat &
+		    EXT2F_ROCOMPAT_EXTRA_ISIZE)) {
+			memset(&ip->i_e2din->e2di_ctime_extra, 0,
+			    sizeof(*ip->i_e2din) -
+			    offsetof(struct ext2fs_dinode, e2di_ctime_extra));
+			ip->i_e2din->e2di_extra_isize =
+			    ext2fs_default_extra_isize(fs);
+			ip->i_flag |= IN_E2FS_NEW;
+		}
+	} else
+		ip->i_e2din->e2di_extra_isize = 0;
+
+	ext2fs_decode_time(&ip->inode_ext.e2fs.ext2fs_atime,
+	    ip->i_e2fs_atime_lo, EXT2FS_HAS_FIELD(ip, e2di_atime_extra) ?
+	    ip->i_e2din->e2di_atime_extra : 0);
+	ext2fs_decode_time(&ip->inode_ext.e2fs.ext2fs_mtime,
+	    ip->i_e2fs_mtime_lo, EXT2FS_HAS_FIELD(ip, e2di_mtime_extra) ?
+	    ip->i_e2din->e2di_mtime_extra : 0);
+	ext2fs_decode_time(&ip->inode_ext.e2fs.ext2fs_ctime,
+	    ip->i_e2fs_ctime_lo, EXT2FS_HAS_FIELD(ip, e2di_ctime_extra) ?
+	    ip->i_e2din->e2di_ctime_extra : 0);
+
+	ip->i_e2fs_birthtime = 0;
+	ip->i_e2fs_birthnsec = 0;
+	if (EXT2FS_HAS_FIELD(ip, e2di_crtime))
+		ext2fs_decode_time(&ip->inode_ext.e2fs.ext2fs_birthtime,
+		    ip->i_e2din->e2di_crtime,
+		    EXT2FS_HAS_FIELD(ip, e2di_crtime_extra) ?
+		    ip->i_e2din->e2di_crtime_extra : 0);
+
+	return (0);
+}
+
+void
+ext2fs_inode_init(struct inode *ip)
+{
+	ip->i_e2din->e2di_extra_isize =
+	    ext2fs_default_extra_isize(ip->i_e2fs);
+	if (EXT2FS_HAS_FIELD(ip, e2di_crtime))
+		getnanotime(&ip->inode_ext.e2fs.ext2fs_birthtime);
+}
+
+void
+ext2fs_itimes(struct inode *ip)
+{
+	struct timespec ts;
+
+	if ((ip->i_flag & (IN_ACCESS | IN_CHANGE | IN_UPDATE)) == 0)
+		return;
+
+	ip->i_flag |= IN_MODIFIED;
+	getnanotime(&ts);
+	if (ip->i_flag & IN_ACCESS)
+		ip->inode_ext.e2fs.ext2fs_atime = ts;
+	if (ip->i_flag & IN_UPDATE)
+		ip->inode_ext.e2fs.ext2fs_mtime = ts;
+	if (ip->i_flag & IN_CHANGE) {
+		ip->inode_ext.e2fs.ext2fs_ctime = ts;
+		ip->i_modrev++;
+	}
+	ip->i_flag &= ~(IN_ACCESS | IN_CHANGE | IN_UPDATE);
+}
+
+static void
+ext2fs_inode_save_times(struct inode *ip)
+{
+	int64_t sec;
+	int extended;
+
+	extended = EXT2FS_HAS_FIELD(ip, e2di_atime_extra);
+	sec = ext2fs_clamp_time(ip->i_e2fs_atime, extended);
+	ip->i_e2fs_atime = sec;
+	ip->i_e2fs_atime_lo = (u_int32_t)sec;
+	if (extended)
+		ip->i_e2din->e2di_atime_extra =
+		    ext2fs_encode_extra_time(sec, ip->i_e2fs_atimensec);
+	else
+		ip->i_e2fs_atimensec = 0;
+
+	extended = EXT2FS_HAS_FIELD(ip, e2di_mtime_extra);
+	sec = ext2fs_clamp_time(ip->i_e2fs_mtime, extended);
+	ip->i_e2fs_mtime = sec;
+	ip->i_e2fs_mtime_lo = (u_int32_t)sec;
+	if (extended)
+		ip->i_e2din->e2di_mtime_extra =
+		    ext2fs_encode_extra_time(sec, ip->i_e2fs_mtimensec);
+	else
+		ip->i_e2fs_mtimensec = 0;
+
+	extended = EXT2FS_HAS_FIELD(ip, e2di_ctime_extra);
+	sec = ext2fs_clamp_time(ip->i_e2fs_ctime, extended);
+	ip->i_e2fs_ctime = sec;
+	ip->i_e2fs_ctime_lo = (u_int32_t)sec;
+	if (extended)
+		ip->i_e2din->e2di_ctime_extra =
+		    ext2fs_encode_extra_time(sec, ip->i_e2fs_ctimensec);
+	else
+		ip->i_e2fs_ctimensec = 0;
+
+	if (EXT2FS_HAS_FIELD(ip, e2di_crtime)) {
+		extended = EXT2FS_HAS_FIELD(ip, e2di_crtime_extra);
+		sec = ext2fs_clamp_time(ip->i_e2fs_birthtime, extended);
+		ip->i_e2fs_birthtime = sec;
+		ip->i_e2din->e2di_crtime = (u_int32_t)sec;
+		if (extended)
+			ip->i_e2din->e2di_crtime_extra =
+			    ext2fs_encode_extra_time(sec,
+			    ip->i_e2fs_birthnsec);
+		else
+			ip->i_e2fs_birthnsec = 0;
+	}
+}
 
 /*
  * Get the size of an inode.
@@ -162,7 +354,7 @@ ext2fs_update(struct inode *ip, int waitfor)
 
 	if (ITOV(ip)->v_mount->mnt_flag & MNT_RDONLY)
 		return (0);
-	EXT2FS_ITIMES(ip);
+	ext2fs_itimes(ip);
 	if ((ip->i_flag & IN_MODIFIED) == 0)
 		return (0);
 	ip->i_flag &= ~IN_MODIFIED;
@@ -188,6 +380,11 @@ ext2fs_update(struct inode *ip, int waitfor)
 	ip->i_e2fs_uid_high = ip->i_e2fs_uid >> 16;
 	ip->i_e2fs_gid_high = ip->i_e2fs_gid >> 16;
 
+	if (ip->i_flag & IN_E2FS_NEW) {
+		memset(cp, 0, EXT2_DINODE_SIZE(fs));
+		ip->i_flag &= ~IN_E2FS_NEW;
+	}
+	ext2fs_inode_save_times(ip);
 	e2fs_isave(fs, ip->i_e2din, (struct ext2fs_dinode *)cp);
 	if (waitfor)
 		return (bwrite(bp));

@@ -331,10 +331,10 @@ ext2fs_reload_vnode(struct vnode *vp, void *args)
 	}
 	cp = (caddr_t)bp->b_data +
 	    (ino_to_fsbo(era->fs, ip->i_number) * EXT2_DINODE_SIZE(era->fs));
-	e2fs_iload(era->fs, (struct ext2fs_dinode *)cp, ip->i_e2din);
+	error = ext2fs_inode_load(ip, (struct ext2fs_dinode *)cp);
 	brelse(bp);
 	vput(vp);
-	return (0);
+	return (error);
 }
 
 static off_t
@@ -985,9 +985,16 @@ ext2fs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 	dp = (struct ext2fs_dinode *) ((char *)bp->b_data
 	    + EXT2_DINODE_SIZE(fs) * ino_to_fsbo(fs, ino));
 
-	ip->i_e2din = pool_get(&ext2fs_dinode_pool, PR_WAITOK);
-	e2fs_iload(fs, dp, ip->i_e2din);
+	ip->i_e2din = pool_get(&ext2fs_dinode_pool, PR_WAITOK | PR_ZERO);
+	error = ext2fs_inode_load(ip, dp);
 	brelse(bp);
+	if (error) {
+		printf("ext2fs: inode %llu has invalid extra size\n",
+		    (unsigned long long)ino);
+		vput(vp);
+		*vpp = NULL;
+		return (error);
+	}
 
 	ip->i_effnlink = ip->i_e2fs_nlink;
 
@@ -1164,6 +1171,7 @@ static int
 e2fs_sbcheck(struct ext2fs *fs, int ronly)
 {
 	u_int32_t mask, tmp;
+	u_int16_t inode_size, max_isize, min_isize, want_isize;
 	int i;
 
 	tmp = letoh16(fs->e2fs_magic);
@@ -1193,10 +1201,30 @@ e2fs_sbcheck(struct ext2fs *fs, int ronly)
 	else if (tmp == E2FS_REV0)
 		return (0);
 
+	inode_size = letoh16(fs->e2fs_inode_size);
+	if (inode_size < EXT2_REV0_DINODE_SIZE ||
+	    inode_size > (1024U << letoh32(fs->e2fs_log_bsize)) ||
+	    (inode_size & (inode_size - 1)) != 0) {
+		printf("ext2fs: invalid inode size\n");
+		return (EINVAL);
+	}
+
 	tmp = letoh32(fs->e2fs_first_ino);
 	if (tmp != EXT2_FIRSTINO) {
 		printf("ext2fs: first inode at 0x%x\n", tmp);
 		return (EINVAL);      /* XXX needs translation */
+	}
+
+	if (letoh32(fs->e2fs_features_rocompat) &
+	    EXT2F_ROCOMPAT_EXTRA_ISIZE) {
+		max_isize = inode_size - EXT2_REV0_DINODE_SIZE;
+		min_isize = letoh16(fs->e2fs_min_extra_isize);
+		want_isize = letoh16(fs->e2fs_want_extra_isize);
+		if ((min_isize & 3) || min_isize > max_isize ||
+		    (want_isize & 3) || want_isize > max_isize) {
+			printf("ext2fs: invalid extra inode size\n");
+			return (EINVAL);
+		}
 	}
 
 	tmp = letoh32(fs->e2fs_features_incompat);

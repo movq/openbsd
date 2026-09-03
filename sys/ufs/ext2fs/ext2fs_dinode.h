@@ -88,15 +88,20 @@ struct ext2fs_dinode {
 	u_int16_t	e2di_gid_high;	/* 122: owner GID, bits 31:16 */
 	u_int16_t	e2di_chksum_lo;	/* 124: inode checksum, bits 15:0 */
 	u_int16_t	e2di__reserved;	/* 126: 	unused */
-	u_int16_t	e2di_isize;	/* 128: size of this inode */
+	u_int16_t	e2di_extra_isize; /* 128: extra inode size */
 	u_int16_t	e2di_chksum_hi;	/* 130: inode checksum, bits 31:16 */
-	u_int32_t	e2di_x_ctime;	/* 132: extra Change time */
-	u_int32_t	e2di_x_mtime;	/* 136: extra Modification time */
-	u_int32_t	e2di_x_atime;	/* 140: extra Access time */
+	u_int32_t	e2di_ctime_extra; /* 132: extra Change time */
+	u_int32_t	e2di_mtime_extra; /* 136: extra Modification time */
+	u_int32_t	e2di_atime_extra; /* 140: extra Access time */
 	u_int32_t	e2di_crtime;	/* 144: Creation (birth) time */
-	u_int32_t	e2di_x_crtime;	/* 148: extra Creation (birth) time */
+	u_int32_t	e2di_crtime_extra; /* 148: extra Creation (birth) time */
 	u_int32_t	e2di_version_hi; /* 152: inode version, bits 63:31 */
+	u_int32_t	e2di_projid;	/* 156: project ID */
 };
+
+#define EXT2_EPOCH_BITS		2
+#define EXT2_EPOCH_MASK		((1U << EXT2_EPOCH_BITS) - 1)
+#define EXT2_NSEC_MASK		(~EXT2_EPOCH_MASK)
 
 #define	E2MAXSYMLINKLEN	((NDADDR + NIADDR) * sizeof(u_int32_t))
 
@@ -140,6 +145,11 @@ struct ext2fs_dinode {
 #define EXT2_DINODE_SIZE(fs)	((fs)->e2fs.e2fs_rev > E2FS_REV0 ?  \
 				    (fs)->e2fs.e2fs_inode_size : \
 				    EXT2_REV0_DINODE_SIZE)
+/* Bytes beyond e2di_extra_isize may contain inline extended attributes. */
+#define EXT2_DINODE_FITS(dip, field)				\
+	(offsetof(struct ext2fs_dinode, field) +			\
+	    sizeof((dip)->field) <= EXT2_REV0_DINODE_SIZE +	\
+	    (dip)->e2di_extra_isize)
 
 /*
  * The e2di_blocks fields may be overlaid with other information for
@@ -160,7 +170,8 @@ struct ext2fs_dinode {
 		memcpy((new),(old), MIN(EXT2_DINODE_SIZE(fs), sizeof(*new)))
 #else
 struct m_ext2fs;
-void e2fs_i_bswap(struct m_ext2fs *, struct ext2fs_dinode *, struct ext2fs_dinode *);
-#	define e2fs_iload(fs, old, new) e2fs_i_bswap((fs), (old), (new))
-#	define e2fs_isave(fs, old, new) e2fs_i_bswap((fs), (old), (new))
+void e2fs_i_bswap(struct m_ext2fs *, struct ext2fs_dinode *,
+    struct ext2fs_dinode *, int);
+#	define e2fs_iload(fs, old, new) e2fs_i_bswap((fs), (old), (new), 0)
+#	define e2fs_isave(fs, old, new) e2fs_i_bswap((fs), (old), (new), 1)
 #endif

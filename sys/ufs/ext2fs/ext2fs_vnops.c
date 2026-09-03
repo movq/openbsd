@@ -165,7 +165,7 @@ ext2fs_getattr(void *v)
 	struct inode *ip = VTOI(vp);
 	struct vattr *vap = ap->a_vap;
 
-	EXT2FS_ITIMES(ip);
+	ext2fs_itimes(ip);
 	/*
 	 * Copy from inode table
 	 */
@@ -178,11 +178,11 @@ ext2fs_getattr(void *v)
 	vap->va_rdev = (dev_t) letoh32(ip->i_e2din->e2di_rdev);
 	vap->va_size = ext2fs_size(ip);
 	vap->va_atime.tv_sec = ip->i_e2fs_atime;
-	vap->va_atime.tv_nsec = 0;
+	vap->va_atime.tv_nsec = ip->i_e2fs_atimensec;
 	vap->va_mtime.tv_sec = ip->i_e2fs_mtime;
-	vap->va_mtime.tv_nsec = 0;
+	vap->va_mtime.tv_nsec = ip->i_e2fs_mtimensec;
 	vap->va_ctime.tv_sec = ip->i_e2fs_ctime;
-	vap->va_ctime.tv_nsec = 0;
+	vap->va_ctime.tv_nsec = ip->i_e2fs_ctimensec;
 	vap->va_flags = (ip->i_e2fs_flags & EXT2_APPEND) ? SF_APPEND : 0;
 	vap->va_flags |= (ip->i_e2fs_flags & EXT2_IMMUTABLE) ? SF_IMMUTABLE : 0;
 	vap->va_gen = ip->i_e2fs_gen;
@@ -293,11 +293,15 @@ ext2fs_setattr(void *v)
 			    (ip->i_flag & (IN_CHANGE | IN_UPDATE)))
 				ip->i_flag |= IN_ACCESS;
 		}
-		EXT2FS_ITIMES(ip);
-		if (vap->va_mtime.tv_nsec != VNOVAL)
+		ext2fs_itimes(ip);
+		if (vap->va_mtime.tv_nsec != VNOVAL) {
 			ip->i_e2fs_mtime = vap->va_mtime.tv_sec;
-		if (vap->va_atime.tv_nsec != VNOVAL)
+			ip->i_e2fs_mtimensec = vap->va_mtime.tv_nsec;
+		}
+		if (vap->va_atime.tv_nsec != VNOVAL) {
 			ip->i_e2fs_atime = vap->va_atime.tv_sec;
+			ip->i_e2fs_atimensec = vap->va_atime.tv_nsec;
+		}
 		error = ext2fs_update(ip, 1);
 		if (error)
 			return (error);

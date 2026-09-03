@@ -35,6 +35,7 @@
  */
 
 struct buf;
+struct ext2fs_dinode;
 struct fid;
 struct m_ext2fs;
 struct inode;
@@ -76,6 +77,9 @@ int	ext2fs_bmap(void *);
 u_int64_t	ext2fs_size(struct inode *);
 int	ext2fs_init(struct vfsconf *);
 int	ext2fs_setsize(struct inode *, u_int64_t);
+int	ext2fs_inode_load(struct inode *, struct ext2fs_dinode *);
+void	ext2fs_inode_init(struct inode *);
+void	ext2fs_itimes(struct inode *);
 int	ext2fs_update(struct inode *ip, int waitfor);
 int	ext2fs_truncate(struct inode *, off_t, int, struct ucred *);
 int	ext2fs_inactive(void *);
