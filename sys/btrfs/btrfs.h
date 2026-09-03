@@ -367,6 +367,11 @@ struct btrfs_file_extent_item {
     uint64_t num_bytes;
 } __packed;
 
+_Static_assert(offsetof(struct btrfs_file_extent_item, disk_bytenr) == 0x15,
+    "btrfs_file_extent_item has wrong inline size");
+_Static_assert(sizeof(struct btrfs_file_extent_item) == 0x35,
+    "btrfs_file_extent_item has wrong size");
+
 struct btrfs_inode_ref {
     uint64_t index;
     uint16_t name_len;
