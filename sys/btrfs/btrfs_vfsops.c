@@ -94,6 +94,9 @@ static int	btrfs_load_chunk_tree(const struct btrfs_super_block *,
 		    const struct btrfs_header *, const struct btrfs_io_map *,
 		    struct btrfs_chunk_map **, unsigned int *,
 		    struct btrfs_chunk_stats *);
+static int	btrfs_find_root_item(const struct btrfs_super_block *,
+		    const struct btrfs_header *, uint64_t,
+		    const struct btrfs_root_item **);
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
@@ -164,11 +167,12 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 {
 	const struct btrfs_super_block *sb;
 	const struct btrfs_header *header;
+	const struct btrfs_root_item *root_item;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_stats chunk_stats;
 	struct btrfs_io_map map, root_map;
 	struct buf *bp = NULL, *rootbp = NULL, *treebp = NULL;
-	uint64_t chunk_root, generation, root;
+	uint64_t chunk_root, fs_root, fs_root_generation, generation, root;
 	uint32_t nritems, nodesize, sectorsize;
 	unsigned int mirror, nchunks = 0, nsystem_chunks;
 	int error;
@@ -242,7 +246,18 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	    (unsigned long long)root_map.physical[mirror], header->level,
 	    nritems, mirror + 1);
 
-	/* Root-item lookup is the next implementation milestone. */
+	error = btrfs_find_root_item(sb, header, BTRFS_FS_TREE_OBJECTID,
+	    &root_item);
+	if (error != 0)
+		goto out;
+	fs_root = letoh64(root_item->bytenr);
+	fs_root_generation = letoh64(root_item->generation);
+	printf("btrfs: %s: filesystem root item logical %llu, "
+	    "generation %llu, level %u\n", fspec,
+	    (unsigned long long)fs_root,
+	    (unsigned long long)fs_root_generation, root_item->level);
+
+	/* Reading the filesystem tree root is the next milestone. */
 	error = EOPNOTSUPP;
 out:
 	if (chunks != NULL)
@@ -644,6 +659,61 @@ fail:
 	free(chunks, M_TEMP, *nchunksp * sizeof(*chunks));
 	*nchunksp = 0;
 	return (error);
+}
+
+static int
+btrfs_find_root_item(const struct btrfs_super_block *sb,
+    const struct btrfs_header *header, uint64_t objectid,
+    const struct btrfs_root_item **root_itemp)
+{
+	const struct btrfs_item *items;
+	const struct btrfs_key *key;
+	const struct btrfs_root_item *root_item;
+	struct btrfs_key target;
+	uint64_t bytenr, generation, root_dirid;
+	uint32_t i, nritems, offset, refs, sectorsize, size;
+	int cmp;
+
+	*root_itemp = NULL;
+	if (header->level != 0)
+		return (EOPNOTSUPP);
+
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(objectid);
+	target.type = BTRFS_ROOT_ITEM_KEY;
+	nritems = letoh32(header->nritems);
+	items = (const struct btrfs_item *)(header + 1);
+	for (i = 0; i < nritems; i++) {
+		key = &items[i].key;
+		cmp = btrfs_key_cmp(key, &target);
+		if (cmp < 0)
+			continue;
+		if (cmp > 0)
+			break;
+
+		size = letoh32(items[i].size);
+		if (size < offsetof(struct btrfs_root_item, generation_v2))
+			return (EINVAL);
+		offset = letoh32(items[i].offset);
+		root_item = (const struct btrfs_root_item *)
+		    ((const uint8_t *)(header + 1) + offset);
+
+		bytenr = letoh64(root_item->bytenr);
+		generation = letoh64(root_item->generation);
+		root_dirid = letoh64(root_item->root_dirid);
+		refs = letoh32(root_item->refs);
+		sectorsize = letoh32(sb->sectorsize);
+		if (bytenr == 0 || (bytenr & (sectorsize - 1)) != 0 ||
+		    generation == 0 || generation > letoh64(sb->generation) ||
+		    root_dirid != BTRFS_FIRST_FREE_OBJECTID || refs == 0 ||
+		    root_item->level >= BTRFS_MAX_LEVEL)
+			return (EINVAL);
+
+		*root_itemp = root_item;
+		return (0);
+	}
+
+	return (ENOENT);
 }
 
 static int
