@@ -216,6 +216,11 @@ struct ntfs_args {
 #define	NTFS_MFLAG_CASEINS      0x00000001
 #define	NTFS_MFLAG_ALLNAMES     0x00000002
 
+/* Arguments to mount Btrfs file systems. */
+struct btrfs_args {
+	char	*fspec;			/* block special device to mount */
+};
+
 /* Arguments to mount UDF file systems */
 struct udf_args {
 	char *fspec; /* Block special device to mount */
@@ -272,6 +277,7 @@ union mount_info {
 	struct iso_args iso_args;
 	struct msdosfs_args msdosfs_args;
 	struct ntfs_args ntfs_args;
+	struct btrfs_args btrfs_args;
 	struct tmpfs_args tmpfs_args;
 	char __align[160];	/* 64-bit alignment and room to grow */
 };
@@ -325,6 +331,7 @@ struct statfs {
 #define	MOUNT_UDF	"udf"		/* UDF */
 #define	MOUNT_TMPFS	"tmpfs"		/* tmpfs */
 #define	MOUNT_FUSEFS	"fuse"		/* FUSE */
+#define	MOUNT_BTRFS	"btrfs"		/* B-tree File System */
 
 /*
  * Structure per mounted file system.  Each mounted file system has an
@@ -555,6 +562,7 @@ extern	const struct vfsops ntfs_vfsops;
 extern	const struct vfsops udf_vfsops;
 extern	const struct vfsops fusefs_vfsops;
 extern	const struct vfsops tmpfs_vfsops;
+extern	const struct vfsops btrfs_vfsops;
 
 #include <net/radix.h>
 #include <sys/socket.h>		/* XXX for AF_MAX */
