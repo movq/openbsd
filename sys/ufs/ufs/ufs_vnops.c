@@ -104,7 +104,7 @@ ufs_itimes(struct vnode *vp)
 
 #ifdef EXT2FS
 	if (IS_EXT2_VNODE(ip->i_vnode)) {
-		EXT2FS_ITIMES(ip);
+		ext2fs_itimes(ip);
 		goto out;
 	}
 #endif

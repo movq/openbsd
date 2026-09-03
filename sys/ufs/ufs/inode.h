@@ -39,6 +39,7 @@
 
 #include <sys/buf.h>
 #include <sys/lock.h>
+#include <sys/time.h>
 #include <ufs/ufs/dinode.h>
 #include <ufs/ufs/dir.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
@@ -53,6 +54,10 @@ struct ext2fs_inode_ext {
 	daddr_t		ext2fs_last_blk;	/* last blk allocated on disk */
 	u_int32_t	ext2fs_effective_uid;	/* effective inode uid */
 	u_int32_t	ext2fs_effective_gid;	/* effective inode gid */
+	struct timespec	ext2fs_atime;		/* last access time */
+	struct timespec	ext2fs_mtime;		/* last modification time */
+	struct timespec	ext2fs_ctime;		/* last inode change time */
+	struct timespec	ext2fs_birthtime;	/* inode creation time */
 	struct ext4_extent_cache	ext2fs_extent_cache;
 };
 
@@ -110,6 +115,14 @@ struct inode {
 #define i_e2fs_last_blk		inode_ext.e2fs.ext2fs_last_blk
 #define i_e2fs_uid		inode_ext.e2fs.ext2fs_effective_uid
 #define i_e2fs_gid		inode_ext.e2fs.ext2fs_effective_gid
+#define i_e2fs_atime		inode_ext.e2fs.ext2fs_atime.tv_sec
+#define i_e2fs_atimensec	inode_ext.e2fs.ext2fs_atime.tv_nsec
+#define i_e2fs_mtime		inode_ext.e2fs.ext2fs_mtime.tv_sec
+#define i_e2fs_mtimensec	inode_ext.e2fs.ext2fs_mtime.tv_nsec
+#define i_e2fs_ctime		inode_ext.e2fs.ext2fs_ctime.tv_sec
+#define i_e2fs_ctimensec	inode_ext.e2fs.ext2fs_ctime.tv_nsec
+#define i_e2fs_birthtime	inode_ext.e2fs.ext2fs_birthtime.tv_sec
+#define i_e2fs_birthnsec	inode_ext.e2fs.ext2fs_birthtime.tv_nsec
 #define i_e2fs_ext_cache	inode_ext.e2fs.ext2fs_extent_cache
 #define	i_dirhash		inode_ext.dirhash
 
@@ -226,9 +239,9 @@ struct inode_vtbl {
 
 #define i_e2fs_mode		i_e2din->e2di_mode
 #define i_e2fs_size		i_e2din->e2di_size
-#define i_e2fs_atime		i_e2din->e2di_atime
-#define i_e2fs_ctime		i_e2din->e2di_ctime
-#define i_e2fs_mtime		i_e2din->e2di_mtime
+#define i_e2fs_atime_lo		i_e2din->e2di_atime
+#define i_e2fs_ctime_lo		i_e2din->e2di_ctime
+#define i_e2fs_mtime_lo		i_e2din->e2di_mtime
 #define i_e2fs_dtime		i_e2din->e2di_dtime
 #define i_e2fs_nlink		i_e2din->e2di_nlink
 #define i_e2fs_nblock		i_e2din->e2di_nblock
@@ -255,6 +268,7 @@ struct inode_vtbl {
 #define	IN_EXLOCK	0x0040		/* File has exclusive lock. */
 #define	IN_LAZYMOD	0x0080		/* Modified, but don't write yet. */
 #define	IN_HASHED	0x0100		/* Inode is on the hash chain */
+#define	IN_E2FS_NEW	0x0200		/* ext2 inode body needs zeroing. */
 
 #define	i_devvp i_ump->um_devvp
 
@@ -315,21 +329,6 @@ struct indir {
 /* Convert between inode pointers and vnode pointers. */
 #define	VTOI(vp)	((struct inode *)(vp)->v_data)
 #define	ITOV(ip)	((ip)->i_vnode)
-
-#define	EXT2FS_ITIMES(ip) do {						\
-	if ((ip)->i_flag & (IN_ACCESS | IN_CHANGE | IN_UPDATE)) {	\
-		(ip)->i_flag |= IN_MODIFIED;				\
-		if ((ip)->i_flag & IN_ACCESS)				\
-			(ip)->i_e2fs_atime = gettime();			\
-		if ((ip)->i_flag & IN_UPDATE)				\
-			(ip)->i_e2fs_mtime = gettime();			\
-		if ((ip)->i_flag & IN_CHANGE) {				\
-			(ip)->i_e2fs_ctime = gettime();			\
-			(ip)->i_modrev++;				\
-		}							\
-		(ip)->i_flag &= ~(IN_ACCESS | IN_CHANGE | IN_UPDATE);	\
-	}								\
-} while (0)
 
 /* Determine if soft dependencies are being done */
 #define DOINGASYNC(vp)        ((vp)->v_mount->mnt_flag & MNT_ASYNC)

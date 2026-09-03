@@ -321,7 +321,8 @@ static const struct ext2_feature incompat[] = {
 /* features supported in this implementation */
 #define EXT2F_COMPAT_SUPP		0x0000
 #define EXT2F_ROCOMPAT_SUPP		(EXT2F_ROCOMPAT_SPARSE_SUPER | \
-					 EXT2F_ROCOMPAT_LARGE_FILE)
+					 EXT2F_ROCOMPAT_LARGE_FILE | \
+					 EXT2F_ROCOMPAT_EXTRA_ISIZE)
 #define EXT2F_INCOMPAT_SUPP		(EXT2F_INCOMPAT_FTYPE)
 #define EXT4F_RW_INCOMPAT_SUPP		(EXT2F_INCOMPAT_EXTENTS | \
 					 EXT2F_INCOMPAT_64BIT)
