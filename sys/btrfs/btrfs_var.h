@@ -66,7 +66,6 @@ struct btrfs_mount {
 	uint64_t			 bm_fs_root_generation;
 	uint64_t			 bm_root_dirid;
 	uint8_t				 bm_fs_root_level;
-	struct btrfs_inode_item		 bm_root_inode;
 	struct btrfs_node_list		 bm_nodes;
 	struct mutex			 bm_nodemtx;
 };
