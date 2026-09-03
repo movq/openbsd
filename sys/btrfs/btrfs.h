@@ -6,6 +6,7 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 
 #define BTRFS_MAGIC         0x4d5f53665248425f
 #define BTRFS_LABEL_SIZE    0x100
+#define BTRFS_NAME_MAX      0xff
 #define BTRFS_FIRST_FREE_OBJECTID   0x100
 #define BTRFS_FIRST_CHUNK_TREE_OBJECTID 0x100
 #define BTRFS_LAST_FREE_OBJECTID    0xffffffffffffff00
