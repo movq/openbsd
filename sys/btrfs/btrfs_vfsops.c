@@ -170,8 +170,8 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	const struct btrfs_root_item *root_item;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_stats chunk_stats;
-	struct btrfs_io_map map, root_map;
-	struct buf *bp = NULL, *rootbp = NULL, *treebp = NULL;
+	struct btrfs_io_map fs_map, map, root_map;
+	struct buf *bp = NULL, *fsbp = NULL, *rootbp = NULL, *treebp = NULL;
 	uint64_t chunk_root, fs_root, fs_root_generation, generation, root;
 	uint32_t nritems, nodesize, sectorsize;
 	unsigned int mirror, nchunks = 0, nsystem_chunks;
@@ -257,11 +257,31 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	    (unsigned long long)fs_root,
 	    (unsigned long long)fs_root_generation, root_item->level);
 
-	/* Reading the filesystem tree root is the next milestone. */
+	error = btrfs_lookup_logical(chunks, nchunks, fs_root, nodesize,
+	    &fs_map);
+	if (error != 0)
+		goto out;
+	error = btrfs_read_tree_block(devvp, sb, &fs_map, fs_root,
+	    fs_root_generation, BTRFS_FS_TREE_OBJECTID, root_item->level,
+	    &fsbp, &mirror);
+	if (error != 0)
+		goto out;
+
+	header = (const struct btrfs_header *)fsbp->b_data;
+	nritems = letoh32(header->nritems);
+	printf("btrfs: %s: filesystem tree root logical %llu, physical %llu, "
+	    "level %u, %u items, mirror %u\n", fspec,
+	    (unsigned long long)fs_root,
+	    (unsigned long long)fs_map.physical[mirror], header->level,
+	    nritems, mirror + 1);
+
+	/* Filesystem-tree item lookup is the next milestone. */
 	error = EOPNOTSUPP;
 out:
 	if (chunks != NULL)
 		free(chunks, M_TEMP, nchunks * sizeof(*chunks));
+	if (fsbp != NULL)
+		brelse(fsbp);
 	if (rootbp != NULL)
 		brelse(rootbp);
 	if (treebp != NULL)
