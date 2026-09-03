@@ -94,8 +94,6 @@ static int	btrfs_find_root_item(const struct btrfs_super_block *,
 static int	btrfs_find_inode_item(const struct btrfs_super_block *,
 		    const struct btrfs_header *, uint64_t,
 		    const struct btrfs_inode_item **);
-static int	btrfs_scan_directory(const struct btrfs_super_block *,
-		    const struct btrfs_header *, uint64_t);
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
@@ -260,7 +258,8 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	if (error != 0)
 		goto out;
 
-	error = btrfs_scan_directory(sb, header, BTRFS_FIRST_FREE_OBJECTID);
+	error = btrfs_iterate_directory(sb, header,
+	    BTRFS_FIRST_FREE_OBJECTID, NULL, NULL);
 	if (error != 0)
 		goto out;
 
@@ -271,6 +270,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	memcpy(&bmp->bm_super, sb, sizeof(bmp->bm_super));
 	bmp->bm_chunks = chunks;
 	bmp->bm_nchunks = nchunks;
+	bmp->bm_treeid = BTRFS_FS_TREE_OBJECTID;
 	bmp->bm_fs_root = fs_root;
 	bmp->bm_fs_root_generation = fs_root_generation;
 	bmp->bm_fs_root_level = root_item->level;
@@ -456,7 +456,7 @@ btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 		return (EOPNOTSUPP);
 
 again:
-	error = btrfs_node_lookup(bmp, BTRFS_FS_TREE_OBJECTID, ino, vpp);
+	error = btrfs_node_lookup(bmp, bmp->bm_treeid, ino, vpp);
 	if (error != 0 || *vpp != NULL)
 		return (error);
 
@@ -469,7 +469,7 @@ again:
 
 	node->bn_vnode = vp;
 	node->bn_mount = bmp;
-	node->bn_treeid = BTRFS_FS_TREE_OBJECTID;
+	node->bn_treeid = bmp->bm_treeid;
 	node->bn_ino = ino;
 	memcpy(&node->bn_inode, &bmp->bm_root_inode, sizeof(node->bn_inode));
 	rrw_init_flags(&node->bn_lock, "btrfsnode",
@@ -763,6 +763,21 @@ btrfs_read_tree_block(struct vnode *devvp,
 	return (error);
 }
 
+int
+btrfs_read_fs_tree_root(struct btrfs_mount *bmp, struct buf **bpp)
+{
+	struct btrfs_io_map map;
+	int error;
+
+	error = btrfs_lookup_logical(bmp->bm_chunks, bmp->bm_nchunks,
+	    bmp->bm_fs_root, letoh32(bmp->bm_super.nodesize), &map);
+	if (error != 0)
+		return (error);
+	return (btrfs_read_tree_block(bmp->bm_devvp, &bmp->bm_super, &map,
+	    bmp->bm_fs_root, bmp->bm_fs_root_generation, bmp->bm_treeid,
+	    bmp->bm_fs_root_level, bpp));
+}
+
 static int
 btrfs_load_chunk_tree(const struct btrfs_super_block *sb,
     const struct btrfs_header *header, const struct btrfs_io_map *bootstrap,
@@ -976,18 +991,21 @@ btrfs_find_inode_item(const struct btrfs_super_block *sb,
 	return (0);
 }
 
-static int
-btrfs_scan_directory(const struct btrfs_super_block *sb,
-    const struct btrfs_header *header, uint64_t objectid)
+int
+btrfs_iterate_directory(const struct btrfs_super_block *sb,
+    const struct btrfs_header *header, uint64_t objectid,
+    btrfs_dir_iter_fn callback, void *arg)
 {
 	const struct btrfs_dir_item *dir_item;
 	const struct btrfs_item *items;
 	const struct btrfs_key *key;
+	struct btrfs_dir_entry entry;
 	const uint8_t *data, *name;
 	uint64_t location, transid;
 	uint32_t i, nritems, offset, size;
 	uint16_t data_len, name_len;
 	size_t record_size, remaining;
+	int error;
 
 	if (header->level != 0)
 		return (EOPNOTSUPP);
@@ -1021,7 +1039,10 @@ btrfs_scan_directory(const struct btrfs_super_block *sb,
 			record_size = sizeof(*dir_item) + name_len;
 			name = data + sizeof(*dir_item);
 			if (memchr(name, '\0', name_len) != NULL ||
-			    memchr(name, '/', name_len) != NULL)
+			    memchr(name, '/', name_len) != NULL ||
+			    (name_len == 1 && name[0] == '.') ||
+			    (name_len == 2 && name[0] == '.' &&
+			    name[1] == '.'))
 				return (EINVAL);
 
 			location = letoh64(dir_item->location.objectid);
@@ -1037,6 +1058,20 @@ btrfs_scan_directory(const struct btrfs_super_block *sb,
 			    BTRFS_INODE_ITEM_KEY ||
 			    letoh64(dir_item->location.offset) != 0)
 				return (EINVAL);
+
+			if (callback != NULL) {
+				entry.bde_name = name;
+				entry.bde_objectid = location;
+				entry.bde_index = letoh64(key->offset);
+				entry.bde_namelen = name_len;
+				entry.bde_type = dir_item->type;
+				entry.bde_subvolume =
+				    dir_item->location.type ==
+				    BTRFS_ROOT_ITEM_KEY;
+				error = callback(&entry, arg);
+				if (error != 0)
+					return (error);
+			}
 
 			data += record_size;
 			remaining -= record_size;
