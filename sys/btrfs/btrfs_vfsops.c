@@ -52,21 +52,6 @@ struct btrfs_io_map {
 	unsigned int	nmirrors;
 };
 
-struct btrfs_chunk_stats {
-	unsigned int	data;
-	unsigned int	metadata;
-	unsigned int	system;
-};
-
-struct btrfs_dir_stats {
-	unsigned int	entries;
-	unsigned int	regular;
-	unsigned int	directories;
-	unsigned int	symlinks;
-	unsigned int	special;
-	unsigned int	subvolumes;
-};
-
 #define BTRFS_BLOCK_GROUP_PROFILE_MASK	(BTRFS_BLOCK_GROUP_RAID0 |	\
 	    BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_DUP |		\
 	    BTRFS_BLOCK_GROUP_RAID10 | BTRFS_BLOCK_GROUP_RAID5 |	\
@@ -77,8 +62,7 @@ struct btrfs_dir_stats {
 
 static int	btrfs_mount(struct mount *, const char *, void *,
 		    struct nameidata *, struct proc *);
-static int	btrfs_mountfs(struct vnode *, struct mount *, const char *,
-		    struct proc *);
+static int	btrfs_mountfs(struct vnode *, struct mount *, struct proc *);
 static int	btrfs_start(struct mount *, int, struct proc *);
 static int	btrfs_unmount(struct mount *, int, struct proc *);
 static int	btrfs_root(struct mount *, struct vnode **);
@@ -88,7 +72,7 @@ static int	btrfs_sync(struct mount *, int, int, struct ucred *,
 static int	btrfs_validate_super(const struct btrfs_super_block *,
 		    uint64_t);
 static int	btrfs_parse_system_chunks(const struct btrfs_super_block *,
-		    uint64_t, uint32_t, struct btrfs_io_map *, unsigned int *);
+		    uint64_t, uint32_t, struct btrfs_io_map *);
 static int	btrfs_decode_chunk(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 		    struct btrfs_chunk_map *);
@@ -98,12 +82,10 @@ static int	btrfs_lookup_logical(const struct btrfs_chunk_map *,
 		    unsigned int, uint64_t, uint32_t, struct btrfs_io_map *);
 static int	btrfs_read_tree_block(struct vnode *,
 		    const struct btrfs_super_block *, const struct btrfs_io_map *,
-		    uint64_t, uint64_t, uint64_t, uint8_t, struct buf **,
-		    unsigned int *);
+		    uint64_t, uint64_t, uint64_t, uint8_t, struct buf **);
 static int	btrfs_load_chunk_tree(const struct btrfs_super_block *,
 		    const struct btrfs_header *, const struct btrfs_io_map *,
-		    struct btrfs_chunk_map **, unsigned int *,
-		    struct btrfs_chunk_stats *);
+		    struct btrfs_chunk_map **, unsigned int *);
 static int	btrfs_lookup_leaf_item(const struct btrfs_header *,
 		    const struct btrfs_key *, const uint8_t **, uint32_t *);
 static int	btrfs_find_root_item(const struct btrfs_super_block *,
@@ -113,8 +95,7 @@ static int	btrfs_find_inode_item(const struct btrfs_super_block *,
 		    const struct btrfs_header *, uint64_t,
 		    const struct btrfs_inode_item **);
 static int	btrfs_scan_directory(const struct btrfs_super_block *,
-		    const struct btrfs_header *, uint64_t,
-		    struct btrfs_dir_stats *);
+		    const struct btrfs_header *, uint64_t);
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
@@ -181,7 +162,7 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 		VOP_UNLOCK(devvp);
 	}
 	if (error == 0)
-		error = btrfs_mountfs(devvp, mp, fspec, p);
+		error = btrfs_mountfs(devvp, mp, p);
 	if (error != 0) {
 		vrele(devvp);
 		return (error);
@@ -197,8 +178,7 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 }
 
 static int
-btrfs_mountfs(struct vnode *devvp, struct mount *mp, const char *fspec,
-    struct proc *p)
+btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 {
 	const struct btrfs_super_block *sb;
 	const struct btrfs_header *header;
@@ -206,13 +186,11 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, const char *fspec,
 	const struct btrfs_root_item *root_item;
 	struct btrfs_mount *bmp = NULL;
 	struct btrfs_chunk_map *chunks = NULL;
-	struct btrfs_chunk_stats chunk_stats;
-	struct btrfs_dir_stats dir_stats;
 	struct btrfs_io_map fs_map, map, root_map;
 	struct buf *bp = NULL, *fsbp = NULL, *rootbp = NULL, *treebp = NULL;
 	uint64_t chunk_root, fs_root, fs_root_generation, generation, root;
-	uint32_t gid, mode, nlink, nritems, nodesize, sectorsize, uid;
-	unsigned int mirror, nchunks = 0, nsystem_chunks;
+	uint32_t nodesize;
+	unsigned int nchunks = 0;
 	int error, mounted = 0;
 
 	error = VOP_OPEN(devvp, FREAD, FSCRED, p);
@@ -231,40 +209,22 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, const char *fspec,
 
 	generation = letoh64(sb->generation);
 	nodesize = letoh32(sb->nodesize);
-	sectorsize = letoh32(sb->sectorsize);
-	printf("btrfs: %s: valid superblock, generation %llu, "
-	    "nodesize %u, sectorsize %u\n", fspec,
-	    (unsigned long long)generation, nodesize, sectorsize);
 
 	chunk_root = letoh64(sb->chunk_root);
-	error = btrfs_parse_system_chunks(sb, chunk_root, nodesize, &map,
-	    &nsystem_chunks);
+	error = btrfs_parse_system_chunks(sb, chunk_root, nodesize, &map);
 	if (error != 0)
 		goto out;
-	printf("btrfs: %s: loaded %u system chunk mapping%s\n", fspec,
-	    nsystem_chunks, nsystem_chunks == 1 ? "" : "s");
 
 	error = btrfs_read_tree_block(devvp, sb, &map, chunk_root,
 	    letoh64(sb->chunk_root_generation), BTRFS_CHUNK_TREE_OBJECTID,
-	    sb->chunk_root_level, &treebp, &mirror);
+	    sb->chunk_root_level, &treebp);
 	if (error != 0)
 		goto out;
 
 	header = (const struct btrfs_header *)treebp->b_data;
-	nritems = letoh32(header->nritems);
-	printf("btrfs: %s: chunk root logical %llu, physical %llu, "
-	    "level %u, %u items, mirror %u\n", fspec,
-	    (unsigned long long)chunk_root,
-	    (unsigned long long)map.physical[mirror], header->level, nritems,
-	    mirror + 1);
-
-	error = btrfs_load_chunk_tree(sb, header, &map, &chunks, &nchunks,
-	    &chunk_stats);
+	error = btrfs_load_chunk_tree(sb, header, &map, &chunks, &nchunks);
 	if (error != 0)
 		goto out;
-	printf("btrfs: %s: loaded complete chunk map: %u chunks "
-	    "(data %u, metadata %u, system %u)\n", fspec, nchunks,
-	    chunk_stats.data, chunk_stats.metadata, chunk_stats.system);
 
 	root = letoh64(sb->root);
 	error = btrfs_lookup_logical(chunks, nchunks, root, nodesize,
@@ -272,28 +232,17 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, const char *fspec,
 	if (error != 0)
 		goto out;
 	error = btrfs_read_tree_block(devvp, sb, &root_map, root, generation,
-	    BTRFS_ROOT_TREE_OBJECTID, sb->root_level, &rootbp, &mirror);
+	    BTRFS_ROOT_TREE_OBJECTID, sb->root_level, &rootbp);
 	if (error != 0)
 		goto out;
 
 	header = (const struct btrfs_header *)rootbp->b_data;
-	nritems = letoh32(header->nritems);
-	printf("btrfs: %s: root tree logical %llu, physical %llu, "
-	    "level %u, %u items, mirror %u\n", fspec,
-	    (unsigned long long)root,
-	    (unsigned long long)root_map.physical[mirror], header->level,
-	    nritems, mirror + 1);
-
 	error = btrfs_find_root_item(sb, header, BTRFS_FS_TREE_OBJECTID,
 	    &root_item);
 	if (error != 0)
 		goto out;
 	fs_root = letoh64(root_item->bytenr);
 	fs_root_generation = letoh64(root_item->generation);
-	printf("btrfs: %s: filesystem root item logical %llu, "
-	    "generation %llu, level %u\n", fspec,
-	    (unsigned long long)fs_root,
-	    (unsigned long long)fs_root_generation, root_item->level);
 
 	error = btrfs_lookup_logical(chunks, nchunks, fs_root, nodesize,
 	    &fs_map);
@@ -301,40 +250,19 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, const char *fspec,
 		goto out;
 	error = btrfs_read_tree_block(devvp, sb, &fs_map, fs_root,
 	    fs_root_generation, BTRFS_FS_TREE_OBJECTID, root_item->level,
-	    &fsbp, &mirror);
+	    &fsbp);
 	if (error != 0)
 		goto out;
 
 	header = (const struct btrfs_header *)fsbp->b_data;
-	nritems = letoh32(header->nritems);
-	printf("btrfs: %s: filesystem tree root logical %llu, physical %llu, "
-	    "level %u, %u items, mirror %u\n", fspec,
-	    (unsigned long long)fs_root,
-	    (unsigned long long)fs_map.physical[mirror], header->level,
-	    nritems, mirror + 1);
-
 	error = btrfs_find_inode_item(sb, header, BTRFS_FIRST_FREE_OBJECTID,
 	    &inode_item);
 	if (error != 0)
 		goto out;
-	mode = letoh32(inode_item->mode);
-	uid = letoh32(inode_item->uid);
-	gid = letoh32(inode_item->gid);
-	nlink = letoh32(inode_item->nlink);
-	printf("btrfs: %s: root inode %llu, mode %o, uid %u, gid %u, "
-	    "size %llu, links %u\n", fspec,
-	    (unsigned long long)BTRFS_FIRST_FREE_OBJECTID, mode, uid, gid,
-	    (unsigned long long)letoh64(inode_item->size), nlink);
 
-	error = btrfs_scan_directory(sb, header, BTRFS_FIRST_FREE_OBJECTID,
-	    &dir_stats);
+	error = btrfs_scan_directory(sb, header, BTRFS_FIRST_FREE_OBJECTID);
 	if (error != 0)
 		goto out;
-	printf("btrfs: %s: root directory has %u entries: %u regular, "
-	    "%u directories, %u symlinks, %u special, %u subvolumes\n",
-	    fspec, dir_stats.entries, dir_stats.regular,
-	    dir_stats.directories, dir_stats.symlinks, dir_stats.special,
-	    dir_stats.subvolumes);
 
 	bmp = malloc(sizeof(*bmp), M_BTRFS, M_WAITOK | M_ZERO);
 	bmp->bm_mount = mp;
@@ -623,8 +551,7 @@ btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 
 static int
 btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
-    uint64_t target, uint32_t target_len, struct btrfs_io_map *map,
-    unsigned int *nchunksp)
+    uint64_t target, uint32_t target_len, struct btrfs_io_map *map)
 {
 	const struct btrfs_key *key;
 	const struct btrfs_chunk *chunk;
@@ -684,7 +611,6 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 
 	if (!mapped || nchunks == 0)
 		return (EINVAL);
-	*nchunksp = nchunks;
 	return (0);
 }
 
@@ -811,7 +737,7 @@ static int
 btrfs_read_tree_block(struct vnode *devvp,
     const struct btrfs_super_block *sb, const struct btrfs_io_map *map,
     uint64_t logical, uint64_t generation, uint64_t owner, uint8_t level,
-    struct buf **bpp, unsigned int *mirrorp)
+    struct buf **bpp)
 {
 	struct buf *bp;
 	unsigned int i;
@@ -828,7 +754,6 @@ btrfs_read_tree_block(struct vnode *devvp,
 			    logical, generation, owner, level);
 		if (error == 0) {
 			*bpp = bp;
-			*mirrorp = i;
 			return (0);
 		}
 		if (bp != NULL)
@@ -841,8 +766,7 @@ btrfs_read_tree_block(struct vnode *devvp,
 static int
 btrfs_load_chunk_tree(const struct btrfs_super_block *sb,
     const struct btrfs_header *header, const struct btrfs_io_map *bootstrap,
-    struct btrfs_chunk_map **chunksp, unsigned int *nchunksp,
-    struct btrfs_chunk_stats *stats)
+    struct btrfs_chunk_map **chunksp, unsigned int *nchunksp)
 {
 	const struct btrfs_item *items;
 	const struct btrfs_key *key;
@@ -856,7 +780,6 @@ btrfs_load_chunk_tree(const struct btrfs_super_block *sb,
 
 	*chunksp = NULL;
 	*nchunksp = 0;
-	memset(stats, 0, sizeof(*stats));
 
 	if (header->level != 0)
 		return (EOPNOTSUPP);
@@ -911,13 +834,6 @@ btrfs_load_chunk_tree(const struct btrfs_super_block *sb,
 		}
 		previous_end = chunks[chunk_index].logical +
 		    chunks[chunk_index].length;
-
-		if (chunks[chunk_index].type & BTRFS_BLOCK_GROUP_DATA)
-			stats->data++;
-		if (chunks[chunk_index].type & BTRFS_BLOCK_GROUP_METADATA)
-			stats->metadata++;
-		if (chunks[chunk_index].type & BTRFS_BLOCK_GROUP_SYSTEM)
-			stats->system++;
 
 		error = btrfs_map_logical(&chunks[chunk_index],
 		    letoh64(sb->chunk_root), letoh32(sb->nodesize), &root_map);
@@ -1062,8 +978,7 @@ btrfs_find_inode_item(const struct btrfs_super_block *sb,
 
 static int
 btrfs_scan_directory(const struct btrfs_super_block *sb,
-    const struct btrfs_header *header, uint64_t objectid,
-    struct btrfs_dir_stats *stats)
+    const struct btrfs_header *header, uint64_t objectid)
 {
 	const struct btrfs_dir_item *dir_item;
 	const struct btrfs_item *items;
@@ -1074,7 +989,6 @@ btrfs_scan_directory(const struct btrfs_super_block *sb,
 	uint16_t data_len, name_len;
 	size_t record_size, remaining;
 
-	memset(stats, 0, sizeof(*stats));
 	if (header->level != 0)
 		return (EOPNOTSUPP);
 
@@ -1119,27 +1033,10 @@ btrfs_scan_directory(const struct btrfs_super_block *sb,
 			if (dir_item->location.type == BTRFS_ROOT_ITEM_KEY) {
 				if (dir_item->type != BTRFS_FT_DIR)
 					return (EINVAL);
-				stats->subvolumes++;
 			} else if (dir_item->location.type !=
 			    BTRFS_INODE_ITEM_KEY ||
 			    letoh64(dir_item->location.offset) != 0)
 				return (EINVAL);
-
-			stats->entries++;
-			switch (dir_item->type) {
-			case BTRFS_FT_REG_FILE:
-				stats->regular++;
-				break;
-			case BTRFS_FT_DIR:
-				stats->directories++;
-				break;
-			case BTRFS_FT_SYMLINK:
-				stats->symlinks++;
-				break;
-			default:
-				stats->special++;
-				break;
-			}
 
 			data += record_size;
 			remaining -= record_size;
