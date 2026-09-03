@@ -40,6 +40,7 @@
 #include <lib/libkern/crc32c.h>
 
 #include <btrfs/btrfs.h>
+#include <btrfs/btrfs_var.h>
 
 #define BTRFS_SUPER_SIZE		0x1000
 #define BTRFS_MIN_SECTORSIZE		0x1000
@@ -47,14 +48,6 @@
 #define BTRFS_MAX_LEVEL			8
 
 struct btrfs_io_map {
-	uint64_t	physical[2];
-	unsigned int	nmirrors;
-};
-
-struct btrfs_chunk_map {
-	uint64_t	logical;
-	uint64_t	length;
-	uint64_t	type;
 	uint64_t	physical[2];
 	unsigned int	nmirrors;
 };
@@ -84,7 +77,14 @@ struct btrfs_dir_stats {
 
 static int	btrfs_mount(struct mount *, const char *, void *,
 		    struct nameidata *, struct proc *);
-static int	btrfs_probe(struct vnode *, const char *, struct proc *);
+static int	btrfs_mountfs(struct vnode *, struct mount *, const char *,
+		    struct proc *);
+static int	btrfs_start(struct mount *, int, struct proc *);
+static int	btrfs_unmount(struct mount *, int, struct proc *);
+static int	btrfs_root(struct mount *, struct vnode **);
+static int	btrfs_statfs(struct mount *, struct statfs *, struct proc *);
+static int	btrfs_sync(struct mount *, int, int, struct ucred *,
+		    struct proc *);
 static int	btrfs_validate_super(const struct btrfs_super_block *,
 		    uint64_t);
 static int	btrfs_parse_system_chunks(const struct btrfs_super_block *,
@@ -127,13 +127,13 @@ static int	btrfs_ispow2(uint32_t);
 
 const struct vfsops btrfs_vfsops = {
 	.vfs_mount	= btrfs_mount,
-	.vfs_start	= (void *)eopnotsupp,
-	.vfs_unmount	= (void *)eopnotsupp,
-	.vfs_root	= (void *)eopnotsupp,
+	.vfs_start	= btrfs_start,
+	.vfs_unmount	= btrfs_unmount,
+	.vfs_root	= btrfs_root,
 	.vfs_quotactl	= (void *)eopnotsupp,
-	.vfs_statfs	= (void *)eopnotsupp,
-	.vfs_sync	= (void *)eopnotsupp,
-	.vfs_vget	= (void *)eopnotsupp,
+	.vfs_statfs	= btrfs_statfs,
+	.vfs_sync	= btrfs_sync,
+	.vfs_vget	= btrfs_vget,
 	.vfs_fhtovp	= (void *)eopnotsupp,
 	.vfs_vptofh	= (void *)eopnotsupp,
 	.vfs_init	= (void *)nullop,
@@ -149,8 +149,6 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 	struct vnode *devvp;
 	char fspec[MNAMELEN];
 	int error;
-
-	(void)path;
 
 	if ((mp->mnt_flag & MNT_RDONLY) == 0)
 		return (EROFS);
@@ -174,19 +172,39 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 	else if (major(devvp->v_rdev) >= nblkdev)
 		error = ENXIO;
 	else
-		error = btrfs_probe(devvp, fspec, p);
+		error = vfs_mountedon(devvp);
+	if (error == 0 && vcount(devvp) > 1 && devvp != rootvp)
+		error = EBUSY;
+	if (error == 0) {
+		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+		error = vinvalbuf(devvp, V_SAVE, p->p_ucred, p, 0, INFSLP);
+		VOP_UNLOCK(devvp);
+	}
+	if (error == 0)
+		error = btrfs_mountfs(devvp, mp, fspec, p);
+	if (error != 0) {
+		vrele(devvp);
+		return (error);
+	}
 
-	vrele(devvp);
-	return (error);
+	memset(mp->mnt_stat.f_mntonname, 0, MNAMELEN);
+	strlcpy(mp->mnt_stat.f_mntonname, path, MNAMELEN);
+	memset(mp->mnt_stat.f_mntfromname, 0, MNAMELEN);
+	strlcpy(mp->mnt_stat.f_mntfromname, fspec, MNAMELEN);
+	memset(mp->mnt_stat.f_mntfromspec, 0, MNAMELEN);
+	strlcpy(mp->mnt_stat.f_mntfromspec, fspec, MNAMELEN);
+	return (0);
 }
 
 static int
-btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
+btrfs_mountfs(struct vnode *devvp, struct mount *mp, const char *fspec,
+    struct proc *p)
 {
 	const struct btrfs_super_block *sb;
 	const struct btrfs_header *header;
 	const struct btrfs_inode_item *inode_item;
 	const struct btrfs_root_item *root_item;
+	struct btrfs_mount *bmp = NULL;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_stats chunk_stats;
 	struct btrfs_dir_stats dir_stats;
@@ -195,7 +213,7 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	uint64_t chunk_root, fs_root, fs_root_generation, generation, root;
 	uint32_t gid, mode, nlink, nritems, nodesize, sectorsize, uid;
 	unsigned int mirror, nchunks = 0, nsystem_chunks;
-	int error;
+	int error, mounted = 0;
 
 	error = VOP_OPEN(devvp, FREAD, FSCRED, p);
 	if (error != 0)
@@ -318,11 +336,33 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	    dir_stats.directories, dir_stats.symlinks, dir_stats.special,
 	    dir_stats.subvolumes);
 
-	/* Persistent mount state is the next milestone. */
-	error = EOPNOTSUPP;
+	bmp = malloc(sizeof(*bmp), M_BTRFS, M_WAITOK | M_ZERO);
+	bmp->bm_mount = mp;
+	bmp->bm_devvp = devvp;
+	bmp->bm_dev = devvp->v_rdev;
+	memcpy(&bmp->bm_super, sb, sizeof(bmp->bm_super));
+	bmp->bm_chunks = chunks;
+	bmp->bm_nchunks = nchunks;
+	bmp->bm_fs_root = fs_root;
+	bmp->bm_fs_root_generation = fs_root_generation;
+	bmp->bm_fs_root_level = root_item->level;
+	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
+	memcpy(&bmp->bm_root_inode, inode_item, sizeof(bmp->bm_root_inode));
+	LIST_INIT(&bmp->bm_nodes);
+	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
+
+	mp->mnt_data = bmp;
+	mp->mnt_stat.f_fsid.val[0] = devvp->v_rdev;
+	mp->mnt_stat.f_fsid.val[1] = mp->mnt_vfc->vfc_typenum;
+	mp->mnt_stat.f_namemax = BTRFS_NAME_MAX;
+	mp->mnt_flag |= MNT_LOCAL;
+	devvp->v_specmountpoint = mp;
+	chunks = NULL;
+	mounted = 1;
+	error = 0;
 out:
 	if (chunks != NULL)
-		free(chunks, M_TEMP, nchunks * sizeof(*chunks));
+		free(chunks, M_BTRFS, nchunks * sizeof(*chunks));
 	if (fsbp != NULL)
 		brelse(fsbp);
 	if (rootbp != NULL)
@@ -331,10 +371,197 @@ out:
 		brelse(treebp);
 	if (bp != NULL)
 		brelse(bp);
-	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
-	(void)VOP_CLOSE(devvp, FREAD, FSCRED, p);
-	VOP_UNLOCK(devvp);
+	if (!mounted) {
+		if (bmp != NULL)
+			free(bmp, M_BTRFS, sizeof(*bmp));
+		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+		(void)VOP_CLOSE(devvp, FREAD, FSCRED, p);
+		VOP_UNLOCK(devvp);
+	}
 	return (error);
+}
+
+static int
+btrfs_start(struct mount *mp, int flags, struct proc *p)
+{
+	return (0);
+}
+
+static int
+btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
+{
+	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct vnode *devvp = bmp->bm_devvp;
+	int error, flags = 0;
+
+	if (mntflags & MNT_FORCE)
+		flags |= FORCECLOSE;
+	error = vflush(mp, NULL, flags);
+	if (error != 0)
+		return (error);
+	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
+
+	devvp->v_specmountpoint = NULL;
+	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+	(void)vinvalbuf(devvp, V_SAVE, NOCRED, p, 0, INFSLP);
+	(void)VOP_CLOSE(devvp, FREAD, NOCRED, p);
+	VOP_UNLOCK(devvp);
+	vrele(devvp);
+
+	free(bmp->bm_chunks, M_BTRFS,
+	    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
+	free(bmp, M_BTRFS, sizeof(*bmp));
+	mp->mnt_data = NULL;
+	mp->mnt_flag &= ~MNT_LOCAL;
+	return (0);
+}
+
+static int
+btrfs_root(struct mount *mp, struct vnode **vpp)
+{
+	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	int error;
+
+	error = btrfs_vget(mp, bmp->bm_root_dirid, vpp);
+	if (error == 0)
+		(*vpp)->v_flag |= VROOT;
+	return (error);
+}
+
+static int
+btrfs_statfs(struct mount *mp, struct statfs *sbp, struct proc *p)
+{
+	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	uint64_t bytes_used, sectorsize, total_bytes;
+
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	total_bytes = letoh64(bmp->bm_super.total_bytes);
+	bytes_used = letoh64(bmp->bm_super.bytes_used);
+
+	sbp->f_bsize = sectorsize;
+	sbp->f_iosize = letoh32(bmp->bm_super.nodesize);
+	sbp->f_blocks = total_bytes / sectorsize;
+	sbp->f_bfree = (total_bytes - bytes_used) / sectorsize;
+	sbp->f_bavail = sbp->f_bfree;
+	sbp->f_files = 0;
+	sbp->f_ffree = 0;
+	sbp->f_favail = 0;
+	copy_statfs_info(sbp, mp);
+	return (0);
+}
+
+static int
+btrfs_sync(struct mount *mp, int waitfor, int stall, struct ucred *cred,
+    struct proc *p)
+{
+	return (0);
+}
+
+static int
+btrfs_node_lookup(struct btrfs_mount *bmp, uint64_t treeid, uint64_t ino,
+    struct vnode **vpp)
+{
+	struct btrfs_node *node;
+	struct vnode *vp;
+	u_int vpid;
+	int error;
+
+	*vpp = NULL;
+again:
+	mtx_enter(&bmp->bm_nodemtx);
+	LIST_FOREACH(node, &bmp->bm_nodes, bn_entry) {
+		if (node->bn_treeid == treeid && node->bn_ino == ino)
+			break;
+	}
+	if (node == NULL) {
+		mtx_leave(&bmp->bm_nodemtx);
+		return (0);
+	}
+	vp = node->bn_vnode;
+	vpid = vp->v_id;
+	mtx_leave(&bmp->bm_nodemtx);
+
+	error = vget(vp, LK_EXCLUSIVE);
+	if (error == ENOENT)
+		goto again;
+	if (error != 0)
+		return (error);
+	if (vpid != vp->v_id) {
+		vput(vp);
+		goto again;
+	}
+	*vpp = vp;
+	return (0);
+}
+
+static int
+btrfs_node_insert(struct btrfs_node *node)
+{
+	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_node *other;
+
+	vn_lock(node->bn_vnode, LK_EXCLUSIVE | LK_RETRY);
+	mtx_enter(&bmp->bm_nodemtx);
+	LIST_FOREACH(other, &bmp->bm_nodes, bn_entry) {
+		if (other->bn_treeid == node->bn_treeid &&
+		    other->bn_ino == node->bn_ino) {
+			mtx_leave(&bmp->bm_nodemtx);
+			VOP_UNLOCK(node->bn_vnode);
+			return (EEXIST);
+		}
+	}
+	LIST_INSERT_HEAD(&bmp->bm_nodes, node, bn_entry);
+	node->bn_hashed = 1;
+	mtx_leave(&bmp->bm_nodemtx);
+	return (0);
+}
+
+int
+btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
+{
+	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_node *node;
+	struct vnode *vp;
+	int error;
+
+	if (ino != bmp->bm_root_dirid)
+		return (EOPNOTSUPP);
+
+again:
+	error = btrfs_node_lookup(bmp, BTRFS_FS_TREE_OBJECTID, ino, vpp);
+	if (error != 0 || *vpp != NULL)
+		return (error);
+
+	node = malloc(sizeof(*node), M_BTRFS, M_WAITOK | M_ZERO);
+	error = getnewvnode(VT_BTRFS, mp, &btrfs_vops, &vp);
+	if (error != 0) {
+		free(node, M_BTRFS, sizeof(*node));
+		return (error);
+	}
+
+	node->bn_vnode = vp;
+	node->bn_mount = bmp;
+	node->bn_treeid = BTRFS_FS_TREE_OBJECTID;
+	node->bn_ino = ino;
+	memcpy(&node->bn_inode, &bmp->bm_root_inode, sizeof(node->bn_inode));
+	rrw_init_flags(&node->bn_lock, "btrfsnode",
+	    RWL_DUPOK | RWL_IS_VNODE);
+	vp->v_data = node;
+	vp->v_type = VDIR;
+	vp->v_flag |= VROOT;
+
+	error = btrfs_node_insert(node);
+	if (error == EEXIST) {
+		vrele(vp);
+		goto again;
+	}
+	if (error != 0) {
+		vrele(vp);
+		return (error);
+	}
+
+	*vpp = vp;
+	return (0);
 }
 
 static int
@@ -661,7 +888,7 @@ btrfs_load_chunk_tree(const struct btrfs_super_block *sb,
 
 	if (device_items != 1 || *nchunksp == 0)
 		return (EINVAL);
-	chunks = mallocarray(*nchunksp, sizeof(*chunks), M_TEMP,
+	chunks = mallocarray(*nchunksp, sizeof(*chunks), M_BTRFS,
 	    M_WAITOK | M_ZERO);
 
 	for (i = 0; i < nritems; i++) {
@@ -719,7 +946,7 @@ btrfs_load_chunk_tree(const struct btrfs_super_block *sb,
 	return (0);
 
 fail:
-	free(chunks, M_TEMP, *nchunksp * sizeof(*chunks));
+	free(chunks, M_BTRFS, *nchunksp * sizeof(*chunks));
 	*nchunksp = 0;
 	return (error);
 }
@@ -822,7 +1049,11 @@ btrfs_find_inode_item(const struct btrfs_super_block *sb,
 	nlink = letoh32(inode_item->nlink);
 	if (generation == 0 || generation > letoh64(sb->generation) ||
 	    transid > letoh64(sb->generation) ||
-	    (mode & S_IFMT) != S_IFDIR || nlink == 0)
+	    (mode & S_IFMT) != S_IFDIR || nlink == 0 ||
+	    letoh32(inode_item->atime.nsec) >= 1000000000 ||
+	    letoh32(inode_item->ctime.nsec) >= 1000000000 ||
+	    letoh32(inode_item->mtime.nsec) >= 1000000000 ||
+	    letoh32(inode_item->otime.nsec) >= 1000000000)
 		return (EINVAL);
 
 	*inode_itemp = inode_item;
