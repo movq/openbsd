@@ -39,6 +39,18 @@ struct btrfs_chunk_map {
 	unsigned int	nmirrors;
 };
 
+struct btrfs_dir_entry {
+	const uint8_t	*bde_name;
+	uint64_t	 bde_objectid;
+	uint64_t	 bde_index;
+	uint16_t	 bde_namelen;
+	uint8_t		 bde_type;
+	int		 bde_subvolume;
+};
+
+typedef int (*btrfs_dir_iter_fn)(const struct btrfs_dir_entry *, void *);
+
+struct buf;
 struct btrfs_node;
 LIST_HEAD(btrfs_node_list, btrfs_node);
 
@@ -49,6 +61,7 @@ struct btrfs_mount {
 	struct btrfs_super_block	 bm_super;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
+	uint64_t			 bm_treeid;
 	uint64_t			 bm_fs_root;
 	uint64_t			 bm_fs_root_generation;
 	uint64_t			 bm_root_dirid;
@@ -74,6 +87,9 @@ struct btrfs_node {
 
 extern const struct vops btrfs_vops;
 
+int	btrfs_iterate_directory(const struct btrfs_super_block *,
+	    const struct btrfs_header *, uint64_t, btrfs_dir_iter_fn, void *);
+int	btrfs_read_fs_tree_root(struct btrfs_mount *, struct buf **);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 
 #endif
