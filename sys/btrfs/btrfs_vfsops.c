@@ -34,6 +34,7 @@
 #include <sys/namei.h>
 #include <sys/proc.h>
 #include <sys/specdev.h>
+#include <sys/stat.h>
 #include <sys/vnode.h>
 
 #include <lib/libkern/crc32c.h>
@@ -62,6 +63,15 @@ struct btrfs_chunk_stats {
 	unsigned int	data;
 	unsigned int	metadata;
 	unsigned int	system;
+};
+
+struct btrfs_dir_stats {
+	unsigned int	entries;
+	unsigned int	regular;
+	unsigned int	directories;
+	unsigned int	symlinks;
+	unsigned int	special;
+	unsigned int	subvolumes;
 };
 
 #define BTRFS_BLOCK_GROUP_PROFILE_MASK	(BTRFS_BLOCK_GROUP_RAID0 |	\
@@ -94,9 +104,17 @@ static int	btrfs_load_chunk_tree(const struct btrfs_super_block *,
 		    const struct btrfs_header *, const struct btrfs_io_map *,
 		    struct btrfs_chunk_map **, unsigned int *,
 		    struct btrfs_chunk_stats *);
+static int	btrfs_lookup_leaf_item(const struct btrfs_header *,
+		    const struct btrfs_key *, const uint8_t **, uint32_t *);
 static int	btrfs_find_root_item(const struct btrfs_super_block *,
 		    const struct btrfs_header *, uint64_t,
 		    const struct btrfs_root_item **);
+static int	btrfs_find_inode_item(const struct btrfs_super_block *,
+		    const struct btrfs_header *, uint64_t,
+		    const struct btrfs_inode_item **);
+static int	btrfs_scan_directory(const struct btrfs_super_block *,
+		    const struct btrfs_header *, uint64_t,
+		    struct btrfs_dir_stats *);
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
@@ -167,13 +185,15 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 {
 	const struct btrfs_super_block *sb;
 	const struct btrfs_header *header;
+	const struct btrfs_inode_item *inode_item;
 	const struct btrfs_root_item *root_item;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_stats chunk_stats;
+	struct btrfs_dir_stats dir_stats;
 	struct btrfs_io_map fs_map, map, root_map;
 	struct buf *bp = NULL, *fsbp = NULL, *rootbp = NULL, *treebp = NULL;
 	uint64_t chunk_root, fs_root, fs_root_generation, generation, root;
-	uint32_t nritems, nodesize, sectorsize;
+	uint32_t gid, mode, nlink, nritems, nodesize, sectorsize, uid;
 	unsigned int mirror, nchunks = 0, nsystem_chunks;
 	int error;
 
@@ -275,7 +295,30 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	    (unsigned long long)fs_map.physical[mirror], header->level,
 	    nritems, mirror + 1);
 
-	/* Filesystem-tree item lookup is the next milestone. */
+	error = btrfs_find_inode_item(sb, header, BTRFS_FIRST_FREE_OBJECTID,
+	    &inode_item);
+	if (error != 0)
+		goto out;
+	mode = letoh32(inode_item->mode);
+	uid = letoh32(inode_item->uid);
+	gid = letoh32(inode_item->gid);
+	nlink = letoh32(inode_item->nlink);
+	printf("btrfs: %s: root inode %llu, mode %o, uid %u, gid %u, "
+	    "size %llu, links %u\n", fspec,
+	    (unsigned long long)BTRFS_FIRST_FREE_OBJECTID, mode, uid, gid,
+	    (unsigned long long)letoh64(inode_item->size), nlink);
+
+	error = btrfs_scan_directory(sb, header, BTRFS_FIRST_FREE_OBJECTID,
+	    &dir_stats);
+	if (error != 0)
+		goto out;
+	printf("btrfs: %s: root directory has %u entries: %u regular, "
+	    "%u directories, %u symlinks, %u special, %u subvolumes\n",
+	    fspec, dir_stats.entries, dir_stats.regular,
+	    dir_stats.directories, dir_stats.symlinks, dir_stats.special,
+	    dir_stats.subvolumes);
+
+	/* Persistent mount state is the next milestone. */
 	error = EOPNOTSUPP;
 out:
 	if (chunks != NULL)
@@ -682,58 +725,197 @@ fail:
 }
 
 static int
-btrfs_find_root_item(const struct btrfs_super_block *sb,
-    const struct btrfs_header *header, uint64_t objectid,
-    const struct btrfs_root_item **root_itemp)
+btrfs_lookup_leaf_item(const struct btrfs_header *header,
+    const struct btrfs_key *target, const uint8_t **datap, uint32_t *sizep)
 {
 	const struct btrfs_item *items;
-	const struct btrfs_key *key;
-	const struct btrfs_root_item *root_item;
-	struct btrfs_key target;
-	uint64_t bytenr, generation, root_dirid;
-	uint32_t i, nritems, offset, refs, sectorsize, size;
 	int cmp;
+	uint32_t i, nritems, offset;
 
-	*root_itemp = NULL;
+	*datap = NULL;
+	*sizep = 0;
 	if (header->level != 0)
 		return (EOPNOTSUPP);
 
-	memset(&target, 0, sizeof(target));
-	target.objectid = htole64(objectid);
-	target.type = BTRFS_ROOT_ITEM_KEY;
 	nritems = letoh32(header->nritems);
 	items = (const struct btrfs_item *)(header + 1);
 	for (i = 0; i < nritems; i++) {
-		key = &items[i].key;
-		cmp = btrfs_key_cmp(key, &target);
+		cmp = btrfs_key_cmp(&items[i].key, target);
 		if (cmp < 0)
 			continue;
 		if (cmp > 0)
 			break;
 
-		size = letoh32(items[i].size);
-		if (size < offsetof(struct btrfs_root_item, generation_v2))
-			return (EINVAL);
 		offset = letoh32(items[i].offset);
-		root_item = (const struct btrfs_root_item *)
-		    ((const uint8_t *)(header + 1) + offset);
-
-		bytenr = letoh64(root_item->bytenr);
-		generation = letoh64(root_item->generation);
-		root_dirid = letoh64(root_item->root_dirid);
-		refs = letoh32(root_item->refs);
-		sectorsize = letoh32(sb->sectorsize);
-		if (bytenr == 0 || (bytenr & (sectorsize - 1)) != 0 ||
-		    generation == 0 || generation > letoh64(sb->generation) ||
-		    root_dirid != BTRFS_FIRST_FREE_OBJECTID || refs == 0 ||
-		    root_item->level >= BTRFS_MAX_LEVEL)
-			return (EINVAL);
-
-		*root_itemp = root_item;
+		*datap = (const uint8_t *)(header + 1) + offset;
+		*sizep = letoh32(items[i].size);
 		return (0);
 	}
 
 	return (ENOENT);
+}
+
+static int
+btrfs_find_root_item(const struct btrfs_super_block *sb,
+    const struct btrfs_header *header, uint64_t objectid,
+    const struct btrfs_root_item **root_itemp)
+{
+	const uint8_t *data;
+	const struct btrfs_root_item *root_item;
+	struct btrfs_key target;
+	uint64_t bytenr, generation, root_dirid;
+	uint32_t refs, sectorsize, size;
+	int error;
+
+	*root_itemp = NULL;
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(objectid);
+	target.type = BTRFS_ROOT_ITEM_KEY;
+	error = btrfs_lookup_leaf_item(header, &target, &data, &size);
+	if (error != 0)
+		return (error);
+	if (size < offsetof(struct btrfs_root_item, generation_v2))
+		return (EINVAL);
+	root_item = (const struct btrfs_root_item *)data;
+
+	bytenr = letoh64(root_item->bytenr);
+	generation = letoh64(root_item->generation);
+	root_dirid = letoh64(root_item->root_dirid);
+	refs = letoh32(root_item->refs);
+	sectorsize = letoh32(sb->sectorsize);
+	if (bytenr == 0 || (bytenr & (sectorsize - 1)) != 0 ||
+	    generation == 0 || generation > letoh64(sb->generation) ||
+	    root_dirid != BTRFS_FIRST_FREE_OBJECTID || refs == 0 ||
+	    root_item->level >= BTRFS_MAX_LEVEL)
+		return (EINVAL);
+
+	*root_itemp = root_item;
+	return (0);
+}
+
+static int
+btrfs_find_inode_item(const struct btrfs_super_block *sb,
+    const struct btrfs_header *header, uint64_t objectid,
+    const struct btrfs_inode_item **inode_itemp)
+{
+	const uint8_t *data;
+	const struct btrfs_inode_item *inode_item;
+	struct btrfs_key target;
+	uint64_t generation, transid;
+	uint32_t mode, nlink, size;
+	int error;
+
+	*inode_itemp = NULL;
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(objectid);
+	target.type = BTRFS_INODE_ITEM_KEY;
+	error = btrfs_lookup_leaf_item(header, &target, &data, &size);
+	if (error != 0)
+		return (error);
+	if (size != sizeof(*inode_item))
+		return (EINVAL);
+	inode_item = (const struct btrfs_inode_item *)data;
+
+	generation = letoh64(inode_item->generation);
+	transid = letoh64(inode_item->transid);
+	mode = letoh32(inode_item->mode);
+	nlink = letoh32(inode_item->nlink);
+	if (generation == 0 || generation > letoh64(sb->generation) ||
+	    transid > letoh64(sb->generation) ||
+	    (mode & S_IFMT) != S_IFDIR || nlink == 0)
+		return (EINVAL);
+
+	*inode_itemp = inode_item;
+	return (0);
+}
+
+static int
+btrfs_scan_directory(const struct btrfs_super_block *sb,
+    const struct btrfs_header *header, uint64_t objectid,
+    struct btrfs_dir_stats *stats)
+{
+	const struct btrfs_dir_item *dir_item;
+	const struct btrfs_item *items;
+	const struct btrfs_key *key;
+	const uint8_t *data, *name;
+	uint64_t location, transid;
+	uint32_t i, nritems, offset, size;
+	uint16_t data_len, name_len;
+	size_t record_size, remaining;
+
+	memset(stats, 0, sizeof(*stats));
+	if (header->level != 0)
+		return (EOPNOTSUPP);
+
+	nritems = letoh32(header->nritems);
+	items = (const struct btrfs_item *)(header + 1);
+	for (i = 0; i < nritems; i++) {
+		key = &items[i].key;
+		if (letoh64(key->objectid) < objectid)
+			continue;
+		if (letoh64(key->objectid) > objectid ||
+		    key->type > BTRFS_DIR_INDEX_KEY)
+			break;
+		if (key->type < BTRFS_DIR_INDEX_KEY)
+			continue;
+
+		offset = letoh32(items[i].offset);
+		size = letoh32(items[i].size);
+		data = (const uint8_t *)(header + 1) + offset;
+		remaining = size;
+		while (remaining != 0) {
+			if (remaining < sizeof(*dir_item))
+				return (EINVAL);
+			dir_item = (const struct btrfs_dir_item *)data;
+			data_len = letoh16(dir_item->data_len);
+			name_len = letoh16(dir_item->name_len);
+			if (name_len == 0 || name_len > BTRFS_NAME_MAX ||
+			    data_len != 0 ||
+			    name_len > remaining - sizeof(*dir_item))
+				return (EINVAL);
+			record_size = sizeof(*dir_item) + name_len;
+			name = data + sizeof(*dir_item);
+			if (memchr(name, '\0', name_len) != NULL ||
+			    memchr(name, '/', name_len) != NULL)
+				return (EINVAL);
+
+			location = letoh64(dir_item->location.objectid);
+			transid = letoh64(dir_item->transid);
+			if (location < BTRFS_FIRST_FREE_OBJECTID ||
+			    transid > letoh64(sb->generation) ||
+			    dir_item->type > BTRFS_FT_SYMLINK)
+				return (EINVAL);
+			if (dir_item->location.type == BTRFS_ROOT_ITEM_KEY) {
+				if (dir_item->type != BTRFS_FT_DIR)
+					return (EINVAL);
+				stats->subvolumes++;
+			} else if (dir_item->location.type !=
+			    BTRFS_INODE_ITEM_KEY ||
+			    letoh64(dir_item->location.offset) != 0)
+				return (EINVAL);
+
+			stats->entries++;
+			switch (dir_item->type) {
+			case BTRFS_FT_REG_FILE:
+				stats->regular++;
+				break;
+			case BTRFS_FT_DIR:
+				stats->directories++;
+				break;
+			case BTRFS_FT_SYMLINK:
+				stats->symlinks++;
+				break;
+			default:
+				stats->special++;
+				break;
+			}
+
+			data += record_size;
+			remaining -= record_size;
+		}
+	}
+
+	return (0);
 }
 
 static int
