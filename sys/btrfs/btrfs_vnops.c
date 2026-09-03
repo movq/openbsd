@@ -43,6 +43,7 @@ static int	btrfs_open(void *);
 static int	btrfs_close(void *);
 static int	btrfs_access(void *);
 static int	btrfs_getattr(void *);
+static int	btrfs_read(void *);
 static int	btrfs_ioctl(void *);
 static int	btrfs_readdir(void *);
 static int	btrfs_inactive(void *);
@@ -62,7 +63,7 @@ const struct vops btrfs_vops = {
 	.vop_access	= btrfs_access,
 	.vop_getattr	= btrfs_getattr,
 	.vop_setattr	= eopnotsupp,
-	.vop_read	= eopnotsupp,
+	.vop_read	= btrfs_read,
 	.vop_write	= eopnotsupp,
 	.vop_ioctl	= btrfs_ioctl,
 	.vop_kqfilter	= eopnotsupp,
@@ -322,6 +323,117 @@ btrfs_getattr(void *v)
 	vap->va_filerev = letoh64(inode->transid);
 	vap->va_vaflags = 0;
 	return (0);
+}
+
+static int
+btrfs_find_inline_extent(const struct btrfs_mount *bmp,
+    const struct btrfs_header *header, uint64_t objectid, uint64_t file_size,
+    const uint8_t **datap, size_t *sizep)
+{
+	const struct btrfs_file_extent_item *extent;
+	const struct btrfs_item *items;
+	const struct btrfs_key *key;
+	const uint8_t *data;
+	uint64_t generation, ram_bytes;
+	uint32_t i, item_offset, item_size, nritems;
+	size_t inline_size, prefix_size;
+
+	*datap = NULL;
+	*sizep = 0;
+	if (header->level != 0)
+		return (EOPNOTSUPP);
+
+	prefix_size = offsetof(struct btrfs_file_extent_item, disk_bytenr);
+	nritems = letoh32(header->nritems);
+	items = (const struct btrfs_item *)(header + 1);
+	for (i = 0; i < nritems; i++) {
+		key = &items[i].key;
+		if (letoh64(key->objectid) < objectid)
+			continue;
+		if (letoh64(key->objectid) > objectid ||
+		    key->type > BTRFS_EXTENT_DATA_KEY)
+			break;
+		if (key->type < BTRFS_EXTENT_DATA_KEY)
+			continue;
+		if (*datap != NULL)
+			return (EOPNOTSUPP);
+
+		item_offset = letoh32(items[i].offset);
+		item_size = letoh32(items[i].size);
+		if (item_size < prefix_size)
+			return (EINVAL);
+		data = (const uint8_t *)(header + 1) + item_offset;
+		extent = (const struct btrfs_file_extent_item *)data;
+		generation = letoh64(extent->generation);
+		ram_bytes = letoh64(extent->ram_bytes);
+		if (generation == 0 ||
+		    generation > letoh64(bmp->bm_super.generation) ||
+		    letoh64(key->offset) != 0 ||
+		    extent->type > BTRFS_FILE_EXTENT_PREALLOC)
+			return (EINVAL);
+		if (extent->compression != BTRFS_COMPRESS_NONE ||
+		    extent->encryption != 0 ||
+		    letoh16(extent->other_encoding) != 0 ||
+		    extent->type != BTRFS_FILE_EXTENT_INLINE)
+			return (EOPNOTSUPP);
+
+		inline_size = item_size - prefix_size;
+		if (ram_bytes != file_size || inline_size != file_size)
+			return (EINVAL);
+		*datap = data + prefix_size;
+		*sizep = inline_size;
+	}
+
+	if (*datap == NULL)
+		return (EOPNOTSUPP);
+	return (0);
+}
+
+static int
+btrfs_read(void *v)
+{
+	struct vop_read_args *ap = v;
+	struct vnode *vp = ap->a_vp;
+	struct btrfs_node *node = VTOBTRFS(vp);
+	struct btrfs_mount *bmp = node->bn_mount;
+	const struct btrfs_header *header;
+	const uint8_t *data;
+	struct buf *bp = NULL;
+	struct uio *uio = ap->a_uio;
+	uint64_t file_size, offset;
+	size_t extent_size, size;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(vp));
+	if (vp->v_type != VREG)
+		return (EISDIR);
+	if (uio->uio_rw != UIO_READ || uio->uio_offset < 0)
+		return (EINVAL);
+	if (uio->uio_resid == 0)
+		return (0);
+
+	file_size = letoh64(node->bn_inode.size);
+	offset = uio->uio_offset;
+	if (offset >= file_size)
+		return (0);
+
+	error = btrfs_read_fs_tree_root(bmp, &bp);
+	if (error != 0)
+		return (error);
+	header = (const struct btrfs_header *)bp->b_data;
+	error = btrfs_find_inline_extent(bmp, header, node->bn_ino,
+	    file_size, &data, &extent_size);
+	if (error != 0)
+		goto out;
+	KASSERT(extent_size == file_size);
+
+	size = uio->uio_resid;
+	if (size > file_size - offset)
+		size = file_size - offset;
+	error = uiomove((void *)(data + offset), size, uio);
+out:
+	brelse(bp);
+	return (error);
 }
 
 static int
