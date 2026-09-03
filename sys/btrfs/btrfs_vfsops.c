@@ -84,9 +84,12 @@ static int	btrfs_decode_chunk(const struct btrfs_super_block *,
 		    struct btrfs_chunk_map *);
 static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
-static int	btrfs_read_chunk_root(struct vnode *,
+static int	btrfs_lookup_logical(const struct btrfs_chunk_map *,
+		    unsigned int, uint64_t, uint32_t, struct btrfs_io_map *);
+static int	btrfs_read_tree_block(struct vnode *,
 		    const struct btrfs_super_block *, const struct btrfs_io_map *,
-		    struct buf **, unsigned int *);
+		    uint64_t, uint64_t, uint64_t, uint8_t, struct buf **,
+		    unsigned int *);
 static int	btrfs_load_chunk_tree(const struct btrfs_super_block *,
 		    const struct btrfs_header *, const struct btrfs_io_map *,
 		    struct btrfs_chunk_map **, unsigned int *,
@@ -163,9 +166,9 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	const struct btrfs_header *header;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_stats chunk_stats;
-	struct btrfs_io_map map;
-	struct buf *bp = NULL, *treebp = NULL;
-	uint64_t chunk_root, generation;
+	struct btrfs_io_map map, root_map;
+	struct buf *bp = NULL, *rootbp = NULL, *treebp = NULL;
+	uint64_t chunk_root, generation, root;
 	uint32_t nritems, nodesize, sectorsize;
 	unsigned int mirror, nchunks = 0, nsystem_chunks;
 	int error;
@@ -199,7 +202,9 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	printf("btrfs: %s: loaded %u system chunk mapping%s\n", fspec,
 	    nsystem_chunks, nsystem_chunks == 1 ? "" : "s");
 
-	error = btrfs_read_chunk_root(devvp, sb, &map, &treebp, &mirror);
+	error = btrfs_read_tree_block(devvp, sb, &map, chunk_root,
+	    letoh64(sb->chunk_root_generation), BTRFS_CHUNK_TREE_OBJECTID,
+	    sb->chunk_root_level, &treebp, &mirror);
 	if (error != 0)
 		goto out;
 
@@ -219,11 +224,31 @@ btrfs_probe(struct vnode *devvp, const char *fspec, struct proc *p)
 	    "(data %u, metadata %u, system %u)\n", fspec, nchunks,
 	    chunk_stats.data, chunk_stats.metadata, chunk_stats.system);
 
-	/* Internal-node traversal is the next implementation milestone. */
+	root = letoh64(sb->root);
+	error = btrfs_lookup_logical(chunks, nchunks, root, nodesize,
+	    &root_map);
+	if (error != 0)
+		goto out;
+	error = btrfs_read_tree_block(devvp, sb, &root_map, root, generation,
+	    BTRFS_ROOT_TREE_OBJECTID, sb->root_level, &rootbp, &mirror);
+	if (error != 0)
+		goto out;
+
+	header = (const struct btrfs_header *)rootbp->b_data;
+	nritems = letoh32(header->nritems);
+	printf("btrfs: %s: root tree logical %llu, physical %llu, "
+	    "level %u, %u items, mirror %u\n", fspec,
+	    (unsigned long long)root,
+	    (unsigned long long)root_map.physical[mirror], header->level,
+	    nritems, mirror + 1);
+
+	/* Root-item lookup is the next implementation milestone. */
 	error = EOPNOTSUPP;
 out:
 	if (chunks != NULL)
 		free(chunks, M_TEMP, nchunks * sizeof(*chunks));
+	if (rootbp != NULL)
+		brelse(rootbp);
 	if (treebp != NULL)
 		brelse(treebp);
 	if (bp != NULL)
@@ -457,8 +482,30 @@ btrfs_map_logical(const struct btrfs_chunk_map *chunk, uint64_t logical,
 }
 
 static int
-btrfs_read_chunk_root(struct vnode *devvp,
+btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
+    unsigned int nchunks, uint64_t logical, uint32_t length,
+    struct btrfs_io_map *map)
+{
+	unsigned int i;
+	int error;
+
+	for (i = 0; i < nchunks; i++) {
+		error = btrfs_map_logical(&chunks[i], logical, length, map);
+		if (error == 0)
+			return (0);
+		if (error != ENOENT)
+			return (error);
+		if (logical < chunks[i].logical)
+			break;
+	}
+
+	return (ENOENT);
+}
+
+static int
+btrfs_read_tree_block(struct vnode *devvp,
     const struct btrfs_super_block *sb, const struct btrfs_io_map *map,
+    uint64_t logical, uint64_t generation, uint64_t owner, uint8_t level,
     struct buf **bpp, unsigned int *mirrorp)
 {
 	struct buf *bp;
@@ -473,9 +520,7 @@ btrfs_read_chunk_root(struct vnode *devvp,
 		if (error == 0)
 			error = btrfs_validate_tree_block(sb,
 			    (const struct btrfs_header *)bp->b_data,
-			    letoh64(sb->chunk_root),
-			    letoh64(sb->chunk_root_generation),
-			    BTRFS_CHUNK_TREE_OBJECTID, sb->chunk_root_level);
+			    logical, generation, owner, level);
 		if (error == 0) {
 			*bpp = bp;
 			*mirrorp = i;
