@@ -90,19 +90,169 @@ const struct vops btrfs_vops = {
 	.vop_bwrite	= vop_generic_bwrite,
 };
 
+#define BTRFS_LOOKUP_FOUND	(-1)
+
+struct btrfs_lookup_ctx {
+	const char	*blc_name;
+	size_t		 blc_namelen;
+	uint64_t	 blc_objectid;
+	uint8_t		 blc_type;
+	int		 blc_subvolume;
+};
+
+static int
+btrfs_lookup_entry(const struct btrfs_dir_entry *entry, void *arg)
+{
+	struct btrfs_lookup_ctx *ctx = arg;
+
+	if (entry->bde_namelen != ctx->blc_namelen ||
+	    memcmp(entry->bde_name, ctx->blc_name, ctx->blc_namelen) != 0)
+		return (0);
+
+	ctx->blc_objectid = entry->bde_objectid;
+	ctx->blc_type = entry->bde_type;
+	ctx->blc_subvolume = entry->bde_subvolume;
+	return (BTRFS_LOOKUP_FOUND);
+}
+
+static enum vtype
+btrfs_dirent_vtype(uint8_t type)
+{
+	switch (type) {
+	case BTRFS_FT_REG_FILE:
+		return (VREG);
+	case BTRFS_FT_DIR:
+		return (VDIR);
+	case BTRFS_FT_CHRDEV:
+		return (VCHR);
+	case BTRFS_FT_BLKDEV:
+		return (VBLK);
+	case BTRFS_FT_FIFO:
+		return (VFIFO);
+	case BTRFS_FT_SOCK:
+		return (VSOCK);
+	case BTRFS_FT_SYMLINK:
+		return (VLNK);
+	default:
+		return (VNON);
+	}
+}
+
 static int
 btrfs_lookup(void *v)
 {
 	struct vop_lookup_args *ap = v;
+	struct vnode *dvp = ap->a_dvp;
+	struct vnode **vpp = ap->a_vpp;
 	struct componentname *cnp = ap->a_cnp;
+	struct btrfs_node *node = VTOBTRFS(dvp);
+	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_lookup_ctx ctx;
+	const struct btrfs_header *header;
+	struct buf *bp = NULL;
+	enum vtype type;
+	int error, lastcn, lockparent;
 
-	*ap->a_vpp = NULL;
-	if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
-		vref(ap->a_dvp);
-		*ap->a_vpp = ap->a_dvp;
-		return (0);
+	KASSERT(VOP_ISLOCKED(dvp));
+	cnp->cn_flags &= ~PDIRUNLOCK;
+	*vpp = NULL;
+	lastcn = (cnp->cn_flags & ISLASTCN) != 0;
+	lockparent = (cnp->cn_flags & LOCKPARENT) != 0;
+
+	if (dvp->v_type != VDIR)
+		return (ENOTDIR);
+	error = VOP_ACCESS(dvp, VEXEC, cnp->cn_cred, cnp->cn_proc);
+	if (error != 0)
+		return (error);
+	if (lastcn && (cnp->cn_nameiop == DELETE ||
+	    cnp->cn_nameiop == RENAME))
+		return (EROFS);
+
+	error = cache_lookup(dvp, vpp, cnp);
+	if (error >= 0)
+		return (error);
+	error = 0;
+
+	if (cnp->cn_flags & ISDOTDOT) {
+		if (node->bn_ino != bmp->bm_root_dirid)
+			return (EOPNOTSUPP);
+		vref(dvp);
+		*vpp = dvp;
+		goto found;
 	}
-	return (EOPNOTSUPP);
+	if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
+		vref(dvp);
+		*vpp = dvp;
+		goto found;
+	}
+
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.blc_name = cnp->cn_nameptr;
+	ctx.blc_namelen = cnp->cn_namelen;
+	error = btrfs_read_fs_tree_root(bmp, &bp);
+	if (error != 0)
+		goto out;
+	header = (const struct btrfs_header *)bp->b_data;
+	error = btrfs_iterate_directory(&bmp->bm_super, header, node->bn_ino,
+	    btrfs_lookup_entry, &ctx);
+	brelse(bp);
+	bp = NULL;
+	if (error == BTRFS_LOOKUP_FOUND)
+		error = 0;
+	else if (error == 0)
+		error = ENOENT;
+	if (error != 0) {
+		if (error == ENOENT && lastcn &&
+		    cnp->cn_nameiop == CREATE) {
+			error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred,
+			    cnp->cn_proc);
+			if (error == 0)
+				error = EJUSTRETURN;
+		}
+		if (error == ENOENT && (cnp->cn_flags & MAKEENTRY))
+			cache_enter(dvp, NULL, cnp);
+		goto out;
+	}
+
+	/* A subvolume location names a tree, not an inode in this tree. */
+	if (ctx.blc_subvolume) {
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	if (!lastcn && ctx.blc_type != BTRFS_FT_UNKNOWN &&
+	    ctx.blc_type != BTRFS_FT_DIR &&
+	    ctx.blc_type != BTRFS_FT_SYMLINK) {
+		error = ENOTDIR;
+		goto out;
+	}
+	if (ctx.blc_objectid == node->bn_ino) {
+		error = EINVAL;
+		goto out;
+	}
+
+	error = btrfs_vget(dvp->v_mount, ctx.blc_objectid, vpp);
+	if (error != 0)
+		goto out;
+	type = btrfs_dirent_vtype(ctx.blc_type);
+	if (type != VNON && type != (*vpp)->v_type) {
+		vput(*vpp);
+		*vpp = NULL;
+		error = EINVAL;
+		goto out;
+	}
+
+found:
+	if (cnp->cn_flags & MAKEENTRY)
+		cache_enter(dvp, *vpp, cnp);
+out:
+	if (bp != NULL)
+		brelse(bp);
+	if (error == 0 && *vpp != dvp && (!lockparent || !lastcn)) {
+		VOP_UNLOCK(dvp);
+		cnp->cn_flags |= PDIRUNLOCK;
+	}
+	KASSERT((*vpp != NULL && VOP_ISLOCKED(*vpp)) || error != 0);
+	return (error);
 }
 
 static int
