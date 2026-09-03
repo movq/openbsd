@@ -23,6 +23,8 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/buf.h>
+#include <sys/dirent.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/fcntl.h>
@@ -42,6 +44,7 @@ static int	btrfs_close(void *);
 static int	btrfs_access(void *);
 static int	btrfs_getattr(void *);
 static int	btrfs_ioctl(void *);
+static int	btrfs_readdir(void *);
 static int	btrfs_inactive(void *);
 static int	btrfs_reclaim(void *);
 static int	btrfs_lock(void *);
@@ -71,7 +74,7 @@ const struct vops btrfs_vops = {
 	.vop_mkdir	= eopnotsupp,
 	.vop_rmdir	= eopnotsupp,
 	.vop_symlink	= eopnotsupp,
-	.vop_readdir	= eopnotsupp,
+	.vop_readdir	= btrfs_readdir,
 	.vop_readlink	= eopnotsupp,
 	.vop_abortop	= vop_generic_abortop,
 	.vop_inactive	= btrfs_inactive,
@@ -175,6 +178,157 @@ static int
 btrfs_ioctl(void *v)
 {
 	return (ENOTTY);
+}
+
+#define BTRFS_DIR_OFFSET_DOT		0
+#define BTRFS_DIR_OFFSET_DOTDOT		1
+#define BTRFS_DIR_OFFSET_FIRST		2
+#define BTRFS_READDIR_FULL		(-1)
+
+struct btrfs_readdir_ctx {
+	struct uio	*brc_uio;
+	off_t		 brc_skip;
+	off_t		 brc_position;
+	off_t		 brc_offset;
+	int		 brc_full;
+};
+
+static uint8_t
+btrfs_dirent_type(uint8_t type)
+{
+	switch (type) {
+	case BTRFS_FT_REG_FILE:
+		return (DT_REG);
+	case BTRFS_FT_DIR:
+		return (DT_DIR);
+	case BTRFS_FT_CHRDEV:
+		return (DT_CHR);
+	case BTRFS_FT_BLKDEV:
+		return (DT_BLK);
+	case BTRFS_FT_FIFO:
+		return (DT_FIFO);
+	case BTRFS_FT_SOCK:
+		return (DT_SOCK);
+	case BTRFS_FT_SYMLINK:
+		return (DT_LNK);
+	default:
+		return (DT_UNKNOWN);
+	}
+}
+
+static int
+btrfs_emit_dirent(struct btrfs_readdir_ctx *ctx, ino_t fileno,
+    uint8_t type, const uint8_t *name, uint16_t namelen, off_t next)
+{
+	union {
+		struct dirent	dirent;
+		uint8_t		padding[roundup(sizeof(struct dirent), 8)];
+	} entry;
+	struct dirent *dirent = &entry.dirent;
+	int error;
+
+	memset(&entry, 0, sizeof(entry));
+	dirent->d_fileno = fileno;
+	dirent->d_off = next;
+	dirent->d_type = type;
+	dirent->d_namlen = namelen;
+	dirent->d_reclen = DIRENT_SIZE(dirent);
+	if (ctx->brc_uio->uio_resid < dirent->d_reclen) {
+		ctx->brc_full = 1;
+		return (BTRFS_READDIR_FULL);
+	}
+	memcpy(dirent->d_name, name, namelen);
+
+	error = uiomove(dirent, dirent->d_reclen, ctx->brc_uio);
+	if (error == 0)
+		ctx->brc_offset = next;
+	return (error);
+}
+
+static int
+btrfs_readdir_entry(const struct btrfs_dir_entry *entry, void *arg)
+{
+	struct btrfs_readdir_ctx *ctx = arg;
+	ino_t fileno;
+	int error;
+
+	if (ctx->brc_position < ctx->brc_skip) {
+		ctx->brc_position++;
+		return (0);
+	}
+
+	/*
+	 * A subvolume directory item names a root item; its visible inode is
+	 * the root directory in that tree, not the root item's object ID.
+	 */
+	if (entry->bde_subvolume)
+		fileno = BTRFS_FIRST_FREE_OBJECTID;
+	else
+		fileno = entry->bde_objectid;
+	error = btrfs_emit_dirent(ctx, fileno,
+	    btrfs_dirent_type(entry->bde_type), entry->bde_name,
+	    entry->bde_namelen, ctx->brc_position + 1);
+	if (error == 0)
+		ctx->brc_position++;
+	return (error);
+}
+
+static int
+btrfs_readdir(void *v)
+{
+	struct vop_readdir_args *ap = v;
+	struct vnode *vp = ap->a_vp;
+	struct btrfs_node *node = VTOBTRFS(vp);
+	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_readdir_ctx ctx;
+	const struct btrfs_header *header;
+	struct uio *uio = ap->a_uio;
+	struct buf *bp = NULL;
+	int error = 0;
+
+	KASSERT(VOP_ISLOCKED(vp));
+	if (uio->uio_rw != UIO_READ || uio->uio_offset < 0)
+		return (EINVAL);
+	if (vp->v_type != VDIR)
+		return (ENOTDIR);
+	if (node->bn_treeid != bmp->bm_treeid ||
+	    node->bn_ino != bmp->bm_root_dirid)
+		return (EOPNOTSUPP);
+
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.brc_uio = uio;
+	ctx.brc_offset = uio->uio_offset;
+
+	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOT) {
+		error = btrfs_emit_dirent(&ctx, node->bn_ino, DT_DIR,
+		    (const uint8_t *)".", 1, BTRFS_DIR_OFFSET_DOTDOT);
+		if (error != 0)
+			goto out;
+	}
+	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOTDOT) {
+		error = btrfs_emit_dirent(&ctx, node->bn_ino, DT_DIR,
+		    (const uint8_t *)"..", 2, BTRFS_DIR_OFFSET_FIRST);
+		if (error != 0)
+			goto out;
+	}
+
+	ctx.brc_skip = ctx.brc_offset;
+	ctx.brc_position = BTRFS_DIR_OFFSET_FIRST;
+	error = btrfs_read_fs_tree_root(bmp, &bp);
+	if (error != 0)
+		goto out;
+	header = (const struct btrfs_header *)bp->b_data;
+	error = btrfs_iterate_directory(&bmp->bm_super, header, node->bn_ino,
+	    btrfs_readdir_entry, &ctx);
+out:
+	if (error == BTRFS_READDIR_FULL)
+		error = 0;
+	if (bp != NULL)
+		brelse(bp);
+	uio->uio_offset = ctx.brc_offset;
+	if (ap->a_eofflag != NULL)
+		*ap->a_eofflag = error == 0 && !ctx.brc_full;
+	return (error);
 }
 
 static int
