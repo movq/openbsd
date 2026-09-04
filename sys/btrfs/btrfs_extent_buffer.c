@@ -345,6 +345,53 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 	return (0);
 }
 
+/*
+ * Consume the caller and dirty-list references to an unlinked COW block.
+ * Its delayed add must have been canceled before the allocation is returned.
+ */
+int
+btrfs_extent_buffer_discard(struct btrfs_trans_handle *handle,
+    struct btrfs_extent_buffer *eb)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_mount *bmp;
+	uint32_t nodesize;
+	int error;
+
+	if (handle == NULL || eb == NULL)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	bmp = trans->bt_mount;
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	rw_assert_wrlock(&eb->eb_lock);
+	if (eb->eb_mount != bmp || eb->eb_transaction != trans ||
+	    eb->eb_generation != trans->bt_generation ||
+	    eb->eb_private == NULL || !eb->eb_dirty ||
+	    eb->eb_writeback || eb->eb_written || eb->eb_stale ||
+	    eb->eb_error != 0)
+		return (EINVAL);
+
+	error = btrfs_space_cancel_alloc(handle, eb->eb_bytenr, nodesize);
+	if (error != 0)
+		return (error);
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_REMOVE(&trans->bt_dirty_extent_buffers, eb, eb_dirty_entry);
+	mtx_leave(&trans->bt_lock);
+	eb->eb_transaction = NULL;
+	eb->eb_dirty = 0;
+	eb->eb_stale = 1;
+	eb->eb_error = ECANCELED;
+
+	/* Drop transaction ownership while the caller's lock/reference remains. */
+	mtx_enter(&bmp->bm_ebmtx);
+	KASSERT(eb->eb_refs >= 2);
+	eb->eb_refs--;
+	mtx_leave(&bmp->bm_ebmtx);
+	btrfs_extent_buffer_put(eb);
+	return (0);
+}
+
 const void *
 btrfs_extent_buffer_data(const struct btrfs_extent_buffer *eb)
 {
