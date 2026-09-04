@@ -117,8 +117,7 @@ btrfs_find_inode(struct btrfs_root *root, uint64_t objectid,
 		goto invalid;
 	inode_item = (const struct btrfs_inode_item *)data;
 	btrfs_decode_inode(inode_item, result);
-	if (result->bi_generation == 0 ||
-	    result->bi_generation > root->br_view_generation ||
+	if (result->bi_generation > root->br_view_generation ||
 	    result->bi_transid > root->br_view_generation ||
 	    IFTOVT(result->bi_mode) == VNON ||
 	    IFTOVT(result->bi_mode) == VBAD || result->bi_nlink == 0 ||
@@ -168,7 +167,6 @@ btrfs_write_inode(struct btrfs_trans_handle *handle,
 		return (0);
 	if (inode->bi_last_dirty_transid != trans->bt_generation ||
 	    (inode->bi_dirty_fields & ~BTRFS_INODE_DIRTY_ALL) != 0 ||
-	    inode->bi_generation == 0 ||
 	    inode->bi_generation > trans->bt_generation ||
 	    inode->bi_transid > trans->bt_generation ||
 	    inode->bi_nlink == 0 || IFTOVT(inode->bi_mode) == VNON ||
