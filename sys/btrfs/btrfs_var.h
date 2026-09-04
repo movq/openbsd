@@ -181,9 +181,33 @@ struct btrfs_free_extent {
 TAILQ_HEAD(btrfs_free_extent_list, btrfs_free_extent);
 
 struct btrfs_mount;
+struct btrfs_root;
 struct btrfs_transaction;
 struct btrfs_extent_buffer;
 TAILQ_HEAD(btrfs_dirty_extent_buffer_list, btrfs_extent_buffer);
+
+/*
+ * Delayed tree references describe the final reference delta for one metadata
+ * extent and backreference identity.  Materialization decides whether a
+ * dropped extent reached zero references and must enter pinned space.
+ */
+struct btrfs_delayed_tree_ref {
+	TAILQ_ENTRY(btrfs_delayed_tree_ref) bdr_entry;
+	uint64_t			 bdr_bytenr;
+	uint64_t			 bdr_parent;
+	uint64_t			 bdr_root;
+	int64_t				 bdr_ref_mod;
+	uint8_t				 bdr_level;
+};
+TAILQ_HEAD(btrfs_delayed_tree_ref_list, btrfs_delayed_tree_ref);
+
+struct btrfs_dirty_root {
+	TAILQ_ENTRY(btrfs_dirty_root)	 bdr_entry;
+	struct btrfs_root		*bdr_root;
+	struct btrfs_root_location	 bdr_old_location;
+	uint64_t			 bdr_old_view_generation;
+};
+TAILQ_HEAD(btrfs_dirty_root_list, btrfs_dirty_root);
 
 struct btrfs_block_group {
 	struct mutex			 bbg_lock;
@@ -240,6 +264,9 @@ struct btrfs_transaction {
 	struct btrfs_trans_extent_list	 bt_pinned_extents;
 	struct btrfs_dirty_extent_buffer_list
 					 bt_dirty_extent_buffers;
+	struct btrfs_delayed_tree_ref_list
+					 bt_delayed_tree_refs;
+	struct btrfs_dirty_root_list	 bt_dirty_roots;
 	uint64_t			 bt_generation;
 	uint64_t			 bt_commit_reserve_target;
 	uint64_t			 bt_commit_reserved_bytes;
@@ -329,6 +356,7 @@ struct btrfs_root {
 	/* Maximum metadata generation visible through this root. */
 	uint64_t			 br_view_generation;
 	uint64_t			 br_owner;
+	struct btrfs_transaction	*br_transaction;
 	uint8_t				 br_level;
 };
 
@@ -365,7 +393,9 @@ struct btrfs_path {
 				*bp_eb[BTRFS_MAX_LEVEL];
 	uint32_t		 bp_slot[BTRFS_MAX_LEVEL];
 	uint64_t		 bp_view_generation;
+	struct btrfs_trans_handle *bp_handle;
 	uint8_t			 bp_level;
+	uint8_t			 bp_write;
 };
 
 #define BTRFS_SUPER_MIRROR_READABLE	0x01
@@ -485,12 +515,24 @@ void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
 void	btrfs_extent_buffer_put(struct btrfs_extent_buffer *);
 int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
 int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
+int	btrfs_delayed_ref_add(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t, uint64_t, uint8_t, int);
+int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
+int	btrfs_roots_finish(struct btrfs_transaction *, int);
 /*
  * An exact miss leaves path at the insertion point.  Paths must initially
- * be zeroed and retain item pointers until advanced or released.
+ * be zeroed and retain item pointers until advanced or released.  A write
+ * path also retains its transaction handle and must be released before that
+ * handle ends.
  */
 int	btrfs_search_slot(struct btrfs_root *, const struct btrfs_key *,
 	    struct btrfs_path *);
+int	btrfs_search_slot_write(struct btrfs_trans_handle *,
+	    struct btrfs_root *, const struct btrfs_key *,
+	    struct btrfs_path *);
+int	btrfs_cow_block(struct btrfs_trans_handle *, struct btrfs_root *,
+	    struct btrfs_extent_buffer *, uint32_t,
+	    struct btrfs_extent_buffer **);
 int	btrfs_search_lower_bound(struct btrfs_root *,
 	    const struct btrfs_key *, struct btrfs_path *);
 int	btrfs_search_predecessor(struct btrfs_root *,
