@@ -51,6 +51,8 @@ btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
 	TAILQ_INIT(&trans->bt_pinned_extents);
 	TAILQ_INIT(&trans->bt_dirty_extent_buffers);
 	TAILQ_INIT(&trans->bt_delayed_tree_refs);
+	TAILQ_INIT(&trans->bt_delayed_data_refs);
+	TAILQ_INIT(&trans->bt_ordered_extents);
 	TAILQ_INIT(&trans->bt_dirty_roots);
 	return (trans);
 }
@@ -102,9 +104,12 @@ btrfs_trans_destroy(struct btrfs_mount *bmp)
 	KASSERT(!trans->bt_commit_handle);
 	(void)btrfs_roots_finish(trans, 0);
 	(void)btrfs_delayed_refs_finish(trans, 0);
+	(void)btrfs_ordered_extents_finish(trans, 0);
 	(void)btrfs_extent_buffers_finish(trans, 0);
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_roots));
 	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_tree_refs));
+	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_data_refs));
+	KASSERT(TAILQ_EMPTY(&trans->bt_ordered_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	if (trans->bt_state != BTRFS_TRANS_COMMITTED)
 		btrfs_space_abort(trans);
@@ -474,7 +479,7 @@ btrfs_run_delayed_refs(struct btrfs_trans_handle *handle)
 			    bdr_entry);
 		mtx_leave(&trans->bt_lock);
 		if (ref == NULL)
-			return (0);
+			return (btrfs_run_delayed_data_refs(handle));
 		error = btrfs_materialize_tree_ref(handle, ref);
 		free(ref, M_BTRFS, sizeof(*ref));
 		if (error != 0) {
@@ -513,6 +518,7 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 
 		mtx_enter(&trans->bt_lock);
 		pending = !TAILQ_EMPTY(&trans->bt_delayed_tree_refs) ||
+		    !TAILQ_EMPTY(&trans->bt_delayed_data_refs) ||
 		    space_seq != trans->bt_space_seq;
 		mtx_leave(&trans->bt_lock);
 		if (!pending)
@@ -557,6 +563,10 @@ btrfs_trans_commit(struct btrfs_mount *bmp, uint64_t minimum_generation,
 		error = trans->bt_error;
 	if (error == 0)
 		error = btrfs_trans_commit_handle(trans, &handle);
+	if (error == 0)
+		error = btrfs_write_ordered_extents(trans);
+	if (error != 0 && handle != NULL)
+		btrfs_trans_abort(handle, error);
 	if (error == 0)
 		error = btrfs_prepare_metadata_commit(handle);
 	if (handle != NULL) {
@@ -613,12 +623,14 @@ btrfs_delayed_refs_finish(struct btrfs_transaction *trans, int committed)
 	KASSERT(!trans->bt_commit_handle);
 	if (committed && !TAILQ_EMPTY(&trans->bt_delayed_tree_refs))
 		return (EBUSY);
+	if (committed && !TAILQ_EMPTY(&trans->bt_delayed_data_refs))
+		return (EBUSY);
 
 	while ((ref = TAILQ_FIRST(&trans->bt_delayed_tree_refs)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_delayed_tree_refs, ref, bdr_entry);
 		free(ref, M_BTRFS, sizeof(*ref));
 	}
-	return (0);
+	return (btrfs_delayed_data_refs_finish(trans, committed));
 }
 
 int
@@ -686,6 +698,8 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 	if (error == 0)
 		error = btrfs_delayed_refs_finish(trans, 1);
 	if (error == 0)
+		error = btrfs_ordered_extents_finish(trans, 1);
+	if (error == 0)
 		error = btrfs_extent_buffers_finish(trans, 1);
 	if (error == 0) {
 		(void)btrfs_roots_finish(trans, 1);
@@ -700,6 +714,7 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 	} else {
 		(void)btrfs_roots_finish(trans, 0);
 		(void)btrfs_delayed_refs_finish(trans, 0);
+		(void)btrfs_ordered_extents_finish(trans, 0);
 		(void)btrfs_extent_buffers_finish(trans, 0);
 		btrfs_space_abort(trans);
 	}
