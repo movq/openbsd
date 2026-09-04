@@ -43,7 +43,6 @@ main(int argc, char *argv[])
 		err(1, "realpath %s", argv[1]);
 
 	args.fspec = argv[0];
-	mntflags |= MNT_RDONLY;
 	if (mount(MOUNT_BTRFS, mountpoint, mntflags, &args) == -1)
 		err(1, "%s on %s", args.fspec, mountpoint);
 
