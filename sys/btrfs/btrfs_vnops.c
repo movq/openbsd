@@ -150,8 +150,7 @@ btrfs_lookup(void *v)
 	struct btrfs_node *node = VTOBTRFS(dvp);
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_lookup_ctx ctx;
-	const struct btrfs_header *header;
-	struct buf *bp = NULL;
+	struct btrfs_root root;
 	enum vtype type;
 	int error, lastcn, lockparent;
 
@@ -191,14 +190,9 @@ btrfs_lookup(void *v)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.blc_name = cnp->cn_nameptr;
 	ctx.blc_namelen = cnp->cn_namelen;
-	error = btrfs_read_fs_tree_root(bmp, &bp);
-	if (error != 0)
-		goto out;
-	header = (const struct btrfs_header *)bp->b_data;
-	error = btrfs_iterate_directory(&bmp->bm_super, header, node->bn_ino,
+	btrfs_init_fs_root(bmp, &root);
+	error = btrfs_iterate_directory(&root, node->bn_ino,
 	    btrfs_lookup_entry, &ctx);
-	brelse(bp);
-	bp = NULL;
 	if (error == BTRFS_LOOKUP_FOUND)
 		error = 0;
 	else if (error == 0)
@@ -247,8 +241,6 @@ found:
 	if (cnp->cn_flags & MAKEENTRY)
 		cache_enter(dvp, *vpp, cnp);
 out:
-	if (bp != NULL)
-		brelse(bp);
 	if (error == 0 && *vpp != dvp && (!lockparent || !lastcn)) {
 		VOP_UNLOCK(dvp);
 		cnp->cn_flags |= PDIRUNLOCK;
@@ -427,55 +419,77 @@ btrfs_decode_file_extent(const struct btrfs_mount *bmp,
 
 static int
 btrfs_find_file_extent(const struct btrfs_mount *bmp,
-    const struct btrfs_header *header, uint64_t objectid, uint64_t position,
-    uint64_t file_size, struct btrfs_file_extent *extent)
+    struct btrfs_root *root, struct btrfs_path *path, uint64_t objectid,
+    uint64_t position, uint64_t file_size, struct btrfs_file_extent *extent)
 {
-	const struct btrfs_item *items;
 	const struct btrfs_key *key;
 	const uint8_t *data;
+	struct btrfs_key target;
 	struct btrfs_file_extent decoded;
-	uint64_t end, object, previous_end = 0;
-	uint32_t i, item_offset, item_size, nritems;
+	uint64_t end, previous_end = 0;
+	uint32_t item_size;
 	int error;
 
 	memset(extent, 0, sizeof(*extent));
-	if (header->level != 0)
-		return (EOPNOTSUPP);
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(objectid);
+	target.type = BTRFS_EXTENT_DATA_KEY;
+	target.offset = htole64(position);
 
-	nritems = letoh32(header->nritems);
-	items = (const struct btrfs_item *)(header + 1);
-	for (i = 0; i < nritems; i++) {
-		key = &items[i].key;
-		object = letoh64(key->objectid);
-		if (object < objectid)
-			continue;
-		if (object > objectid || key->type > BTRFS_EXTENT_DATA_KEY)
-			break;
-		if (key->type < BTRFS_EXTENT_DATA_KEY)
-			continue;
-
-		item_offset = letoh32(items[i].offset);
-		item_size = letoh32(items[i].size);
-		data = (const uint8_t *)(header + 1) + item_offset;
-		error = btrfs_decode_file_extent(bmp, key, data, item_size,
-		    &decoded);
+	error = btrfs_search_predecessor(root, &target, path);
+	if (error == 0) {
+		error = btrfs_path_item(path, &key, &data, &item_size);
 		if (error != 0)
 			return (error);
-		if (decoded.bfe_logical < previous_end)
-			return (EINVAL);
-		end = decoded.bfe_logical + decoded.bfe_length;
-		previous_end = end;
-
-		if (position < decoded.bfe_logical) {
-			extent->bfe_logical = position;
-			extent->bfe_length =
-			    MIN(decoded.bfe_logical, file_size) - position;
-			extent->bfe_type = BTRFS_FILE_EXTENT_HOLE;
-			return (0);
+		if (letoh64(key->objectid) == objectid &&
+		    key->type == BTRFS_EXTENT_DATA_KEY) {
+			error = btrfs_decode_file_extent(bmp, key, data,
+			    item_size, &decoded);
+			if (error != 0)
+				return (error);
+			end = decoded.bfe_logical + decoded.bfe_length;
+			if (position < end) {
+				*extent = decoded;
+				return (0);
+			}
+			previous_end = end;
+			error = btrfs_next_item(path);
+		} else {
+			target.offset = 0;
+			error = btrfs_search_lower_bound(root, &target, path);
 		}
-		if (position < end) {
-			*extent = decoded;
-			return (0);
+	} else if (error == ENOENT) {
+		target.offset = 0;
+		error = btrfs_search_lower_bound(root, &target, path);
+	}
+	if (error != 0 && error != ENOENT)
+		return (error);
+
+	if (error == 0) {
+		error = btrfs_path_item(path, &key, &data, &item_size);
+		if (error != 0)
+			return (error);
+		if (letoh64(key->objectid) == objectid &&
+		    key->type == BTRFS_EXTENT_DATA_KEY) {
+			error = btrfs_decode_file_extent(bmp, key, data,
+			    item_size, &decoded);
+			if (error != 0)
+				return (error);
+			if (decoded.bfe_logical < previous_end)
+				return (EINVAL);
+			end = decoded.bfe_logical + decoded.bfe_length;
+			if (position < decoded.bfe_logical) {
+				extent->bfe_logical = position;
+				extent->bfe_length =
+				    MIN(decoded.bfe_logical, file_size) -
+				    position;
+				extent->bfe_type = BTRFS_FILE_EXTENT_HOLE;
+				return (0);
+			}
+			if (position < end) {
+				*extent = decoded;
+				return (0);
+			}
 		}
 	}
 
@@ -503,11 +517,9 @@ btrfs_uiomove_zeros(size_t size, struct uio *uio)
 
 static int
 btrfs_read_regular_extent(struct btrfs_node *node,
-    const struct btrfs_file_extent *extent, size_t size, struct uio *uio,
-    struct buf **csumbpp)
+    const struct btrfs_file_extent *extent, size_t size, struct uio *uio)
 {
 	struct btrfs_mount *bmp = node->bn_mount;
-	const struct btrfs_header *csum_header;
 	struct buf *bp = NULL;
 	uint64_t block, logical, relative;
 	uint64_t inode_flags;
@@ -528,15 +540,7 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 		chunk = MIN(size, sectorsize - offset);
 		expectedp = NULL;
 		if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
-			if (*csumbpp == NULL) {
-				error = btrfs_read_csum_tree_root(bmp, csumbpp);
-				if (error != 0)
-					break;
-			}
-			csum_header =
-			    (const struct btrfs_header *)(*csumbpp)->b_data;
-			error = btrfs_lookup_data_csum(bmp, csum_header,
-			    block, &expected);
+			error = btrfs_lookup_data_csum(bmp, block, &expected);
 			if (error != 0) {
 				if (error == ENOENT)
 					error = EINVAL;
@@ -569,8 +573,8 @@ btrfs_read(void *v)
 	struct btrfs_node *node = VTOBTRFS(vp);
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
-	const struct btrfs_header *header;
-	struct buf *bp = NULL, *csumbp = NULL;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root root;
 	struct uio *uio = ap->a_uio;
 	uint64_t available, file_size, offset;
 	size_t size;
@@ -589,16 +593,13 @@ btrfs_read(void *v)
 	if (offset >= file_size)
 		return (0);
 
-	error = btrfs_read_fs_tree_root(bmp, &bp);
-	if (error != 0)
-		return (error);
-	header = (const struct btrfs_header *)bp->b_data;
+	btrfs_init_fs_root(bmp, &root);
 
 	while (error == 0 && uio->uio_resid != 0 &&
 	    (uint64_t)uio->uio_offset < file_size) {
 		offset = uio->uio_offset;
-		error = btrfs_find_file_extent(bmp, header, node->bn_ino,
-		    offset, file_size, &extent);
+		error = btrfs_find_file_extent(bmp, &root, &path,
+		    node->bn_ino, offset, file_size, &extent);
 		if (error != 0)
 			break;
 		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
@@ -625,8 +626,7 @@ btrfs_read(void *v)
 			    offset - extent.bfe_logical), size, uio);
 			break;
 		case BTRFS_FILE_EXTENT_REG:
-			error = btrfs_read_regular_extent(node, &extent, size,
-			    uio, &csumbp);
+			error = btrfs_read_regular_extent(node, &extent, size, uio);
 			break;
 		case BTRFS_FILE_EXTENT_PREALLOC:
 		case BTRFS_FILE_EXTENT_HOLE:
@@ -638,9 +638,7 @@ btrfs_read(void *v)
 		}
 	}
 
-	if (csumbp != NULL)
-		brelse(csumbp);
-	brelse(bp);
+	btrfs_release_path(&path);
 	return (error);
 }
 
@@ -658,8 +656,8 @@ btrfs_readlink(void *v)
 	struct btrfs_node *node = VTOBTRFS(vp);
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
-	const struct btrfs_header *header;
-	struct buf *bp = NULL;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root root;
 	struct uio *uio = ap->a_uio;
 	uint64_t file_size;
 	size_t size;
@@ -675,11 +673,8 @@ btrfs_readlink(void *v)
 	file_size = letoh64(node->bn_inode.size);
 	if (file_size == 0)
 		return (EINVAL);
-	error = btrfs_read_fs_tree_root(bmp, &bp);
-	if (error != 0)
-		return (error);
-	header = (const struct btrfs_header *)bp->b_data;
-	error = btrfs_find_file_extent(bmp, header, node->bn_ino, 0,
+	btrfs_init_fs_root(bmp, &root);
+	error = btrfs_find_file_extent(bmp, &root, &path, node->bn_ino, 0,
 	    file_size, &extent);
 	if (error != 0)
 		goto out;
@@ -700,7 +695,7 @@ btrfs_readlink(void *v)
 		size = file_size;
 	error = uiomove((void *)extent.bfe_inline_data, size, uio);
 out:
-	brelse(bp);
+	btrfs_release_path(&path);
 	return (error);
 }
 
@@ -805,9 +800,8 @@ btrfs_readdir(void *v)
 	struct btrfs_node *node = VTOBTRFS(vp);
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_readdir_ctx ctx;
-	const struct btrfs_header *header;
+	struct btrfs_root root;
 	struct uio *uio = ap->a_uio;
-	struct buf *bp = NULL;
 	int error = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
@@ -838,17 +832,12 @@ btrfs_readdir(void *v)
 
 	ctx.brc_skip = ctx.brc_offset;
 	ctx.brc_position = BTRFS_DIR_OFFSET_FIRST;
-	error = btrfs_read_fs_tree_root(bmp, &bp);
-	if (error != 0)
-		goto out;
-	header = (const struct btrfs_header *)bp->b_data;
-	error = btrfs_iterate_directory(&bmp->bm_super, header, node->bn_ino,
+	btrfs_init_fs_root(bmp, &root);
+	error = btrfs_iterate_directory(&root, node->bn_ino,
 	    btrfs_readdir_entry, &ctx);
 out:
 	if (error == BTRFS_READDIR_FULL)
 		error = 0;
-	if (bp != NULL)
-		brelse(bp);
 	uio->uio_offset = ctx.brc_offset;
 	if (ap->a_eofflag != NULL)
 		*ap->a_eofflag = error == 0 && !ctx.brc_full;
