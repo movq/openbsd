@@ -54,6 +54,8 @@ static int	btrfs_unlock(void *);
 static int	btrfs_islocked(void *);
 static int	btrfs_print(void *);
 static int	btrfs_pathconf(void *);
+static int	btrfs_find_dir_parent(struct btrfs_mount *, uint64_t,
+		    uint64_t *);
 
 const struct vops btrfs_vops = {
 	.vop_lookup	= btrfs_lookup,
@@ -141,6 +143,112 @@ btrfs_dirent_vtype(uint8_t type)
 }
 
 static int
+btrfs_ref_name_valid(const uint8_t *name, uint16_t namelen)
+{
+	if (namelen == 0 || namelen > BTRFS_NAME_MAX ||
+	    memchr(name, '\0', namelen) != NULL ||
+	    memchr(name, '/', namelen) != NULL ||
+	    (namelen == 1 && name[0] == '.') ||
+	    (namelen == 2 && name[0] == '.' && name[1] == '.'))
+		return (0);
+	return (1);
+}
+
+static int
+btrfs_find_dir_parent(struct btrfs_mount *bmp, uint64_t objectid,
+    uint64_t *parentp)
+{
+	const struct btrfs_inode_extref *extref;
+	const struct btrfs_inode_ref *ref;
+	const struct btrfs_key *key;
+	const uint8_t *data, *name;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root root;
+	struct btrfs_key target;
+	uint64_t parent;
+	uint32_t item_size;
+	uint16_t namelen;
+	size_t record_size, remaining;
+	unsigned int nrefs = 0;
+	int error;
+
+	if (objectid == bmp->bm_root_dirid) {
+		*parentp = objectid;
+		return (0);
+	}
+
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(objectid);
+	target.type = BTRFS_INODE_REF_KEY;
+	btrfs_init_fs_root(bmp, &root);
+	error = btrfs_search_lower_bound(&root, &target, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &key, &data, &item_size);
+		if (error != 0)
+			break;
+		if (letoh64(key->objectid) != objectid ||
+		    key->type > BTRFS_INODE_EXTREF_KEY)
+			break;
+
+		remaining = item_size;
+		if (key->type == BTRFS_INODE_REF_KEY) {
+			parent = letoh64(key->offset);
+			while (remaining != 0) {
+				if (remaining < sizeof(*ref))
+					goto invalid;
+				ref = (const struct btrfs_inode_ref *)data;
+				namelen = letoh16(ref->name_len);
+				if (namelen > remaining - sizeof(*ref))
+					goto invalid;
+				record_size = sizeof(*ref) + namelen;
+				name = data + sizeof(*ref);
+				if (!btrfs_ref_name_valid(name, namelen))
+					goto invalid;
+				if (parent < BTRFS_FIRST_FREE_OBJECTID ||
+				    parent > BTRFS_LAST_FREE_OBJECTID ||
+				    parent == objectid || ++nrefs != 1)
+					goto invalid;
+				*parentp = parent;
+				data += record_size;
+				remaining -= record_size;
+			}
+		} else if (key->type == BTRFS_INODE_EXTREF_KEY) {
+			while (remaining != 0) {
+				if (remaining < sizeof(*extref))
+					goto invalid;
+				extref = (const struct btrfs_inode_extref *)data;
+				namelen = letoh16(extref->name_len);
+				if (namelen > remaining - sizeof(*extref))
+					goto invalid;
+				record_size = sizeof(*extref) + namelen;
+				name = data + sizeof(*extref);
+				if (!btrfs_ref_name_valid(name, namelen))
+					goto invalid;
+				parent = letoh64(extref->parent_objectid);
+				if (parent < BTRFS_FIRST_FREE_OBJECTID ||
+				    parent > BTRFS_LAST_FREE_OBJECTID ||
+				    parent == objectid || ++nrefs != 1)
+					goto invalid;
+				*parentp = parent;
+				data += record_size;
+				remaining -= record_size;
+			}
+		}
+		error = btrfs_next_item(&path);
+	}
+	if (error == ENOENT)
+		error = 0;
+	if (error == 0 && nrefs != 1)
+		error = EINVAL;
+	goto out;
+invalid:
+	error = EINVAL;
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+static int
 btrfs_lookup(void *v)
 {
 	struct vop_lookup_args *ap = v;
@@ -151,6 +259,7 @@ btrfs_lookup(void *v)
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_lookup_ctx ctx;
 	struct btrfs_root root;
+	uint64_t parent;
 	enum vtype type;
 	int error, lastcn, lockparent;
 
@@ -175,10 +284,31 @@ btrfs_lookup(void *v)
 	error = 0;
 
 	if (cnp->cn_flags & ISDOTDOT) {
-		if (node->bn_ino != bmp->bm_root_dirid)
-			return (EOPNOTSUPP);
-		vref(dvp);
-		*vpp = dvp;
+		if (node->bn_ino == bmp->bm_root_dirid) {
+			vref(dvp);
+			*vpp = dvp;
+			goto found;
+		}
+		error = btrfs_find_dir_parent(bmp, node->bn_ino, &parent);
+		if (error != 0)
+			goto out;
+		VOP_UNLOCK(dvp);
+		cnp->cn_flags |= PDIRUNLOCK;
+		error = btrfs_vget(dvp->v_mount, parent, vpp);
+		if (error != 0) {
+			if (vn_lock(dvp, LK_EXCLUSIVE | LK_RETRY) == 0)
+				cnp->cn_flags &= ~PDIRUNLOCK;
+			return (error);
+		}
+		if (lockparent && lastcn) {
+			error = vn_lock(dvp, LK_EXCLUSIVE);
+			if (error != 0) {
+				vput(*vpp);
+				*vpp = NULL;
+				return (error);
+			}
+			cnp->cn_flags &= ~PDIRUNLOCK;
+		}
 		goto found;
 	}
 	if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
@@ -241,7 +371,8 @@ found:
 	if (cnp->cn_flags & MAKEENTRY)
 		cache_enter(dvp, *vpp, cnp);
 out:
-	if (error == 0 && *vpp != dvp && (!lockparent || !lastcn)) {
+	if (error == 0 && *vpp != dvp && (!lockparent || !lastcn) &&
+	    (cnp->cn_flags & PDIRUNLOCK) == 0) {
 		VOP_UNLOCK(dvp);
 		cnp->cn_flags |= PDIRUNLOCK;
 	}
@@ -802,6 +933,7 @@ btrfs_readdir(void *v)
 	struct btrfs_readdir_ctx ctx;
 	struct btrfs_root root;
 	struct uio *uio = ap->a_uio;
+	uint64_t parent;
 	int error = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
@@ -809,8 +941,7 @@ btrfs_readdir(void *v)
 		return (EINVAL);
 	if (vp->v_type != VDIR)
 		return (ENOTDIR);
-	if (node->bn_treeid != bmp->bm_treeid ||
-	    node->bn_ino != bmp->bm_root_dirid)
+	if (node->bn_treeid != bmp->bm_treeid)
 		return (EOPNOTSUPP);
 
 	memset(&ctx, 0, sizeof(ctx));
@@ -824,7 +955,10 @@ btrfs_readdir(void *v)
 			goto out;
 	}
 	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOTDOT) {
-		error = btrfs_emit_dirent(&ctx, node->bn_ino, DT_DIR,
+		error = btrfs_find_dir_parent(bmp, node->bn_ino, &parent);
+		if (error != 0)
+			goto out;
+		error = btrfs_emit_dirent(&ctx, parent, DT_DIR,
 		    (const uint8_t *)"..", 2, BTRFS_DIR_OFFSET_FIRST);
 		if (error != 0)
 			goto out;
