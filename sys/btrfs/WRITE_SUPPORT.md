@@ -53,8 +53,10 @@ This physical cache is not, by itself, enough for writes:
 * Mounted trees now use persistent roots and take a locked location snapshot
   for each search.  Root-location publication still needs to be tied to
   transaction commit before those locations can change.
-* `bn_inode` is an on-disk-endian snapshot.  It needs host-endian mutable state,
-  dirty flags, and transaction sequencing before it can be written safely.
+* `bn_inode` is now host-endian mutable state decoded at inode-item lookup.
+  Dirty-field bits and the last dirty transaction are represented but remain
+  clear while the filesystem is read-only; mutation and writeback still need
+  to connect them to transaction ownership.
 
 The allocation iterators in `btrfs_alloc.c` provide useful validation and
 decoding, but there is no in-memory free-space index, reservation mechanism, or
@@ -185,9 +187,11 @@ extents, completed, represented in a transaction, and then fully committed.
 
 ### Mutable inode state
 
-Decode inode items into host-endian fields in `struct btrfs_node`.  Track at
-least size, allocated bytes, mode, owner, times, flags, generation, last dirty
-transaction, and dirty field bits.
+Inode items are decoded into host-endian `struct btrfs_inode` fields before
+being cached in `struct btrfs_node`.  The state includes size, allocated bytes,
+mode, owner, times, flags, generation, last dirty transaction, and dirty field
+bits.  Vnode inode lookup confines packed `struct btrfs_inode_item` values to
+the tree-item decoder.
 
 The in-memory inode is authoritative while the vnode exists.  Updating it and
 its inode item must be coordinated so that a transaction cannot commit an
@@ -409,7 +413,8 @@ starting redundant commits.
 
 The following changes are useful before enabling writable mounts:
 
-* Decode vnode inode state to host endian and add dirty/transaction fields.
+* Completed: decode vnode inode state to host endian and add
+  dirty/transaction fields.
 * Refactor regular and compressed extent reads to fill logical file buffers,
   then implement vnode-buffer reads before writes.
 * Split `btrfs_alloc.c` decoders from mutable allocator code and construct
@@ -425,8 +430,8 @@ designed together with COW ownership and transaction lifetime.
 
 ### 1. Read-path architecture
 
-Finish host-endian mutable inode state and logical vnode data buffers.  No
-writable mount is permitted.
+Host-endian mutable inode state is in place.  Finish logical vnode data
+buffers.  No writable mount is permitted.
 
 ### 2. Transaction and allocator core
 

@@ -207,7 +207,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
     const struct btrfs_super_block *sb, int readonly,
     struct btrfs_bootstrap *bootstrap)
 {
-	struct btrfs_inode_item inode_item;
+	struct btrfs_inode inode;
 	struct btrfs_root_item csum_root_item, fs_root_item;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_map *system_chunks = NULL;
@@ -339,8 +339,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	fs_tree.br_view_generation = generation;
 	fs_tree.br_owner = BTRFS_FS_TREE_OBJECTID;
 	fs_tree.br_level = fs_root_item.level;
-	error = btrfs_find_inode_item(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
-	    &inode_item);
+	error = btrfs_find_inode(&fs_tree, BTRFS_FIRST_FREE_OBJECTID, &inode);
 	if (error != 0)
 		goto out;
 	error = btrfs_iterate_directory(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
