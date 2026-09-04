@@ -33,6 +33,8 @@
 static int	btrfs_ref_name_valid(const uint8_t *, uint16_t);
 static void	btrfs_decode_timespec(const struct btrfs_timespec *,
 		    struct timespec *);
+static void	btrfs_encode_timespec(const struct timespec *,
+		    struct btrfs_timespec *);
 static void	btrfs_decode_inode(const struct btrfs_inode_item *,
 		    struct btrfs_inode *);
 static int	btrfs_decode_file_extent(const struct btrfs_mount *,
@@ -57,6 +59,14 @@ btrfs_decode_timespec(const struct btrfs_timespec *disk,
 {
 	host->tv_sec = letoh64(disk->sec);
 	host->tv_nsec = letoh32(disk->nsec);
+}
+
+static void
+btrfs_encode_timespec(const struct timespec *host,
+    struct btrfs_timespec *disk)
+{
+	disk->sec = htole64(host->tv_sec);
+	disk->nsec = htole32(host->tv_nsec);
 }
 
 static void
@@ -127,6 +137,94 @@ btrfs_find_inode(struct btrfs_root *root, uint64_t objectid,
 invalid:
 	memset(result, 0, sizeof(*result));
 	error = EINVAL;
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+int
+btrfs_write_inode(struct btrfs_trans_handle *handle,
+    struct btrfs_node *node)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_inode_item item;
+	struct btrfs_inode *inode;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_key key;
+	const uint8_t *data;
+	uint32_t size;
+	int error;
+
+	if (handle == NULL || handle->bth_transaction == NULL ||
+	    node == NULL || node->bn_vnode == NULL)
+		return (EINVAL);
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	trans = handle->bth_transaction;
+	inode = &node->bn_inode;
+	if (node->bn_mount != trans->bt_mount)
+		return (EINVAL);
+	if (inode->bi_dirty_fields == 0)
+		return (0);
+	if (inode->bi_last_dirty_transid != trans->bt_generation ||
+	    (inode->bi_dirty_fields & ~BTRFS_INODE_DIRTY_ALL) != 0 ||
+	    inode->bi_generation == 0 ||
+	    inode->bi_generation > trans->bt_generation ||
+	    inode->bi_transid > trans->bt_generation ||
+	    inode->bi_nlink == 0 || IFTOVT(inode->bi_mode) == VNON ||
+	    IFTOVT(inode->bi_mode) == VBAD ||
+	    inode->bi_atime.tv_nsec < 0 ||
+	    inode->bi_atime.tv_nsec >= 1000000000 ||
+	    inode->bi_ctime.tv_nsec < 0 ||
+	    inode->bi_ctime.tv_nsec >= 1000000000 ||
+	    inode->bi_mtime.tv_nsec < 0 ||
+	    inode->bi_mtime.tv_nsec >= 1000000000 ||
+	    inode->bi_otime.tv_nsec < 0 ||
+	    inode->bi_otime.tv_nsec >= 1000000000)
+		return (EINVAL);
+
+	error = btrfs_get_root(node->bn_mount, node->bn_treeid, &root);
+	if (error != 0)
+		return (error);
+	memset(&key, 0, sizeof(key));
+	key.objectid = htole64(node->bn_ino);
+	key.type = BTRFS_INODE_ITEM_KEY;
+	error = btrfs_search_slot(root, &key, &path);
+	if (error != 0)
+		goto out;
+	error = btrfs_path_item(&path, NULL, &data, &size);
+	if (error != 0)
+		goto out;
+	if (size != sizeof(item)) {
+		error = EINVAL;
+		goto out;
+	}
+	memcpy(&item, data, sizeof(item));
+	btrfs_release_path(&path);
+
+	item.generation = htole64(inode->bi_generation);
+	item.transid = htole64(trans->bt_generation);
+	item.size = htole64(inode->bi_size);
+	item.nbytes = htole64(inode->bi_nbytes);
+	item.block_group = htole64(inode->bi_block_group);
+	item.nlink = htole32(inode->bi_nlink);
+	item.uid = htole32(inode->bi_uid);
+	item.gid = htole32(inode->bi_gid);
+	item.mode = htole32(inode->bi_mode);
+	item.rdev = htole64(inode->bi_rdev);
+	item.flags = htole64(inode->bi_flags);
+	item.sequence = htole64(inode->bi_sequence);
+	btrfs_encode_timespec(&inode->bi_atime, &item.atime);
+	btrfs_encode_timespec(&inode->bi_ctime, &item.ctime);
+	btrfs_encode_timespec(&inode->bi_mtime, &item.mtime);
+	btrfs_encode_timespec(&inode->bi_otime, &item.otime);
+
+	error = btrfs_replace_item(handle, root, &key, &item, sizeof(item));
+	if (error != 0)
+		return (error);
+	inode->bi_transid = trans->bt_generation;
+	inode->bi_dirty_fields = 0;
+	return (0);
 out:
 	btrfs_release_path(&path);
 	return (error);

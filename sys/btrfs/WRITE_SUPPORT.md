@@ -103,8 +103,10 @@ materializes skinny metadata extent items and tree/shared block references to
 a fixed point.  It pins a replaced metadata block only after its reference
 count reaches zero.  Commit preparation also rewrites block-group usage and
 dirty root items until delayed references and allocator state stop changing.
-Data references and durable transaction publication remain unfinished, so the
-full commit path is not enabled.
+The durable commit path writes finalized metadata, forces it through the
+device cache, writes all readable superblock mirrors, forces a second cache
+barrier, and only then publishes the generation in memory.  Data references
+remain unfinished, so the full path is not exposed through VFS operations.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
@@ -116,11 +118,13 @@ Mounted trees use persistent roots and take a locked location snapshot for
 each read search.  A write search retains the root write lock and publishes
 its running-transaction location to later in-memory searches once its COW path
 is complete.  The committed location is restored on abort; writing dirty root
-items and the final root-tree location into a superblock still belongs to the
-future commit path.  `bn_inode` is host-endian mutable state decoded at
-inode-item lookup.  Dirty-field bits and the last dirty transaction are
-represented but remain clear while the filesystem is read-only; mutation and
-writeback still need to connect them to transaction ownership.
+items and the final root-tree location into a superblock are now part of
+commit.  `bn_inode` is host-endian mutable state decoded at inode-item lookup.
+A vnode-locked writer can now preserve unmodeled inode-item bytes, encode all
+mutable fields, advance the inode transid, and replace the item in its owning
+filesystem tree.  Dirty-field bits and the last dirty transaction remain clear
+while the filesystem is read-only; the initial VOPs still need to set and
+serialize them.
 
 Allocation-tree decoding and validation is isolated in `btrfs_disk.c`.
 `btrfs_alloc.c` constructs a mount-owned, per-block-group free-space index by
@@ -150,8 +154,8 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed data references, ordered extents, durable commit integration, and
-superblock publication are not implemented yet.
+Delayed data references, ordered extents, and VFS commit integration are not
+implemented yet.
 
 ## Initial writable format
 
@@ -206,8 +210,8 @@ record.  Updating a root changes the persistent root object, not a stack-local
 copy.  Subvolume roots discovered through root items are cached in the same
 table.  Abort restores the saved location.  Commit preparation now rewrites
 the location, generation, level, and generation-v2 fields of every dirty
-non-superblock root item; final root-tree and chunk-tree locations still need
-superblock encoding.
+non-superblock root item.  Final root-tree and chunk-tree locations are encoded
+directly in each new superblock.
 
 The chunk map should similarly be a mount-owned service with a lock and stable
 references.  A raw `bm_chunks` pointer copied into a stack root will not remain
@@ -334,8 +338,10 @@ struct btrfs_transaction {
 ```
 
 Dirty metadata, dirty roots, and delayed metadata references now have
-transaction-owned queues.  Inodes, ordered extents, delayed data references,
-and on-disk accounting deltas still need their transaction-owned queues.
+transaction-owned queues.  Inode items are serialized by their vnode-locked
+operation before its handle ends, so closed commit does not need to acquire
+arbitrary vnode locks.  Ordered extents and delayed data references still need
+transaction-owned queues.
 
 A normal transaction handle represents one filesystem operation and its
 reservation.  The implemented lifecycle and allocator interface is:
@@ -348,6 +354,7 @@ btrfs_trans_end(handle)
 btrfs_trans_abort(handle, error)
 btrfs_trans_close(mount, minimum_generation, &transaction)
 btrfs_trans_commit_handle(transaction, &handle)
+btrfs_trans_commit(mount, minimum_generation, process)
 btrfs_trans_finish(mount, transaction, error)
 ```
 
@@ -358,9 +365,11 @@ the actual objects being changed.  `close` elects one committer, changes OPEN
 to CLOSING, and waits for handles to leave.  The committer can then obtain one
 active commit-only handle at a time without incrementing the writer count.
 That handle sees only the transaction's emergency metadata reserve.  After
-the future disk commit publishes or fails, `finish` performs the corresponding
+the durable commit publishes or fails, `finish` performs the corresponding
 allocator transition and either installs the next open generation or leaves
-the mount aborted and read-only.
+the mount aborted and read-only.  `btrfs_trans_commit()` now drives that whole
+sequence and lets concurrent requests wait for a commit which already covers
+their minimum generation.
 
 Ending the last handle does not normally commit.  Commit requests are
 coalesced and can come from:
@@ -402,11 +411,12 @@ not recursively modify the extent tree while holding an arbitrary
 filesystem-tree path; such updates are represented as delayed references and
 processed from a controlled commit context.
 
-Commit must not acquire arbitrary vnode locks after it has closed the
-transaction.  A caller such as `fsync` flushes the relevant vnode data before
-requesting the commit.  Mount-wide sync flushes dirty vnodes before closing the
-transaction.  The transaction itself tracks everything that commit must wait
-for without a vnode scan.
+Commit does not acquire arbitrary vnode locks after it has closed the
+transaction.  Inode items are encoded while the operation still owns the
+vnode lock and an ordinary transaction handle.  A caller such as `fsync`
+flushes the relevant vnode data before requesting the commit.  Mount-wide sync
+will flush dirty vnodes before closing the transaction.  The transaction
+itself tracks everything that commit must wait for without a vnode scan.
 
 ## Reservations and allocation
 
@@ -509,16 +519,20 @@ fields according to the on-disk format.
 
 ## Commit protocol
 
-The first full commit should have an explicit state machine and fault-injection
-points.  At a high level:
+The implemented metadata commit has an explicit state machine.  Ordered data
+and fault-injection points remain to be added.  At a high level:
 
-1. Flush the data required by the caller into ordered extents.  A mount-wide
-   sync does this for all dirty btrfs vnodes before closing the transaction.
+1. The future data-write caller flushes required data into ordered extents.  A
+   mount-wide sync will do this for all dirty btrfs vnodes before closing the
+   transaction.
 2. Serialize with another committer, mark the transaction CLOSING, stop joins,
    and wait for active handles to leave.
-3. Wait for all ordered data I/O in the transaction.  If any failed, abort.
-4. Insert data checksum and file-extent items and materialize dirty inode
-   items.
+3. The future data path waits for all ordered data I/O in the transaction.  If
+   any failed, it aborts.  Metadata-only callers already enter after this
+   conceptual point.
+4. Data callers will insert checksum and file-extent items.  Inode fields are
+   encoded into their tree items while the vnode and ordinary handle are
+   still held, before transaction close.
 5. Run delayed references and allocator accounting until no work remains,
    using the commit reserve.  Finalize dirty root items and COW-only roots.
 6. Set metadata headers to the transaction generation and compute metadata
@@ -539,9 +553,10 @@ points.  At a high level:
 
 If failure occurs before any new superblock can be valid, the old filesystem
 remains the disk authority, but the in-memory transaction is still aborted.
-If a superblock write has been attempted, the durability outcome may be
-ambiguous.  The conservative response is to make the mount read-only, return
-the error, and require a remount/check rather than attempting to continue.
+If a superblock write has been attempted, the implementation performs the
+final drain/cache-sync attempt even when one mirror write failed.  The
+durability outcome may be ambiguous, so it makes the mount read-only, returns
+the error, and requires a remount/check rather than attempting to continue.
 
 Writing a superblock with the highest generation is safe only after all blocks
 it reaches are durable.  Merely waiting for `bwrite()` completion is not a
@@ -550,10 +565,12 @@ be refused if the backing device cannot supply the required ordering and
 durability operation; silently ignoring an unsupported cache-sync ioctl is not
 an acceptable policy for btrfs commits.
 
-Steps 6 and 7 now have an extent-buffer implementation, but no transaction
-commit caller invokes it yet.  It must be called only after item mutation,
-delayed references, accounting, and root updates have reached their final
-state, and before the first device cache flush and superblock publication.
+Steps 5 through 10 are now connected for metadata-only transactions.
+Superblock construction updates the generation, root/chunk locations and
+levels, bytes used, log-root fields, and one rotating backup-root slot.  Each
+readable in-range mirror gets its own physical `bytenr` and CRC32C.  Public
+write paths remain gated until ordered data and initial VOP integration are
+complete.
 
 ## VFS operation order
 
@@ -658,6 +675,14 @@ The following write-path foundations are in place:
   bytes used for superblock publication, updates dirty root items, and repeats
   whenever those operations create delayed references or change allocator
   state.
+* Completed: serialize dirty host-endian inode state back into an existing
+  inode item while preserving unmodeled bytes and advancing its transaction
+  generation.
+* Completed: publish metadata-only transactions durably.  Commit writes and
+  validates every dirty metadata buffer, drains and force-syncs the device
+  cache, writes every readable superblock mirror with an updated backup root,
+  repeats the durability barrier, and only then commits roots and allocator
+  state in memory.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -677,10 +702,10 @@ Transaction handles, free-space indexes, typed reservations, allocation,
 pinning, commit/abort allocator transitions, and the emergency metadata commit
 reserve are in place.  Delayed metadata-reference ownership and merging are in
 place, along with skinny-metadata extent-tree materialization and commit-time
-block-group accounting.  Delayed data refs, ordered extents, and durable
-superblock publication remain.  Exercise the mutation paths with a small
-in-kernel test harness as they gain callers, but keep the public filesystem
-read-only.
+block-group accounting.  Delayed data refs and ordered data extents remain;
+metadata-only transactions now have durable superblock publication.  Exercise
+the mutation paths with a small in-kernel test harness as they gain callers,
+but keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
@@ -691,9 +716,10 @@ separator-key propagation, two-way leaf and recursive internal-node splitting,
 three-way leaf fallback, root growth, and final metadata block submission are
 in place, as are empty-node removal, root shrinking, and delayed skinny
 metadata-reference materialization.  Commit preparation now stabilizes
-allocator accounting and dirty root items.  Next add durable transaction and
-superblock publication for internal testing on throwaway images.  Gate it
-behind a compile-time diagnostic option until crash tests are credible.
+allocator accounting and dirty root items, and the transaction path now
+publishes finalized metadata through two device cache barriers and mirrored
+superblocks.  Next add ordered data extents and VFS callers for testing on
+throwaway images.  Keep public writes gated until crash tests are credible.
 
 ### 4. Existing-file writes
 

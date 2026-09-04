@@ -19,9 +19,14 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>
+#include <sys/dkio.h>
 #include <sys/errno.h>
+#include <sys/fcntl.h>
+#include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
+#include <sys/proc.h>
+#include <sys/vnode.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -29,6 +34,7 @@ static struct btrfs_transaction *
 	btrfs_trans_alloc(struct btrfs_mount *, uint64_t);
 static int	btrfs_materialize_tree_ref(struct btrfs_trans_handle *,
 		    const struct btrfs_delayed_tree_ref *);
+static int	btrfs_sync_device(struct btrfs_mount *, struct proc *);
 
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
@@ -514,6 +520,88 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 	}
 	btrfs_trans_abort(handle, ELOOP);
 	return (ELOOP);
+}
+
+static int
+btrfs_sync_device(struct btrfs_mount *bmp, struct proc *p)
+{
+	int error, flush_error, force = 1;
+
+	vn_lock(bmp->bm_devvp, LK_EXCLUSIVE | LK_RETRY);
+	error = VOP_FSYNC(bmp->bm_devvp, FSCRED, MNT_WAIT, p);
+	flush_error = VOP_IOCTL(bmp->bm_devvp, DIOCCACHESYNC, &force,
+	    FWRITE, FSCRED, p);
+	VOP_UNLOCK(bmp->bm_devvp);
+	if (error == 0)
+		error = flush_error;
+	return (error);
+}
+
+int
+btrfs_trans_commit(struct btrfs_mount *bmp, uint64_t minimum_generation,
+    struct proc *p)
+{
+	struct btrfs_super_block *super = NULL;
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_transaction *trans = NULL;
+	unsigned int i;
+	int end_error, error, finish_error, write_error;
+
+	if (bmp == NULL || p == NULL)
+		return (EINVAL);
+	error = btrfs_trans_close(bmp, minimum_generation, &trans);
+	if (error != 0 || trans == NULL)
+		return (error);
+
+	if (trans->bt_error != 0)
+		error = trans->bt_error;
+	if (error == 0)
+		error = btrfs_trans_commit_handle(trans, &handle);
+	if (error == 0)
+		error = btrfs_prepare_metadata_commit(handle);
+	if (handle != NULL) {
+		end_error = btrfs_trans_end(handle);
+		handle = NULL;
+		if (error == 0)
+			error = end_error;
+	}
+	if (error == 0)
+		error = btrfs_write_dirty_metadata(trans);
+	if (error == 0)
+		error = btrfs_sync_device(bmp, p);
+	if (error == 0) {
+		super = malloc(sizeof(*super), M_BTRFS, M_WAITOK);
+		error = btrfs_build_super(trans, super);
+	}
+	if (error == 0) {
+		write_error = btrfs_write_super_mirrors(bmp, super);
+		end_error = btrfs_sync_device(bmp, p);
+		error = write_error != 0 ? write_error : end_error;
+	}
+	if (error == 0) {
+		memcpy(&bmp->bm_super, super, sizeof(bmp->bm_super));
+		bmp->bm_backup_roots_valid =
+		    btrfs_validate_backup_roots(&bmp->bm_super);
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			if ((bmp->bm_super_mirrors[i].bsm_flags &
+			    BTRFS_SUPER_MIRROR_READABLE) == 0)
+				continue;
+			bmp->bm_super_mirrors[i].bsm_generation =
+			    trans->bt_generation;
+			bmp->bm_super_mirrors[i].bsm_flags |=
+			    BTRFS_SUPER_MIRROR_VALID |
+			    BTRFS_SUPER_MIRROR_CONSISTENT;
+			bmp->bm_super_mirrors[i].bsm_flags &=
+			    ~BTRFS_SUPER_MIRROR_STALE;
+		}
+	}
+	if (super != NULL)
+		free(super, M_BTRFS, sizeof(*super));
+
+	finish_error = btrfs_trans_finish(bmp, trans, error);
+	if (error == 0)
+		error = finish_error;
+	return (error);
 }
 
 int
