@@ -181,8 +181,12 @@ int	btrfs_check_super_policy(const struct btrfs_super_block *, int);
 int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
 	    int, struct btrfs_bootstrap *);
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
-void	btrfs_init_fs_root(struct btrfs_mount *, struct btrfs_root *);
+void	btrfs_init_root_tree(struct btrfs_mount *, struct btrfs_root *);
+int	btrfs_init_fs_root(struct btrfs_mount *, uint64_t,
+	    struct btrfs_root *);
 void	btrfs_init_csum_root(struct btrfs_mount *, struct btrfs_root *);
+int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
+	    struct btrfs_root_item *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 	    uint64_t, uint32_t, struct btrfs_io_map *);
 int	btrfs_read_root_block(const struct btrfs_root *, uint64_t, uint64_t,
@@ -204,7 +208,9 @@ int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
 void	btrfs_release_path(struct btrfs_path *);
 int	btrfs_find_inode_item(struct btrfs_root *, uint64_t,
 	    struct btrfs_inode_item *);
-int	btrfs_find_dir_parent(struct btrfs_mount *, uint64_t, uint64_t *);
+int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
+int	btrfs_find_subvol_parent(struct btrfs_mount *, uint64_t, uint64_t *,
+	    uint64_t *);
 int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
 	    btrfs_dir_iter_fn, void *);
 int	btrfs_find_file_extent(const struct btrfs_mount *,
@@ -214,5 +220,6 @@ int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
 int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
 	    const uint32_t *, struct buf **);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
+int	btrfs_vget_tree(struct mount *, uint64_t, uint64_t, struct vnode **);
 
 #endif

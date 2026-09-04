@@ -404,6 +404,15 @@ int
 btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 {
 	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+
+	return (btrfs_vget_tree(mp, bmp->bm_treeid, ino, vpp));
+}
+
+int
+btrfs_vget_tree(struct mount *mp, uint64_t treeid, uint64_t ino,
+    struct vnode **vpp)
+{
+	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
 	struct btrfs_root root;
 	struct btrfs_inode_item inode;
 	struct btrfs_node *node;
@@ -416,11 +425,13 @@ btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 		return (ENOENT);
 
 again:
-	error = btrfs_node_lookup(bmp, bmp->bm_treeid, ino, vpp);
+	error = btrfs_node_lookup(bmp, treeid, ino, vpp);
 	if (error != 0 || *vpp != NULL)
 		return (error);
 
-	btrfs_init_fs_root(bmp, &root);
+	error = btrfs_init_fs_root(bmp, treeid, &root);
+	if (error != 0)
+		return (error);
 	error = btrfs_find_inode_item(&root, ino, &inode);
 	if (error != 0)
 		return (error);
@@ -435,14 +446,14 @@ again:
 
 	node->bn_vnode = vp;
 	node->bn_mount = bmp;
-	node->bn_treeid = bmp->bm_treeid;
+	node->bn_treeid = treeid;
 	node->bn_ino = ino;
 	memcpy(&node->bn_inode, &inode, sizeof(node->bn_inode));
 	rrw_init_flags(&node->bn_lock, "btrfsnode",
 	    RWL_DUPOK | RWL_IS_VNODE);
 	vp->v_data = node;
 	vp->v_type = type;
-	if (ino == bmp->bm_root_dirid)
+	if (treeid == bmp->bm_treeid && ino == bmp->bm_root_dirid)
 		vp->v_flag |= VROOT;
 
 	error = btrfs_node_insert(node);
