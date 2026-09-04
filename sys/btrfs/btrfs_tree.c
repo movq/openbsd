@@ -47,6 +47,8 @@ static int	btrfs_key_cmp(const struct btrfs_key *,
 		    const struct btrfs_key *);
 static int	btrfs_leaf_mutate(struct btrfs_path *,
 		    const struct btrfs_key *, const void *, uint32_t, int);
+static int	btrfs_leaf_delete_empty(struct btrfs_path *,
+		    const struct btrfs_key *);
 static int	btrfs_leaf_split_insert(struct btrfs_path *,
 		    const struct btrfs_key *, const void *, uint32_t);
 static int	btrfs_insert_split_pointers(struct btrfs_path *,
@@ -670,6 +672,192 @@ fail:
 }
 
 /*
+ * Removing the final item in a leaf can detach a whole COW path.  Cancel
+ * allocations for blocks which never became reachable, and keep the leaf as
+ * an empty root when no sibling survives.
+ */
+static int
+btrfs_leaf_delete_empty(struct btrfs_path *path,
+    const struct btrfs_key *key)
+{
+	struct btrfs_trans_handle *handle = path->bp_handle;
+	struct btrfs_root *root = path->bp_root;
+	struct btrfs_extent_buffer *child, *leaf, *parent, *promoted = NULL;
+	struct btrfs_header *header, *parent_header;
+	struct btrfs_item *items;
+	struct btrfs_key old_first;
+	struct btrfs_key_ptr *ptrs;
+	uint64_t bytenr, generation;
+	uint32_t capacity, i, nritems, nodesize, slot;
+	uint8_t level;
+	int all_single = 1;
+	int error;
+
+	leaf = path->bp_eb[0];
+	header = btrfs_extent_buffer_data_mutable(handle, leaf);
+	if (header == NULL || header->level != 0 ||
+	    letoh32(header->nritems) != 1 || path->bp_slot[0] != 0)
+		return (EINVAL);
+	items = (struct btrfs_item *)(header + 1);
+	if (btrfs_key_cmp(&items[0].key, key) != 0)
+		return (ENOENT);
+
+	for (level = 1; level <= path->bp_level; level++) {
+		parent_header = btrfs_extent_buffer_data_mutable(handle,
+		    path->bp_eb[level]);
+		if (parent_header == NULL ||
+		    path->bp_slot[level] >= letoh32(parent_header->nritems))
+			return (EINVAL);
+		if (letoh32(parent_header->nritems) != 1 ||
+		    path->bp_slot[level] != 0)
+			all_single = 0;
+	}
+
+	nodesize = letoh32(root->br_super->nodesize);
+	capacity = nodesize - sizeof(*header);
+	if (all_single) {
+		memset(header + 1, 0, capacity);
+		header->nritems = htole32(0);
+		for (level = 1; level <= path->bp_level; level++) {
+			child = path->bp_eb[level - 1];
+			parent = path->bp_eb[level];
+			error = btrfs_delayed_ref_add(handle,
+			    child->eb_bytenr, parent->eb_bytenr,
+			    root->br_owner, child->eb_level, -1);
+			if (error != 0)
+				goto fail;
+			if (level > 1) {
+				error = btrfs_extent_buffer_discard(handle,
+				    child);
+				if (error != 0)
+					goto fail;
+				path->bp_eb[level - 1] = NULL;
+			}
+		}
+		parent = path->bp_eb[path->bp_level];
+		error = btrfs_delayed_ref_add(handle, parent->eb_bytenr, 0,
+		    root->br_owner, parent->eb_level, -1);
+		if (error == 0)
+			error = btrfs_delayed_ref_add(handle, leaf->eb_bytenr,
+			    0, root->br_owner, 0, 1);
+		if (error != 0)
+			goto fail;
+		error = btrfs_extent_buffer_discard(handle, parent);
+		if (error != 0)
+			goto fail;
+		path->bp_eb[path->bp_level] = NULL;
+		root->br_bytenr = leaf->eb_bytenr;
+		root->br_generation = leaf->eb_generation;
+		root->br_view_generation =
+		    handle->bth_transaction->bt_generation;
+		root->br_level = 0;
+		path->bp_level = 0;
+		return (0);
+	}
+
+	for (level = 0; level < path->bp_level; level++) {
+		child = path->bp_eb[level];
+		parent = path->bp_eb[level + 1];
+		parent_header = btrfs_extent_buffer_data_mutable(handle,
+		    parent);
+		nritems = letoh32(parent_header->nritems);
+		slot = path->bp_slot[level + 1];
+		ptrs = (struct btrfs_key_ptr *)(parent_header + 1);
+		if (nritems == 0 || slot >= nritems ||
+		    letoh64(ptrs[slot].blockptr) != child->eb_bytenr ||
+		    letoh64(ptrs[slot].generation) != child->eb_generation) {
+			error = EINVAL;
+			goto fail;
+		}
+		memcpy(&old_first, &ptrs[0].key, sizeof(old_first));
+		error = btrfs_delayed_ref_add(handle, child->eb_bytenr,
+		    parent->eb_bytenr, root->br_owner, child->eb_level, -1);
+		if (error != 0)
+			goto fail;
+		error = btrfs_extent_buffer_discard(handle, child);
+		if (error != 0)
+			goto fail;
+		path->bp_eb[level] = NULL;
+
+		memmove(&ptrs[slot], &ptrs[slot + 1],
+		    (nritems - slot - 1) * sizeof(*ptrs));
+		memset(&ptrs[nritems - 1], 0, sizeof(*ptrs));
+		parent_header->nritems = htole32(nritems - 1);
+		if (nritems == 1)
+			continue;
+
+		if (level + 1 == path->bp_level && nritems == 2) {
+			bytenr = letoh64(ptrs[0].blockptr);
+			generation = letoh64(ptrs[0].generation);
+			error = btrfs_extent_buffer_read(root, bytenr,
+			    generation, root->br_owner, level, &promoted);
+			if (error != 0)
+				goto fail;
+			rw_exit_read(&promoted->eb_lock);
+			rw_enter_write(&promoted->eb_lock);
+			error = btrfs_cow_block(handle, root, parent, 0,
+			    &promoted);
+			if (error != 0)
+				goto fail;
+			bytenr = promoted->eb_bytenr;
+			generation = promoted->eb_generation;
+			error = btrfs_delayed_ref_add(handle, bytenr,
+			    parent->eb_bytenr, root->br_owner, level, -1);
+			if (error == 0)
+				error = btrfs_delayed_ref_add(handle, bytenr, 0,
+				    root->br_owner, level, 1);
+			if (error == 0)
+				error = btrfs_delayed_ref_add(handle,
+				    parent->eb_bytenr, 0, root->br_owner,
+				    parent->eb_level, -1);
+			if (error != 0)
+				goto fail;
+			root->br_bytenr = bytenr;
+			root->br_generation = generation;
+			root->br_view_generation =
+			    handle->bth_transaction->bt_generation;
+			root->br_level = level;
+			btrfs_extent_buffer_put(promoted);
+			promoted = NULL;
+			error = btrfs_extent_buffer_discard(handle, parent);
+			if (error != 0)
+				goto fail;
+			path->bp_eb[level + 1] = NULL;
+			path->bp_level = level;
+			return (0);
+		}
+
+		if (slot == 0) {
+			for (i = level + 2; i <= path->bp_level; i++) {
+				header = btrfs_extent_buffer_data_mutable(handle,
+				    path->bp_eb[i]);
+				ptrs = (struct btrfs_key_ptr *)(header + 1);
+				if (path->bp_slot[i] >=
+				    letoh32(header->nritems) ||
+				    btrfs_key_cmp(&ptrs[path->bp_slot[i]].key,
+				    &old_first) != 0) {
+					error = EINVAL;
+					goto fail;
+				}
+				memcpy(&ptrs[path->bp_slot[i]].key,
+				    btrfs_block_key(parent_header, 0),
+				    sizeof(ptrs[path->bp_slot[i]].key));
+				if (path->bp_slot[i] != 0)
+					break;
+			}
+		}
+		return (0);
+	}
+
+	error = EINVAL;
+fail:
+	if (promoted != NULL)
+		btrfs_extent_buffer_put(promoted);
+	btrfs_trans_abort(handle, error);
+	return (error);
+}
+
+/*
  * Rebuild the leaf rather than moving packed payloads in place.  Besides
  * making overlap impossible, this compacts all payloads and zeros unused
  * bytes before the metadata block is written.
@@ -767,7 +955,7 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 		    btrfs_key_cmp(&items[slot].key, key) != 0)
 			return (ENOENT);
 		if (nritems == 1 && path->bp_level != 0)
-			return (EOPNOTSUPP);
+			return (btrfs_leaf_delete_empty(path, key));
 		payload_bytes -= letoh32(items[slot].size);
 		new_nritems = nritems - 1;
 		first_changed = slot == 0 && new_nritems != 0;

@@ -512,6 +512,8 @@ int	btrfs_extent_buffer_clone(struct btrfs_trans_handle *,
 int	btrfs_extent_buffer_alloc(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_buffer *, uint8_t,
 	    struct btrfs_extent_buffer **);
+int	btrfs_extent_buffer_discard(struct btrfs_trans_handle *,
+	    struct btrfs_extent_buffer *);
 const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
 void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
 	    struct btrfs_extent_buffer *);
@@ -582,6 +584,8 @@ int	btrfs_space_reserve_commit(struct btrfs_transaction *);
 void	btrfs_space_release(struct btrfs_trans_handle *);
 int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
 	    uint64_t, uint64_t *);
+int	btrfs_space_cancel_alloc(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t);
 int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
 void	btrfs_space_commit(struct btrfs_transaction *);
 void	btrfs_space_abort(struct btrfs_transaction *);
