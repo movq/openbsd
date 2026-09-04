@@ -77,6 +77,14 @@ the transaction, redirects the locked parent pointer or in-memory root
 location, and queues signed delayed tree-reference changes.  A later search
 in the same transaction reuses the dirty blocks.
 
+Key-based leaf insertion, replacement, and deletion now use that write search.
+Each mutation rebuilds the leaf in zeroed scratch storage, preserving packed
+little-endian keys and payloads while compacting all item data.  A changed
+first key is propagated through the required ancestor separators.  Full leaves
+return `ENOSPC` until splitting is implemented, and deletion of the sole item
+in a non-root leaf returns `EOPNOTSUPP` until empty-node removal is implemented.
+An empty level-zero root remains valid.
+
 The first root COW also saves the old root location on the transaction's
 dirty-root queue.  Abort restores it before stale COW buffers and allocations
 are discarded; successful finalization clears transaction ownership only
@@ -128,9 +136,9 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed-reference materialization, ordered extents, item mutation and tree
-splits, commit integration, and on-disk accounting updates are not implemented
-yet.
+Delayed-reference materialization, ordered extents, tree splits and node
+removal, commit integration, and on-disk accounting updates are not
+implemented yet.
 
 ## Initial writable format
 
@@ -235,8 +243,10 @@ a new logical metadata extent, copies the block, changes header bytenr and
 generation, updates the parent pointer (or root location), and queues delayed
 reference changes.  Later modifications in the same transaction reuse that
 dirty block.  This operation and a top-down transaction-aware search are now
-implemented.  Item-level mutation must use the write path and must not call
-the lower-level extent-buffer clone directly.
+implemented.  Key-based item insert, replace, and delete operations use this
+write path, compact leaf payloads, and update ancestor separator keys.  Callers
+must use these operations and must not call the lower-level extent-buffer
+clone or open-code leaf layout changes.
 
 ### File data cache and ordered extents
 
@@ -425,22 +435,30 @@ transaction containing delayed refs cannot successfully finalize.
 
 ## B-tree mutation
 
-Build mutation below vnode operations.  The first two primitives are now in
-place:
+Build mutation below vnode operations.  The initial mutation engine now
+provides:
 
 * Search with a transaction handle and a write-locked path.
 * COW every block in the path which is not owned by this transaction.
-* Insert, replace, and delete leaf items.
-* Compact leaf payloads and maintain item offsets.
-* Split full leaves and internal nodes, including root growth.
+* Insert, replace, and delete leaf items when no topology change is needed.
+* Rebuild leaves in zeroed storage to compact payloads and maintain offsets.
 * Update separator keys after the first key in a child changes.
-* Remove empty nodes and shrink roots.  More aggressive balancing can wait.
 * Mark dirty blocks and roots exactly once per transaction.
+
+The next topology tranche must:
+
+* Split full leaves and internal nodes, including root growth.
+* Remove empty nodes and shrink roots.  More aggressive balancing can wait.
 
 `btrfs_search_slot_write()` retains the transaction handle in the path, holds
 the root write lock until `btrfs_release_path()`, and returns every populated
 extent buffer write-locked and transaction-owned.  COW redirects only a
 transaction-owned parent, while root COW records rollback state exactly once.
+`btrfs_insert_item()`, `btrfs_replace_item()`, and `btrfs_delete_item()` own
+that path lifecycle and accept keys and payloads in packed on-disk encoding.
+They return `ENOSPC` rather than partially inserting into a full leaf, and do
+not create an empty non-root leaf.  Traversal also rejects an existing empty
+non-root child before attempting to inspect its first or last key.
 
 Start by testing this engine against synthetic nodes in memory.  Vnode
 operations should never open-code item-array movement or parent-pointer
@@ -577,6 +595,11 @@ The following write-path foundations are in place:
   generation, track root rollback locations, and queue merged delayed metadata
   reference deltas.  Abort restores roots before allocator rollback, while
   successful finalization rejects unmaterialized refs.
+* Completed: add key-based leaf item insert, replace, and delete operations.
+  Mutations preflight capacity and separator invariants, rebuild compact leaves
+  in zeroed scratch storage, and propagate changed first keys through ancestor
+  separators.  Topology-changing cases remain explicit until node split and
+  removal support is added.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -603,12 +626,12 @@ they gain callers, but keep the public filesystem read-only.
 
 Private COW-block allocation, top-down write-locked search, parent/root-aware
 COW, dirty-root rollback, delayed metadata-reference queuing, transaction
-dirty tracking, and final metadata block submission are in place.  Next add
-leaf item insert/replace/delete with compaction and separator-key propagation,
-then splits and root growth.  Delayed-ref/accounting materialization, dirty
-root-item updates, and an internal transaction commit on throwaway images
-follow.  Gate it behind a compile-time diagnostic option until crash tests are
-credible.
+dirty tracking, leaf item insert/replace/delete with compaction and
+separator-key propagation, and final metadata block submission are in place.
+Next add leaf and internal-node splits, root growth, empty-node removal, and
+root shrinking.  Delayed-ref/accounting materialization, dirty root-item
+updates, and an internal transaction commit on throwaway images follow.  Gate
+it behind a compile-time diagnostic option until crash tests are credible.
 
 ### 4. Existing-file writes
 
