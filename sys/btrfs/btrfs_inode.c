@@ -196,7 +196,7 @@ btrfs_find_subvol_parent(struct btrfs_mount *bmp, uint64_t treeid,
 	const struct btrfs_key *key;
 	const uint8_t *data, *name;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	struct btrfs_key target;
 	uint64_t parent_treeid, parent_dirid;
 	uint32_t size;
@@ -213,8 +213,10 @@ btrfs_find_subvol_parent(struct btrfs_mount *bmp, uint64_t treeid,
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(treeid);
 	target.type = BTRFS_ROOT_BACKREF_KEY;
-	btrfs_init_root_tree(bmp, &root);
-	error = btrfs_search_lower_bound(&root, &target, &path);
+	error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &root);
+	if (error != 0)
+		return (error);
+	error = btrfs_search_lower_bound(root, &target, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &size);
 		if (error != 0)
