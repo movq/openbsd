@@ -47,6 +47,12 @@ static int	btrfs_key_cmp(const struct btrfs_key *,
 		    const struct btrfs_key *);
 static int	btrfs_leaf_mutate(struct btrfs_path *,
 		    const struct btrfs_key *, const void *, uint32_t, int);
+static int	btrfs_leaf_split_insert(struct btrfs_path *,
+		    const struct btrfs_key *, const void *, uint32_t);
+static int	btrfs_insert_split_pointer(struct btrfs_path *,
+		    struct btrfs_extent_buffer *, const struct btrfs_key *);
+static int	btrfs_grow_root(struct btrfs_path *,
+		    struct btrfs_extent_buffer *, const struct btrfs_key *);
 static int	btrfs_mutate_item(struct btrfs_trans_handle *,
 		    struct btrfs_root *, const struct btrfs_key *, const void *,
 		    uint32_t, int);
@@ -872,6 +878,486 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 }
 
 static int
+btrfs_leaf_insert_entry(const struct btrfs_header *source, uint32_t slot,
+    const struct btrfs_key *key, const void *data, uint32_t size,
+    uint32_t index, const struct btrfs_key **keyp, const void **datap,
+    uint32_t *sizep)
+{
+	const struct btrfs_item *items;
+	uint32_t source_slot;
+
+	if (index == slot) {
+		*keyp = key;
+		*datap = data;
+		*sizep = size;
+		return (0);
+	}
+	source_slot = index - (index > slot);
+	if (source_slot >= letoh32(source->nritems))
+		return (EINVAL);
+	items = (const struct btrfs_item *)(source + 1);
+	*keyp = &items[source_slot].key;
+	*sizep = letoh32(items[source_slot].size);
+	*datap = (const uint8_t *)(source + 1) +
+	    letoh32(items[source_slot].offset);
+	return (0);
+}
+
+static int
+btrfs_leaf_build_insert(struct btrfs_path *path,
+    struct btrfs_extent_buffer *eb, const struct btrfs_header *source,
+    uint32_t slot, const struct btrfs_key *key, const void *data,
+    uint32_t size, uint32_t first, uint32_t count)
+{
+	struct btrfs_header *header;
+	struct btrfs_item *items;
+	const struct btrfs_key *item_key;
+	const void *item_data;
+	uint8_t *base;
+	uint32_t capacity, i, item_size, nodesize, offset;
+	int error;
+
+	header = btrfs_extent_buffer_data_mutable(path->bp_handle, eb);
+	if (header == NULL || header->level != 0)
+		return (EINVAL);
+	nodesize = letoh32(path->bp_root->br_super->nodesize);
+	capacity = nodesize - sizeof(*header);
+	memset(header + 1, 0, capacity);
+	header->nritems = htole32(count);
+	items = (struct btrfs_item *)(header + 1);
+	base = (uint8_t *)(header + 1);
+	offset = capacity;
+	for (i = 0; i < count; i++) {
+		error = btrfs_leaf_insert_entry(source, slot, key, data, size,
+		    first + i, &item_key, &item_data, &item_size);
+		if (error != 0 || item_size > offset)
+			return (EINVAL);
+		offset -= item_size;
+		if (item_size != 0)
+			memcpy(base + offset, item_data, item_size);
+		memcpy(&items[i].key, item_key, sizeof(items[i].key));
+		items[i].offset = htole32(offset);
+		items[i].size = htole32(item_size);
+	}
+	if (offset < count * sizeof(*items))
+		return (EINVAL);
+	return (0);
+}
+
+/*
+ * Insert the pointer for a newly split right sibling.  If a parent is full,
+ * split it and carry its new right sibling upward until a parent has room or
+ * the root must grow.
+ */
+static int
+btrfs_insert_split_pointer(struct btrfs_path *path,
+    struct btrfs_extent_buffer *right, const struct btrfs_key *right_key)
+{
+	struct btrfs_trans_handle *handle = path->bp_handle;
+	struct btrfs_root *root = path->bp_root;
+	struct btrfs_extent_buffer *parent, *new_right;
+	struct btrfs_header *header, *new_header;
+	struct btrfs_key carry_key;
+	struct btrfs_key_ptr *combined, *ptrs, *new_ptrs;
+	uint32_t capacity, insert_slot, left_count, nritems, nodesize;
+	uint32_t i, total;
+	uint8_t level;
+	int error;
+
+	memcpy(&carry_key, right_key, sizeof(carry_key));
+	nodesize = letoh32(root->br_super->nodesize);
+	capacity = (nodesize - sizeof(struct btrfs_header)) /
+	    sizeof(struct btrfs_key_ptr);
+
+	for (level = right->eb_level + 1; level <= path->bp_level; level++) {
+		parent = path->bp_eb[level];
+		if (parent == NULL || parent->eb_level != level ||
+		    parent->eb_transaction != handle->bth_transaction) {
+			error = EINVAL;
+			goto fail;
+		}
+		rw_assert_wrlock(&parent->eb_lock);
+		header = btrfs_extent_buffer_data_mutable(handle, parent);
+		if (header == NULL || header->level != level) {
+			error = EINVAL;
+			goto fail;
+		}
+		nritems = letoh32(header->nritems);
+		insert_slot = path->bp_slot[level] + 1;
+		if (nritems == 0 || nritems > capacity ||
+		    insert_slot == 0 || insert_slot > nritems) {
+			error = EINVAL;
+			goto fail;
+		}
+		ptrs = (struct btrfs_key_ptr *)(header + 1);
+		if (btrfs_key_cmp(&ptrs[insert_slot - 1].key,
+		    &carry_key) >= 0 ||
+		    (insert_slot < nritems &&
+		    btrfs_key_cmp(&carry_key, &ptrs[insert_slot].key) >= 0)) {
+			error = EINVAL;
+			goto fail;
+		}
+
+		if (nritems < capacity) {
+			memmove(&ptrs[insert_slot + 1], &ptrs[insert_slot],
+			    (nritems - insert_slot) * sizeof(*ptrs));
+			memcpy(&ptrs[insert_slot].key, &carry_key,
+			    sizeof(carry_key));
+			ptrs[insert_slot].blockptr =
+			    htole64(right->eb_bytenr);
+			ptrs[insert_slot].generation =
+			    htole64(right->eb_generation);
+			header->nritems = htole32(nritems + 1);
+			error = btrfs_delayed_ref_add(handle,
+			    right->eb_bytenr, parent->eb_bytenr,
+			    root->br_owner, right->eb_level, 1);
+			if (error != 0)
+				goto fail;
+			btrfs_extent_buffer_put(right);
+			return (0);
+		}
+
+		total = nritems + 1;
+		combined = mallocarray(total, sizeof(*combined), M_BTRFS,
+		    M_WAITOK | M_ZERO);
+		for (i = 0; i < total; i++) {
+			if (i == insert_slot) {
+				memcpy(&combined[i].key, &carry_key,
+				    sizeof(carry_key));
+				combined[i].blockptr =
+				    htole64(right->eb_bytenr);
+				combined[i].generation =
+				    htole64(right->eb_generation);
+			} else {
+				uint32_t source_slot = i - (i > insert_slot);
+
+				memcpy(&combined[i], &ptrs[source_slot],
+				    sizeof(combined[i]));
+			}
+		}
+
+		error = btrfs_extent_buffer_alloc(handle, parent, level,
+		    &new_right);
+		if (error != 0) {
+			free(combined, M_BTRFS,
+			    total * sizeof(*combined));
+			goto fail;
+		}
+		new_header = btrfs_extent_buffer_data_mutable(handle,
+		    new_right);
+		if (new_header == NULL) {
+			error = EINVAL;
+			btrfs_extent_buffer_put(new_right);
+			free(combined, M_BTRFS,
+			    total * sizeof(*combined));
+			goto fail;
+		}
+		left_count = total / 2;
+		memset(ptrs, 0, capacity * sizeof(*ptrs));
+		memcpy(ptrs, combined, left_count * sizeof(*ptrs));
+		header->nritems = htole32(left_count);
+		new_ptrs = (struct btrfs_key_ptr *)(new_header + 1);
+		memcpy(new_ptrs, &combined[left_count],
+		    (total - left_count) * sizeof(*new_ptrs));
+		new_header->nritems = htole32(total - left_count);
+
+		for (i = left_count; i < total; i++) {
+			uint64_t child = letoh64(combined[i].blockptr);
+
+			if (i != insert_slot) {
+				error = btrfs_delayed_ref_add(handle, child,
+				    parent->eb_bytenr, root->br_owner,
+				    level - 1, -1);
+				if (error != 0)
+					break;
+			}
+			error = btrfs_delayed_ref_add(handle, child,
+			    new_right->eb_bytenr, root->br_owner,
+			    level - 1, 1);
+			if (error != 0)
+				break;
+		}
+		if (error == 0 && insert_slot < left_count)
+			error = btrfs_delayed_ref_add(handle,
+			    right->eb_bytenr, parent->eb_bytenr,
+			    root->br_owner, right->eb_level, 1);
+		memcpy(&carry_key, &combined[left_count].key,
+		    sizeof(carry_key));
+		free(combined, M_BTRFS, total * sizeof(*combined));
+		btrfs_extent_buffer_put(right);
+		if (error != 0) {
+			btrfs_extent_buffer_put(new_right);
+			goto fail_no_right;
+		}
+		right = new_right;
+	}
+
+	return (btrfs_grow_root(path, right, &carry_key));
+
+fail:
+	btrfs_extent_buffer_put(right);
+fail_no_right:
+	btrfs_trans_abort(handle, error);
+	return (error);
+}
+
+static int
+btrfs_grow_root(struct btrfs_path *path,
+    struct btrfs_extent_buffer *right, const struct btrfs_key *right_key)
+{
+	struct btrfs_trans_handle *handle = path->bp_handle;
+	struct btrfs_root *root = path->bp_root;
+	struct btrfs_extent_buffer *left, *new_root;
+	struct btrfs_header *header;
+	struct btrfs_key_ptr *ptrs;
+	const struct btrfs_header *left_header, *right_header;
+	uint32_t left_nritems, right_nritems;
+	uint8_t level;
+	int error;
+
+	level = path->bp_level;
+	left = path->bp_eb[level];
+	if (left == NULL || left->eb_level != level ||
+	    right->eb_level != level || level + 1 >= BTRFS_MAX_LEVEL) {
+		error = level + 1 >= BTRFS_MAX_LEVEL ? EFBIG : EINVAL;
+		goto fail;
+	}
+	left_header = btrfs_extent_buffer_data(left);
+	right_header = btrfs_extent_buffer_data(right);
+	left_nritems = letoh32(left_header->nritems);
+	right_nritems = letoh32(right_header->nritems);
+	if (left_nritems == 0 || right_nritems == 0 ||
+	    btrfs_key_cmp(btrfs_block_key(right_header, 0), right_key) != 0 ||
+	    btrfs_key_cmp(btrfs_block_key(left_header, left_nritems - 1),
+	    right_key) >= 0) {
+		error = EINVAL;
+		goto fail;
+	}
+	error = btrfs_extent_buffer_alloc(handle, left, level + 1,
+	    &new_root);
+	if (error != 0)
+		goto fail;
+	header = btrfs_extent_buffer_data_mutable(handle, new_root);
+	if (header == NULL) {
+		error = EINVAL;
+		goto fail_new;
+	}
+	ptrs = (struct btrfs_key_ptr *)(header + 1);
+	memcpy(&ptrs[0].key, btrfs_block_key(left_header, 0),
+	    sizeof(ptrs[0].key));
+	ptrs[0].blockptr = htole64(left->eb_bytenr);
+	ptrs[0].generation = htole64(left->eb_generation);
+	memcpy(&ptrs[1].key, right_key, sizeof(ptrs[1].key));
+	ptrs[1].blockptr = htole64(right->eb_bytenr);
+	ptrs[1].generation = htole64(right->eb_generation);
+	header->nritems = htole32(2);
+
+	error = btrfs_delayed_ref_add(handle, left->eb_bytenr, 0,
+	    root->br_owner, left->eb_level, -1);
+	if (error == 0)
+		error = btrfs_delayed_ref_add(handle, left->eb_bytenr,
+		    new_root->eb_bytenr, root->br_owner, left->eb_level, 1);
+	if (error == 0)
+		error = btrfs_delayed_ref_add(handle, right->eb_bytenr,
+		    new_root->eb_bytenr, root->br_owner, right->eb_level, 1);
+	if (error == 0)
+		error = btrfs_delayed_ref_add(handle, new_root->eb_bytenr, 0,
+		    root->br_owner, new_root->eb_level, 1);
+	if (error != 0)
+		goto fail_new;
+
+	KASSERT(root->br_transaction == handle->bth_transaction);
+	root->br_bytenr = new_root->eb_bytenr;
+	root->br_generation = new_root->eb_generation;
+	root->br_view_generation = new_root->eb_generation;
+	root->br_level = new_root->eb_level;
+	btrfs_extent_buffer_put(new_root);
+	btrfs_extent_buffer_put(right);
+	return (0);
+
+fail_new:
+	btrfs_extent_buffer_put(new_root);
+fail:
+	btrfs_extent_buffer_put(right);
+	btrfs_trans_abort(handle, error);
+	return (error);
+}
+
+static int
+btrfs_leaf_split_insert(struct btrfs_path *path,
+    const struct btrfs_key *key, const void *data, uint32_t size)
+{
+	struct btrfs_extent_buffer *child, *leaf, *parent, *right;
+	struct btrfs_header *header, *parent_header;
+	const struct btrfs_header *check_header, *source;
+	const struct btrfs_item *items;
+	struct btrfs_key old_first, right_key;
+	struct btrfs_key_ptr *ptrs;
+	const void *item_data;
+	const struct btrfs_key *item_key;
+	void *insert_data = NULL;
+	uint8_t *scratch;
+	uint64_t best_delta = UINT64_MAX, delta;
+	uint32_t best = 0, capacity, count, i, item_size, nritems;
+	uint32_t nodesize, payload, right_payload, slot, total;
+	int error;
+
+	leaf = path->bp_eb[0];
+	header = btrfs_extent_buffer_data_mutable(path->bp_handle, leaf);
+	if (header == NULL || header->level != 0)
+		return (EINVAL);
+	nodesize = letoh32(path->bp_root->br_super->nodesize);
+	capacity = nodesize - sizeof(*header);
+	nritems = letoh32(header->nritems);
+	slot = path->bp_slot[0];
+	if (nritems == 0 || nritems == UINT32_MAX || slot > nritems ||
+	    nritems > capacity / sizeof(*items))
+		return (EINVAL);
+	items = (const struct btrfs_item *)(header + 1);
+	if ((slot != 0 && btrfs_key_cmp(&items[slot - 1].key, key) >= 0) ||
+	    (slot != nritems &&
+	    btrfs_key_cmp(key, &items[slot].key) >= 0))
+		return (EINVAL);
+	if (size > capacity - sizeof(*items))
+		return (ENOSPC);
+
+	/*
+	 * Choose a split by used bytes, while requiring both resulting leaves
+	 * to satisfy the packed item-array/payload boundary.
+	 */
+	total = nritems + 1;
+	payload = 0;
+	for (i = 0; i < total; i++) {
+		error = btrfs_leaf_insert_entry(header, slot, key, data, size,
+		    i, &item_key, &item_data, &item_size);
+		if (error != 0 || payload > UINT32_MAX - item_size)
+			return (EINVAL);
+		payload += item_size;
+	}
+	right_payload = payload;
+	payload = 0;
+	for (count = 1; count < total; count++) {
+		error = btrfs_leaf_insert_entry(header, slot, key, data, size,
+		    count - 1, &item_key, &item_data, &item_size);
+		if (error != 0 || payload > UINT32_MAX - item_size ||
+		    right_payload < item_size)
+			return (EINVAL);
+		payload += item_size;
+		right_payload -= item_size;
+		if (payload > capacity - count * sizeof(*items) ||
+		    right_payload >
+		    capacity - (total - count) * sizeof(*items))
+			continue;
+		delta = payload + count * sizeof(*items);
+		if (delta > right_payload +
+		    (total - count) * sizeof(*items))
+			delta -= right_payload +
+			    (total - count) * sizeof(*items);
+		else
+			delta = right_payload +
+			    (total - count) * sizeof(*items) - delta;
+		if (delta < best_delta) {
+			best = count;
+			best_delta = delta;
+		}
+	}
+	/* A large middle item can require three leaves despite fitting alone. */
+	if (best == 0)
+		return (ENOSPC);
+	if (path->bp_level + 1 >= BTRFS_MAX_LEVEL) {
+		for (i = 1; i <= path->bp_level; i++) {
+			check_header =
+			    btrfs_extent_buffer_data(path->bp_eb[i]);
+			if (letoh32(check_header->nritems) <
+			    (nodesize - sizeof(*check_header)) /
+			    sizeof(*ptrs))
+				break;
+		}
+		if (i > path->bp_level)
+			return (EFBIG);
+	}
+
+	if (size != 0) {
+		insert_data = malloc(size, M_BTRFS, M_WAITOK);
+		memcpy(insert_data, data, size);
+	}
+	scratch = malloc(nodesize, M_BTRFS, M_WAITOK);
+	memcpy(scratch, header, nodesize);
+	source = (const struct btrfs_header *)scratch;
+	memcpy(&old_first, &items[0].key, sizeof(old_first));
+
+	/*
+	 * Verify the separator chain before allocating or changing either leaf.
+	 */
+	if (slot == 0) {
+		child = leaf;
+		for (i = 1; i <= path->bp_level; i++) {
+			parent = path->bp_eb[i];
+			parent_header =
+			    btrfs_extent_buffer_data_mutable(path->bp_handle,
+			    parent);
+			if (parent_header == NULL ||
+			    path->bp_slot[i] >=
+			    letoh32(parent_header->nritems)) {
+				error = EINVAL;
+				goto out;
+			}
+			ptrs = (struct btrfs_key_ptr *)(parent_header + 1);
+			if (letoh64(ptrs[path->bp_slot[i]].blockptr) !=
+			    child->eb_bytenr ||
+			    letoh64(ptrs[path->bp_slot[i]].generation) !=
+			    child->eb_generation ||
+			    btrfs_key_cmp(&ptrs[path->bp_slot[i]].key,
+			    &old_first) != 0) {
+				error = EINVAL;
+				goto out;
+			}
+			if (path->bp_slot[i] != 0)
+				break;
+			child = parent;
+		}
+	}
+
+	error = btrfs_extent_buffer_alloc(path->bp_handle, leaf, 0, &right);
+	if (error != 0)
+		goto out;
+	error = btrfs_leaf_build_insert(path, leaf, source, slot, key,
+	    insert_data, size, 0, best);
+	if (error == 0)
+		error = btrfs_leaf_build_insert(path, right, source, slot, key,
+		    insert_data, size, best, total - best);
+	if (error != 0) {
+		btrfs_extent_buffer_put(right);
+		btrfs_trans_abort(path->bp_handle, error);
+		goto out;
+	}
+
+	header = btrfs_extent_buffer_data_mutable(path->bp_handle, leaf);
+	if (slot == 0) {
+		items = (const struct btrfs_item *)(header + 1);
+		for (i = 1; i <= path->bp_level; i++) {
+			parent_header = btrfs_extent_buffer_data_mutable(
+			    path->bp_handle, path->bp_eb[i]);
+			KASSERT(parent_header != NULL);
+			ptrs = (struct btrfs_key_ptr *)(parent_header + 1);
+			memcpy(&ptrs[path->bp_slot[i]].key, &items[0].key,
+			    sizeof(items[0].key));
+			if (path->bp_slot[i] != 0)
+				break;
+		}
+	}
+	header = btrfs_extent_buffer_data_mutable(path->bp_handle, right);
+	items = (const struct btrfs_item *)(header + 1);
+	memcpy(&right_key, &items[0].key, sizeof(right_key));
+	error = btrfs_insert_split_pointer(path, right, &right_key);
+out:
+	free(scratch, M_BTRFS, nodesize);
+	if (insert_data != NULL)
+		free(insert_data, M_BTRFS, size);
+	return (error);
+}
+
+static int
 btrfs_mutate_item(struct btrfs_trans_handle *handle, struct btrfs_root *root,
     const struct btrfs_key *key, const void *data, uint32_t size, int operation)
 {
@@ -897,6 +1383,8 @@ btrfs_mutate_item(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 	}
 
 	error = btrfs_leaf_mutate(&path, key, data, size, operation);
+	if (error == ENOSPC && operation == BTRFS_LEAF_INSERT)
+		error = btrfs_leaf_split_insert(&path, key, data, size);
 	if (error == EINVAL)
 		btrfs_trans_abort(handle, error);
 out:
