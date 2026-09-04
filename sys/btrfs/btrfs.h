@@ -171,7 +171,11 @@ static const uint64_t superblock_addrs[BTRFS_SUPER_MIRROR_MAX] = {
  * from the read mask: being able to decode a feature does not imply that all
  * of its transactional accounting can be updated safely.
  */
-#define BTRFS_FEATURE_INCOMPAT_WRITE_SUPPORTED	0
+#define BTRFS_FEATURE_INCOMPAT_WRITE_SUPPORTED			\
+    (BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF |		\
+    BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF |		\
+    BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA |		\
+    BTRFS_FEATURE_INCOMPAT_NO_HOLES)
 
 #define BTRFS_SUPER_FLAG_SEEDING   0x100000000
 

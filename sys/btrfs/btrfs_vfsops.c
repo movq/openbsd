@@ -42,6 +42,12 @@
 static int	btrfs_mount(struct mount *, const char *, void *,
 		    struct nameidata *, struct proc *);
 static int	btrfs_mountfs(struct vnode *, struct mount *, struct proc *);
+static int	btrfs_write_extent_valid(
+		    const struct btrfs_extent_record *, void *);
+static int	btrfs_write_backref_valid(
+		    const struct btrfs_backref_record *, void *);
+static int	btrfs_validate_writable(struct btrfs_mount *);
+static int	btrfs_commit_current(struct btrfs_mount *, struct proc *);
 static int	btrfs_start(struct mount *, int, struct proc *);
 static int	btrfs_unmount(struct mount *, int, struct proc *);
 static int	btrfs_root(struct mount *, struct vnode **);
@@ -74,8 +80,6 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 	char fspec[MNAMELEN];
 	int error;
 
-	if ((mp->mnt_flag & MNT_RDONLY) == 0)
-		return (EROFS);
 	if (mp->mnt_flag & MNT_UPDATE)
 		return (EOPNOTSUPP);
 	if (args == NULL || args->fspec == NULL)
@@ -131,10 +135,11 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	uint64_t best_generation, selected_generation;
 	unsigned int anchor_index, best, i, selected;
 	const char *stage = "opening device";
-	int error, last_error = EINVAL, mounted = 0;
+	int error, last_error = EINVAL, mounted = 0, open_flags;
 	int readonly = (mp->mnt_flag & MNT_RDONLY) != 0;
 
-	error = VOP_OPEN(devvp, FREAD, FSCRED, p);
+	open_flags = FREAD | (readonly ? 0 : FWRITE);
+	error = VOP_OPEN(devvp, open_flags, FSCRED, p);
 	if (error != 0)
 		return (error);
 
@@ -213,11 +218,25 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 		    mirrors[i].bsm_generation < selected_generation)
 			mirrors[i].bsm_flags |= BTRFS_SUPER_MIRROR_STALE;
 	}
+	if (!readonly) {
+		stage = "validating writable superblock generation";
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			if ((mirrors[i].bsm_flags &
+			    (BTRFS_SUPER_MIRROR_VALID |
+			    BTRFS_SUPER_MIRROR_FOREIGN)) ==
+			    BTRFS_SUPER_MIRROR_VALID &&
+			    mirrors[i].bsm_generation > selected_generation) {
+				error = EROFS;
+				goto out;
+			}
+		}
+	}
 
 	bmp = malloc(sizeof(*bmp), M_BTRFS, M_WAITOK | M_ZERO);
 	bmp->bm_mount = mp;
 	bmp->bm_devvp = devvp;
 	bmp->bm_dev = devvp->v_rdev;
+	bmp->bm_open_flags = open_flags;
 	memcpy(&bmp->bm_super, sb, sizeof(bmp->bm_super));
 	memcpy(bmp->bm_super_mirrors, mirrors, sizeof(mirrors));
 	bmp->bm_selected_super = selected;
@@ -245,6 +264,12 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	error = btrfs_space_init(bmp);
 	if (error != 0)
 		goto out;
+	if (!readonly) {
+		stage = "validating writable image";
+		error = btrfs_validate_writable(bmp);
+		if (error != 0)
+			goto out;
+	}
 	stage = "initializing transaction";
 	error = btrfs_trans_init(bmp);
 	if (error != 0)
@@ -277,10 +302,66 @@ out:
 			free(bmp, M_BTRFS, sizeof(*bmp));
 		}
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
-		(void)VOP_CLOSE(devvp, FREAD, FSCRED, p);
+		(void)VOP_CLOSE(devvp, open_flags, FSCRED, p);
 		VOP_UNLOCK(devvp);
 	}
 	return (error);
+}
+
+static int
+btrfs_write_extent_valid(const struct btrfs_extent_record *extent, void *arg)
+{
+	if (extent->ber_legacy) {
+		printf("btrfs: legacy extents are not writable\n");
+		return (EOPNOTSUPP);
+	}
+	if (extent->ber_has_owner) {
+		printf("btrfs: simple-quota owner refs are not writable\n");
+		return (EOPNOTSUPP);
+	}
+	return (0);
+}
+
+static int
+btrfs_write_backref_valid(const struct btrfs_backref_record *backref,
+    void *arg)
+{
+	struct btrfs_mount *bmp = arg;
+
+	if (backref->bbr_type == BTRFS_SHARED_BLOCK_REF_KEY ||
+	    backref->bbr_type == BTRFS_SHARED_DATA_REF_KEY) {
+		printf("btrfs: shared extents are not writable\n");
+		return (EOPNOTSUPP);
+	}
+	if ((backref->bbr_type == BTRFS_TREE_BLOCK_REF_KEY &&
+	    backref->bbr_root >= BTRFS_FIRST_FREE_OBJECTID) ||
+	    (backref->bbr_type == BTRFS_EXTENT_DATA_REF_KEY &&
+	    backref->bbr_root != bmp->bm_treeid)) {
+		printf("btrfs: subvolumes are not writable\n");
+		return (EOPNOTSUPP);
+	}
+	return (0);
+}
+
+static int
+btrfs_validate_writable(struct btrfs_mount *bmp)
+{
+	unsigned int i;
+	uint64_t profile;
+
+	if (bmp->bm_subvol_readonly)
+		return (EROFS);
+	for (i = 0; i < bmp->bm_nchunks; i++) {
+		profile = bmp->bm_chunks[i].type &
+		    (BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 |
+		    BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID10 |
+		    BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6 |
+		    BTRFS_BLOCK_GROUP_RAID1C3 | BTRFS_BLOCK_GROUP_RAID1C4);
+		if (profile != 0 && profile != BTRFS_BLOCK_GROUP_DUP)
+			return (EOPNOTSUPP);
+	}
+	return (btrfs_iterate_extent_items(bmp, btrfs_write_extent_valid,
+	    btrfs_write_backref_valid, bmp));
 }
 
 static int
@@ -290,14 +371,46 @@ btrfs_start(struct mount *mp, int flags, struct proc *p)
 }
 
 static int
+btrfs_commit_current(struct btrfs_mount *bmp, struct proc *p)
+{
+	struct btrfs_transaction *trans;
+	uint64_t generation;
+	int error = 0;
+
+	if ((bmp->bm_open_flags & FWRITE) == 0)
+		return (0);
+	mtx_enter(&bmp->bm_trans_mtx);
+	trans = bmp->bm_transaction;
+	if (trans->bt_state == BTRFS_TRANS_ABORTED)
+		error = trans->bt_error != 0 ? trans->bt_error : EIO;
+	generation = trans->bt_generation;
+	mtx_leave(&bmp->bm_trans_mtx);
+	if (error != 0)
+		return (error);
+	return (btrfs_trans_commit(bmp, generation, p));
+}
+
+static int
 btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 {
 	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_transaction *trans;
 	struct vnode *devvp = bmp->bm_devvp;
-	int error, flags = 0;
+	int aborted = 0, error, flags = 0;
 
 	if (mntflags & MNT_FORCE)
 		flags |= FORCECLOSE;
+	if (bmp->bm_open_flags & FWRITE) {
+		mtx_enter(&bmp->bm_trans_mtx);
+		trans = bmp->bm_transaction;
+		aborted = trans->bt_state == BTRFS_TRANS_ABORTED;
+		mtx_leave(&bmp->bm_trans_mtx);
+		if (!aborted) {
+			error = btrfs_commit_current(bmp, p);
+			if (error != 0 && (mntflags & MNT_FORCE) == 0)
+				return (error);
+		}
+	}
 	error = vflush(mp, NULL, flags);
 	if (error != 0)
 		return (error);
@@ -310,7 +423,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	devvp->v_specmountpoint = NULL;
 	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 	(void)vinvalbuf(devvp, V_SAVE, NOCRED, p, 0, INFSLP);
-	(void)VOP_CLOSE(devvp, FREAD, NOCRED, p);
+	(void)VOP_CLOSE(devvp, bmp->bm_open_flags, NOCRED, p);
 	VOP_UNLOCK(devvp);
 	vrele(devvp);
 
@@ -360,7 +473,7 @@ static int
 btrfs_sync(struct mount *mp, int waitfor, int stall, struct ucred *cred,
     struct proc *p)
 {
-	return (0);
+	return (btrfs_commit_current(VFSTOBTRFS(mp), p));
 }
 
 static int

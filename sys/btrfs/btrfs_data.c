@@ -20,6 +20,7 @@
 #include <sys/systm.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
+#include <sys/fcntl.h>
 #include <sys/malloc.h>
 #include <sys/vnode.h>
 
@@ -713,10 +714,13 @@ btrfs_ordered_extents_finish(struct btrfs_transaction *trans, int committed)
 
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!trans->bt_commit_handle);
+	mtx_enter(&trans->bt_lock);
 	if (committed) {
 		TAILQ_FOREACH(ordered, &trans->bt_ordered_extents, boe_entry) {
-			if (!ordered->boe_written)
+			if (!ordered->boe_written) {
+				mtx_leave(&trans->bt_lock);
 				return (EBUSY);
+			}
 		}
 	}
 	while ((ordered = TAILQ_FIRST(&trans->bt_ordered_extents)) != NULL) {
@@ -724,7 +728,58 @@ btrfs_ordered_extents_finish(struct btrfs_transaction *trans, int committed)
 		free(ordered->boe_data, M_BTRFS, ordered->boe_length);
 		free(ordered, M_BTRFS, sizeof(*ordered));
 	}
+	mtx_leave(&trans->bt_lock);
 	return (0);
+}
+
+int
+btrfs_read_ordered_sector(struct btrfs_node *node, uint64_t file_offset,
+    void *data)
+{
+	struct btrfs_mount *bmp;
+	struct btrfs_ordered_extent *ordered;
+	struct btrfs_transaction *trans;
+	uint32_t sectorsize;
+	int error = ENOENT;
+
+	if (node == NULL || data == NULL)
+		return (EINVAL);
+	bmp = node->bn_mount;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if ((file_offset & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	if ((bmp->bm_open_flags & FWRITE) == 0)
+		return (ENOENT);
+
+	mtx_enter(&bmp->bm_trans_mtx);
+	trans = bmp->bm_transaction;
+	if (trans == NULL) {
+		mtx_leave(&bmp->bm_trans_mtx);
+		return (ENOENT);
+	}
+	mtx_enter(&trans->bt_lock);
+	if (trans->bt_state == BTRFS_TRANS_ABORTED) {
+		error = trans->bt_error != 0 ? trans->bt_error : EIO;
+		goto out;
+	}
+	TAILQ_FOREACH(ordered, &trans->bt_ordered_extents, boe_entry) {
+		if (ordered->boe_treeid != node->bn_treeid ||
+		    ordered->boe_objectid != node->bn_ino ||
+		    ordered->boe_file_offset != file_offset)
+			continue;
+		if (ordered->boe_data == NULL ||
+		    ordered->boe_length != sectorsize) {
+			error = EINVAL;
+			break;
+		}
+		memcpy(data, ordered->boe_data, sectorsize);
+		error = 0;
+		break;
+	}
+out:
+	mtx_leave(&trans->bt_lock);
+	mtx_leave(&bmp->bm_trans_mtx);
+	return (error);
 }
 
 int
@@ -753,8 +808,9 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	    node->bn_inode.bi_last_dirty_transid > trans->bt_generation ||
 	    (file_offset & (sectorsize - 1)) != 0 ||
 	    file_offset > UINT64_MAX - sectorsize ||
-	    file_size <= file_offset || file_size > file_offset + sectorsize ||
-	    file_size < node->bn_inode.bi_size)
+	    file_size <= file_offset || file_size < node->bn_inode.bi_size ||
+	    file_size > MAX(node->bn_inode.bi_size,
+	    file_offset + sectorsize))
 		return (EINVAL);
 	if ((node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0)
 		return (EOPNOTSUPP);
@@ -780,11 +836,17 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 			    BTRFS_INODE_DIRTY_SIZE;
 			node->bn_inode.bi_last_dirty_transid =
 			    trans->bt_generation;
+		}
+		if (node->bn_inode.bi_dirty_fields != 0) {
+			node->bn_inode.bi_last_dirty_transid =
+			    trans->bt_generation;
 			error = btrfs_write_inode(handle, node);
 			if (error != 0)
 				goto abort;
 		}
+		mtx_enter(&trans->bt_lock);
 		memcpy(ordered->boe_data, data, sectorsize);
+		mtx_leave(&trans->bt_lock);
 		return (0);
 	}
 

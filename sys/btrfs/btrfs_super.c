@@ -188,6 +188,10 @@ btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 			    "0x%llx\n", (unsigned long long)unsupported);
 			return (EOPNOTSUPP);
 		}
+		if ((incompat & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) == 0) {
+			printf("btrfs: writable mounts require skinny metadata\n");
+			return (EOPNOTSUPP);
+		}
 		/*
 		 * No compat-ro feature is supported for writes yet.  Unknown
 		 * compat-ro bits are intentionally harmless on read-only
