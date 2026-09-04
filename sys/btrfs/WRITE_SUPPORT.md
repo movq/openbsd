@@ -98,9 +98,11 @@ without losing the required drops of the committed blocks they replaced.
 The first root COW also saves the old root location on the transaction's
 dirty-root queue.  Abort restores it before stale COW buffers and allocations
 are discarded; successful finalization clears transaction ownership only
-after metadata publication.  Delayed-reference materialization is not
-implemented, so transaction finalization deliberately fails rather than
-claim success while queued reference updates remain.
+after metadata publication.  The commit-only delayed-reference engine now
+materializes skinny metadata extent items and tree/shared block references to
+a fixed point.  It pins a replaced metadata block only after its reference
+count reaches zero.  Allocator accounting items and data references remain
+unfinished, so the full commit path is not enabled.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
@@ -146,8 +148,8 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed-reference materialization, ordered extents, commit integration, and
-on-disk accounting updates are not implemented yet.
+Delayed data references, ordered extents, commit integration, and on-disk
+accounting updates are not implemented yet.
 
 ## Initial writable format
 
@@ -433,18 +435,20 @@ Allocation updates only in-memory indexes immediately.  Extent items,
 backreferences, block-group `used`, device `bytes_used`, and superblock
 `bytes_used` are transaction deltas materialized through delayed references.
 
-Delayed metadata references now combine signed add/drop operations with the
-same extent, parent, owning root, and level identity.  They are essential both
-for performance and to avoid recursively changing the extent tree while
-COWing another tree.  The queue does not yet alter extent items.  Its
-materializer must handle skinny metadata and the active backreference format
-explicitly rather than infer them only from item size.
+Delayed metadata references combine signed add/drop operations with the same
+extent, parent, owning root, and level identity.  They are essential both for
+performance and to avoid recursively changing the extent tree while COWing
+another tree.  A commit-only handle drains them to a fixed point because
+COWing the extent tree can queue more work.  New skinny metadata extents are
+created with an inline reference; additions to existing extents use explicit
+tree/shared block-reference items, and drops handle either representation.
+Legacy non-skinny metadata and unsupported inline-reference forms fail
+explicitly.
 
-A replaced metadata block is not immediately passed to `btrfs_space_pin()`.
-It may still be referenced by a snapshot or shared tree.  Delayed-reference
-materialization must first apply the drop to the on-disk reference count and
-pin the extent only if that count becomes zero.  Until that exists, a
-transaction containing delayed refs cannot successfully finalize.
+A replaced metadata block is not immediately passed to
+`btrfs_space_pin()`.  It may still be referenced by a snapshot or shared tree.
+The materializer first applies the drop to the on-disk reference count and
+pins the extent only if that count becomes zero.
 
 ## B-tree mutation
 
@@ -631,6 +635,10 @@ The following write-path foundations are in place:
   Transaction-owned blocks detached during deletion cancel their allocator
   and dirty-buffer ownership, while delayed references retain the committed
   block drops and cancel references to discarded COW blocks.
+* Completed: materialize delayed skinny-metadata references from commit
+  context.  The fixed-point runner creates and updates metadata extent items,
+  supports inline and separate tree/shared block references, and pins an old
+  metadata extent only after its final reference is removed.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -649,9 +657,10 @@ mount is permitted.
 Transaction handles, free-space indexes, typed reservations, allocation,
 pinning, commit/abort allocator transitions, and the emergency metadata commit
 reserve are in place.  Delayed metadata-reference ownership and merging are in
-place, but extent-tree materialization, delayed data refs, and ordered extents
-remain.  Exercise the mutation paths with a small in-kernel test harness as
-they gain callers, but keep the public filesystem read-only.
+place, along with skinny-metadata extent-tree materialization.  Delayed data
+refs, on-disk allocator accounting, and ordered extents remain.  Exercise the
+mutation paths with a small in-kernel test harness as they gain callers, but
+keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
@@ -660,10 +669,11 @@ COW, dirty-root rollback, delayed metadata-reference queuing, transaction
 dirty tracking, leaf item insert/replace/delete with compaction and
 separator-key propagation, two-way leaf and recursive internal-node splitting,
 three-way leaf fallback, root growth, and final metadata block submission are
-in place, as are empty-node removal and root shrinking.  Next add
-delayed-ref/accounting materialization, dirty root-item updates, and an
-internal transaction commit on throwaway images.  Gate it behind a compile-time
-diagnostic option until crash tests are credible.
+in place, as are empty-node removal, root shrinking, and delayed skinny
+metadata-reference materialization.  Next add allocator accounting, dirty
+root-item updates, and an internal transaction commit on throwaway images.
+Gate it behind a compile-time diagnostic option until crash tests are
+credible.
 
 ### 4. Existing-file writes
 
