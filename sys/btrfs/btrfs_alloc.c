@@ -674,6 +674,97 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
 }
 
 int
+btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
+    uint64_t length)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_reserved_space_list *reservations;
+	struct btrfs_reserved_space *reservation;
+	struct btrfs_trans_extent *extent;
+	struct btrfs_free_extent *space, *garbage[2];
+	struct btrfs_block_group *group = NULL;
+	uint64_t type = 0;
+	unsigned int i, ngarbage;
+	int error;
+
+	error = btrfs_space_handle_error(handle);
+	if (error != 0)
+		return (error);
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
+		if (extent->bte_bytenr == bytenr &&
+		    extent->bte_length == length) {
+			group = extent->bte_group;
+			type = extent->bte_type;
+			break;
+		}
+	}
+	mtx_leave(&trans->bt_lock);
+	if (group == NULL)
+		return (ENOENT);
+
+	if (handle->bth_commit)
+		reservations = &trans->bt_commit_reservations;
+	else
+		reservations = &handle->bth_reservations;
+	TAILQ_FOREACH(reservation, reservations, brs_entry) {
+		if (reservation->brs_group == group &&
+		    reservation->brs_type == type)
+			break;
+	}
+	if (reservation == NULL)
+		return (EINVAL);
+
+	space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
+	space->bfe_bytenr = bytenr;
+	space->bfe_length = length;
+
+	mtx_enter(&group->bbg_lock);
+	mtx_enter(&trans->bt_lock);
+	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
+		if (extent->bte_bytenr == bytenr &&
+		    extent->bte_length == length &&
+		    extent->bte_group == group)
+			break;
+	}
+	if (extent == NULL) {
+		error = ENOENT;
+		goto unlock;
+	}
+	KASSERT(group->bbg_allocated_bytes >= length);
+	KASSERT(group->bbg_reserved_bytes <= UINT64_MAX - length);
+	KASSERT(reservation->brs_bytes <= UINT64_MAX - length);
+	KASSERT(trans->bt_allocated_bytes >= length);
+	group->bbg_allocated_bytes -= length;
+	group->bbg_reserved_bytes += length;
+	reservation->brs_bytes += length;
+	trans->bt_allocated_bytes -= length;
+	if (handle->bth_commit) {
+		KASSERT(trans->bt_commit_reserved_bytes <=
+		    UINT64_MAX - length);
+		trans->bt_commit_reserved_bytes += length;
+	}
+	TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+	ngarbage = btrfs_space_insert_free_locked(group, space, garbage);
+	space = NULL;
+	error = 0;
+unlock:
+	btrfs_space_check_commit_reserve(trans);
+	mtx_leave(&trans->bt_lock);
+	btrfs_space_check_group(group);
+	mtx_leave(&group->bbg_lock);
+	if (space == NULL) {
+		for (i = 0; i < ngarbage; i++)
+			free(garbage[i], M_BTRFS, sizeof(*garbage[i]));
+		free(extent, M_BTRFS, sizeof(*extent));
+	} else {
+		free(space, M_BTRFS, sizeof(*space));
+	}
+	return (error);
+}
+
+int
 btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
     uint64_t length)
 {

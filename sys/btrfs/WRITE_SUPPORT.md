@@ -89,9 +89,11 @@ nodes and new root/parent relationships are queued as delayed reference
 changes.  When a large middle item prevents every two-way partition, insertion
 uses three leaves: the old prefix, the new item, and the old suffix.  Both new
 sibling pointers are inserted into the parent as one batch, including through
-recursive internal-node splits or root growth.  Deletion of the sole item in a
-non-root leaf returns `EOPNOTSUPP` until empty-node removal is implemented.  An
-empty level-zero root remains valid.
+recursive internal-node splits or root growth.  Deleting the sole item in a
+leaf now removes empty ancestors and shrinks a one-child root.  If the entire
+tree becomes empty, its transaction-owned leaf becomes the level-zero root.
+Detached COW blocks cancel their transaction allocations and delayed adds
+without losing the required drops of the committed blocks they replaced.
 
 The first root COW also saves the old root location on the transaction's
 dirty-root queue.  Abort restores it before stale COW buffers and allocations
@@ -144,9 +146,8 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed-reference materialization, ordered extents, empty-node removal and
-root shrinking, commit integration, and on-disk accounting updates are not
-implemented yet.
+Delayed-reference materialization, ordered extents, commit integration, and
+on-disk accounting updates are not implemented yet.
 
 ## Initial writable format
 
@@ -461,9 +462,8 @@ provides:
 * Grow a full root and queue reference changes for every new or moved node.
 * Mark dirty blocks and roots exactly once per transaction.
 
-The remaining topology tranche must:
-
-* Remove empty nodes and shrink roots.  More aggressive balancing can wait.
+Empty-node removal and root shrinking are implemented.  More aggressive
+occupancy balancing can wait.
 
 `btrfs_search_slot_write()` retains the transaction handle in the path, holds
 the root write lock until `btrfs_release_path()`, and returns every populated
@@ -474,9 +474,10 @@ that path lifecycle and accept keys and payloads in packed on-disk encoding.
 They return `ENOSPC` when one item cannot fit in an otherwise empty leaf and
 `EFBIG` if insertion would exceed the maximum tree height.  A failure after a
 split starts aborts the transaction rather than exposing partially linked
-topology.  Deletion does not create an empty non-root leaf.  Traversal also
-rejects an existing empty non-root child before attempting to inspect its
-first or last key.
+topology.  Deletion removes empty paths recursively, COWs a surviving child
+before promoting it as a shorter root, and leaves an empty level-zero root
+when the final item is removed.  Traversal also rejects an existing empty
+non-root child before attempting to inspect its first or last key.
 
 Start by testing this engine against synthetic nodes in memory.  Vnode
 operations should never open-code item-array movement or parent-pointer
@@ -625,8 +626,11 @@ The following write-path foundations are in place:
 * Completed: add the three-way leaf-split fallback for a large middle item.
   The new item is isolated between the source leaf's valid prefix and suffix,
   and both new sibling pointers propagate atomically through available,
-  splitting, or newly grown parents.  Empty-node removal and root shrinking
-  remain explicit.
+  splitting, or newly grown parents.
+* Completed: remove empty nodes recursively and shrink one-child roots.
+  Transaction-owned blocks detached during deletion cancel their allocator
+  and dirty-buffer ownership, while delayed references retain the committed
+  block drops and cancel references to discarded COW blocks.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -656,10 +660,10 @@ COW, dirty-root rollback, delayed metadata-reference queuing, transaction
 dirty tracking, leaf item insert/replace/delete with compaction and
 separator-key propagation, two-way leaf and recursive internal-node splitting,
 three-way leaf fallback, root growth, and final metadata block submission are
-in place.  Next add empty-node removal and root shrinking.
-Delayed-ref/accounting materialization, dirty root-item updates, and an
-internal transaction commit on throwaway images follow.  Gate it behind a
-compile-time diagnostic option until crash tests are credible.
+in place, as are empty-node removal and root shrinking.  Next add
+delayed-ref/accounting materialization, dirty root-item updates, and an
+internal transaction commit on throwaway images.  Gate it behind a compile-time
+diagnostic option until crash tests are credible.
 
 ### 4. Existing-file writes
 
