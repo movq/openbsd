@@ -171,13 +171,14 @@ unmount.
 The writable mount policy currently requires:
 
 * One device, CRC32C, and existing SINGLE or DUP chunks only.
-* Skinny metadata, with only `MIXED_BACKREF`, `EXTENDED_IREF`,
-  `SKINNY_METADATA`, and `NO_HOLES` incompat bits accepted.
+* Skinny metadata, with only `MIXED_BACKREF`, `BIG_METADATA`,
+  `EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits accepted.
 * No compat-ro feature bits, including free-space-tree and block-group-tree.
 * No pending log root, seeding device, or read-only top-level filesystem tree.
 * No fallback from a newer valid superblock mirror to an older generation.
-* No legacy extent items, simple-quota owner refs, shared block/data refs,
-  snapshots, or additional subvolumes.  The complete extent tree is scanned
+* No legacy extent items, simple-quota owner refs, shared block/data refs, or
+  snapshots.  Additional subvolumes may be present and traversed, but their
+  vnodes reject mutations with `EROFS`.  The complete extent tree is scanned
   before the transaction subsystem is initialized.
 * No device add/remove, chunk allocation, balance, relocation, scrub repair,
   send/receive, qgroups, or zoned mode.
