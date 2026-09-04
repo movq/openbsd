@@ -130,6 +130,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	struct btrfs_super_mirror mirrors[BTRFS_SUPER_MIRROR_MAX];
 	uint64_t best_generation, selected_generation;
 	unsigned int anchor_index, best, i, selected;
+	const char *stage = "opening device";
 	int error, last_error = EINVAL, mounted = 0;
 	int readonly = (mp->mnt_flag & MNT_RDONLY) != 0;
 
@@ -139,6 +140,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 
 	candidates = mallocarray(BTRFS_SUPER_MIRROR_MAX, sizeof(*candidates),
 	    M_BTRFS, M_WAITOK | M_ZERO);
+	stage = "reading superblocks";
 	error = btrfs_read_super_mirrors(devvp, p, candidates, mirrors);
 	if (error != 0)
 		goto out;
@@ -183,11 +185,13 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 
 		candidates[best].bsc_tried = 1;
 		sb = &candidates[best].bsc_super;
+		stage = "checking superblock features";
 		error = btrfs_check_super_policy(sb, readonly);
 		if (error != 0) {
 			mirrors[best].bsm_error = error;
 			goto out;
 		}
+		stage = "loading filesystem trees";
 		error = btrfs_bootstrap_super(devvp, sb, readonly, &bootstrap);
 		if (error == 0) {
 			selected = best;
@@ -256,6 +260,8 @@ out:
 		free(candidates, M_BTRFS,
 		    BTRFS_SUPER_MIRROR_MAX * sizeof(*candidates));
 	if (!mounted) {
+		printf("btrfs: mount failed while %s: error %d\n", stage,
+		    error);
 		if (bmp != NULL)
 			free(bmp, M_BTRFS, sizeof(*bmp));
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
