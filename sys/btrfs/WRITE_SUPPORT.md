@@ -1,8 +1,9 @@
 # Btrfs write support
 
-This document tracks the implemented write-path foundation and the remaining
-work needed for a transactional writer.  The public filesystem is still
-read-only: writable mounts and VFS mutation operations are not enabled.
+This document tracks the implemented write path and the remaining work needed
+to broaden it.  Writable mounts are exposed only for a deliberately narrow
+on-disk format and currently support existing regular-file data writes plus
+selected inode attribute changes.
 
 The first writer should batch changes from multiple operations in one
 transaction.  It should not commit after each operation.  It is acceptable for
@@ -105,17 +106,18 @@ dirty root items until delayed references and allocator state stop changing.
 The durable commit path writes finalized metadata, forces it through the
 device cache, writes all readable superblock mirrors, forces a second cache
 barrier, and only then publishes the generation in memory.  Data references
-are now included, but the full path is not exposed through VFS operations.
+are included in the published transaction.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
-compressed extents, using the physical device buffers underneath.  This lets
-reads observe a delayed-allocation dirty buffer before writeback.  The
-strategy write side and delayed allocation are not connected yet, but the
-lower data writer can now allocate one uncompressed COW sector, retain its
-ordered payload, replace an overlapping file-extent item while preserving
-left and right mappings, update its physical checksum, and serialize inode
-size and allocated-byte changes.
+compressed extents, using the physical device buffers underneath.  A
+vnode-locked `VOP_WRITE` reads or zero-fills one sector, applies `uiomove()` to
+a temporary copy, reserves data and pessimistic metadata space, and
+immediately attaches the sector to the open transaction.  Successful sectors
+are reflected in clean logical buffers; the strategy read side overlays
+transaction-owned ordered payloads if such a buffer is reclaimed before
+commit.  Strategy writeback remains disabled because it cannot safely mutate
+tree and inode state without the vnode lock.
 
 Mounted trees use persistent roots and take a locked location snapshot for
 each read search.  A write search retains the root write lock and publishes
@@ -123,11 +125,12 @@ its running-transaction location to later in-memory searches once its COW path
 is complete.  The committed location is restored on abort; writing dirty root
 items and the final root-tree location into a superblock are now part of
 commit.  `bn_inode` is host-endian mutable state decoded at inode-item lookup.
-A vnode-locked writer can now preserve unmodeled inode-item bytes, encode all
-mutable fields, advance the inode transid, and replace the item in its owning
-filesystem tree.  Dirty-field bits and the last dirty transaction remain clear
-while the filesystem is read-only; the initial VOPs still need to set and
-serialize them.
+A vnode-locked writer preserves unmodeled inode-item bytes, encodes all mutable
+fields, advances the inode transid, and replaces the item in its owning
+filesystem tree.  `VOP_WRITE` updates size, allocated bytes, mode, mtime, and
+ctime as required.  `VOP_SETATTR` supports owner, group, mode, atime, and
+mtime changes with VFS permission checks; size and BSD flag changes are
+explicitly unsupported.
 
 Allocation-tree decoding and validation is isolated in `btrfs_disk.c`.
 `btrfs_alloc.c` constructs a mount-owned, per-block-group free-space index by
@@ -142,9 +145,9 @@ allocation consumes only a handle's reservations.  Allocations and pinned
 frees remain transaction-owned: abort returns new allocations to free space,
 while successful commit publication accounts new allocations as committed and
 only then releases pinned extents.  Block-group diagnostics check the
-free-list and accounting invariants after each transition.  The public mount
-gate remains read-only, so no transaction can currently be joined through VFS
-operations.
+free-list and accounting invariants after each transition.  Writable VFS
+operations join this shared open transaction one sector or inode update at a
+time.
 
 A writable transaction also retains an emergency metadata commit reserve
 before any ordinary handle can join.  It is sized for four full-height COW
@@ -157,38 +160,40 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Ordered data extents and implicit data-reference materialization are
-implemented below VFS.  Initial write VOPs and mount-time write-format
-validation are not implemented yet.
+`IO_SYNC` writes, `VOP_FSYNC`, mount-wide sync, and clean unmount close and
+fully commit the relevant open transaction.  Other successful writes may
+batch in that transaction.  An already aborted transaction is discarded
+safely on unmount, while ordinary commit failure prevents a non-forced
+unmount.
 
 ## Initial writable format
 
-Write support should start with a deliberately narrow mount policy:
+The writable mount policy currently requires:
 
 * One device, CRC32C, and existing SINGLE or DUP chunks only.
+* Skinny metadata, with only `MIXED_BACKREF`, `EXTENDED_IREF`,
+  `SKINNY_METADATA`, and `NO_HOLES` incompat bits accepted.
+* No compat-ro feature bits, including free-space-tree and block-group-tree.
+* No pending log root, seeding device, or read-only top-level filesystem tree.
+* No fallback from a newer valid superblock mirror to an older generation.
+* No legacy extent items, simple-quota owner refs, shared block/data refs,
+  snapshots, or additional subvolumes.  The complete extent tree is scanned
+  before the transaction subsystem is initialized.
 * No device add/remove, chunk allocation, balance, relocation, scrub repair,
   send/receive, qgroups, or zoned mode.
 * No log-tree replay or log-tree creation.
-* No data compression on newly written extents.  Existing supported compressed
-  extents remain readable and are replaced with uncompressed COW extents when
-  modified.
-* No NODATACOW writes initially.  Existing NODATACOW files may either be
-  rejected for write or use normal COW; in-place data writes should not be
-  implemented as a shortcut.
-* No free-space tree or block-group tree initially.  Filesystems with those
-  compat-ro features remain read-only until both trees can be updated
-  transactionally.
-* Shared extents must either be handled correctly or cause writable mount to be
-  refused.  A filesystem having snapshots makes a "reference count is one"
-  shortcut unsafe.
+* No data compression on newly written extents.  Existing compressed extents
+  remain readable, but writes overlapping them return `EOPNOTSUPP`.
+* NODATACOW mappings are replaced through normal COW rather than in place.
+  NODATASUM files, inline files, and encoded mappings reject writes.
 
 Read-compatible and write-compatible feature masks must remain separate.  A
 feature can be safe to parse while still requiring accounting that the writer
 does not implement.
 
-Initially, allocate only from existing block groups.  Returning `ENOSPC` when
-they are exhausted is safer and much smaller in scope than changing the chunk
-and device trees.
+Allocation uses only existing block groups.  Returning `ENOSPC` when they are
+exhausted is safer and much smaller in scope than changing the chunk and
+device trees.
 
 ## Main in-memory objects
 
@@ -280,10 +285,10 @@ constructor or open-code leaf and node layout changes.
 Regular file reads use buffers indexed by file logical sector.  The btrfs
 `VOP_STRATEGY` read side resolves extent items and fills these logical buffers,
 including across holes and compressed extents.  Physical data remains cached
-on the device vnode.  The write side will connect this OpenBSD vnode-buffer
-integration to the implemented sector writer:
+on the device vnode.  The vnode write side connects this OpenBSD vnode-buffer
+integration directly to the sector writer:
 
-* Delayed-allocation and metadata reservations are made before dirtying data.
+* Data and pessimistic metadata reservations are made before tree mutation.
 * The lower writer allocates one sector from a data block group, records its
   file and physical identity, and retains an immutable transaction-owned
   payload until commit.
@@ -293,15 +298,15 @@ integration to the implemented sector writer:
   commit performs ordered I/O and delayed-reference materialization.
 * Commit writes every ordered sector to all required mirrors before preparing
   or writing metadata.
-* Reads first observe dirty file buffers, then ordered extents, then committed
-  extent items.  This prevents stale disk data from being returned after a
-  buffered write.
+* Successful writes update clean logical buffers.  Cache misses first consult
+  ordered extents, then committed extent data, preventing stale disk data from
+  being returned before commit.
 
 The initial lower writer rejects inline files, compressed overlap, encoded
 data, and NODATASUM files.  Existing regular and preallocated uncompressed
-mappings can be split on sector boundaries.  Public write enablement must
-additionally refuse shared data or metadata references until shared-leaf
-reference conversion is implemented.
+mappings can be split on sector boundaries.  Writable mount rejects shared
+data and metadata references because shared-leaf reference conversion is not
+implemented.
 
 Compressed reads do not map one-to-one through `VOP_BMAP`.  Extent readers now
 fill caller-provided memory, allowing `VOP_STRATEGY` to populate a logical file
@@ -309,10 +314,10 @@ buffer without exposing physical mappings.  Compressed extents are currently
 decompressed once for each logical buffer they intersect; caching larger
 decompressed clusters is a later optimization.
 
-Dirty data need not join a transaction at the moment of `uiomove()`.  It can
-hold an allocator reservation and join during writeback.  Before returning
-from `fsync`, all dirty data for that vnode must be converted to ordered
-extents, completed, represented in a transaction, and then fully committed.
+The initial VOP deliberately avoids delayed writeback.  Each successful
+partial or full-sector `uiomove()` is represented by an ordered extent before
+the operation advances to the next sector.  `fsync` then commits at least the
+inode's last dirty transaction generation.
 
 ### Mutable inode state
 
@@ -589,9 +594,8 @@ an acceptable policy for btrfs commits.
 Steps 3 through 10 are connected for transactions containing ordered data.
 Superblock construction updates the generation, root/chunk locations and
 levels, bytes used, log-root fields, and one rotating backup-root slot.  Each
-readable in-range mirror gets its own physical `bytenr` and CRC32C.  Public
-write paths remain gated until initial VOP integration and strict writable
-format validation are complete.
+readable in-range mirror gets its own physical `bytenr` and CRC32C.  Strict
+mount-time validation now gates the VFS write paths described above.
 
 ## VFS operation order
 
@@ -600,9 +604,9 @@ B-tree mutation layers can be tested directly.  A useful progression is:
 
 1. Update an existing inode item without changing file data, exercised by
    chmod/chown/time updates on a disposable image.
-2. Buffered uncompressed writes which replace or append whole sectors,
-   including checksum and extent items.
-3. Partial-sector writes, holes, truncate, and range replacement.
+2. Sector-attached uncompressed writes which replace, append, or extend through
+   holes, including checksum and extent items.
+3. Truncate and general range deletion.
 4. File creation and unlink, with inode allocation, orphan handling, directory
    index/hash items, inode refs, and link-count updates.
 5. mkdir/rmdir, rename, hard links, symlinks, and special nodes.
@@ -713,18 +717,20 @@ The following write-path foundations are in place:
   updates inline or separate reference counts, creates new data extent items
   with inline references, removes checksum ranges on a final drop, and pins
   freed data until superblock publication.
+* Completed: expose strictly gated writable mounts and vnode-locked,
+  sector-attached writes for existing regular files.  The VFS layer also
+  serializes safe inode attribute changes and performs full commits for
+  synchronous writes, `fsync`, mount sync, and clean unmount.
 
-These changes preserve public read-only behavior.  The next layers should
-continue using the logical extent-buffer and transaction allocator APIs rather
-than adding parallel caches or ad hoc reservations.
+The next layers should continue using the logical extent-buffer and transaction
+allocator APIs rather than adding parallel caches or ad hoc reservations.
 
 ## Milestones
 
 ### 1. Read-path architecture
 
 Completed: persistent roots, logical metadata extent buffers, host-endian
-mutable inode state, and logical vnode data buffers are in place.  No writable
-mount is permitted.
+mutable inode state, and logical vnode data buffers are in place.
 
 ### 2. Transaction and allocator core
 
@@ -733,9 +739,7 @@ pinning, commit/abort allocator transitions, and the emergency metadata commit
 reserve are in place.  Delayed metadata-reference ownership and merging are in
 place, along with skinny-metadata extent-tree materialization and commit-time
 block-group accounting.  Delayed implicit data references, ordered sector
-writes, and durable superblock publication are in place.  Exercise the
-mutation paths with a small in-kernel test harness as they gain callers, but
-keep the public filesystem read-only.
+writes, and durable superblock publication are in place.
 
 ### 3. B-tree writer
 
@@ -749,13 +753,13 @@ metadata-reference materialization.  Commit preparation now stabilizes
 allocator accounting and dirty root items, and the transaction path now
 publishes finalized metadata through two device cache barriers and mirrored
 superblocks.  Ordered data and data-reference materialization are also in
-place.  Next add VFS callers for testing on throwaway images.  Keep public
-writes gated until crash tests are credible.
+place.
 
 ### 4. Existing-file writes
 
-Enable narrowly gated writable mounts and regular uncompressed file writes,
-truncate, inode updates, full-commit `fsync`, sync, and unmount.
+In progress: narrowly gated writable mounts, regular uncompressed partial and
+full-sector file writes, inode updates, and full-commit `fsync`, sync, and
+unmount are implemented.  Truncate and range deletion remain unsupported.
 
 ### 5. Namespace writes
 
@@ -801,11 +805,9 @@ The following are intentionally deferred:
 
 * Whether to add a larger decompressed-cluster cache or read-ahead while
   retaining sector-sized vnode buffers.
-* Whether the first writable release supports existing snapshots or rejects
-  them after a complete root/backreference scan.
 * When to allow the next transaction to run concurrently with commit I/O.
 * Which free-space-tree representation to emit and when to create new chunks.
 * Log-tree replay and log-based `fsync`.
 
-Correctness does not depend on resolving these before the first three
-milestones, provided writable mount remains strictly feature-gated.
+Correctness does not depend on resolving these before later milestones,
+provided writable mount remains strictly feature-gated.
