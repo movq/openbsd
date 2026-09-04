@@ -61,6 +61,9 @@ static int	btrfs_load_root_location(struct btrfs_root *, uint64_t,
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
+static int	btrfs_snapshot_root(struct btrfs_transaction *, uint64_t,
+		    struct btrfs_root_location *);
+static void	btrfs_set_super_csum(struct btrfs_super_block *);
 static int	btrfs_ispow2(uint32_t);
 
 int
@@ -423,6 +426,178 @@ btrfs_validate_backup_roots(const struct btrfs_super_block *sb)
 	}
 
 	return (valid);
+}
+
+static int
+btrfs_snapshot_root(struct btrfs_transaction *trans, uint64_t owner,
+    struct btrfs_root_location *location)
+{
+	struct btrfs_root *root;
+	uint32_t sectorsize;
+	int error;
+
+	error = btrfs_get_root(trans->bt_mount, owner, &root);
+	if (error != 0)
+		return (error);
+	rw_enter_read(root->br_lock);
+	location->brl_bytenr = root->br_bytenr;
+	location->brl_generation = root->br_generation;
+	location->brl_level = root->br_level;
+	if (root->br_transaction != NULL &&
+	    root->br_transaction != trans)
+		error = EBUSY;
+	rw_exit_read(root->br_lock);
+	sectorsize = letoh32(trans->bt_mount->bm_super.sectorsize);
+	if (error == 0 &&
+	    (location->brl_bytenr == 0 ||
+	    (location->brl_bytenr & (sectorsize - 1)) != 0 ||
+	    location->brl_generation == 0 ||
+	    location->brl_generation > trans->bt_generation ||
+	    location->brl_level >= BTRFS_MAX_LEVEL))
+		error = EINVAL;
+	return (error);
+}
+
+static void
+btrfs_set_super_csum(struct btrfs_super_block *sb)
+{
+	uint32_t csum;
+
+	memset(sb->csum, 0, sizeof(sb->csum));
+	csum = htole32(crc32c(0,
+	    (const uint8_t *)sb + sizeof(sb->csum),
+	    sizeof(*sb) - sizeof(sb->csum)));
+	memcpy(sb->csum, &csum, sizeof(csum));
+}
+
+int
+btrfs_build_super(struct btrfs_transaction *trans,
+    struct btrfs_super_block *sb)
+{
+	struct btrfs_mount *bmp;
+	struct btrfs_root_backup *backup;
+	struct btrfs_root_location csum, dev, extent, fs, root, chunk;
+	unsigned int slot;
+	int error;
+
+	if (trans == NULL || sb == NULL)
+		return (EINVAL);
+	bmp = trans->bt_mount;
+	if (bmp == NULL || trans->bt_generation == 0 ||
+	    trans->bt_bytes_used > letoh64(bmp->bm_super.total_bytes))
+		return (EINVAL);
+	mtx_enter(&bmp->bm_trans_mtx);
+	if (bmp->bm_transaction != trans || !bmp->bm_committer ||
+	    trans->bt_state != BTRFS_TRANS_COMMITTING ||
+	    trans->bt_writers != 0 || trans->bt_commit_handle)
+		error = trans->bt_error != 0 ? trans->bt_error : EINVAL;
+	else
+		error = 0;
+	mtx_leave(&bmp->bm_trans_mtx);
+	if (error != 0)
+		return (error);
+	error = btrfs_snapshot_root(trans, BTRFS_ROOT_TREE_OBJECTID, &root);
+	if (error == 0)
+		error = btrfs_snapshot_root(trans,
+		    BTRFS_CHUNK_TREE_OBJECTID, &chunk);
+	if (error == 0)
+		error = btrfs_snapshot_root(trans,
+		    BTRFS_EXTENT_TREE_OBJECTID, &extent);
+	if (error == 0)
+		error = btrfs_snapshot_root(trans, bmp->bm_treeid, &fs);
+	if (error == 0)
+		error = btrfs_snapshot_root(trans, BTRFS_DEV_TREE_OBJECTID,
+		    &dev);
+	if (error == 0)
+		error = btrfs_snapshot_root(trans, BTRFS_CSUM_TREE_OBJECTID,
+		    &csum);
+	if (error != 0)
+		return (error);
+	if (root.brl_generation != trans->bt_generation)
+		return (EINVAL);
+
+	memcpy(sb, &bmp->bm_super, sizeof(*sb));
+	sb->generation = htole64(trans->bt_generation);
+	sb->root = htole64(root.brl_bytenr);
+	sb->root_level = root.brl_level;
+	sb->chunk_root = htole64(chunk.brl_bytenr);
+	sb->chunk_root_generation = htole64(chunk.brl_generation);
+	sb->chunk_root_level = chunk.brl_level;
+	sb->bytes_used = htole64(trans->bt_bytes_used);
+	sb->log_root = 0;
+	sb->__unused_log_root_transid = 0;
+	sb->log_root_level = 0;
+
+	slot = trans->bt_generation % BTRFS_NUM_BACKUP_ROOTS;
+	backup = &sb->super_roots[slot];
+	memset(backup, 0, sizeof(*backup));
+	backup->tree_root = htole64(root.brl_bytenr);
+	backup->tree_root_gen = htole64(root.brl_generation);
+	backup->chunk_root = htole64(chunk.brl_bytenr);
+	backup->chunk_root_gen = htole64(chunk.brl_generation);
+	backup->extent_root = htole64(extent.brl_bytenr);
+	backup->extent_root_gen = htole64(extent.brl_generation);
+	backup->fs_root = htole64(fs.brl_bytenr);
+	backup->fs_root_gen = htole64(fs.brl_generation);
+	backup->dev_root = htole64(dev.brl_bytenr);
+	backup->dev_root_gen = htole64(dev.brl_generation);
+	backup->csum_root = htole64(csum.brl_bytenr);
+	backup->csum_root_gen = htole64(csum.brl_generation);
+	backup->total_bytes = sb->total_bytes;
+	backup->bytes_used = sb->bytes_used;
+	backup->num_devices = sb->num_devices;
+	backup->tree_root_level = root.brl_level;
+	backup->chunk_root_level = chunk.brl_level;
+	backup->extent_root_level = extent.brl_level;
+	backup->fs_root_level = fs.brl_level;
+	backup->dev_root_level = dev.brl_level;
+	backup->csum_root_level = csum.brl_level;
+	btrfs_set_super_csum(sb);
+	return (btrfs_validate_super(sb, letoh64(sb->bytenr)));
+}
+
+int
+btrfs_write_super_mirrors(struct btrfs_mount *bmp,
+    const struct btrfs_super_block *template)
+{
+	struct btrfs_super_block *sb;
+	struct btrfs_super_mirror *mirror;
+	struct buf *bp;
+	unsigned int i, nwritten = 0;
+	int error, first_error = 0;
+
+	if (bmp == NULL || template == NULL)
+		return (EINVAL);
+	sb = malloc(sizeof(*sb), M_BTRFS, M_WAITOK);
+	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+		mirror = &bmp->bm_super_mirrors[i];
+		if ((mirror->bsm_flags & BTRFS_SUPER_MIRROR_READABLE) == 0)
+			continue;
+		memcpy(sb, template, sizeof(*sb));
+		sb->bytenr = htole64(mirror->bsm_bytenr);
+		btrfs_set_super_csum(sb);
+		error = btrfs_validate_super(sb, mirror->bsm_bytenr);
+		if (error != 0) {
+			mirror->bsm_error = error;
+			if (first_error == 0)
+				first_error = error;
+			continue;
+		}
+		bp = getblk(bmp->bm_devvp,
+		    mirror->bsm_bytenr / DEV_BSIZE, sizeof(*sb), 0, INFSLP);
+		memcpy(bp->b_data, sb, sizeof(*sb));
+		SET(bp->b_flags, B_NOCACHE);
+		error = bwrite(bp);
+		mirror->bsm_error = error;
+		if (error == 0)
+			nwritten++;
+		else if (first_error == 0)
+			first_error = error;
+	}
+	free(sb, M_BTRFS, sizeof(*sb));
+	if (nwritten == 0 && first_error == 0)
+		return (ENXIO);
+	return (first_error);
 }
 
 static int

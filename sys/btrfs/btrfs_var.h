@@ -315,6 +315,7 @@ typedef int (*btrfs_free_space_iter_fn)(
 #define BTRFS_INODE_DIRTY_CTIME		0x00000400
 #define BTRFS_INODE_DIRTY_MTIME		0x00000800
 #define BTRFS_INODE_DIRTY_OTIME		0x00001000
+#define BTRFS_INODE_DIRTY_ALL		0x00001fff
 
 struct btrfs_inode {
 	uint64_t	bi_generation;
@@ -490,6 +491,10 @@ int	btrfs_check_super_policy(const struct btrfs_super_block *, int);
 int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
 	    int, struct btrfs_bootstrap *);
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
+int	btrfs_build_super(struct btrfs_transaction *,
+	    struct btrfs_super_block *);
+int	btrfs_write_super_mirrors(struct btrfs_mount *,
+	    const struct btrfs_super_block *);
 void	btrfs_init_roots(struct btrfs_mount *, const struct btrfs_bootstrap *);
 void	btrfs_free_roots(struct btrfs_mount *);
 int	btrfs_get_root(struct btrfs_mount *, uint64_t, struct btrfs_root **);
@@ -563,6 +568,7 @@ int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
 	    const uint8_t **, uint32_t *);
 void	btrfs_release_path(struct btrfs_path *);
 int	btrfs_find_inode(struct btrfs_root *, uint64_t, struct btrfs_inode *);
+int	btrfs_write_inode(struct btrfs_trans_handle *, struct btrfs_node *);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_mount *, uint64_t, uint64_t *,
 	    uint64_t *);
@@ -606,6 +612,7 @@ int	btrfs_trans_end(struct btrfs_trans_handle *);
 void	btrfs_trans_abort(struct btrfs_trans_handle *, int);
 int	btrfs_trans_close(struct btrfs_mount *, uint64_t,
 	    struct btrfs_transaction **);
+int	btrfs_trans_commit(struct btrfs_mount *, uint64_t, struct proc *);
 int	btrfs_trans_finish(struct btrfs_mount *, struct btrfs_transaction *,
 	    int);
 int	btrfs_read_data_csums(struct btrfs_mount *, uint64_t, uint64_t,
