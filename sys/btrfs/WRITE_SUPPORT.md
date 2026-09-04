@@ -40,6 +40,12 @@ device vnode.  Consequently, physical disk blocks are already cached by the
 OpenBSD buffer cache.  Adding a second cache containing untracked copies of the
 same bytes would waste memory and create coherency problems.
 
+Logical mapping and mirror-aware physical reads are centralized in
+`btrfs_io.c`.  Metadata header validation and data checksum validation run
+inside the shared mirror loop, so a rejected copy is released before another
+DUP mirror is tried.  The interface can also return each mirror's error and the
+selected mirror.  Mirrored write submission is not implemented yet.
+
 This physical cache is not, by itself, enough for writes:
 
 * A btrfs metadata block is identified by logical bytenr, owner, level, and
@@ -419,8 +425,12 @@ The following changes are useful before enabling writable mounts:
   then implement vnode-buffer reads before writes.
 * Split `btrfs_alloc.c` decoders from mutable allocator code and construct
   per-block-group free-space indexes at mount.
-* Centralize logical-to-physical I/O submission so metadata/data writes handle
-  SINGLE and DUP consistently and report mirror failures.
+* Completed: centralize logical-to-physical read submission.  Metadata and
+  data now use one SINGLE/DUP mirror loop, with caller validation participating
+  in failover and optional per-mirror error reporting.
+* Extend the logical I/O layer with mirrored write submission so metadata/data
+  writes handle SINGLE and DUP consistently and report every required-copy
+  failure.
 
 These should land in small changes which preserve read-only behavior.  Avoid
 adding an ad hoc metadata cache now; the logical extent-buffer API should be
