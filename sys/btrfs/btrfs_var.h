@@ -41,6 +41,12 @@ struct btrfs_chunk_map {
 	unsigned int	nmirrors;
 };
 
+struct btrfs_io_map {
+	uint64_t	physical[2];
+	uint64_t	type;
+	unsigned int	nmirrors;
+};
+
 struct btrfs_dir_entry {
 	const uint8_t	*bde_name;
 	uint64_t	 bde_objectid;
@@ -52,8 +58,29 @@ struct btrfs_dir_entry {
 
 typedef int (*btrfs_dir_iter_fn)(const struct btrfs_dir_entry *, void *);
 
+/*
+ * Decoded file extents point into the leaf held by the caller's path.
+ * Inline data therefore remains valid until that path is advanced or released.
+ */
+#define BTRFS_FILE_EXTENT_HOLE	3
+
+struct btrfs_file_extent {
+	const uint8_t	*bfe_inline_data;
+	uint64_t	 bfe_logical;
+	uint64_t	 bfe_length;
+	uint64_t	 bfe_disk_bytenr;
+	uint64_t	 bfe_disk_num_bytes;
+	uint64_t	 bfe_disk_offset;
+	size_t		 bfe_inline_size;
+	uint16_t	 bfe_other_encoding;
+	uint8_t		 bfe_compression;
+	uint8_t		 bfe_encryption;
+	uint8_t		 bfe_type;
+};
+
 struct buf;
 struct btrfs_node;
+struct proc;
 struct vnode;
 LIST_HEAD(btrfs_node_list, btrfs_node);
 
@@ -86,6 +113,23 @@ struct btrfs_super_mirror {
 	uint64_t	bsm_generation;
 	int		bsm_error;
 	uint8_t		bsm_flags;
+};
+
+struct btrfs_super_candidate {
+	struct btrfs_super_block	 bsc_super;
+	int			 bsc_tried;
+};
+
+struct btrfs_bootstrap {
+	struct btrfs_chunk_map	*bb_chunks;
+	unsigned int		 bb_nchunks;
+	uint64_t		 bb_fs_root;
+	uint64_t		 bb_fs_root_generation;
+	uint64_t		 bb_csum_root;
+	uint64_t		 bb_csum_root_generation;
+	uint64_t		 bb_fs_root_flags;
+	uint8_t			 bb_fs_root_level;
+	uint8_t			 bb_csum_root_level;
 };
 
 struct btrfs_mount {
@@ -129,8 +173,20 @@ struct btrfs_node {
 
 extern const struct vops btrfs_vops;
 
+int	btrfs_read_super_mirrors(struct vnode *, struct proc *,
+	    struct btrfs_super_candidate *, struct btrfs_super_mirror *);
+int	btrfs_super_same_filesystem(const struct btrfs_super_block *,
+	    const struct btrfs_super_block *);
+int	btrfs_check_super_policy(const struct btrfs_super_block *, int);
+int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
+	    int, struct btrfs_bootstrap *);
+uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
 void	btrfs_init_fs_root(struct btrfs_mount *, struct btrfs_root *);
 void	btrfs_init_csum_root(struct btrfs_mount *, struct btrfs_root *);
+int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
+	    uint64_t, uint32_t, struct btrfs_io_map *);
+int	btrfs_read_root_block(const struct btrfs_root *, uint64_t, uint64_t,
+	    uint8_t, struct buf **);
 /*
  * An exact miss leaves path at the insertion point.  Paths must initially
  * be zeroed and retain item pointers until advanced or released.
@@ -146,8 +202,14 @@ int	btrfs_prev_item(struct btrfs_path *);
 int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
 	    const uint8_t **, uint32_t *);
 void	btrfs_release_path(struct btrfs_path *);
+int	btrfs_find_inode_item(struct btrfs_root *, uint64_t,
+	    struct btrfs_inode_item *);
+int	btrfs_find_dir_parent(struct btrfs_mount *, uint64_t, uint64_t *);
 int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
 	    btrfs_dir_iter_fn, void *);
+int	btrfs_find_file_extent(const struct btrfs_mount *,
+	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
+	    uint64_t, struct btrfs_file_extent *);
 int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
 int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
 	    const uint32_t *, struct buf **);

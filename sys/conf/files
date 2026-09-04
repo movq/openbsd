@@ -822,6 +822,9 @@ file kern/vfs_vops.c
 file kern/vfs_vnops.c
 file kern/vfs_getcwd.c
 file kern/spec_vnops.c
+file btrfs/btrfs_inode.c		btrfs
+file btrfs/btrfs_super.c		btrfs
+file btrfs/btrfs_tree.c			btrfs
 file btrfs/btrfs_vfsops.c		btrfs
 file btrfs/btrfs_vnops.c		btrfs
 file miscfs/deadfs/dead_vnops.c
