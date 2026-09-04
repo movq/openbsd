@@ -37,6 +37,8 @@ static struct btrfs_root *
 		btrfs_root_lookup(struct btrfs_mount *, uint64_t);
 static void	btrfs_root_insert(struct btrfs_mount *, uint64_t,
 		    const struct btrfs_root_location *);
+static int	btrfs_root_dirty(struct btrfs_trans_handle *,
+		    struct btrfs_root *);
 static const struct btrfs_key *
 		btrfs_block_key(const struct btrfs_header *, uint32_t);
 static int	btrfs_read_child(struct btrfs_path *, uint8_t, uint32_t,
@@ -143,8 +145,67 @@ btrfs_free_roots(struct btrfs_mount *bmp)
 	while ((entry = LIST_FIRST(&bmp->bm_roots)) != NULL) {
 		LIST_REMOVE(entry, bre_entry);
 		rw_assert_unlocked(&entry->bre_lock);
+		KASSERT(entry->bre_root.br_transaction == NULL);
 		free(entry, M_BTRFS, sizeof(*entry));
 	}
+}
+
+static int
+btrfs_root_dirty(struct btrfs_trans_handle *handle, struct btrfs_root *root)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_dirty_root *dirty;
+
+	rw_assert_wrlock(root->br_lock);
+	if (root->br_transaction == trans)
+		return (0);
+	if (root->br_transaction != NULL)
+		return (EBUSY);
+
+	dirty = malloc(sizeof(*dirty), M_BTRFS, M_WAITOK | M_ZERO);
+	dirty->bdr_root = root;
+	dirty->bdr_old_location.brl_bytenr = root->br_bytenr;
+	dirty->bdr_old_location.brl_generation = root->br_generation;
+	dirty->bdr_old_location.brl_level = root->br_level;
+	dirty->bdr_old_view_generation = root->br_view_generation;
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_INSERT_TAIL(&trans->bt_dirty_roots, dirty, bdr_entry);
+	root->br_transaction = trans;
+	mtx_leave(&trans->bt_lock);
+	return (0);
+}
+
+int
+btrfs_roots_finish(struct btrfs_transaction *trans, int committed)
+{
+	struct btrfs_dirty_root *dirty;
+	struct btrfs_root *root;
+
+	KASSERT(trans->bt_writers == 0);
+	KASSERT(!trans->bt_commit_handle);
+	while ((dirty = TAILQ_FIRST(&trans->bt_dirty_roots)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_dirty_roots, dirty, bdr_entry);
+		root = dirty->bdr_root;
+		rw_enter_write(root->br_lock);
+		KASSERT(root->br_transaction == trans);
+		KASSERT(!committed ||
+		    (root->br_generation == trans->bt_generation &&
+		    root->br_view_generation == trans->bt_generation));
+		if (!committed) {
+			root->br_bytenr =
+			    dirty->bdr_old_location.brl_bytenr;
+			root->br_generation =
+			    dirty->bdr_old_location.brl_generation;
+			root->br_level = dirty->bdr_old_location.brl_level;
+			root->br_view_generation =
+			    dirty->bdr_old_view_generation;
+		}
+		root->br_transaction = NULL;
+		rw_exit_write(root->br_lock);
+		free(dirty, M_BTRFS, sizeof(*dirty));
+	}
+	return (0);
 }
 
 int
@@ -229,6 +290,17 @@ btrfs_read_child(struct btrfs_path *path, uint8_t parent_level,
 	    path->bp_view_generation, parent_level - 1, ebp);
 	if (error != 0)
 		return (error);
+	if (path->bp_write) {
+		rw_exit_read(&(*ebp)->eb_lock);
+		rw_enter_write(&(*ebp)->eb_lock);
+		error = btrfs_cow_block(path->bp_handle, path->bp_root,
+		    path->bp_eb[parent_level], slot, ebp);
+		if (error != 0) {
+			btrfs_extent_buffer_put(*ebp);
+			*ebp = NULL;
+			return (error);
+		}
+	}
 
 	child = btrfs_extent_buffer_data(*ebp);
 	nritems = letoh32(child->nritems);
@@ -248,6 +320,8 @@ btrfs_read_child(struct btrfs_path *path, uint8_t parent_level,
 	}
 	if (btrfs_key_cmp(first, &ptrs[slot].key) != 0 ||
 	    (upper != NULL && btrfs_key_cmp(last, upper) >= 0)) {
+		if (path->bp_write)
+			btrfs_trans_abort(path->bp_handle, EINVAL);
 		btrfs_extent_buffer_put(*ebp);
 		*ebp = NULL;
 		return (EINVAL);
@@ -258,6 +332,7 @@ btrfs_read_child(struct btrfs_path *path, uint8_t parent_level,
 void
 btrfs_release_path(struct btrfs_path *path)
 {
+	struct btrfs_root *root = path->bp_root;
 	unsigned int level;
 
 	for (level = 0; level < BTRFS_MAX_LEVEL; level++) {
@@ -272,12 +347,127 @@ btrfs_release_path(struct btrfs_path *path)
 		path->bp_slot[level] = 0;
 	}
 	path->bp_root = NULL;
+	path->bp_handle = NULL;
 	path->bp_view_generation = 0;
 	path->bp_level = 0;
+	if (path->bp_write) {
+		KASSERT(root != NULL);
+		KASSERT(root->br_lock != NULL);
+		rw_exit_write(root->br_lock);
+		path->bp_write = 0;
+	}
 #ifdef DIAGNOSTIC
 	for (level = 0; level < BTRFS_MAX_LEVEL; level++)
 		KASSERT(path->bp_eb[level] == NULL);
 #endif
+}
+
+int
+btrfs_cow_block(struct btrfs_trans_handle *handle, struct btrfs_root *root,
+    struct btrfs_extent_buffer *parent, uint32_t parent_slot,
+    struct btrfs_extent_buffer **ebp)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_extent_buffer *source, *cow;
+	struct btrfs_header *parent_header;
+	struct btrfs_key_ptr *ptrs;
+	uint64_t ref_parent;
+	uint32_t nritems;
+	int error;
+
+	if (handle == NULL || root == NULL || ebp == NULL || *ebp == NULL ||
+	    root->br_lock == NULL)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	source = *ebp;
+	if (trans == NULL || root->br_mount != trans->bt_mount ||
+	    source->eb_mount != trans->bt_mount ||
+	    source->eb_owner != root->br_owner)
+		return (EINVAL);
+	rw_assert_wrlock(root->br_lock);
+	rw_assert_wrlock(&source->eb_lock);
+
+	if (parent == NULL) {
+		if (source->eb_level != root->br_level ||
+		    source->eb_bytenr != root->br_bytenr ||
+		    source->eb_generation != root->br_generation)
+			return (EINVAL);
+	} else {
+		rw_assert_wrlock(&parent->eb_lock);
+		if (parent->eb_transaction != trans ||
+		    parent->eb_generation != trans->bt_generation ||
+		    parent->eb_level != source->eb_level + 1)
+			return (EINVAL);
+		parent_header = btrfs_extent_buffer_data_mutable(handle,
+		    parent);
+		if (parent_header == NULL)
+			return (EINVAL);
+		nritems = letoh32(parent_header->nritems);
+		if (parent_slot >= nritems)
+			return (EINVAL);
+		ptrs = (struct btrfs_key_ptr *)(parent_header + 1);
+		if (letoh64(ptrs[parent_slot].blockptr) !=
+		    source->eb_bytenr ||
+		    letoh64(ptrs[parent_slot].generation) !=
+		    source->eb_generation)
+			return (EINVAL);
+	}
+
+	if (source->eb_transaction == trans) {
+		if (source->eb_generation != trans->bt_generation ||
+		    source->eb_private == NULL || !source->eb_dirty ||
+		    (parent == NULL && root->br_transaction != trans))
+			return (EINVAL);
+		return (0);
+	}
+	if (source->eb_transaction != NULL ||
+	    source->eb_generation >= trans->bt_generation)
+		return (EINVAL);
+
+	error = btrfs_extent_buffer_clone(handle, source, &cow);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * A drop is not necessarily a free when metadata is shared.  Delayed-ref
+	 * materialization pins source only after proving its refcount reached 0.
+	 */
+	ref_parent = parent != NULL ? parent->eb_bytenr : 0;
+	error = btrfs_delayed_ref_add(handle, cow->eb_bytenr, ref_parent,
+	    root->br_owner, cow->eb_level, 1);
+	if (error == 0)
+		error = btrfs_delayed_ref_add(handle, source->eb_bytenr,
+		    ref_parent, root->br_owner, source->eb_level, -1);
+	if (error != 0) {
+		btrfs_trans_abort(handle, error);
+		btrfs_extent_buffer_put(cow);
+		return (error);
+	}
+
+	if (parent == NULL) {
+		error = btrfs_root_dirty(handle, root);
+		if (error != 0) {
+			btrfs_trans_abort(handle, error);
+			btrfs_extent_buffer_put(cow);
+			return (error);
+		}
+		root->br_bytenr = cow->eb_bytenr;
+		root->br_generation = trans->bt_generation;
+		root->br_view_generation = trans->bt_generation;
+		root->br_level = cow->eb_level;
+	} else {
+		parent_header = btrfs_extent_buffer_data_mutable(handle,
+		    parent);
+		KASSERT(parent_header != NULL);
+		ptrs = (struct btrfs_key_ptr *)(parent_header + 1);
+		ptrs[parent_slot].blockptr = htole64(cow->eb_bytenr);
+		ptrs[parent_slot].generation =
+		    htole64(trans->bt_generation);
+	}
+
+	btrfs_extent_buffer_put(source);
+	*ebp = cow;
+	return (0);
 }
 
 int
@@ -310,6 +500,103 @@ btrfs_search_slot(struct btrfs_root *root, const struct btrfs_key *target,
 	path->bp_level = level;
 	error = btrfs_extent_buffer_read(root, bytenr, generation,
 	    view_generation, level, &path->bp_eb[level]);
+	if (error != 0)
+		goto fail;
+
+	for (; level != 0; level--) {
+		header = btrfs_extent_buffer_data(path->bp_eb[level]);
+		ptrs = (const struct btrfs_key_ptr *)(header + 1);
+		low = 0;
+		high = letoh32(header->nritems);
+		while (low < high) {
+			mid = low + (high - low) / 2;
+			if (btrfs_key_cmp(&ptrs[mid].key, target) <= 0)
+				low = mid + 1;
+			else
+				high = mid;
+		}
+		slot = low == 0 ? 0 : low - 1;
+		path->bp_slot[level] = slot;
+		error = btrfs_read_child(path, level, slot,
+		    &path->bp_eb[level - 1]);
+		if (error != 0)
+			goto fail;
+	}
+
+	header = btrfs_extent_buffer_data(path->bp_eb[0]);
+	items = (const struct btrfs_item *)(header + 1);
+	low = 0;
+	high = letoh32(header->nritems);
+	while (low < high) {
+		mid = low + (high - low) / 2;
+		if (btrfs_key_cmp(&items[mid].key, target) < 0)
+			low = mid + 1;
+		else
+			high = mid;
+	}
+	path->bp_slot[0] = low;
+	if (low < letoh32(header->nritems)) {
+		cmp = btrfs_key_cmp(&items[low].key, target);
+		if (cmp == 0)
+			return (0);
+	}
+	return (ENOENT);
+
+fail:
+	btrfs_release_path(path);
+	return (error);
+}
+
+int
+btrfs_search_slot_write(struct btrfs_trans_handle *handle,
+    struct btrfs_root *root, const struct btrfs_key *target,
+    struct btrfs_path *path)
+{
+	const struct btrfs_header *header;
+	const struct btrfs_key_ptr *ptrs;
+	const struct btrfs_item *items;
+	struct btrfs_transaction *trans;
+	uint64_t bytenr, generation;
+	uint32_t high, low, mid, slot;
+	uint8_t level;
+	int cmp, error;
+
+	if (handle == NULL || handle->bth_transaction == NULL ||
+	    root == NULL || root->br_lock == NULL)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	if (root->br_mount != trans->bt_mount)
+		return (EINVAL);
+	if (path->bp_root != NULL)
+		btrfs_release_path(path);
+
+	rw_enter_write(root->br_lock);
+	path->bp_root = root;
+	path->bp_handle = handle;
+	path->bp_write = 1;
+	bytenr = root->br_bytenr;
+	generation = root->br_generation;
+	level = root->br_level;
+	if (root->br_transaction != NULL &&
+	    root->br_transaction != trans) {
+		error = EBUSY;
+		goto fail;
+	}
+	if (generation == 0 || generation > trans->bt_generation ||
+	    level >= BTRFS_MAX_LEVEL) {
+		error = EINVAL;
+		goto fail;
+	}
+	path->bp_view_generation = trans->bt_generation;
+	path->bp_level = level;
+	error = btrfs_extent_buffer_read(root, bytenr, generation,
+	    trans->bt_generation, level, &path->bp_eb[level]);
+	if (error != 0)
+		goto fail;
+	rw_exit_read(&path->bp_eb[level]->eb_lock);
+	rw_enter_write(&path->bp_eb[level]->eb_lock);
+	error = btrfs_cow_block(handle, root, NULL, 0,
+	    &path->bp_eb[level]);
 	if (error != 0)
 		goto fail;
 
