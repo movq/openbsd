@@ -533,6 +533,16 @@ int	btrfs_search_slot_write(struct btrfs_trans_handle *,
 int	btrfs_cow_block(struct btrfs_trans_handle *, struct btrfs_root *,
 	    struct btrfs_extent_buffer *, uint32_t,
 	    struct btrfs_extent_buffer **);
+/*
+ * Item keys and payloads are supplied in their packed on-disk encoding.
+ * Topology changes are reported until node split/removal support is present.
+ */
+int	btrfs_insert_item(struct btrfs_trans_handle *, struct btrfs_root *,
+	    const struct btrfs_key *, const void *, uint32_t);
+int	btrfs_replace_item(struct btrfs_trans_handle *, struct btrfs_root *,
+	    const struct btrfs_key *, const void *, uint32_t);
+int	btrfs_delete_item(struct btrfs_trans_handle *, struct btrfs_root *,
+	    const struct btrfs_key *);
 int	btrfs_search_lower_bound(struct btrfs_root *,
 	    const struct btrfs_key *, struct btrfs_path *);
 int	btrfs_search_predecessor(struct btrfs_root *,
