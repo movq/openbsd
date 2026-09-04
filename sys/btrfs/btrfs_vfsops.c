@@ -302,8 +302,8 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	if (error != 0)
 		return (error);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
-	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 	btrfs_trans_destroy(bmp);
+	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 	btrfs_space_destroy(bmp);
 	btrfs_free_roots(bmp);
 

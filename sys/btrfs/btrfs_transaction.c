@@ -41,6 +41,7 @@ btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
 	TAILQ_INIT(&trans->bt_commit_reservations);
 	TAILQ_INIT(&trans->bt_allocated_extents);
 	TAILQ_INIT(&trans->bt_pinned_extents);
+	TAILQ_INIT(&trans->bt_dirty_extent_buffers);
 	return (trans);
 }
 
@@ -89,6 +90,8 @@ btrfs_trans_destroy(struct btrfs_mount *bmp)
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!bmp->bm_committer);
 	KASSERT(!trans->bt_commit_handle);
+	(void)btrfs_extent_buffers_finish(trans, 0);
+	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	if (trans->bt_state != BTRFS_TRANS_COMMITTED)
 		btrfs_space_abort(trans);
 	KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
@@ -295,6 +298,8 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 		error = trans->bt_error;
 	if (error == 0 && trans->bt_generation == UINT64_MAX)
 		error = EOVERFLOW;
+	if (error == 0)
+		error = btrfs_extent_buffers_finish(trans, 1);
 	if (error == 0) {
 		generation = trans->bt_generation + 1;
 		btrfs_space_commit(trans);
@@ -305,6 +310,7 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 			next->bt_state = BTRFS_TRANS_ABORTED;
 		}
 	} else {
+		(void)btrfs_extent_buffers_finish(trans, 0);
 		btrfs_space_abort(trans);
 	}
 

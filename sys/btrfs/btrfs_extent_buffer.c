@@ -27,6 +27,7 @@
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/malloc.h>
+#include <sys/mount.h>
 #include <sys/vnode.h>
 
 #include <lib/libkern/crc32c.h>
@@ -35,6 +36,10 @@
 
 static int	btrfs_extent_buffer_load(const struct btrfs_root *,
 		    struct btrfs_extent_buffer *, uint64_t);
+static const void *
+		btrfs_extent_buffer_bytes(const struct btrfs_extent_buffer *);
+static void	btrfs_extent_buffer_fail_transaction(
+		    struct btrfs_transaction *, int);
 static int	btrfs_extent_buffer_validate(const void *, size_t, void *);
 static int	btrfs_validate_tree_block(const struct btrfs_super_block *,
 		    const struct btrfs_header *, uint64_t, uint64_t, uint64_t,
@@ -57,6 +62,15 @@ btrfs_extent_buffer_matches(const struct btrfs_extent_buffer *eb,
 {
 	return (eb->eb_generation == generation && eb->eb_owner == owner &&
 	    eb->eb_level == level);
+}
+
+static const void *
+btrfs_extent_buffer_bytes(const struct btrfs_extent_buffer *eb)
+{
+	if (eb->eb_private != NULL)
+		return (eb->eb_private);
+	KASSERT(eb->eb_buf != NULL);
+	return (eb->eb_buf->b_data);
 }
 
 int
@@ -117,8 +131,8 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
 
 			rw_enter_read(&eb->eb_lock);
 			KASSERT(eb->eb_loaded);
-			if (eb->eb_error != 0) {
-				error = eb->eb_error;
+			if (eb->eb_error != 0 || eb->eb_stale) {
+				error = eb->eb_error != 0 ? eb->eb_error : EIO;
 				btrfs_extent_buffer_put(eb);
 				return (error);
 			}
@@ -142,6 +156,97 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
 	return (0);
 }
 
+/*
+ * Allocate a transaction-owned metadata block and seed its private bytes from
+ * source.  This is deliberately below btrfs_cow_block(): callers must still
+ * update the parent or root pointer and queue the corresponding delayed refs.
+ */
+int
+btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
+    const struct btrfs_extent_buffer *source,
+    struct btrfs_extent_buffer **ebp)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_extent_buffer *eb, *collision;
+	struct btrfs_mount *bmp;
+	struct btrfs_header *header;
+	uint64_t bytenr, flags;
+	uint32_t nodesize;
+	int error;
+
+	if (ebp == NULL)
+		return (EINVAL);
+	*ebp = NULL;
+	if (handle == NULL || source == NULL)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	bmp = trans->bt_mount;
+	nodesize = letoh32(bmp->bm_super.nodesize);
+
+	rw_assert_anylock((struct rwlock *)&source->eb_lock);
+	if (source->eb_mount != bmp || !source->eb_loaded ||
+	    source->eb_error != 0 || source->eb_stale ||
+	    source->eb_transaction != NULL ||
+	    source->eb_generation >= trans->bt_generation)
+		return (EINVAL);
+
+	eb = malloc(sizeof(*eb), M_BTRFS, M_WAITOK | M_ZERO);
+	eb->eb_private = malloc(nodesize, M_BTRFS, M_WAITOK);
+	memcpy(eb->eb_private, btrfs_extent_buffer_bytes(source), nodesize);
+	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
+	rw_enter_write(&eb->eb_lock);
+
+	error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_METADATA,
+	    nodesize, nodesize, &bytenr);
+	if (error != 0) {
+		rw_exit_write(&eb->eb_lock);
+		free(eb->eb_private, M_BTRFS, nodesize);
+		free(eb, M_BTRFS, sizeof(*eb));
+		return (error);
+	}
+
+	header = eb->eb_private;
+	memset(header->csum, 0, sizeof(header->csum));
+	header->bytenr = htole64(bytenr);
+	header->generation = htole64(trans->bt_generation);
+	flags = letoh64(header->flags);
+	header->flags = htole64(flags & ~BTRFS_HEADER_FLAG_WRITTEN);
+
+	eb->eb_mount = bmp;
+	eb->eb_transaction = trans;
+	eb->eb_bytenr = bytenr;
+	eb->eb_generation = trans->bt_generation;
+	eb->eb_owner = source->eb_owner;
+	eb->eb_refs = 2;	/* caller plus transaction dirty-list ownership */
+	eb->eb_level = source->eb_level;
+	eb->eb_loaded = 1;
+	eb->eb_dirty = 1;
+
+	collision = NULL;
+	mtx_enter(&bmp->bm_ebmtx);
+	LIST_FOREACH(collision, &bmp->bm_extent_buffers, eb_entry) {
+		if (collision->eb_bytenr == bytenr)
+			break;
+	}
+	if (collision == NULL)
+		LIST_INSERT_HEAD(&bmp->bm_extent_buffers, eb, eb_entry);
+	mtx_leave(&bmp->bm_ebmtx);
+	if (collision != NULL) {
+		rw_exit_write(&eb->eb_lock);
+		free(eb->eb_private, M_BTRFS, nodesize);
+		free(eb, M_BTRFS, sizeof(*eb));
+		btrfs_trans_abort(handle, EINVAL);
+		return (EINVAL);
+	}
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_INSERT_TAIL(&trans->bt_dirty_extent_buffers, eb,
+	    eb_dirty_entry);
+	mtx_leave(&trans->bt_lock);
+	*ebp = eb;
+	return (0);
+}
+
 const void *
 btrfs_extent_buffer_data(const struct btrfs_extent_buffer *eb)
 {
@@ -152,14 +257,34 @@ btrfs_extent_buffer_data(const struct btrfs_extent_buffer *eb)
 	rw_assert_anylock((struct rwlock *)&eb->eb_lock);
 	KASSERT(eb->eb_loaded);
 	KASSERT(eb->eb_error == 0);
-	KASSERT(eb->eb_buf != NULL);
-	header = (const struct btrfs_header *)eb->eb_buf->b_data;
+	KASSERT(!eb->eb_stale);
+	KASSERT(eb->eb_buf != NULL || eb->eb_private != NULL);
+	header = btrfs_extent_buffer_bytes(eb);
 	KASSERT(letoh64(header->bytenr) == eb->eb_bytenr);
 	KASSERT(letoh64(header->generation) == eb->eb_generation);
 	KASSERT(letoh64(header->owner) == eb->eb_owner);
 	KASSERT(header->level == eb->eb_level);
 #endif
-	return (eb->eb_buf->b_data);
+	return (btrfs_extent_buffer_bytes(eb));
+}
+
+void *
+btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *handle,
+    struct btrfs_extent_buffer *eb)
+{
+	struct btrfs_transaction *trans;
+
+	if (handle == NULL || eb == NULL)
+		return (NULL);
+	trans = handle->bth_transaction;
+	rw_assert_wrlock(&eb->eb_lock);
+	if (eb->eb_transaction != trans ||
+	    eb->eb_generation != trans->bt_generation ||
+	    !eb->eb_loaded || !eb->eb_dirty || eb->eb_writeback ||
+	    eb->eb_written || eb->eb_stale || eb->eb_error != 0 ||
+	    eb->eb_private == NULL)
+		return (NULL);
+	return (eb->eb_private);
 }
 
 void
@@ -190,7 +315,148 @@ btrfs_extent_buffer_put(struct btrfs_extent_buffer *eb)
 	rw_assert_unlocked(&eb->eb_lock);
 	if (eb->eb_buf != NULL)
 		brelse(eb->eb_buf);
+	if (eb->eb_private != NULL)
+		free(eb->eb_private, M_BTRFS,
+		    letoh32(bmp->bm_super.nodesize));
 	free(eb, M_BTRFS, sizeof(*eb));
+}
+
+static void
+btrfs_extent_buffer_fail_transaction(struct btrfs_transaction *trans,
+    int error)
+{
+	struct btrfs_mount *bmp = trans->bt_mount;
+
+	if (error == 0)
+		error = EIO;
+	mtx_enter(&bmp->bm_trans_mtx);
+	if (trans->bt_error == 0)
+		trans->bt_error = error;
+	trans->bt_state = BTRFS_TRANS_ABORTED;
+	bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+	wakeup(&bmp->bm_transaction);
+	mtx_leave(&bmp->bm_trans_mtx);
+}
+
+int
+btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
+{
+	struct btrfs_extent_buffer *eb;
+	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_header *header;
+	uint64_t flags;
+	uint32_t csum, nodesize;
+	int error;
+
+	mtx_enter(&bmp->bm_trans_mtx);
+	if (bmp->bm_transaction != trans ||
+	    trans->bt_state != BTRFS_TRANS_COMMITTING ||
+	    trans->bt_writers != 0 || trans->bt_commit_handle) {
+		error = trans->bt_error != 0 ? trans->bt_error : EINVAL;
+		mtx_leave(&bmp->bm_trans_mtx);
+		return (error);
+	}
+	mtx_leave(&bmp->bm_trans_mtx);
+
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	TAILQ_FOREACH(eb, &trans->bt_dirty_extent_buffers, eb_dirty_entry) {
+		rw_enter_write(&eb->eb_lock);
+		if (eb->eb_transaction != trans || !eb->eb_dirty ||
+		    eb->eb_stale || eb->eb_private == NULL) {
+			error = EINVAL;
+			goto fail;
+		}
+		if (eb->eb_error != 0) {
+			error = eb->eb_error;
+			goto fail;
+		}
+		if (eb->eb_written) {
+			rw_exit_write(&eb->eb_lock);
+			continue;
+		}
+
+		eb->eb_writeback = 1;
+		header = eb->eb_private;
+		flags = letoh64(header->flags);
+		header->flags = htole64(flags | BTRFS_HEADER_FLAG_WRITTEN);
+		memset(header->csum, 0, sizeof(header->csum));
+		csum = htole32(crc32c(0,
+		    (const uint8_t *)header + sizeof(header->csum),
+		    nodesize - sizeof(header->csum)));
+		memcpy(header->csum, &csum, sizeof(csum));
+		error = btrfs_validate_tree_block(&bmp->bm_super, header,
+		    eb->eb_bytenr, eb->eb_generation, trans->bt_generation,
+		    eb->eb_owner, eb->eb_level);
+		if (error == 0)
+			error = btrfs_write_logical(bmp->bm_devvp,
+			    bmp->bm_chunks, bmp->bm_nchunks, eb->eb_bytenr,
+			    nodesize, BTRFS_BLOCK_GROUP_METADATA |
+			    BTRFS_BLOCK_GROUP_SYSTEM, header, NULL);
+		eb->eb_writeback = 0;
+		if (error != 0)
+			goto fail;
+		eb->eb_written = 1;
+		rw_exit_write(&eb->eb_lock);
+	}
+	return (0);
+
+fail:
+	eb->eb_writeback = 0;
+	eb->eb_error = error;
+	rw_exit_write(&eb->eb_lock);
+	btrfs_extent_buffer_fail_transaction(trans, error);
+	return (error);
+}
+
+int
+btrfs_extent_buffers_finish(struct btrfs_transaction *trans, int committed)
+{
+	struct btrfs_extent_buffer *eb;
+	int error = 0;
+
+	KASSERT(trans->bt_writers == 0);
+	KASSERT(!trans->bt_commit_handle);
+	if (committed) {
+		TAILQ_FOREACH(eb, &trans->bt_dirty_extent_buffers,
+		    eb_dirty_entry) {
+			rw_enter_read(&eb->eb_lock);
+			if (eb->eb_transaction != trans || !eb->eb_dirty ||
+			    eb->eb_writeback || !eb->eb_written ||
+			    eb->eb_stale || eb->eb_error != 0)
+				error = eb->eb_error != 0 ?
+				    eb->eb_error : EBUSY;
+			rw_exit_read(&eb->eb_lock);
+			if (error != 0)
+				return (error);
+		}
+	}
+
+	for (;;) {
+		mtx_enter(&trans->bt_lock);
+		eb = TAILQ_FIRST(&trans->bt_dirty_extent_buffers);
+		if (eb != NULL)
+			TAILQ_REMOVE(&trans->bt_dirty_extent_buffers, eb,
+			    eb_dirty_entry);
+		mtx_leave(&trans->bt_lock);
+		if (eb == NULL)
+			break;
+
+		rw_enter_write(&eb->eb_lock);
+		KASSERT(eb->eb_transaction == trans);
+		KASSERT(eb->eb_dirty);
+		KASSERT(!eb->eb_writeback);
+		eb->eb_transaction = NULL;
+		eb->eb_dirty = 0;
+		eb->eb_written = 0;
+		if (!committed) {
+			eb->eb_stale = 1;
+			if (eb->eb_error == 0)
+				eb->eb_error = trans->bt_error != 0 ?
+				    trans->bt_error : EIO;
+		}
+		btrfs_extent_buffer_put(eb);
+	}
+	return (0);
 }
 
 static int
