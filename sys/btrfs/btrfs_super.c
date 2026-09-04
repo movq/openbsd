@@ -247,10 +247,12 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	chunk_tree.br_nchunks = nsystem_chunks;
 	chunk_tree.br_bytenr = chunk_root;
 	chunk_tree.br_generation = letoh64(sb->chunk_root_generation);
+	chunk_tree.br_view_generation = generation;
 	chunk_tree.br_owner = BTRFS_CHUNK_TREE_OBJECTID;
 	chunk_tree.br_level = sb->chunk_root_level;
 	error = btrfs_read_root_block(&chunk_tree, chunk_tree.br_bytenr,
-	    chunk_tree.br_generation, chunk_tree.br_level, &bp);
+	    chunk_tree.br_generation, chunk_tree.br_view_generation,
+	    chunk_tree.br_level, &bp);
 	if (error != 0)
 		goto out;
 	header = (const struct btrfs_header *)bp->b_data;
@@ -270,6 +272,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	root_tree.br_nchunks = nchunks;
 	root_tree.br_bytenr = root;
 	root_tree.br_generation = generation;
+	root_tree.br_view_generation = generation;
 	root_tree.br_owner = BTRFS_ROOT_TREE_OBJECTID;
 	root_tree.br_level = sb->root_level;
 	error = btrfs_find_root_item(&root_tree, BTRFS_FS_TREE_OBJECTID,
@@ -315,10 +318,12 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	csum_tree.br_nchunks = nchunks;
 	csum_tree.br_bytenr = letoh64(csum_root_item.bytenr);
 	csum_tree.br_generation = letoh64(csum_root_item.generation);
+	csum_tree.br_view_generation = generation;
 	csum_tree.br_owner = BTRFS_CSUM_TREE_OBJECTID;
 	csum_tree.br_level = csum_root_item.level;
 	error = btrfs_read_root_block(&csum_tree, csum_tree.br_bytenr,
-	    csum_tree.br_generation, csum_tree.br_level, &bp);
+	    csum_tree.br_generation, csum_tree.br_view_generation,
+	    csum_tree.br_level, &bp);
 	if (error != 0)
 		goto out;
 	brelse(bp);
@@ -331,6 +336,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	fs_tree.br_nchunks = nchunks;
 	fs_tree.br_bytenr = letoh64(fs_root_item.bytenr);
 	fs_tree.br_generation = letoh64(fs_root_item.generation);
+	fs_tree.br_view_generation = generation;
 	fs_tree.br_owner = BTRFS_FS_TREE_OBJECTID;
 	fs_tree.br_level = fs_root_item.level;
 	error = btrfs_find_inode_item(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,

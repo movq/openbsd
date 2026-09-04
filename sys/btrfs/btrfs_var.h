@@ -184,6 +184,8 @@ struct btrfs_root {
 	unsigned int			 br_nchunks;
 	uint64_t			 br_bytenr;
 	uint64_t			 br_generation;
+	/* Maximum metadata generation visible through this root. */
+	uint64_t			 br_view_generation;
 	uint64_t			 br_owner;
 	uint8_t				 br_level;
 };
@@ -298,7 +300,7 @@ int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);
 int	btrfs_read_root_block(const struct btrfs_root *, uint64_t, uint64_t,
-	    uint8_t, struct buf **);
+	    uint64_t, uint8_t, struct buf **);
 /*
  * An exact miss leaves path at the insertion point.  Paths must initially
  * be zeroed and retain item pointers until advanced or released.
