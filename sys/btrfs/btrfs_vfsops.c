@@ -25,6 +25,8 @@
 #include <sys/systm.h>
 #include <sys/buf.h>
 #include <sys/conf.h>
+#include <sys/disklabel.h>
+#include <sys/dkio.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/fcntl.h>
@@ -52,6 +54,23 @@ struct btrfs_io_map {
 	unsigned int	nmirrors;
 };
 
+struct btrfs_super_candidate {
+	struct btrfs_super_block	 bsc_super;
+	int			 bsc_tried;
+};
+
+struct btrfs_bootstrap {
+	struct btrfs_chunk_map	*bb_chunks;
+	unsigned int		 bb_nchunks;
+	uint64_t		 bb_fs_root;
+	uint64_t		 bb_fs_root_generation;
+	uint64_t		 bb_csum_root;
+	uint64_t		 bb_csum_root_generation;
+	uint64_t		 bb_fs_root_flags;
+	uint8_t			 bb_fs_root_level;
+	uint8_t			 bb_csum_root_level;
+};
+
 #define BTRFS_BLOCK_GROUP_PROFILE_MASK	(BTRFS_BLOCK_GROUP_RAID0 |	\
 	    BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_DUP |		\
 	    BTRFS_BLOCK_GROUP_RAID10 | BTRFS_BLOCK_GROUP_RAID5 |	\
@@ -69,6 +88,18 @@ static int	btrfs_root(struct mount *, struct vnode **);
 static int	btrfs_statfs(struct mount *, struct statfs *, struct proc *);
 static int	btrfs_sync(struct mount *, int, int, struct ucred *,
 		    struct proc *);
+static int	btrfs_read_super_mirrors(struct vnode *, struct proc *,
+		    struct btrfs_super_candidate *,
+		    struct btrfs_super_mirror *);
+static int	btrfs_super_same_filesystem(const struct btrfs_super_block *,
+		    const struct btrfs_super_block *);
+static int	btrfs_check_super_policy(const struct btrfs_super_block *,
+		    int);
+static int	btrfs_bootstrap_super(struct vnode *,
+		    const struct btrfs_super_block *, int,
+		    struct btrfs_bootstrap *);
+static uint8_t	btrfs_validate_backup_roots(
+		    const struct btrfs_super_block *);
 static int	btrfs_validate_super(const struct btrfs_super_block *,
 		    uint64_t);
 static int	btrfs_parse_system_chunks(const struct btrfs_super_block *,
@@ -176,117 +207,118 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 static int
 btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 {
-	const struct btrfs_super_block *sb;
-	struct btrfs_inode_item inode_item;
-	struct btrfs_root_item csum_root_item, fs_root_item;
+	const struct btrfs_super_block *anchor, *sb;
+	struct btrfs_bootstrap bootstrap = { 0 };
 	struct btrfs_mount *bmp = NULL;
-	struct btrfs_chunk_map *chunks = NULL;
-	struct btrfs_chunk_map *system_chunks = NULL;
-	struct btrfs_root chunk_tree, fs_tree, root_tree;
-	struct btrfs_io_map map;
-	struct buf *bp = NULL;
-	uint64_t chunk_root, csum_root, csum_root_generation;
-	uint64_t fs_root, fs_root_generation, generation, root;
-	uint32_t nodesize;
-	unsigned int nchunks = 0, nsystem_chunks = 0;
-	int error, mounted = 0;
+	struct btrfs_super_candidate *candidates = NULL;
+	struct btrfs_super_mirror mirrors[BTRFS_SUPER_MIRROR_MAX];
+	uint64_t best_generation, selected_generation;
+	unsigned int anchor_index, best, i, selected;
+	int error, last_error = EINVAL, mounted = 0;
+	int readonly = (mp->mnt_flag & MNT_RDONLY) != 0;
 
 	error = VOP_OPEN(devvp, FREAD, FSCRED, p);
 	if (error != 0)
 		return (error);
 
-	error = bread(devvp, superblock_addrs[0] / DEV_BSIZE,
-	    BTRFS_SUPER_SIZE, &bp);
+	candidates = mallocarray(BTRFS_SUPER_MIRROR_MAX, sizeof(*candidates),
+	    M_BTRFS, M_WAITOK | M_ZERO);
+	error = btrfs_read_super_mirrors(devvp, p, candidates, mirrors);
 	if (error != 0)
 		goto out;
 
-	sb = (const struct btrfs_super_block *)bp->b_data;
-	error = btrfs_validate_super(sb, superblock_addrs[0]);
-	if (error != 0)
-		goto out;
+	for (anchor_index = 0; anchor_index < BTRFS_SUPER_MIRROR_MAX;
+	    anchor_index++) {
+		if (mirrors[anchor_index].bsm_flags &
+		    BTRFS_SUPER_MIRROR_VALID)
+			break;
+	}
+	KASSERT(anchor_index < BTRFS_SUPER_MIRROR_MAX);
+	anchor = &candidates[anchor_index].bsc_super;
 
-	generation = letoh64(sb->generation);
-	nodesize = letoh32(sb->nodesize);
+	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+		if ((mirrors[i].bsm_flags & BTRFS_SUPER_MIRROR_VALID) != 0 &&
+		    !btrfs_super_same_filesystem(anchor,
+		    &candidates[i].bsc_super))
+			mirrors[i].bsm_flags |= BTRFS_SUPER_MIRROR_FOREIGN;
+	}
 
-	chunk_root = letoh64(sb->chunk_root);
-	error = btrfs_parse_system_chunks(sb, &system_chunks,
-	    &nsystem_chunks);
-	if (error != 0)
-		goto out;
-	error = btrfs_lookup_logical(system_chunks, nsystem_chunks,
-	    chunk_root, nodesize, &map);
-	if (error != 0)
-		goto out;
+	selected = BTRFS_SUPER_MIRROR_MAX;
+	for (;;) {
+		best = BTRFS_SUPER_MIRROR_MAX;
+		best_generation = 0;
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			if ((mirrors[i].bsm_flags &
+			    (BTRFS_SUPER_MIRROR_VALID |
+			    BTRFS_SUPER_MIRROR_FOREIGN)) !=
+			    BTRFS_SUPER_MIRROR_VALID ||
+			    candidates[i].bsc_tried)
+				continue;
+			if (best == BTRFS_SUPER_MIRROR_MAX ||
+			    mirrors[i].bsm_generation > best_generation) {
+				best = i;
+				best_generation = mirrors[i].bsm_generation;
+			}
+		}
+		if (best == BTRFS_SUPER_MIRROR_MAX) {
+			error = last_error;
+			goto out;
+		}
 
-	memset(&chunk_tree, 0, sizeof(chunk_tree));
-	chunk_tree.br_devvp = devvp;
-	chunk_tree.br_super = sb;
-	chunk_tree.br_chunks = system_chunks;
-	chunk_tree.br_nchunks = nsystem_chunks;
-	chunk_tree.br_bytenr = chunk_root;
-	chunk_tree.br_generation = letoh64(sb->chunk_root_generation);
-	chunk_tree.br_owner = BTRFS_CHUNK_TREE_OBJECTID;
-	chunk_tree.br_level = sb->chunk_root_level;
-	error = btrfs_load_chunk_tree(&chunk_tree, &map, &chunks, &nchunks);
-	if (error != 0)
-		goto out;
-
-	root = letoh64(sb->root);
-	memset(&root_tree, 0, sizeof(root_tree));
-	root_tree.br_devvp = devvp;
-	root_tree.br_super = sb;
-	root_tree.br_chunks = chunks;
-	root_tree.br_nchunks = nchunks;
-	root_tree.br_bytenr = root;
-	root_tree.br_generation = generation;
-	root_tree.br_owner = BTRFS_ROOT_TREE_OBJECTID;
-	root_tree.br_level = sb->root_level;
-	error = btrfs_find_root_item(&root_tree, BTRFS_FS_TREE_OBJECTID,
-	    BTRFS_FIRST_FREE_OBJECTID, &fs_root_item);
-	if (error != 0)
-		goto out;
-	fs_root = letoh64(fs_root_item.bytenr);
-	fs_root_generation = letoh64(fs_root_item.generation);
-	error = btrfs_find_root_item(&root_tree, BTRFS_CSUM_TREE_OBJECTID, 0,
-	    &csum_root_item);
-	if (error != 0)
-		goto out;
-	csum_root = letoh64(csum_root_item.bytenr);
-	csum_root_generation = letoh64(csum_root_item.generation);
-
-	memset(&fs_tree, 0, sizeof(fs_tree));
-	fs_tree.br_devvp = devvp;
-	fs_tree.br_super = sb;
-	fs_tree.br_chunks = chunks;
-	fs_tree.br_nchunks = nchunks;
-	fs_tree.br_bytenr = fs_root;
-	fs_tree.br_generation = fs_root_generation;
-	fs_tree.br_owner = BTRFS_FS_TREE_OBJECTID;
-	fs_tree.br_level = fs_root_item.level;
-	error = btrfs_find_inode_item(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
-	    &inode_item);
-	if (error != 0)
-		goto out;
-
-	error = btrfs_iterate_directory(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
-	    NULL, NULL);
-	if (error != 0)
-		goto out;
+		candidates[best].bsc_tried = 1;
+		sb = &candidates[best].bsc_super;
+		error = btrfs_check_super_policy(sb, readonly);
+		if (error != 0) {
+			mirrors[best].bsm_error = error;
+			goto out;
+		}
+		error = btrfs_bootstrap_super(devvp, sb, readonly, &bootstrap);
+		if (error == 0) {
+			selected = best;
+			break;
+		}
+		mirrors[best].bsm_error = error;
+		last_error = error;
+		if (error == EOPNOTSUPP || error == ENOMEM)
+			goto out;
+	}
+	sb = &candidates[selected].bsc_super;
+	selected_generation = mirrors[selected].bsm_generation;
+	mirrors[selected].bsm_flags |= BTRFS_SUPER_MIRROR_CONSISTENT |
+	    BTRFS_SUPER_MIRROR_SELECTED;
+	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+		if ((mirrors[i].bsm_flags &
+		    (BTRFS_SUPER_MIRROR_VALID | BTRFS_SUPER_MIRROR_FOREIGN)) ==
+		    BTRFS_SUPER_MIRROR_VALID &&
+		    mirrors[i].bsm_generation < selected_generation)
+			mirrors[i].bsm_flags |= BTRFS_SUPER_MIRROR_STALE;
+	}
 
 	bmp = malloc(sizeof(*bmp), M_BTRFS, M_WAITOK | M_ZERO);
 	bmp->bm_mount = mp;
 	bmp->bm_devvp = devvp;
 	bmp->bm_dev = devvp->v_rdev;
 	memcpy(&bmp->bm_super, sb, sizeof(bmp->bm_super));
-	bmp->bm_chunks = chunks;
-	bmp->bm_nchunks = nchunks;
+	memcpy(bmp->bm_super_mirrors, mirrors, sizeof(mirrors));
+	bmp->bm_selected_super = selected;
+	/*
+	 * Backup roots are retained for diagnostics only.  Recovery must
+	 * roll the tree and chunk roots back as one coordinated operation.
+	 */
+	bmp->bm_backup_roots_valid = btrfs_validate_backup_roots(sb);
+	bmp->bm_seeding =
+	    (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING) != 0;
+	bmp->bm_subvol_readonly =
+	    (bootstrap.bb_fs_root_flags & BTRFS_ROOT_SUBVOL_RDONLY) != 0;
+	bmp->bm_chunks = bootstrap.bb_chunks;
+	bmp->bm_nchunks = bootstrap.bb_nchunks;
 	bmp->bm_treeid = BTRFS_FS_TREE_OBJECTID;
-	bmp->bm_fs_root = fs_root;
-	bmp->bm_fs_root_generation = fs_root_generation;
-	bmp->bm_fs_root_level = fs_root_item.level;
-	bmp->bm_csum_root = csum_root;
-	bmp->bm_csum_root_generation = csum_root_generation;
-	bmp->bm_csum_root_level = csum_root_item.level;
+	bmp->bm_fs_root = bootstrap.bb_fs_root;
+	bmp->bm_fs_root_generation = bootstrap.bb_fs_root_generation;
+	bmp->bm_fs_root_level = bootstrap.bb_fs_root_level;
+	bmp->bm_csum_root = bootstrap.bb_csum_root;
+	bmp->bm_csum_root_generation = bootstrap.bb_csum_root_generation;
+	bmp->bm_csum_root_level = bootstrap.bb_csum_root_level;
 	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
 	LIST_INIT(&bmp->bm_nodes);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
@@ -297,17 +329,16 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	mp->mnt_stat.f_namemax = BTRFS_NAME_MAX;
 	mp->mnt_flag |= MNT_LOCAL;
 	devvp->v_specmountpoint = mp;
-	chunks = NULL;
+	bootstrap.bb_chunks = NULL;
 	mounted = 1;
 	error = 0;
 out:
-	if (system_chunks != NULL)
-		free(system_chunks, M_BTRFS,
-		    nsystem_chunks * sizeof(*system_chunks));
-	if (chunks != NULL)
-		free(chunks, M_BTRFS, nchunks * sizeof(*chunks));
-	if (bp != NULL)
-		brelse(bp);
+	if (bootstrap.bb_chunks != NULL)
+		free(bootstrap.bb_chunks, M_BTRFS,
+		    bootstrap.bb_nchunks * sizeof(*bootstrap.bb_chunks));
+	if (candidates != NULL)
+		free(candidates, M_BTRFS,
+		    BTRFS_SUPER_MIRROR_MAX * sizeof(*candidates));
 	if (!mounted) {
 		if (bmp != NULL)
 			free(bmp, M_BTRFS, sizeof(*bmp));
@@ -513,9 +544,287 @@ again:
 }
 
 static int
+btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
+    struct btrfs_super_candidate *candidates,
+    struct btrfs_super_mirror *mirrors)
+{
+	const struct btrfs_super_block *sb;
+	struct buf *bp;
+	struct partinfo pi;
+	uint64_t media_size = UINT64_MAX, partition_size;
+	unsigned int i, nvalid = 0;
+	int error, result = EINVAL;
+
+	memset(mirrors, 0,
+	    BTRFS_SUPER_MIRROR_MAX * sizeof(*mirrors));
+	if (VOP_IOCTL(devvp, DIOCGPART, &pi, FREAD, FSCRED, p) == 0 &&
+	    pi.disklab->d_secsize != 0) {
+		partition_size = DL_GETPSIZE(pi.part);
+		if (partition_size <= UINT64_MAX / pi.disklab->d_secsize)
+			media_size = partition_size * pi.disklab->d_secsize;
+	}
+	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+		mirrors[i].bsm_bytenr = superblock_addrs[i];
+		if (superblock_addrs[i] > media_size ||
+		    BTRFS_SUPER_SIZE > media_size - superblock_addrs[i]) {
+			mirrors[i].bsm_error = ENXIO;
+			continue;
+		}
+		bp = NULL;
+		error = bread(devvp, superblock_addrs[i] / DEV_BSIZE,
+		    BTRFS_SUPER_SIZE, &bp);
+		if (error == 0 && bp->b_resid != 0)
+			error = EIO;
+		if (error != 0) {
+			mirrors[i].bsm_error = error;
+			if (bp != NULL)
+				brelse(bp);
+			continue;
+		}
+		mirrors[i].bsm_flags |= BTRFS_SUPER_MIRROR_READABLE;
+
+		sb = (const struct btrfs_super_block *)bp->b_data;
+		memcpy(&candidates[i].bsc_super, sb,
+		    sizeof(candidates[i].bsc_super));
+		brelse(bp);
+
+		error = btrfs_validate_super(&candidates[i].bsc_super,
+		    superblock_addrs[i]);
+		mirrors[i].bsm_error = error;
+		if (error != 0) {
+			if (error == EOPNOTSUPP)
+				result = error;
+			continue;
+		}
+		mirrors[i].bsm_flags |= BTRFS_SUPER_MIRROR_VALID;
+		mirrors[i].bsm_generation =
+		    letoh64(candidates[i].bsc_super.generation);
+		nvalid++;
+	}
+
+	return (nvalid == 0 ? result : 0);
+}
+
+static int
+btrfs_super_same_filesystem(const struct btrfs_super_block *a,
+    const struct btrfs_super_block *b)
+{
+	if (memcmp(a->fsid, b->fsid, BTRFS_UUID_SIZE) != 0 ||
+	    letoh64(a->dev_item.devid) != letoh64(b->dev_item.devid) ||
+	    memcmp(a->dev_item.uuid, b->dev_item.uuid,
+	    BTRFS_UUID_SIZE) != 0)
+		return (0);
+	return (1);
+}
+
+static int
+btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
+{
+	uint64_t incompat;
+
+	incompat = letoh64(sb->incompat_flags);
+	if (incompat & ~BTRFS_FEATURE_INCOMPAT_KNOWN)
+		return (EOPNOTSUPP);
+	if (incompat & ~BTRFS_FEATURE_INCOMPAT_SUPPORTED)
+		return (EOPNOTSUPP);
+
+	if (!readonly) {
+		/*
+		 * No compat-ro feature is supported for writes yet.  Unknown
+		 * compat-ro bits are intentionally harmless on read-only
+		 * mounts by the format's definition.
+		 */
+		if (letoh64(sb->compat_ro_flags) &
+		    ~BTRFS_FEATURE_COMPAT_RO_WRITE_SUPPORTED)
+			return (EROFS);
+		if (letoh64(sb->log_root) != 0)
+			return (EROFS);
+		if (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING)
+			return (EROFS);
+	}
+
+	return (0);
+}
+
+static int
+btrfs_bootstrap_super(struct vnode *devvp,
+    const struct btrfs_super_block *sb, int readonly,
+    struct btrfs_bootstrap *bootstrap)
+{
+	struct btrfs_inode_item inode_item;
+	struct btrfs_root_item csum_root_item, fs_root_item;
+	struct btrfs_chunk_map *chunks = NULL;
+	struct btrfs_chunk_map *system_chunks = NULL;
+	struct btrfs_root chunk_tree, csum_tree, fs_tree, root_tree;
+	struct btrfs_io_map map;
+	struct buf *bp = NULL;
+	uint64_t chunk_root, generation, root;
+	uint32_t nodesize;
+	unsigned int nchunks = 0, nsystem_chunks = 0;
+	int error;
+
+	memset(bootstrap, 0, sizeof(*bootstrap));
+	generation = letoh64(sb->generation);
+	nodesize = letoh32(sb->nodesize);
+
+	chunk_root = letoh64(sb->chunk_root);
+	error = btrfs_parse_system_chunks(sb, &system_chunks,
+	    &nsystem_chunks);
+	if (error != 0)
+		goto out;
+	error = btrfs_lookup_logical(system_chunks, nsystem_chunks,
+	    chunk_root, nodesize, &map);
+	if (error != 0)
+		goto out;
+
+	memset(&chunk_tree, 0, sizeof(chunk_tree));
+	chunk_tree.br_devvp = devvp;
+	chunk_tree.br_super = sb;
+	chunk_tree.br_chunks = system_chunks;
+	chunk_tree.br_nchunks = nsystem_chunks;
+	chunk_tree.br_bytenr = chunk_root;
+	chunk_tree.br_generation = letoh64(sb->chunk_root_generation);
+	chunk_tree.br_owner = BTRFS_CHUNK_TREE_OBJECTID;
+	chunk_tree.br_level = sb->chunk_root_level;
+	error = btrfs_load_chunk_tree(&chunk_tree, &map, &chunks, &nchunks);
+	if (error != 0)
+		goto out;
+
+	root = letoh64(sb->root);
+	memset(&root_tree, 0, sizeof(root_tree));
+	root_tree.br_devvp = devvp;
+	root_tree.br_super = sb;
+	root_tree.br_chunks = chunks;
+	root_tree.br_nchunks = nchunks;
+	root_tree.br_bytenr = root;
+	root_tree.br_generation = generation;
+	root_tree.br_owner = BTRFS_ROOT_TREE_OBJECTID;
+	root_tree.br_level = sb->root_level;
+	error = btrfs_find_root_item(&root_tree, BTRFS_FS_TREE_OBJECTID,
+	    BTRFS_FIRST_FREE_OBJECTID, &fs_root_item);
+	if (error != 0)
+		goto out;
+	if (!readonly &&
+	    (letoh64(fs_root_item.flags) & BTRFS_ROOT_SUBVOL_RDONLY)) {
+		error = EROFS;
+		goto out;
+	}
+	error = btrfs_find_root_item(&root_tree, BTRFS_CSUM_TREE_OBJECTID, 0,
+	    &csum_root_item);
+	if (error != 0)
+		goto out;
+
+	memset(&csum_tree, 0, sizeof(csum_tree));
+	csum_tree.br_devvp = devvp;
+	csum_tree.br_super = sb;
+	csum_tree.br_chunks = chunks;
+	csum_tree.br_nchunks = nchunks;
+	csum_tree.br_bytenr = letoh64(csum_root_item.bytenr);
+	csum_tree.br_generation = letoh64(csum_root_item.generation);
+	csum_tree.br_owner = BTRFS_CSUM_TREE_OBJECTID;
+	csum_tree.br_level = csum_root_item.level;
+	error = btrfs_read_root_block(&csum_tree, csum_tree.br_bytenr,
+	    csum_tree.br_generation, csum_tree.br_level, &bp);
+	if (error != 0)
+		goto out;
+	brelse(bp);
+	bp = NULL;
+
+	memset(&fs_tree, 0, sizeof(fs_tree));
+	fs_tree.br_devvp = devvp;
+	fs_tree.br_super = sb;
+	fs_tree.br_chunks = chunks;
+	fs_tree.br_nchunks = nchunks;
+	fs_tree.br_bytenr = letoh64(fs_root_item.bytenr);
+	fs_tree.br_generation = letoh64(fs_root_item.generation);
+	fs_tree.br_owner = BTRFS_FS_TREE_OBJECTID;
+	fs_tree.br_level = fs_root_item.level;
+	error = btrfs_find_inode_item(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
+	    &inode_item);
+	if (error != 0)
+		goto out;
+	error = btrfs_iterate_directory(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
+	    NULL, NULL);
+	if (error != 0)
+		goto out;
+
+	bootstrap->bb_chunks = chunks;
+	bootstrap->bb_nchunks = nchunks;
+	bootstrap->bb_fs_root = letoh64(fs_root_item.bytenr);
+	bootstrap->bb_fs_root_generation =
+	    letoh64(fs_root_item.generation);
+	bootstrap->bb_fs_root_flags = letoh64(fs_root_item.flags);
+	bootstrap->bb_fs_root_level = fs_root_item.level;
+	bootstrap->bb_csum_root = letoh64(csum_root_item.bytenr);
+	bootstrap->bb_csum_root_generation =
+	    letoh64(csum_root_item.generation);
+	bootstrap->bb_csum_root_level = csum_root_item.level;
+	chunks = NULL;
+	error = 0;
+out:
+	if (bp != NULL)
+		brelse(bp);
+	if (system_chunks != NULL)
+		free(system_chunks, M_BTRFS,
+		    nsystem_chunks * sizeof(*system_chunks));
+	if (chunks != NULL)
+		free(chunks, M_BTRFS, nchunks * sizeof(*chunks));
+	return (error);
+}
+
+static uint8_t
+btrfs_validate_backup_roots(const struct btrfs_super_block *sb)
+{
+	const struct btrfs_root_backup *backup;
+	uint64_t bytes_used, generation, num_devices, total_bytes;
+	uint32_t sectorsize;
+	uint8_t valid = 0;
+	unsigned int i;
+
+	sectorsize = letoh32(sb->sectorsize);
+	for (i = 0; i < BTRFS_NUM_BACKUP_ROOTS; i++) {
+		backup = &sb->super_roots[i];
+		generation = letoh64(backup->tree_root_gen);
+		total_bytes = letoh64(backup->total_bytes);
+		bytes_used = letoh64(backup->bytes_used);
+		num_devices = letoh64(backup->num_devices);
+
+		if (generation == 0 ||
+		    generation > letoh64(sb->generation) ||
+		    letoh64(backup->chunk_root_gen) == 0 ||
+		    letoh64(backup->chunk_root_gen) >
+		    letoh64(sb->generation) ||
+		    letoh64(backup->fs_root_gen) == 0 ||
+		    letoh64(backup->fs_root_gen) > letoh64(sb->generation) ||
+		    letoh64(backup->csum_root_gen) == 0 ||
+		    letoh64(backup->csum_root_gen) >
+		    letoh64(sb->generation) ||
+		    letoh64(backup->tree_root) == 0 ||
+		    (letoh64(backup->tree_root) & (sectorsize - 1)) != 0 ||
+		    letoh64(backup->chunk_root) == 0 ||
+		    (letoh64(backup->chunk_root) & (sectorsize - 1)) != 0 ||
+		    letoh64(backup->fs_root) == 0 ||
+		    (letoh64(backup->fs_root) & (sectorsize - 1)) != 0 ||
+		    letoh64(backup->csum_root) == 0 ||
+		    (letoh64(backup->csum_root) & (sectorsize - 1)) != 0 ||
+		    backup->tree_root_level >= BTRFS_MAX_LEVEL ||
+		    backup->chunk_root_level >= BTRFS_MAX_LEVEL ||
+		    backup->fs_root_level >= BTRFS_MAX_LEVEL ||
+		    backup->csum_root_level >= BTRFS_MAX_LEVEL ||
+		    total_bytes == 0 || bytes_used > total_bytes ||
+		    num_devices != 1)
+			continue;
+		valid |= 1U << i;
+	}
+
+	return (valid);
+}
+
+static int
 btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 {
-	uint64_t bytes_used, chunk_root, root, total_bytes;
+	uint64_t bytes_used, chunk_generation, chunk_root, generation;
+	uint64_t log_root, root, total_bytes;
 	uint32_t csum, disk_csum, nodesize, sectorsize;
 
 	if (letoh64(sb->magic) != BTRFS_MAGIC)
@@ -556,11 +865,23 @@ btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 		return (EINVAL);
 	if (letoh64(sb->num_devices) != 1)
 		return (EOPNOTSUPP);
+	if (letoh64(sb->dev_item.total_bytes) > total_bytes ||
+	    letoh64(sb->dev_item.bytes_used) >
+	    letoh64(sb->dev_item.total_bytes) ||
+	    letoh32(sb->dev_item.sector_size) != sectorsize)
+		return (EINVAL);
 
+	generation = letoh64(sb->generation);
+	chunk_generation = letoh64(sb->chunk_root_generation);
 	root = letoh64(sb->root);
 	chunk_root = letoh64(sb->chunk_root);
-	if (root == 0 || (root & (sectorsize - 1)) != 0 ||
+	log_root = letoh64(sb->log_root);
+	if (generation == 0 || chunk_generation == 0 ||
+	    chunk_generation > generation ||
+	    root == 0 || (root & (sectorsize - 1)) != 0 ||
 	    chunk_root == 0 || (chunk_root & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	if (log_root != 0 && (log_root & (sectorsize - 1)) != 0)
 		return (EINVAL);
 
 	if (memcmp(sb->fsid, sb->dev_item.fsid, BTRFS_UUID_SIZE) != 0)
@@ -1611,7 +1932,7 @@ btrfs_validate_tree_block(const struct btrfs_super_block *sb,
 		return (EINVAL);
 
 	nritems = letoh32(header->nritems);
-	if (nritems == 0)
+	if (level != 0 && nritems == 0)
 		return (EINVAL);
 
 	if (level == 0) {
