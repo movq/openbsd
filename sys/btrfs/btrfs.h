@@ -166,6 +166,13 @@ static const uint64_t superblock_addrs[BTRFS_SUPER_MIRROR_MAX] = {
     BTRFS_FEATURE_INCOMPAT_METADATA_UUID |		\
     BTRFS_FEATURE_INCOMPAT_SIMPLE_QUOTA)
 
+/*
+ * Features which can be maintained by the write path.  Keep this separate
+ * from the read mask: being able to decode a feature does not imply that all
+ * of its transactional accounting can be updated safely.
+ */
+#define BTRFS_FEATURE_INCOMPAT_WRITE_SUPPORTED	0
+
 #define BTRFS_SUPER_FLAG_SEEDING   0x100000000
 
 #define BTRFS_CSUM_TYPE_CRC32         0

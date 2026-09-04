@@ -178,6 +178,13 @@ btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 	}
 
 	if (!readonly) {
+		unsupported =
+		    incompat & ~BTRFS_FEATURE_INCOMPAT_WRITE_SUPPORTED;
+		if (unsupported != 0) {
+			printf("btrfs: unsupported write incompat features "
+			    "0x%llx\n", (unsigned long long)unsupported);
+			return (EOPNOTSUPP);
+		}
 		/*
 		 * No compat-ro feature is supported for writes yet.  Unknown
 		 * compat-ro bits are intentionally harmless on read-only
