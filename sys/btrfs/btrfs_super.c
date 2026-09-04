@@ -59,8 +59,6 @@ static int	btrfs_decode_chunk(const struct btrfs_super_block *,
 static int	btrfs_load_chunk_tree(struct btrfs_root *,
 		    const struct btrfs_io_map *,
 		    struct btrfs_chunk_map **, unsigned int *);
-static int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
-		    struct btrfs_root_item *);
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
@@ -685,7 +683,7 @@ fail:
 	return (error);
 }
 
-static int
+int
 btrfs_find_root_item(struct btrfs_root *root, uint64_t objectid,
     uint64_t root_dirid, struct btrfs_root_item *result)
 {

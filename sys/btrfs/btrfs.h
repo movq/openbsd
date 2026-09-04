@@ -488,6 +488,9 @@ struct btrfs_root_ref {
     uint16_t name_len;
 } __packed;
 
+_Static_assert(sizeof(struct btrfs_root_ref) == 0x12,
+    "btrfs_root_ref has wrong size");
+
 struct btrfs_dev_extent {
     uint64_t chunk_tree;
     uint64_t chunk_objectid;

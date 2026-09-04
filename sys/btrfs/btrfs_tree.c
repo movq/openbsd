@@ -143,17 +143,50 @@ btrfs_read_root_block(const struct btrfs_root *root, uint64_t logical,
 }
 
 void
-btrfs_init_fs_root(struct btrfs_mount *bmp, struct btrfs_root *root)
+btrfs_init_root_tree(struct btrfs_mount *bmp, struct btrfs_root *root)
 {
 	memset(root, 0, sizeof(*root));
 	root->br_devvp = bmp->bm_devvp;
 	root->br_super = &bmp->bm_super;
 	root->br_chunks = bmp->bm_chunks;
 	root->br_nchunks = bmp->bm_nchunks;
-	root->br_bytenr = bmp->bm_fs_root;
-	root->br_generation = bmp->bm_fs_root_generation;
-	root->br_owner = bmp->bm_treeid;
-	root->br_level = bmp->bm_fs_root_level;
+	root->br_bytenr = letoh64(bmp->bm_super.root);
+	root->br_generation = letoh64(bmp->bm_super.generation);
+	root->br_owner = BTRFS_ROOT_TREE_OBJECTID;
+	root->br_level = bmp->bm_super.root_level;
+}
+
+int
+btrfs_init_fs_root(struct btrfs_mount *bmp, uint64_t treeid,
+    struct btrfs_root *root)
+{
+	struct btrfs_root_item item;
+	struct btrfs_root root_tree;
+	int error;
+
+	memset(root, 0, sizeof(*root));
+	root->br_devvp = bmp->bm_devvp;
+	root->br_super = &bmp->bm_super;
+	root->br_chunks = bmp->bm_chunks;
+	root->br_nchunks = bmp->bm_nchunks;
+	root->br_owner = treeid;
+
+	if (treeid == bmp->bm_treeid) {
+		root->br_bytenr = bmp->bm_fs_root;
+		root->br_generation = bmp->bm_fs_root_generation;
+		root->br_level = bmp->bm_fs_root_level;
+		return (0);
+	}
+
+	btrfs_init_root_tree(bmp, &root_tree);
+	error = btrfs_find_root_item(&root_tree, treeid,
+	    BTRFS_FIRST_FREE_OBJECTID, &item);
+	if (error != 0)
+		return (error);
+	root->br_bytenr = letoh64(item.bytenr);
+	root->br_generation = letoh64(item.generation);
+	root->br_level = item.level;
+	return (0);
 }
 
 void
