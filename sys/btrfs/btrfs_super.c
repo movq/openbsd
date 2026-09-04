@@ -217,7 +217,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	struct btrfs_root_location extent_root = { 0 };
 	struct btrfs_root_location free_space_root = { 0 };
 	struct btrfs_io_map map;
-	struct buf *bp = NULL;
+	struct btrfs_extent_buffer *eb = NULL;
 	const struct btrfs_header *header;
 	uint8_t chunk_tree_uuid[BTRFS_UUID_SIZE];
 	uint64_t chunk_root, generation, root;
@@ -250,16 +250,16 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	chunk_tree.br_view_generation = generation;
 	chunk_tree.br_owner = BTRFS_CHUNK_TREE_OBJECTID;
 	chunk_tree.br_level = sb->chunk_root_level;
-	error = btrfs_read_root_block(&chunk_tree, chunk_tree.br_bytenr,
+	error = btrfs_extent_buffer_read(&chunk_tree, chunk_tree.br_bytenr,
 	    chunk_tree.br_generation, chunk_tree.br_view_generation,
-	    chunk_tree.br_level, &bp);
+	    chunk_tree.br_level, &eb);
 	if (error != 0)
 		goto out;
-	header = (const struct btrfs_header *)bp->b_data;
+	header = btrfs_extent_buffer_data(eb);
 	memcpy(chunk_tree_uuid, header->chunk_tree_uuid,
 	    sizeof(chunk_tree_uuid));
-	brelse(bp);
-	bp = NULL;
+	btrfs_extent_buffer_put(eb);
+	eb = NULL;
 	error = btrfs_load_chunk_tree(&chunk_tree, &map, &chunks, &nchunks);
 	if (error != 0)
 		goto out;
@@ -321,13 +321,13 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	csum_tree.br_view_generation = generation;
 	csum_tree.br_owner = BTRFS_CSUM_TREE_OBJECTID;
 	csum_tree.br_level = csum_root_item.level;
-	error = btrfs_read_root_block(&csum_tree, csum_tree.br_bytenr,
+	error = btrfs_extent_buffer_read(&csum_tree, csum_tree.br_bytenr,
 	    csum_tree.br_generation, csum_tree.br_view_generation,
-	    csum_tree.br_level, &bp);
+	    csum_tree.br_level, &eb);
 	if (error != 0)
 		goto out;
-	brelse(bp);
-	bp = NULL;
+	btrfs_extent_buffer_put(eb);
+	eb = NULL;
 
 	memset(&fs_tree, 0, sizeof(fs_tree));
 	fs_tree.br_devvp = devvp;
@@ -368,8 +368,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	chunks = NULL;
 	error = 0;
 out:
-	if (bp != NULL)
-		brelse(bp);
+	if (eb != NULL)
+		btrfs_extent_buffer_put(eb);
 	if (system_chunks != NULL)
 		free(system_chunks, M_BTRFS,
 		    nsystem_chunks * sizeof(*system_chunks));
