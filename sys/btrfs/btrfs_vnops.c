@@ -763,8 +763,8 @@ btrfs_write(void *v)
 	uint64_t file_offset, file_size;
 	uint32_t sectorsize;
 	daddr_t block;
-	off_t move_offset;
-	size_t move_resid, moved, offset, size;
+	off_t move_offset, unit_offset;
+	size_t move_resid, moved, offset, resid, size;
 	ssize_t overrun;
 	int end_error, error = 0, extended = 0, move_error, wrote = 0;
 
@@ -775,8 +775,6 @@ btrfs_write(void *v)
 		return (EINVAL);
 	if (uio->uio_resid == 0)
 		return (0);
-	if (ap->a_ioflag & IO_UNIT)
-		return (EOPNOTSUPP);
 	if ((vp->v_mount->mnt_flag & MNT_RDONLY) ||
 	    bmp->bm_subvol_readonly ||
 	    node->bn_treeid != bmp->bm_treeid ||
@@ -801,6 +799,8 @@ btrfs_write(void *v)
 	error = vn_fsizechk(vp, uio, ap->a_ioflag, &overrun);
 	if (error != 0)
 		return (error);
+	unit_offset = uio->uio_offset;
+	resid = uio->uio_resid;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	reservation.btr_data = sectorsize;
@@ -886,6 +886,10 @@ btrfs_write(void *v)
 	if (bp != NULL)
 		brelse(bp);
 	free(data, M_BTRFS, sectorsize);
+	if (error != 0 && (ap->a_ioflag & IO_UNIT)) {
+		uio->uio_offset = unit_offset;
+		uio->uio_resid = resid;
+	}
 	uio->uio_resid += overrun;
 	if (wrote)
 		VN_KNOTE(vp, NOTE_WRITE | (extended ? NOTE_EXTEND : 0));
