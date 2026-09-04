@@ -241,6 +241,10 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
 	LIST_INIT(&bmp->bm_nodes);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
+	stage = "building free-space index";
+	error = btrfs_space_init(bmp);
+	if (error != 0)
+		goto out;
 
 	mp->mnt_data = bmp;
 	mp->mnt_stat.f_fsid.val[0] = devvp->v_rdev;
@@ -261,8 +265,12 @@ out:
 	if (!mounted) {
 		printf("btrfs: mount failed while %s: error %d\n", stage,
 		    error);
-		if (bmp != NULL)
+		if (bmp != NULL) {
+			btrfs_space_destroy(bmp);
+			KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
+			btrfs_free_roots(bmp);
 			free(bmp, M_BTRFS, sizeof(*bmp));
+		}
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 		(void)VOP_CLOSE(devvp, FREAD, FSCRED, p);
 		VOP_UNLOCK(devvp);
@@ -290,6 +298,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 		return (error);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
 	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
+	btrfs_space_destroy(bmp);
 	btrfs_free_roots(bmp);
 
 	devvp->v_specmountpoint = NULL;

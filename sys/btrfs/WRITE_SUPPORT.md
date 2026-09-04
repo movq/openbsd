@@ -68,9 +68,13 @@ This physical cache is not, by itself, enough for writes:
   clear while the filesystem is read-only; mutation and writeback still need
   to connect them to transaction ownership.
 
-The allocation iterators in `btrfs_alloc.c` provide useful validation and
-decoding, but there is no in-memory free-space index, reservation mechanism, or
-delayed-reference machinery yet.
+Allocation-tree decoding and validation is isolated in `btrfs_disk.c`.
+`btrfs_alloc.c` constructs a mount-owned, per-block-group free-space index by
+subtracting every allocated extent from the existing block-group ranges.  The
+mount scan rejects overlapping extents and reconciles each block group's used
+bytes, as well as their total, with the selected superblock.  Reservation,
+allocation, pinning, and delayed-reference operations do not consume or update
+the index yet.
 
 ## Initial writable format
 
@@ -431,8 +435,10 @@ The following changes are useful before enabling writable mounts:
   buffers, then implement vnode-buffer reads before writes.  Logical buffers
   are one filesystem sector so they align with data checksums and the minimum
   COW unit.
-* Split `btrfs_alloc.c` decoders from mutable allocator code and construct
-  per-block-group free-space indexes at mount.
+* Completed: split allocation-tree decoders from mutable allocator code and
+  construct per-block-group free-space indexes at mount.  The indexes retain
+  separate committed-used, free, reserved, transaction-allocated, and pinned
+  accounting in preparation for reservations.
 * Completed: centralize logical-to-physical read submission.  Metadata and
   data now use one SINGLE/DUP mirror loop, with caller validation participating
   in failover and optional per-mirror error reporting.
@@ -453,9 +459,10 @@ in place.  No writable mount is permitted.
 
 ### 2. Transaction and allocator core
 
-Add transaction handles, reservations, free-space indexes, pinned extents,
-ordered extents, and delayed references.  Exercise them with kernel diagnostics
-or a small in-kernel test harness, but keep the public filesystem read-only.
+Free-space indexes are in place.  Add transaction handles, reservations,
+pinned extents, ordered extents, and delayed references.  Exercise them with
+kernel diagnostics or a small in-kernel test harness, but keep the public
+filesystem read-only.
 
 ### 3. B-tree writer
 
