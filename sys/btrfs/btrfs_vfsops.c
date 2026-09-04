@@ -232,20 +232,11 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	    (bootstrap.bb_fs_root_flags & BTRFS_ROOT_SUBVOL_RDONLY) != 0;
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
-	bmp->bm_extent_root = bootstrap.bb_extent_root;
-	bmp->bm_dev_root = bootstrap.bb_dev_root;
-	bmp->bm_free_space_root = bootstrap.bb_free_space_root;
-	bmp->bm_block_group_root = bootstrap.bb_block_group_root;
 	bmp->bm_treeid = BTRFS_FS_TREE_OBJECTID;
-	bmp->bm_fs_root = bootstrap.bb_fs_root;
-	bmp->bm_fs_root_generation = bootstrap.bb_fs_root_generation;
-	bmp->bm_fs_root_level = bootstrap.bb_fs_root_level;
-	bmp->bm_csum_root = bootstrap.bb_csum_root;
-	bmp->bm_csum_root_generation = bootstrap.bb_csum_root_generation;
-	bmp->bm_csum_root_level = bootstrap.bb_csum_root_level;
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
 	    sizeof(bmp->bm_chunk_tree_uuid));
 	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
+	btrfs_init_roots(bmp, &bootstrap);
 	LIST_INIT(&bmp->bm_extent_buffers);
 	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
 	LIST_INIT(&bmp->bm_nodes);
@@ -299,6 +290,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 		return (error);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
 	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
+	btrfs_free_roots(bmp);
 
 	devvp->v_specmountpoint = NULL;
 	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
@@ -428,7 +420,7 @@ btrfs_vget_tree(struct mount *mp, uint64_t treeid, uint64_t ino,
     struct vnode **vpp)
 {
 	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	struct btrfs_inode_item inode;
 	struct btrfs_node *node;
 	struct vnode *vp;
@@ -444,10 +436,10 @@ again:
 	if (error != 0 || *vpp != NULL)
 		return (error);
 
-	error = btrfs_init_fs_root(bmp, treeid, &root);
+	error = btrfs_get_root(bmp, treeid, &root);
 	if (error != 0)
 		return (error);
-	error = btrfs_find_inode_item(&root, ino, &inode);
+	error = btrfs_find_inode_item(root, ino, &inode);
 	if (error != 0)
 		return (error);
 	type = IFTOVT(letoh32(inode.mode));

@@ -175,16 +175,19 @@ struct buf;
 struct btrfs_extent_buffer;
 struct btrfs_mount;
 struct btrfs_node;
+struct btrfs_root_entry;
 struct proc;
 struct vnode;
 LIST_HEAD(btrfs_extent_buffer_list, btrfs_extent_buffer);
 LIST_HEAD(btrfs_node_list, btrfs_node);
+LIST_HEAD(btrfs_root_list, btrfs_root_entry);
 
 struct btrfs_root {
 	struct btrfs_mount		*br_mount;
 	struct vnode			*br_devvp;
 	const struct btrfs_super_block	*br_super;
 	const struct btrfs_chunk_map	*br_chunks;
+	struct rwlock			*br_lock;
 	unsigned int			 br_nchunks;
 	uint64_t			 br_bytenr;
 	uint64_t			 br_generation;
@@ -192,6 +195,12 @@ struct btrfs_root {
 	uint64_t			 br_view_generation;
 	uint64_t			 br_owner;
 	uint8_t				 br_level;
+};
+
+struct btrfs_root_entry {
+	LIST_ENTRY(btrfs_root_entry)	 bre_entry;
+	struct rwlock			 bre_lock;
+	struct btrfs_root		 bre_root;
 };
 
 struct btrfs_extent_buffer {
@@ -213,6 +222,8 @@ struct btrfs_path {
 	struct btrfs_extent_buffer
 				*bp_eb[BTRFS_MAX_LEVEL];
 	uint32_t		 bp_slot[BTRFS_MAX_LEVEL];
+	uint64_t		 bp_view_generation;
+	uint8_t			 bp_level;
 };
 
 #define BTRFS_SUPER_MIRROR_READABLE	0x01
@@ -264,19 +275,11 @@ struct btrfs_mount {
 	uint8_t				 bm_subvol_readonly;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
-	struct btrfs_root_location	 bm_extent_root;
-	struct btrfs_root_location	 bm_dev_root;
-	struct btrfs_root_location	 bm_free_space_root;
-	struct btrfs_root_location	 bm_block_group_root;
 	uint64_t			 bm_treeid;
-	uint64_t			 bm_fs_root;
-	uint64_t			 bm_fs_root_generation;
-	uint64_t			 bm_csum_root;
-	uint64_t			 bm_csum_root_generation;
 	uint64_t			 bm_root_dirid;
-	uint8_t				 bm_fs_root_level;
-	uint8_t				 bm_csum_root_level;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
+	struct btrfs_root_list		 bm_roots;
+	struct mutex			 bm_rootmtx;
 	struct btrfs_extent_buffer_list	 bm_extent_buffers;
 	struct mutex			 bm_ebmtx;
 	struct btrfs_node_list		 bm_nodes;
@@ -307,12 +310,9 @@ int	btrfs_check_super_policy(const struct btrfs_super_block *, int);
 int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
 	    int, struct btrfs_bootstrap *);
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
-void	btrfs_init_root_tree(struct btrfs_mount *, struct btrfs_root *);
-int	btrfs_init_fs_root(struct btrfs_mount *, uint64_t,
-	    struct btrfs_root *);
-void	btrfs_init_csum_root(struct btrfs_mount *, struct btrfs_root *);
-int	btrfs_init_special_root(struct btrfs_mount *, uint64_t,
-	    struct btrfs_root *);
+void	btrfs_init_roots(struct btrfs_mount *, const struct btrfs_bootstrap *);
+void	btrfs_free_roots(struct btrfs_mount *);
+int	btrfs_get_root(struct btrfs_mount *, uint64_t, struct btrfs_root **);
 int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
 	    struct btrfs_root_item *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,

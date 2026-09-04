@@ -26,6 +26,7 @@
 #include <sys/buf.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
+#include <sys/malloc.h>
 #include <sys/vnode.h>
 
 #include <lib/libkern/crc32c.h>
@@ -34,6 +35,13 @@
 
 static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
+static void	btrfs_root_init(struct btrfs_mount *, struct btrfs_root *,
+		    struct rwlock *, uint64_t,
+		    const struct btrfs_root_location *);
+static struct btrfs_root *
+		btrfs_root_lookup(struct btrfs_mount *, uint64_t);
+static void	btrfs_root_insert(struct btrfs_mount *, uint64_t,
+		    const struct btrfs_root_location *);
 static const struct btrfs_key *
 		btrfs_block_key(const struct btrfs_header *, uint32_t);
 static int	btrfs_read_child(struct btrfs_path *, uint8_t, uint32_t,
@@ -86,125 +94,155 @@ btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
 	return (ENOENT);
 }
 
-void
-btrfs_init_root_tree(struct btrfs_mount *bmp, struct btrfs_root *root)
+static void
+btrfs_root_init(struct btrfs_mount *bmp, struct btrfs_root *root,
+    struct rwlock *lock, uint64_t owner,
+    const struct btrfs_root_location *location)
 {
 	memset(root, 0, sizeof(*root));
 	root->br_mount = bmp;
 	root->br_devvp = bmp->bm_devvp;
 	root->br_super = &bmp->bm_super;
 	root->br_chunks = bmp->bm_chunks;
+	root->br_lock = lock;
 	root->br_nchunks = bmp->bm_nchunks;
-	root->br_bytenr = letoh64(bmp->bm_super.root);
-	root->br_generation = letoh64(bmp->bm_super.generation);
+	root->br_bytenr = location->brl_bytenr;
+	root->br_generation = location->brl_generation;
 	root->br_view_generation = letoh64(bmp->bm_super.generation);
-	root->br_owner = BTRFS_ROOT_TREE_OBJECTID;
-	root->br_level = bmp->bm_super.root_level;
+	root->br_owner = owner;
+	root->br_level = location->brl_level;
+}
+
+static struct btrfs_root *
+btrfs_root_lookup(struct btrfs_mount *bmp, uint64_t owner)
+{
+	struct btrfs_root_entry *entry;
+	struct btrfs_root *root = NULL;
+
+	mtx_enter(&bmp->bm_rootmtx);
+	LIST_FOREACH(entry, &bmp->bm_roots, bre_entry) {
+		if (entry->bre_root.br_owner == owner) {
+			root = &entry->bre_root;
+			break;
+		}
+	}
+	mtx_leave(&bmp->bm_rootmtx);
+	return (root);
+}
+
+static void
+btrfs_root_insert(struct btrfs_mount *bmp, uint64_t owner,
+    const struct btrfs_root_location *location)
+{
+	struct btrfs_root_entry *entry;
+
+	if (location->brl_bytenr == 0)
+		return;
+	entry = malloc(sizeof(*entry), M_BTRFS, M_WAITOK | M_ZERO);
+	rw_init_flags(&entry->bre_lock, "btrfsroot", RWL_DUPOK);
+	btrfs_root_init(bmp, &entry->bre_root, &entry->bre_lock, owner,
+	    location);
+	LIST_INSERT_HEAD(&bmp->bm_roots, entry, bre_entry);
+}
+
+void
+btrfs_init_roots(struct btrfs_mount *bmp,
+    const struct btrfs_bootstrap *bootstrap)
+{
+	struct btrfs_root_location location;
+
+	LIST_INIT(&bmp->bm_roots);
+	mtx_init(&bmp->bm_rootmtx, IPL_NONE);
+
+	location.brl_bytenr = letoh64(bmp->bm_super.root);
+	location.brl_generation = letoh64(bmp->bm_super.generation);
+	location.brl_level = bmp->bm_super.root_level;
+	btrfs_root_insert(bmp, BTRFS_ROOT_TREE_OBJECTID, &location);
+
+	location.brl_bytenr = letoh64(bmp->bm_super.chunk_root);
+	location.brl_generation =
+	    letoh64(bmp->bm_super.chunk_root_generation);
+	location.brl_level = bmp->bm_super.chunk_root_level;
+	btrfs_root_insert(bmp, BTRFS_CHUNK_TREE_OBJECTID, &location);
+
+	location.brl_bytenr = bootstrap->bb_fs_root;
+	location.brl_generation = bootstrap->bb_fs_root_generation;
+	location.brl_level = bootstrap->bb_fs_root_level;
+	btrfs_root_insert(bmp, bmp->bm_treeid, &location);
+
+	location.brl_bytenr = bootstrap->bb_csum_root;
+	location.brl_generation = bootstrap->bb_csum_root_generation;
+	location.brl_level = bootstrap->bb_csum_root_level;
+	btrfs_root_insert(bmp, BTRFS_CSUM_TREE_OBJECTID, &location);
+
+	btrfs_root_insert(bmp, BTRFS_EXTENT_TREE_OBJECTID,
+	    &bootstrap->bb_extent_root);
+	btrfs_root_insert(bmp, BTRFS_DEV_TREE_OBJECTID,
+	    &bootstrap->bb_dev_root);
+	btrfs_root_insert(bmp, BTRFS_FREE_SPACE_TREE_OBJECTID,
+	    &bootstrap->bb_free_space_root);
+	btrfs_root_insert(bmp, BTRFS_BLOCK_GROUP_TREE_OBJECTID,
+	    &bootstrap->bb_block_group_root);
+}
+
+void
+btrfs_free_roots(struct btrfs_mount *bmp)
+{
+	struct btrfs_root_entry *entry;
+
+	while ((entry = LIST_FIRST(&bmp->bm_roots)) != NULL) {
+		LIST_REMOVE(entry, bre_entry);
+		rw_assert_unlocked(&entry->bre_lock);
+		free(entry, M_BTRFS, sizeof(*entry));
+	}
 }
 
 int
-btrfs_init_fs_root(struct btrfs_mount *bmp, uint64_t treeid,
-    struct btrfs_root *root)
+btrfs_get_root(struct btrfs_mount *bmp, uint64_t owner,
+    struct btrfs_root **rootp)
 {
 	struct btrfs_root_item item;
-	struct btrfs_root root_tree;
+	struct btrfs_root_location location;
+	struct btrfs_root_entry *entry, *new;
+	struct btrfs_root *root, *root_tree;
 	int error;
 
-	memset(root, 0, sizeof(*root));
-	root->br_mount = bmp;
-	root->br_devvp = bmp->bm_devvp;
-	root->br_super = &bmp->bm_super;
-	root->br_chunks = bmp->bm_chunks;
-	root->br_nchunks = bmp->bm_nchunks;
-	root->br_view_generation = letoh64(bmp->bm_super.generation);
-	root->br_owner = treeid;
-
-	if (treeid == bmp->bm_treeid) {
-		root->br_bytenr = bmp->bm_fs_root;
-		root->br_generation = bmp->bm_fs_root_generation;
-		root->br_level = bmp->bm_fs_root_level;
+	*rootp = NULL;
+	root = btrfs_root_lookup(bmp, owner);
+	if (root != NULL) {
+		*rootp = root;
 		return (0);
 	}
 
-	btrfs_init_root_tree(bmp, &root_tree);
-	error = btrfs_find_root_item(&root_tree, treeid,
+	root_tree = btrfs_root_lookup(bmp, BTRFS_ROOT_TREE_OBJECTID);
+	KASSERT(root_tree != NULL);
+	error = btrfs_find_root_item(root_tree, owner,
 	    BTRFS_FIRST_FREE_OBJECTID, &item);
 	if (error != 0)
 		return (error);
-	root->br_bytenr = letoh64(item.bytenr);
-	root->br_generation = letoh64(item.generation);
-	root->br_level = item.level;
-	return (0);
-}
+	location.brl_bytenr = letoh64(item.bytenr);
+	location.brl_generation = letoh64(item.generation);
+	location.brl_level = item.level;
 
-void
-btrfs_init_csum_root(struct btrfs_mount *bmp, struct btrfs_root *root)
-{
-	memset(root, 0, sizeof(*root));
-	root->br_mount = bmp;
-	root->br_devvp = bmp->bm_devvp;
-	root->br_super = &bmp->bm_super;
-	root->br_chunks = bmp->bm_chunks;
-	root->br_nchunks = bmp->bm_nchunks;
-	root->br_bytenr = bmp->bm_csum_root;
-	root->br_generation = bmp->bm_csum_root_generation;
-	root->br_view_generation = letoh64(bmp->bm_super.generation);
-	root->br_owner = BTRFS_CSUM_TREE_OBJECTID;
-	root->br_level = bmp->bm_csum_root_level;
-}
-
-int
-btrfs_init_special_root(struct btrfs_mount *bmp, uint64_t owner,
-    struct btrfs_root *root)
-{
-	const struct btrfs_root_location *location;
-
-	location = NULL;
-	switch (owner) {
-	case BTRFS_ROOT_TREE_OBJECTID:
-		btrfs_init_root_tree(bmp, root);
-		return (0);
-	case BTRFS_CHUNK_TREE_OBJECTID:
-		memset(root, 0, sizeof(*root));
-		root->br_bytenr = letoh64(bmp->bm_super.chunk_root);
-		root->br_generation =
-		    letoh64(bmp->bm_super.chunk_root_generation);
-		root->br_level = bmp->bm_super.chunk_root_level;
-		break;
-	case BTRFS_CSUM_TREE_OBJECTID:
-		btrfs_init_csum_root(bmp, root);
-		return (0);
-	case BTRFS_EXTENT_TREE_OBJECTID:
-		location = &bmp->bm_extent_root;
-		break;
-	case BTRFS_DEV_TREE_OBJECTID:
-		location = &bmp->bm_dev_root;
-		break;
-	case BTRFS_FREE_SPACE_TREE_OBJECTID:
-		location = &bmp->bm_free_space_root;
-		break;
-	case BTRFS_BLOCK_GROUP_TREE_OBJECTID:
-		location = &bmp->bm_block_group_root;
-		break;
-	default:
-		return (EINVAL);
+	new = malloc(sizeof(*new), M_BTRFS, M_WAITOK | M_ZERO);
+	rw_init_flags(&new->bre_lock, "btrfsroot", RWL_DUPOK);
+	btrfs_root_init(bmp, &new->bre_root, &new->bre_lock, owner,
+	    &location);
+	mtx_enter(&bmp->bm_rootmtx);
+	LIST_FOREACH(entry, &bmp->bm_roots, bre_entry) {
+		if (entry->bre_root.br_owner == owner)
+			break;
 	}
-
-	if (owner != BTRFS_CHUNK_TREE_OBJECTID) {
-		if (location->brl_bytenr == 0)
-			return (ENOENT);
-		memset(root, 0, sizeof(*root));
-		root->br_bytenr = location->brl_bytenr;
-		root->br_generation = location->brl_generation;
-		root->br_level = location->brl_level;
+	if (entry == NULL) {
+		LIST_INSERT_HEAD(&bmp->bm_roots, new, bre_entry);
+		entry = new;
+		new = NULL;
 	}
-	root->br_mount = bmp;
-	root->br_devvp = bmp->bm_devvp;
-	root->br_super = &bmp->bm_super;
-	root->br_chunks = bmp->bm_chunks;
-	root->br_nchunks = bmp->bm_nchunks;
-	root->br_view_generation = letoh64(bmp->bm_super.generation);
-	root->br_owner = owner;
+	root = &entry->bre_root;
+	mtx_leave(&bmp->bm_rootmtx);
+	if (new != NULL)
+		free(new, M_BTRFS, sizeof(*new));
+	*rootp = root;
 	return (0);
 }
 
@@ -238,7 +276,7 @@ btrfs_read_child(struct btrfs_path *path, uint8_t parent_level,
 	ptrs = (const struct btrfs_key_ptr *)(parent + 1);
 	error = btrfs_extent_buffer_read(path->bp_root,
 	    letoh64(ptrs[slot].blockptr), letoh64(ptrs[slot].generation),
-	    path->bp_root->br_view_generation, parent_level - 1, ebp);
+	    path->bp_view_generation, parent_level - 1, ebp);
 	if (error != 0)
 		return (error);
 
@@ -249,7 +287,7 @@ btrfs_read_child(struct btrfs_path *path, uint8_t parent_level,
 	if (slot + 1 < letoh32(parent->nritems))
 		upper = &ptrs[slot + 1].key;
 	for (level = parent_level + 1;
-	    upper == NULL && level <= path->bp_root->br_level; level++) {
+	    upper == NULL && level <= path->bp_level; level++) {
 		ancestor = btrfs_extent_buffer_data(path->bp_eb[level]);
 		ancestor_slot = path->bp_slot[level];
 		if (ancestor_slot + 1 >= letoh32(ancestor->nritems))
@@ -284,6 +322,8 @@ btrfs_release_path(struct btrfs_path *path)
 		path->bp_slot[level] = 0;
 	}
 	path->bp_root = NULL;
+	path->bp_view_generation = 0;
+	path->bp_level = 0;
 #ifdef DIAGNOSTIC
 	for (level = 0; level < BTRFS_MAX_LEVEL; level++)
 		KASSERT(path->bp_eb[level] == NULL);
@@ -297,22 +337,33 @@ btrfs_search_slot(struct btrfs_root *root, const struct btrfs_key *target,
 	const struct btrfs_header *header;
 	const struct btrfs_key_ptr *ptrs;
 	const struct btrfs_item *items;
+	uint64_t bytenr, generation, view_generation;
 	uint32_t high, low, mid, slot;
 	uint8_t level;
 	int cmp, error;
 
 	if (path->bp_root != NULL)
 		btrfs_release_path(path);
-	if (root->br_level >= BTRFS_MAX_LEVEL)
+
+	if (root->br_lock != NULL)
+		rw_enter_read(root->br_lock);
+	bytenr = root->br_bytenr;
+	generation = root->br_generation;
+	view_generation = root->br_view_generation;
+	level = root->br_level;
+	if (root->br_lock != NULL)
+		rw_exit_read(root->br_lock);
+	if (level >= BTRFS_MAX_LEVEL)
 		return (EINVAL);
 	path->bp_root = root;
-	error = btrfs_extent_buffer_read(root, root->br_bytenr,
-	    root->br_generation, root->br_view_generation, root->br_level,
-	    &path->bp_eb[root->br_level]);
+	path->bp_view_generation = view_generation;
+	path->bp_level = level;
+	error = btrfs_extent_buffer_read(root, bytenr, generation,
+	    view_generation, level, &path->bp_eb[level]);
 	if (error != 0)
 		goto fail;
 
-	for (level = root->br_level; level != 0; level--) {
+	for (; level != 0; level--) {
 		header = btrfs_extent_buffer_data(path->bp_eb[level]);
 		ptrs = (const struct btrfs_key_ptr *)(header + 1);
 		low = 0;
@@ -405,7 +456,7 @@ btrfs_next_item(struct btrfs_path *path)
 		return (0);
 	}
 
-	for (level = 1; level <= path->bp_root->br_level; level++) {
+	for (level = 1; level <= path->bp_level; level++) {
 		header = btrfs_extent_buffer_data(path->bp_eb[level]);
 		if (path->bp_slot[level] + 1 >=
 		    letoh32(header->nritems))
@@ -447,7 +498,7 @@ btrfs_prev_item(struct btrfs_path *path)
 		return (0);
 	}
 
-	for (level = 1; level <= path->bp_root->br_level; level++) {
+	for (level = 1; level <= path->bp_level; level++) {
 		if (path->bp_slot[level] == 0)
 			continue;
 		path->bp_slot[level]--;
@@ -513,7 +564,7 @@ btrfs_read_data_csums(struct btrfs_mount *bmp, uint64_t logical,
 	const struct btrfs_key *key;
 	const uint8_t *data;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	struct btrfs_key target;
 	uint64_t cursor, end, item_end, span, start;
 	uint32_t csum, item_size, sectorsize;
@@ -537,10 +588,12 @@ btrfs_read_data_csums(struct btrfs_mount *bmp, uint64_t logical,
 	target.objectid = htole64(BTRFS_EXTENT_CSUM_OBJECTID);
 	target.type = BTRFS_EXTENT_CSUM_KEY;
 	target.offset = htole64(logical);
-	btrfs_init_csum_root(bmp, &root);
-	error = btrfs_search_predecessor(&root, &target, &path);
+	error = btrfs_get_root(bmp, BTRFS_CSUM_TREE_OBJECTID, &root);
+	if (error != 0)
+		return (error);
+	error = btrfs_search_predecessor(root, &target, &path);
 	if (error == ENOENT)
-		error = btrfs_search_lower_bound(&root, &target, &path);
+		error = btrfs_search_lower_bound(root, &target, &path);
 	if (error != 0)
 		goto out;
 
