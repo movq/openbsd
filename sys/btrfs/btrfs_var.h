@@ -180,6 +180,9 @@ struct btrfs_free_extent {
 };
 TAILQ_HEAD(btrfs_free_extent_list, btrfs_free_extent);
 
+struct btrfs_mount;
+struct btrfs_transaction;
+
 struct btrfs_block_group {
 	struct mutex			 bbg_lock;
 	struct btrfs_free_extent_list	 bbg_free_extents;
@@ -194,6 +197,55 @@ struct btrfs_block_group {
 	/* Scratch fields used only while constructing the mount-time index. */
 	uint64_t			 bbg_build_cursor;
 	uint64_t			 bbg_build_used;
+};
+
+struct btrfs_trans_reservation {
+	uint64_t	btr_data;
+	uint64_t	btr_metadata;
+	uint64_t	btr_system;
+};
+
+struct btrfs_reserved_space {
+	TAILQ_ENTRY(btrfs_reserved_space) brs_entry;
+	struct btrfs_block_group		*brs_group;
+	uint64_t			 brs_bytes;
+	uint64_t			 brs_type;
+};
+TAILQ_HEAD(btrfs_reserved_space_list, btrfs_reserved_space);
+
+struct btrfs_trans_extent {
+	TAILQ_ENTRY(btrfs_trans_extent)	 bte_entry;
+	struct btrfs_block_group		*bte_group;
+	uint64_t			 bte_bytenr;
+	uint64_t			 bte_length;
+	uint64_t			 bte_type;
+};
+TAILQ_HEAD(btrfs_trans_extent_list, btrfs_trans_extent);
+
+enum btrfs_trans_state {
+	BTRFS_TRANS_OPEN,
+	BTRFS_TRANS_CLOSING,
+	BTRFS_TRANS_COMMITTING,
+	BTRFS_TRANS_COMMITTED,
+	BTRFS_TRANS_ABORTED
+};
+
+struct btrfs_transaction {
+	struct btrfs_mount		*bt_mount;
+	struct mutex			 bt_lock;
+	struct btrfs_trans_extent_list	 bt_allocated_extents;
+	struct btrfs_trans_extent_list	 bt_pinned_extents;
+	uint64_t			 bt_generation;
+	uint64_t			 bt_allocated_bytes;
+	uint64_t			 bt_pinned_bytes;
+	unsigned int			 bt_writers;
+	int				 bt_error;
+	enum btrfs_trans_state		 bt_state;
+};
+
+struct btrfs_trans_handle {
+	struct btrfs_transaction	*bth_transaction;
+	struct btrfs_reserved_space_list bth_reservations;
 };
 
 typedef int (*btrfs_extent_iter_fn)(const struct btrfs_extent_record *,
@@ -249,7 +301,6 @@ struct btrfs_inode {
 
 struct buf;
 struct btrfs_extent_buffer;
-struct btrfs_mount;
 struct btrfs_node;
 struct btrfs_root_entry;
 struct proc;
@@ -353,6 +404,10 @@ struct btrfs_mount {
 	unsigned int			 bm_nchunks;
 	struct btrfs_block_group	*bm_block_groups;
 	unsigned int			 bm_nblock_groups;
+	struct btrfs_transaction	*bm_transaction;
+	struct mutex			 bm_trans_mtx;
+	uint64_t			 bm_last_transid;
+	int				 bm_committer;
 	uint64_t			 bm_treeid;
 	uint64_t			 bm_root_dirid;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
@@ -442,6 +497,25 @@ int	btrfs_iterate_free_space(struct btrfs_mount *,
 	    btrfs_free_space_iter_fn, void *);
 int	btrfs_space_init(struct btrfs_mount *);
 void	btrfs_space_destroy(struct btrfs_mount *);
+int	btrfs_space_reserve(struct btrfs_trans_handle *,
+	    const struct btrfs_trans_reservation *);
+void	btrfs_space_release(struct btrfs_trans_handle *);
+int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
+	    uint64_t, uint64_t *);
+int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
+void	btrfs_space_commit(struct btrfs_transaction *);
+void	btrfs_space_abort(struct btrfs_transaction *);
+void	btrfs_trans_init(struct btrfs_mount *);
+void	btrfs_trans_destroy(struct btrfs_mount *);
+int	btrfs_trans_join(struct btrfs_mount *,
+	    const struct btrfs_trans_reservation *,
+	    struct btrfs_trans_handle **);
+int	btrfs_trans_end(struct btrfs_trans_handle *);
+void	btrfs_trans_abort(struct btrfs_trans_handle *, int);
+int	btrfs_trans_close(struct btrfs_mount *, uint64_t,
+	    struct btrfs_transaction **);
+int	btrfs_trans_finish(struct btrfs_mount *, struct btrfs_transaction *,
+	    int);
 int	btrfs_read_data_csums(struct btrfs_mount *, uint64_t, uint64_t,
 	    uint32_t *);
 int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);

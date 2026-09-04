@@ -35,6 +35,21 @@ static int	btrfs_space_add_extent(const struct btrfs_extent_record *,
 		    void *);
 static int	btrfs_space_add_free(struct btrfs_block_group *, uint64_t,
 		    uint64_t);
+static int	btrfs_space_check_type(uint64_t);
+static int	btrfs_space_group_matches(const struct btrfs_block_group *,
+		    uint64_t, int);
+static int	btrfs_space_reserve_type(struct btrfs_trans_handle *,
+		    uint64_t, uint64_t);
+static int	btrfs_space_handle_error(struct btrfs_trans_handle *);
+static int	btrfs_space_ranges_overlap(uint64_t, uint64_t, uint64_t,
+		    uint64_t);
+static int	btrfs_space_range_is_free(const struct btrfs_block_group *,
+		    uint64_t, uint64_t);
+static unsigned int
+		btrfs_space_insert_free_locked(struct btrfs_block_group *,
+		    struct btrfs_free_extent *,
+		    struct btrfs_free_extent **);
+static void	btrfs_space_check_group(struct btrfs_block_group *);
 static struct btrfs_block_group *
 		btrfs_space_find_group(struct btrfs_mount *, uint64_t,
 		    uint64_t);
@@ -79,6 +94,154 @@ btrfs_space_add_free(struct btrfs_block_group *group, uint64_t bytenr,
 	TAILQ_INSERT_TAIL(&group->bbg_free_extents, space, bfe_entry);
 	group->bbg_free_bytes += length;
 	return (0);
+}
+
+static int
+btrfs_space_check_type(uint64_t type)
+{
+	const uint64_t types = BTRFS_BLOCK_GROUP_DATA |
+	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM;
+
+	return ((type & types) == type && type != 0 &&
+	    (type & (type - 1)) == 0);
+}
+
+static int
+btrfs_space_group_matches(const struct btrfs_block_group *group,
+    uint64_t type, int mixed)
+{
+	const uint64_t types = BTRFS_BLOCK_GROUP_DATA |
+	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM;
+	uint64_t group_type = group->bbg_flags & types;
+
+	if ((group_type & type) == 0)
+		return (0);
+	return (mixed ? group_type != type : group_type == type);
+}
+
+static int
+btrfs_space_handle_error(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_mount *bmp = trans->bt_mount;
+	int error;
+
+	mtx_enter(&bmp->bm_trans_mtx);
+	error = trans->bt_error;
+	if (error == 0 && trans->bt_state == BTRFS_TRANS_ABORTED)
+		error = EROFS;
+	mtx_leave(&bmp->bm_trans_mtx);
+	return (error);
+}
+
+static int
+btrfs_space_ranges_overlap(uint64_t bytenr1, uint64_t length1,
+    uint64_t bytenr2, uint64_t length2)
+{
+	return (bytenr1 < bytenr2 + length2 &&
+	    bytenr2 < bytenr1 + length1);
+}
+
+static int
+btrfs_space_range_is_free(const struct btrfs_block_group *group,
+    uint64_t bytenr, uint64_t length)
+{
+	const struct btrfs_free_extent *space;
+
+	TAILQ_FOREACH(space, &group->bbg_free_extents, bfe_entry) {
+		if (space->bfe_bytenr >= bytenr + length)
+			break;
+		if (btrfs_space_ranges_overlap(bytenr, length,
+		    space->bfe_bytenr, space->bfe_length))
+			return (1);
+	}
+	return (0);
+}
+
+/*
+ * Insert a returned extent in address order and merge its neighbours.
+ * Removed list nodes are returned to the caller because free() may not be
+ * called while the block-group mutex is held.
+ */
+static unsigned int
+btrfs_space_insert_free_locked(struct btrfs_block_group *group,
+    struct btrfs_free_extent *space, struct btrfs_free_extent **garbage)
+{
+	struct btrfs_free_extent *current, *previous = NULL, *merged;
+	unsigned int ngarbage = 0;
+	uint64_t end;
+
+	MUTEX_ASSERT_LOCKED(&group->bbg_lock);
+	TAILQ_FOREACH(current, &group->bbg_free_extents, bfe_entry) {
+		if (current->bfe_bytenr >= space->bfe_bytenr)
+			break;
+		previous = current;
+	}
+	if (previous != NULL) {
+		end = previous->bfe_bytenr + previous->bfe_length;
+		KASSERT(end <= space->bfe_bytenr);
+	}
+	if (current != NULL)
+		KASSERT(space->bfe_bytenr + space->bfe_length <=
+		    current->bfe_bytenr);
+
+	if (previous != NULL &&
+	    previous->bfe_bytenr + previous->bfe_length ==
+	    space->bfe_bytenr) {
+		previous->bfe_length += space->bfe_length;
+		merged = previous;
+		garbage[ngarbage++] = space;
+	} else {
+		if (current != NULL)
+			TAILQ_INSERT_BEFORE(current, space, bfe_entry);
+		else
+			TAILQ_INSERT_TAIL(&group->bbg_free_extents, space,
+			    bfe_entry);
+		merged = space;
+	}
+	if (current != NULL && current != merged &&
+	    merged->bfe_bytenr + merged->bfe_length ==
+	    current->bfe_bytenr) {
+		merged->bfe_length += current->bfe_length;
+		TAILQ_REMOVE(&group->bbg_free_extents, current, bfe_entry);
+		garbage[ngarbage++] = current;
+	}
+	return (ngarbage);
+}
+
+static void
+btrfs_space_check_group(struct btrfs_block_group *group)
+{
+#ifdef DIAGNOSTIC
+	struct btrfs_free_extent *space;
+	uint64_t end = group->bbg_bytenr, list_bytes = 0;
+
+	MUTEX_ASSERT_LOCKED(&group->bbg_lock);
+	TAILQ_FOREACH(space, &group->bbg_free_extents, bfe_entry) {
+		KASSERT(space->bfe_length != 0);
+		KASSERT(space->bfe_bytenr >= end);
+		KASSERT(space->bfe_bytenr >= group->bbg_bytenr);
+		KASSERT(space->bfe_bytenr - group->bbg_bytenr <=
+		    group->bbg_length);
+		KASSERT(space->bfe_length <= group->bbg_length -
+		    (space->bfe_bytenr - group->bbg_bytenr));
+		KASSERT(list_bytes <= UINT64_MAX - space->bfe_length);
+		list_bytes += space->bfe_length;
+		end = space->bfe_bytenr + space->bfe_length;
+	}
+	KASSERT(group->bbg_free_bytes <= UINT64_MAX -
+	    group->bbg_reserved_bytes);
+	KASSERT(list_bytes == group->bbg_free_bytes +
+	    group->bbg_reserved_bytes);
+	KASSERT(group->bbg_disk_used <= group->bbg_length);
+	KASSERT(group->bbg_allocated_bytes <=
+	    group->bbg_length - group->bbg_disk_used);
+	KASSERT(list_bytes == group->bbg_length -
+	    group->bbg_disk_used - group->bbg_allocated_bytes);
+	KASSERT(group->bbg_pinned_bytes <= group->bbg_disk_used);
+#else
+	(void)group;
+#endif
 }
 
 static int
@@ -188,6 +351,9 @@ btrfs_space_init(struct btrfs_mount *bmp)
 		}
 		group->bbg_build_cursor = 0;
 		group->bbg_build_used = 0;
+		mtx_enter(&group->bbg_lock);
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
 	}
 	if (build.bsb_bytes_used != letoh64(bmp->bm_super.bytes_used)) {
 		error = EINVAL;
@@ -211,6 +377,12 @@ btrfs_space_destroy(struct btrfs_mount *bmp)
 		return;
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
 		group = &bmp->bm_block_groups[i];
+		mtx_enter(&group->bbg_lock);
+		btrfs_space_check_group(group);
+		KASSERT(group->bbg_reserved_bytes == 0);
+		KASSERT(group->bbg_allocated_bytes == 0);
+		KASSERT(group->bbg_pinned_bytes == 0);
+		mtx_leave(&group->bbg_lock);
 		while ((space = TAILQ_FIRST(&group->bbg_free_extents)) != NULL) {
 			TAILQ_REMOVE(&group->bbg_free_extents, space, bfe_entry);
 			free(space, M_BTRFS, sizeof(*space));
@@ -220,4 +392,368 @@ btrfs_space_destroy(struct btrfs_mount *bmp)
 	    bmp->bm_nblock_groups * sizeof(*bmp->bm_block_groups));
 	bmp->bm_block_groups = NULL;
 	bmp->bm_nblock_groups = 0;
+}
+
+static int
+btrfs_space_reserve_type(struct btrfs_trans_handle *handle, uint64_t type,
+    uint64_t bytes)
+{
+	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_reserved_space *reservation;
+	struct btrfs_block_group *group;
+	uint64_t take;
+	unsigned int i;
+	int mixed;
+
+	for (mixed = 0; mixed <= 1 && bytes != 0; mixed++) {
+		for (i = 0; i < bmp->bm_nblock_groups && bytes != 0; i++) {
+			group = &bmp->bm_block_groups[i];
+			if (!btrfs_space_group_matches(group, type, mixed))
+				continue;
+			reservation = malloc(sizeof(*reservation), M_BTRFS,
+			    M_WAITOK | M_ZERO);
+			mtx_enter(&group->bbg_lock);
+			take = MIN(bytes, group->bbg_free_bytes);
+			if (take != 0) {
+				group->bbg_free_bytes -= take;
+				KASSERT(group->bbg_reserved_bytes <=
+				    UINT64_MAX - take);
+				group->bbg_reserved_bytes += take;
+				reservation->brs_group = group;
+				reservation->brs_bytes = take;
+				reservation->brs_type = type;
+				TAILQ_INSERT_TAIL(&handle->bth_reservations,
+				    reservation, brs_entry);
+				bytes -= take;
+			}
+			btrfs_space_check_group(group);
+			mtx_leave(&group->bbg_lock);
+			if (take == 0)
+				free(reservation, M_BTRFS,
+				    sizeof(*reservation));
+		}
+	}
+	return (bytes == 0 ? 0 : ENOSPC);
+}
+
+int
+btrfs_space_reserve(struct btrfs_trans_handle *handle,
+    const struct btrfs_trans_reservation *request)
+{
+	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
+	uint32_t sectorsize;
+	int error;
+
+	if (request == NULL)
+		return (0);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if ((request->btr_data & (sectorsize - 1)) != 0 ||
+	    (request->btr_metadata & (sectorsize - 1)) != 0 ||
+	    (request->btr_system & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	error = btrfs_space_handle_error(handle);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * Protect system and metadata promises before data can consume mixed
+	 * block groups.
+	 */
+	error = btrfs_space_reserve_type(handle, BTRFS_BLOCK_GROUP_SYSTEM,
+	    request->btr_system);
+	if (error == 0)
+		error = btrfs_space_reserve_type(handle,
+		    BTRFS_BLOCK_GROUP_METADATA, request->btr_metadata);
+	if (error == 0)
+		error = btrfs_space_reserve_type(handle,
+		    BTRFS_BLOCK_GROUP_DATA, request->btr_data);
+	if (error != 0)
+		btrfs_space_release(handle);
+	return (error);
+}
+
+void
+btrfs_space_release(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_reserved_space *reservation;
+	struct btrfs_block_group *group;
+
+	while ((reservation = TAILQ_FIRST(&handle->bth_reservations)) !=
+	    NULL) {
+		TAILQ_REMOVE(&handle->bth_reservations, reservation, brs_entry);
+		group = reservation->brs_group;
+		mtx_enter(&group->bbg_lock);
+		KASSERT(group->bbg_reserved_bytes >=
+		    reservation->brs_bytes);
+		KASSERT(group->bbg_free_bytes <= UINT64_MAX -
+		    reservation->brs_bytes);
+		group->bbg_reserved_bytes -= reservation->brs_bytes;
+		group->bbg_free_bytes += reservation->brs_bytes;
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		free(reservation, M_BTRFS, sizeof(*reservation));
+	}
+}
+
+int
+btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
+    uint64_t length, uint64_t alignment, uint64_t *bytenrp)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_reserved_space *reservation;
+	struct btrfs_trans_extent *allocated;
+	struct btrfs_free_extent *space, *split, *removed = NULL;
+	struct btrfs_block_group *group;
+	uint64_t aligned, delta, end, suffix;
+	uint32_t sectorsize;
+	int error;
+
+	if (bytenrp == NULL)
+		return (EINVAL);
+	*bytenrp = 0;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if (!btrfs_space_check_type(type) || length == 0 ||
+	    alignment == 0 || !powerof2(alignment) ||
+	    alignment < sectorsize ||
+	    (length & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	error = btrfs_space_handle_error(handle);
+	if (error != 0)
+		return (error);
+
+	allocated = malloc(sizeof(*allocated), M_BTRFS, M_WAITOK | M_ZERO);
+	split = malloc(sizeof(*split), M_BTRFS, M_WAITOK | M_ZERO);
+	TAILQ_FOREACH(reservation, &handle->bth_reservations, brs_entry) {
+		if (reservation->brs_type != type ||
+		    reservation->brs_bytes < length)
+			continue;
+		group = reservation->brs_group;
+		mtx_enter(&group->bbg_lock);
+		TAILQ_FOREACH(space, &group->bbg_free_extents, bfe_entry) {
+			if (space->bfe_bytenr > UINT64_MAX - (alignment - 1))
+				continue;
+			aligned = (space->bfe_bytenr + alignment - 1) &
+			    ~(alignment - 1);
+			delta = aligned - space->bfe_bytenr;
+			if (delta > space->bfe_length ||
+			    length > space->bfe_length - delta)
+				continue;
+			end = aligned + length;
+			suffix = space->bfe_bytenr + space->bfe_length - end;
+			if (delta != 0 && suffix != 0) {
+				split->bfe_bytenr = end;
+				split->bfe_length = suffix;
+				TAILQ_INSERT_AFTER(&group->bbg_free_extents,
+				    space, split, bfe_entry);
+				space->bfe_length = delta;
+				split = NULL;
+			} else if (delta != 0) {
+				space->bfe_length = delta;
+			} else if (suffix != 0) {
+				space->bfe_bytenr = end;
+				space->bfe_length = suffix;
+			} else {
+				TAILQ_REMOVE(&group->bbg_free_extents, space,
+				    bfe_entry);
+				removed = space;
+			}
+			KASSERT(group->bbg_reserved_bytes >= length);
+			KASSERT(group->bbg_allocated_bytes <=
+			    UINT64_MAX - length);
+			group->bbg_reserved_bytes -= length;
+			group->bbg_allocated_bytes += length;
+			reservation->brs_bytes -= length;
+
+			allocated->bte_group = group;
+			allocated->bte_bytenr = aligned;
+			allocated->bte_length = length;
+			allocated->bte_type = type;
+			mtx_enter(&trans->bt_lock);
+			KASSERT(trans->bt_allocated_bytes <=
+			    UINT64_MAX - length);
+			trans->bt_allocated_bytes += length;
+			TAILQ_INSERT_TAIL(&trans->bt_allocated_extents,
+			    allocated, bte_entry);
+			mtx_leave(&trans->bt_lock);
+			btrfs_space_check_group(group);
+			mtx_leave(&group->bbg_lock);
+
+			if (removed != NULL)
+				free(removed, M_BTRFS, sizeof(*removed));
+			if (split != NULL)
+				free(split, M_BTRFS, sizeof(*split));
+			*bytenrp = aligned;
+			return (0);
+		}
+		mtx_leave(&group->bbg_lock);
+	}
+	free(split, M_BTRFS, sizeof(*split));
+	free(allocated, M_BTRFS, sizeof(*allocated));
+	return (ENOSPC);
+}
+
+int
+btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
+    uint64_t length)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_trans_extent *extent, *pinned;
+	struct btrfs_block_group *group;
+	uint32_t sectorsize;
+	int error = 0;
+
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if (length == 0 || bytenr > UINT64_MAX - length ||
+	    (bytenr & (sectorsize - 1)) != 0 ||
+	    (length & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	error = btrfs_space_handle_error(handle);
+	if (error != 0)
+		return (error);
+	group = btrfs_space_find_group(bmp, bytenr, length);
+	if (group == NULL)
+		return (EINVAL);
+	pinned = malloc(sizeof(*pinned), M_BTRFS, M_WAITOK | M_ZERO);
+
+	mtx_enter(&group->bbg_lock);
+	if (btrfs_space_range_is_free(group, bytenr, length)) {
+		error = EINVAL;
+		goto out;
+	}
+	mtx_enter(&trans->bt_lock);
+	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
+		if (btrfs_space_ranges_overlap(bytenr, length,
+		    extent->bte_bytenr, extent->bte_length)) {
+			error = EINVAL;
+			goto unlock;
+		}
+	}
+	TAILQ_FOREACH(extent, &trans->bt_pinned_extents, bte_entry) {
+		if (btrfs_space_ranges_overlap(bytenr, length,
+		    extent->bte_bytenr, extent->bte_length)) {
+			error = EINVAL;
+			goto unlock;
+		}
+	}
+	if (group->bbg_pinned_bytes > UINT64_MAX - length ||
+	    trans->bt_pinned_bytes > UINT64_MAX - length) {
+		error = EOVERFLOW;
+		goto unlock;
+	}
+	pinned->bte_group = group;
+	pinned->bte_bytenr = bytenr;
+	pinned->bte_length = length;
+	group->bbg_pinned_bytes += length;
+	trans->bt_pinned_bytes += length;
+	TAILQ_INSERT_TAIL(&trans->bt_pinned_extents, pinned, bte_entry);
+	pinned = NULL;
+unlock:
+	mtx_leave(&trans->bt_lock);
+out:
+	btrfs_space_check_group(group);
+	mtx_leave(&group->bbg_lock);
+	if (pinned != NULL)
+		free(pinned, M_BTRFS, sizeof(*pinned));
+	return (error);
+}
+
+void
+btrfs_space_commit(struct btrfs_transaction *trans)
+{
+	struct btrfs_trans_extent *extent;
+	struct btrfs_free_extent *space, *garbage[2];
+	struct btrfs_block_group *group;
+	unsigned int i, ngarbage;
+
+	KASSERT(trans->bt_writers == 0);
+	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+		group = extent->bte_group;
+		mtx_enter(&group->bbg_lock);
+		KASSERT(group->bbg_allocated_bytes >= extent->bte_length);
+		KASSERT(group->bbg_disk_used <=
+		    UINT64_MAX - extent->bte_length);
+		group->bbg_allocated_bytes -= extent->bte_length;
+		group->bbg_disk_used += extent->bte_length;
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		KASSERT(trans->bt_allocated_bytes >= extent->bte_length);
+		trans->bt_allocated_bytes -= extent->bte_length;
+		free(extent, M_BTRFS, sizeof(*extent));
+	}
+	while ((extent = TAILQ_FIRST(&trans->bt_pinned_extents)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_pinned_extents, extent, bte_entry);
+		group = extent->bte_group;
+		space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
+		space->bfe_bytenr = extent->bte_bytenr;
+		space->bfe_length = extent->bte_length;
+		mtx_enter(&group->bbg_lock);
+		KASSERT(group->bbg_disk_used >= extent->bte_length);
+		KASSERT(group->bbg_pinned_bytes >= extent->bte_length);
+		KASSERT(group->bbg_free_bytes <=
+		    UINT64_MAX - extent->bte_length);
+		group->bbg_disk_used -= extent->bte_length;
+		group->bbg_pinned_bytes -= extent->bte_length;
+		group->bbg_free_bytes += extent->bte_length;
+		ngarbage = btrfs_space_insert_free_locked(group, space,
+		    garbage);
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		for (i = 0; i < ngarbage; i++)
+			free(garbage[i], M_BTRFS, sizeof(*garbage[i]));
+		KASSERT(trans->bt_pinned_bytes >= extent->bte_length);
+		trans->bt_pinned_bytes -= extent->bte_length;
+		free(extent, M_BTRFS, sizeof(*extent));
+	}
+	KASSERT(trans->bt_allocated_bytes == 0);
+	KASSERT(trans->bt_pinned_bytes == 0);
+}
+
+void
+btrfs_space_abort(struct btrfs_transaction *trans)
+{
+	struct btrfs_trans_extent *extent;
+	struct btrfs_free_extent *space, *garbage[2];
+	struct btrfs_block_group *group;
+	unsigned int i, ngarbage;
+
+	KASSERT(trans->bt_writers == 0);
+	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+		group = extent->bte_group;
+		space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
+		space->bfe_bytenr = extent->bte_bytenr;
+		space->bfe_length = extent->bte_length;
+		mtx_enter(&group->bbg_lock);
+		KASSERT(group->bbg_allocated_bytes >= extent->bte_length);
+		KASSERT(group->bbg_free_bytes <=
+		    UINT64_MAX - extent->bte_length);
+		group->bbg_allocated_bytes -= extent->bte_length;
+		group->bbg_free_bytes += extent->bte_length;
+		ngarbage = btrfs_space_insert_free_locked(group, space,
+		    garbage);
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		for (i = 0; i < ngarbage; i++)
+			free(garbage[i], M_BTRFS, sizeof(*garbage[i]));
+		KASSERT(trans->bt_allocated_bytes >= extent->bte_length);
+		trans->bt_allocated_bytes -= extent->bte_length;
+		free(extent, M_BTRFS, sizeof(*extent));
+	}
+	while ((extent = TAILQ_FIRST(&trans->bt_pinned_extents)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_pinned_extents, extent, bte_entry);
+		group = extent->bte_group;
+		mtx_enter(&group->bbg_lock);
+		KASSERT(group->bbg_pinned_bytes >= extent->bte_length);
+		group->bbg_pinned_bytes -= extent->bte_length;
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		KASSERT(trans->bt_pinned_bytes >= extent->bte_length);
+		trans->bt_pinned_bytes -= extent->bte_length;
+		free(extent, M_BTRFS, sizeof(*extent));
+	}
+	KASSERT(trans->bt_allocated_bytes == 0);
+	KASSERT(trans->bt_pinned_bytes == 0);
 }
