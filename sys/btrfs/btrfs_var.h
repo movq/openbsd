@@ -509,6 +509,9 @@ int	btrfs_extent_buffer_read(const struct btrfs_root *, uint64_t, uint64_t,
 	    uint64_t, uint8_t, struct btrfs_extent_buffer **);
 int	btrfs_extent_buffer_clone(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_buffer *, struct btrfs_extent_buffer **);
+int	btrfs_extent_buffer_alloc(struct btrfs_trans_handle *,
+	    const struct btrfs_extent_buffer *, uint8_t,
+	    struct btrfs_extent_buffer **);
 const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
 void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
 	    struct btrfs_extent_buffer *);
@@ -535,7 +538,7 @@ int	btrfs_cow_block(struct btrfs_trans_handle *, struct btrfs_root *,
 	    struct btrfs_extent_buffer **);
 /*
  * Item keys and payloads are supplied in their packed on-disk encoding.
- * Topology changes are reported until node split/removal support is present.
+ * Insertion grows tree topology as needed; empty-node removal is not present.
  */
 int	btrfs_insert_item(struct btrfs_trans_handle *, struct btrfs_root *,
 	    const struct btrfs_key *, const void *, uint32_t);
