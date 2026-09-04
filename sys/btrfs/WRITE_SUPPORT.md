@@ -70,10 +70,19 @@ CRC32C, and submits all required mirrors.  The transaction retains dirty
 buffers until successful publication or abort; abort marks them stale before
 their allocated extents return to free space.
 
-This clone operation is deliberately not yet `btrfs_cow_block()`.  It creates
-an unreachable staging block but does not update a parent pointer or root
-location, pin the replaced block, or queue extent-reference changes.  Those
-steps must be implemented together by the B-tree mutation layer.
+`btrfs_cow_block()` now wraps that low-level clone in the B-tree ownership
+changes.  A transaction-aware search holds the root lock and extent-buffer
+write locks from the root downward.  It COWs each block not already owned by
+the transaction, redirects the locked parent pointer or in-memory root
+location, and queues signed delayed tree-reference changes.  A later search
+in the same transaction reuses the dirty blocks.
+
+The first root COW also saves the old root location on the transaction's
+dirty-root queue.  Abort restores it before stale COW buffers and allocations
+are discarded; successful finalization clears transaction ownership only
+after metadata publication.  Delayed-reference materialization is not
+implemented, so transaction finalization deliberately fails rather than
+claim success while queued reference updates remain.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
@@ -82,12 +91,14 @@ reads observe a future delayed-allocation dirty buffer before writeback.  The
 strategy write side and delayed allocation are not implemented yet.
 
 Mounted trees use persistent roots and take a locked location snapshot for
-each search.  Root-location publication still needs to be tied to transaction
-commit before those locations can change.  `bn_inode` is host-endian mutable
-state decoded at inode-item lookup.  Dirty-field bits and the last dirty
-transaction are represented but remain clear while the filesystem is
-read-only; mutation and writeback still need to connect them to transaction
-ownership.
+each read search.  A write search retains the root write lock and publishes
+its running-transaction location to later in-memory searches once its COW path
+is complete.  The committed location is restored on abort; writing dirty root
+items and the final root-tree location into a superblock still belongs to the
+future commit path.  `bn_inode` is host-endian mutable state decoded at
+inode-item lookup.  Dirty-field bits and the last dirty transaction are
+represented but remain clear while the filesystem is read-only; mutation and
+writeback still need to connect them to transaction ownership.
 
 Allocation-tree decoding and validation is isolated in `btrfs_disk.c`.
 `btrfs_alloc.c` constructs a mount-owned, per-block-group free-space index by
@@ -117,8 +128,9 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed references, ordered extents, complete path COW, commit integration,
-and on-disk accounting updates are not implemented yet.
+Delayed-reference materialization, ordered extents, item mutation and tree
+splits, commit integration, and on-disk accounting updates are not implemented
+yet.
 
 ## Initial writable format
 
@@ -164,12 +176,15 @@ currently contains:
 * Current logical bytenr, level, and generation.
 * Owner/object ID and a pointer back to the mount.
 * A lock protecting the current root location.
+* The transaction which owns a running-transaction location, if any.
 
-Tree searches take a root-location snapshot for the committed view.  Updating
-a root will change the persistent root object, not a stack-local copy.
-Subvolume roots discovered through root items are cached in the same table.
-Roots still need the transaction generation in which they were last COWed and
-linkage on the current transaction's dirty-root list before mutation begins.
+Read searches take a locked root-location snapshot.  A transaction-aware
+write search keeps the root write-locked until its path is released, and the
+first root COW saves the prior location in a transaction-owned dirty-root
+record.  Updating a root changes the persistent root object, not a stack-local
+copy.  Subvolume roots discovered through root items are cached in the same
+table.  Abort restores the saved location; commit-side root-item and
+superblock encoding remains to be implemented.
 
 The chunk map should similarly be a mount-owned service with a lock and stable
 references.  A raw `bm_chunks` pointer copied into a stack root will not remain
@@ -219,9 +234,9 @@ Metadata dirtying must always be done through a transaction-aware
 a new logical metadata extent, copies the block, changes header bytenr and
 generation, updates the parent pointer (or root location), and queues delayed
 reference changes.  Later modifications in the same transaction reuse that
-dirty block.  The implemented extent-buffer clone supplies the allocation,
-private-copy, and dirty-tracking portion; it must not be called directly by
-item-level mutation once `btrfs_cow_block()` exists.
+dirty block.  This operation and a top-down transaction-aware search are now
+implemented.  Item-level mutation must use the write path and must not call
+the lower-level extent-buffer clone directly.
 
 ### File data cache and ordered extents
 
@@ -284,12 +299,14 @@ struct btrfs_transaction {
         allocated extents;
         pinned freed extents;
         dirty metadata extent buffers;
+        delayed metadata references;
+        dirty roots with saved committed locations;
 };
 ```
 
-Dirty metadata now has a transaction-owned queue.  Roots, inodes, ordered
-extents, delayed references, and on-disk accounting deltas still need their
-transaction-owned queues.
+Dirty metadata, dirty roots, and delayed metadata references now have
+transaction-owned queues.  Inodes, ordered extents, delayed data references,
+and on-disk accounting deltas still need their transaction-owned queues.
 
 A normal transaction handle represents one filesystem operation and its
 reservation.  The implemented lifecycle and allocator interface is:
@@ -337,7 +354,7 @@ extent-buffer generations, so it should not be hidden in the first writer.
 
 ## Locking
 
-A proposed lock order is:
+The lock order is:
 
 1. Vnode locks in normal VFS/namei order.
 2. Transaction handle/reference, without holding the mount transaction mutex.
@@ -349,10 +366,12 @@ A proposed lock order is:
 The mount transaction mutex protects state transitions, handle counts, and
 waiters only.  It must not be held across disk I/O or a tree search.
 
-Tree mutation locks a search path top-down.  Splits may lock the needed sibling
-in key order.  Code must not recursively modify the extent tree while holding
-an arbitrary filesystem-tree path; such updates are represented as delayed
-references and processed from a controlled commit context.
+The implemented write search retains the root write lock and locks/COWs the
+search path top-down.  Path release drops extent-buffer locks bottom-up before
+the root lock.  Splits must lock any needed sibling in key order.  Code must
+not recursively modify the extent tree while holding an arbitrary
+filesystem-tree path; such updates are represented as delayed references and
+processed from a controlled commit context.
 
 Commit must not acquire arbitrary vnode locks after it has closed the
 transaction.  A caller such as `fsync` flushes the relevant vnode data before
@@ -391,14 +410,23 @@ Allocation updates only in-memory indexes immediately.  Extent items,
 backreferences, block-group `used`, device `bytes_used`, and superblock
 `bytes_used` are transaction deltas materialized through delayed references.
 
-Delayed references combine repeated add/drop operations for the same extent.
-They are essential both for performance and to avoid recursively changing the
-extent tree while COWing another tree.  Handle skinny metadata and the active
-backreference format explicitly; do not infer them only from item size.
+Delayed metadata references now combine signed add/drop operations with the
+same extent, parent, owning root, and level identity.  They are essential both
+for performance and to avoid recursively changing the extent tree while
+COWing another tree.  The queue does not yet alter extent items.  Its
+materializer must handle skinny metadata and the active backreference format
+explicitly rather than infer them only from item size.
+
+A replaced metadata block is not immediately passed to `btrfs_space_pin()`.
+It may still be referenced by a snapshot or shared tree.  Delayed-reference
+materialization must first apply the drop to the on-disk reference count and
+pin the extent only if that count becomes zero.  Until that exists, a
+transaction containing delayed refs cannot successfully finalize.
 
 ## B-tree mutation
 
-Build mutation below vnode operations.  Required primitives include:
+Build mutation below vnode operations.  The first two primitives are now in
+place:
 
 * Search with a transaction handle and a write-locked path.
 * COW every block in the path which is not owned by this transaction.
@@ -408,6 +436,11 @@ Build mutation below vnode operations.  Required primitives include:
 * Update separator keys after the first key in a child changes.
 * Remove empty nodes and shrink roots.  More aggressive balancing can wait.
 * Mark dirty blocks and roots exactly once per transaction.
+
+`btrfs_search_slot_write()` retains the transaction handle in the path, holds
+the root write lock until `btrfs_release_path()`, and returns every populated
+extent buffer write-locked and transaction-owned.  COW redirects only a
+transaction-owned parent, while root COW records rollback state exactly once.
 
 Start by testing this engine against synthetic nodes in memory.  Vnode
 operations should never open-code item-array movement or parent-pointer
@@ -538,6 +571,12 @@ The following write-path foundations are in place:
   and retains dirty blocks on a transaction queue.  Final writeback computes
   and validates metadata checksums before mirrored logical writes; publication
   and abort cleanup release or stale the buffers in allocator-safe order.
+* Completed: add top-down transaction-aware tree search and
+  `btrfs_cow_block()`.  Mutable paths retain the root and extent-buffer locks,
+  redirect only transaction-owned parents, reuse blocks already COWed in the
+  generation, track root rollback locations, and queue merged delayed metadata
+  reference deltas.  Abort restores roots before allocator rollback, while
+  successful finalization rejects unmaterialized refs.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -555,19 +594,21 @@ mount is permitted.
 
 Transaction handles, free-space indexes, typed reservations, allocation,
 pinning, commit/abort allocator transitions, and the emergency metadata commit
-reserve are in place.  Add ordered extents and delayed references.  Exercise
-the mutation paths with a small in-kernel test harness as they gain callers,
-but keep the public filesystem read-only.
+reserve are in place.  Delayed metadata-reference ownership and merging are in
+place, but extent-tree materialization, delayed data refs, and ordered extents
+remain.  Exercise the mutation paths with a small in-kernel test harness as
+they gain callers, but keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
-Private COW-block allocation, transaction dirty tracking, and final metadata
-block submission are in place.  Next implement delayed metadata references
-and `btrfs_cow_block()` as one operation which updates a locked parent or root,
-pins the replaced block, and reuses an already-owned block.  Then add item
-mutation, splits, root updates, accounting materialization, and an internal
-transaction commit on throwaway images.  Gate it behind a compile-time
-diagnostic option until crash tests are credible.
+Private COW-block allocation, top-down write-locked search, parent/root-aware
+COW, dirty-root rollback, delayed metadata-reference queuing, transaction
+dirty tracking, and final metadata block submission are in place.  Next add
+leaf item insert/replace/delete with compaction and separator-key propagation,
+then splits and root growth.  Delayed-ref/accounting materialization, dirty
+root-item updates, and an internal transaction commit on throwaway images
+follow.  Gate it behind a compile-time diagnostic option until crash tests are
+credible.
 
 ### 4. Existing-file writes
 
