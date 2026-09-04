@@ -63,8 +63,10 @@ Transaction-owned extent buffers now use private nodesize storage so metadata
 mutation never aliases a clean physical device buffer.  A low-level clone
 operation consumes a handle's metadata reservation, allocates a new logical
 block, copies the source, updates its bytenr and generation, clears the WRITTEN
-flag and checksum, and adds it to the transaction dirty list.  Mutable access
-requires both the transaction handle and the extent-buffer write lock.
+flag and checksum, and adds it to the transaction dirty list.  A companion
+constructor uses a transaction-owned source header to create a zeroed sibling
+or one-level-higher root block for topology growth.  Mutable access requires
+both the transaction handle and the extent-buffer write lock.
 Commit-side metadata writeback sets WRITTEN, computes and validates the final
 CRC32C, and submits all required mirrors.  The transaction retains dirty
 buffers until successful publication or abort; abort marks them stale before
@@ -80,10 +82,14 @@ in the same transaction reuses the dirty blocks.
 Key-based leaf insertion, replacement, and deletion now use that write search.
 Each mutation rebuilds the leaf in zeroed scratch storage, preserving packed
 little-endian keys and payloads while compacting all item data.  A changed
-first key is propagated through the required ancestor separators.  Full leaves
-return `ENOSPC` until splitting is implemented, and deletion of the sole item
-in a non-root leaf returns `EOPNOTSUPP` until empty-node removal is implemented.
-An empty level-zero root remains valid.
+first key is propagated through the required ancestor separators.  Insertion
+performs a byte-balanced two-way split of a full leaf, recursively splits full
+internal nodes, and grows the root.  Child references moved between internal
+nodes and new root/parent relationships are queued as delayed reference
+changes.  A pathological large middle item which requires three leaves still
+returns `ENOSPC`.  Deletion of the sole item in a non-root leaf returns
+`EOPNOTSUPP` until empty-node removal is implemented.  An empty level-zero
+root remains valid.
 
 The first root COW also saves the old root location on the transaction's
 dirty-root queue.  Abort restores it before stale COW buffers and allocations
@@ -136,9 +142,9 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed-reference materialization, ordered extents, tree splits and node
-removal, commit integration, and on-disk accounting updates are not
-implemented yet.
+Delayed-reference materialization, ordered extents, three-way leaf splitting,
+empty-node removal and root shrinking, commit integration, and on-disk
+accounting updates are not implemented yet.
 
 ## Initial writable format
 
@@ -244,9 +250,13 @@ generation, updates the parent pointer (or root location), and queues delayed
 reference changes.  Later modifications in the same transaction reuse that
 dirty block.  This operation and a top-down transaction-aware search are now
 implemented.  Key-based item insert, replace, and delete operations use this
-write path, compact leaf payloads, and update ancestor separator keys.  Callers
-must use these operations and must not call the lower-level extent-buffer
-clone or open-code leaf layout changes.
+write path, compact leaf payloads, update ancestor separator keys, perform
+two-way leaf and recursive internal-node splits, and grow roots.  A lower-level
+constructor creates empty transaction-owned metadata blocks from a locked
+source header for split siblings and root growth.  It is not a general
+mutation API.  Callers must use the tree operations and must not call the
+lower-level extent-buffer clone or constructor or open-code leaf and node
+layout changes.
 
 ### File data cache and ordered extents
 
@@ -440,14 +450,18 @@ provides:
 
 * Search with a transaction handle and a write-locked path.
 * COW every block in the path which is not owned by this transaction.
-* Insert, replace, and delete leaf items when no topology change is needed.
+* Insert, replace, and delete leaf items.
 * Rebuild leaves in zeroed storage to compact payloads and maintain offsets.
 * Update separator keys after the first key in a child changes.
+* Split full leaves in two by used bytes and recursively split full internal
+  nodes.
+* Grow a full root and queue reference changes for every new or moved node.
 * Mark dirty blocks and roots exactly once per transaction.
 
 The next topology tranche must:
 
-* Split full leaves and internal nodes, including root growth.
+* Add a three-way fallback for a large middle item which cannot fit in either
+  half of a two-way leaf split.
 * Remove empty nodes and shrink roots.  More aggressive balancing can wait.
 
 `btrfs_search_slot_write()` retains the transaction handle in the path, holds
@@ -456,9 +470,13 @@ extent buffer write-locked and transaction-owned.  COW redirects only a
 transaction-owned parent, while root COW records rollback state exactly once.
 `btrfs_insert_item()`, `btrfs_replace_item()`, and `btrfs_delete_item()` own
 that path lifecycle and accept keys and payloads in packed on-disk encoding.
-They return `ENOSPC` rather than partially inserting into a full leaf, and do
-not create an empty non-root leaf.  Traversal also rejects an existing empty
-non-root child before attempting to inspect its first or last key.
+They return `ENOSPC` when one item cannot fit in an otherwise empty leaf or
+when key ordering around a large middle item requires a not-yet-implemented
+three-way split, and `EFBIG` if insertion would exceed the maximum tree height.
+A failure after a split starts aborts the transaction rather than exposing
+partially linked topology.  Deletion does not create an empty non-root leaf.
+Traversal also rejects an existing empty non-root child before attempting to
+inspect its first or last key.
 
 Start by testing this engine against synthetic nodes in memory.  Vnode
 operations should never open-code item-array movement or parent-pointer
@@ -598,8 +616,13 @@ The following write-path foundations are in place:
 * Completed: add key-based leaf item insert, replace, and delete operations.
   Mutations preflight capacity and separator invariants, rebuild compact leaves
   in zeroed scratch storage, and propagate changed first keys through ancestor
-  separators.  Topology-changing cases remain explicit until node split and
-  removal support is added.
+  separators.
+* Completed: add insertion-time B-tree topology growth.  Full leaves split in
+  two by packed bytes, full internal nodes split recursively, and a full root
+  grows one level.  New blank metadata blocks remain transaction-owned, while
+  new, moved, and root references are represented through delayed-reference
+  changes.  Three-way leaf splitting, empty-node removal, and root shrinking
+  remain explicit.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -627,11 +650,12 @@ they gain callers, but keep the public filesystem read-only.
 Private COW-block allocation, top-down write-locked search, parent/root-aware
 COW, dirty-root rollback, delayed metadata-reference queuing, transaction
 dirty tracking, leaf item insert/replace/delete with compaction and
-separator-key propagation, and final metadata block submission are in place.
-Next add leaf and internal-node splits, root growth, empty-node removal, and
-root shrinking.  Delayed-ref/accounting materialization, dirty root-item
-updates, and an internal transaction commit on throwaway images follow.  Gate
-it behind a compile-time diagnostic option until crash tests are credible.
+separator-key propagation, two-way leaf and recursive internal-node splitting,
+root growth, and final metadata block submission are in place.  Next add
+three-way leaf splitting, empty-node removal, and root shrinking.
+Delayed-ref/accounting materialization, dirty root-item updates, and an
+internal transaction commit on throwaway images follow.  Gate it behind a
+compile-time diagnostic option until crash tests are credible.
 
 ### 4. Existing-file writes
 

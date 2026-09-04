@@ -183,7 +183,7 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 	bmp = trans->bt_mount;
 	nodesize = letoh32(bmp->bm_super.nodesize);
 
-	rw_assert_anylock((struct rwlock *)&source->eb_lock);
+	rw_assert_wrlock((struct rwlock *)&source->eb_lock);
 	if (source->eb_mount != bmp || !source->eb_loaded ||
 	    source->eb_error != 0 || source->eb_stale ||
 	    source->eb_transaction != NULL ||
@@ -219,6 +219,104 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 	eb->eb_owner = source->eb_owner;
 	eb->eb_refs = 2;	/* caller plus transaction dirty-list ownership */
 	eb->eb_level = source->eb_level;
+	eb->eb_loaded = 1;
+	eb->eb_dirty = 1;
+
+	collision = NULL;
+	mtx_enter(&bmp->bm_ebmtx);
+	LIST_FOREACH(collision, &bmp->bm_extent_buffers, eb_entry) {
+		if (collision->eb_bytenr == bytenr)
+			break;
+	}
+	if (collision == NULL)
+		LIST_INSERT_HEAD(&bmp->bm_extent_buffers, eb, eb_entry);
+	mtx_leave(&bmp->bm_ebmtx);
+	if (collision != NULL) {
+		rw_exit_write(&eb->eb_lock);
+		free(eb->eb_private, M_BTRFS, nodesize);
+		free(eb, M_BTRFS, sizeof(*eb));
+		btrfs_trans_abort(handle, EINVAL);
+		return (EINVAL);
+	}
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_INSERT_TAIL(&trans->bt_dirty_extent_buffers, eb,
+	    eb_dirty_entry);
+	mtx_leave(&trans->bt_lock);
+	*ebp = eb;
+	return (0);
+}
+
+/*
+ * Allocate an empty transaction-owned block using source only as a header
+ * template.  Split siblings keep the same level, while root growth creates
+ * the one permitted next level.
+ */
+int
+btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
+    const struct btrfs_extent_buffer *source, uint8_t level,
+    struct btrfs_extent_buffer **ebp)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_extent_buffer *eb, *collision;
+	struct btrfs_mount *bmp;
+	struct btrfs_header *header;
+	const struct btrfs_header *source_header;
+	uint64_t bytenr, flags;
+	uint32_t nodesize;
+	int error;
+
+	if (ebp == NULL)
+		return (EINVAL);
+	*ebp = NULL;
+	if (handle == NULL || handle->bth_transaction == NULL ||
+	    source == NULL || level >= BTRFS_MAX_LEVEL)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	bmp = trans->bt_mount;
+	nodesize = letoh32(bmp->bm_super.nodesize);
+
+	rw_assert_anylock((struct rwlock *)&source->eb_lock);
+	if (source->eb_mount != bmp || !source->eb_loaded ||
+	    source->eb_error != 0 || source->eb_stale ||
+	    source->eb_transaction != trans ||
+	    source->eb_generation != trans->bt_generation ||
+	    source->eb_private == NULL || !source->eb_dirty ||
+	    (level != source->eb_level && level != source->eb_level + 1))
+		return (EINVAL);
+	source_header = btrfs_extent_buffer_bytes(source);
+
+	eb = malloc(sizeof(*eb), M_BTRFS, M_WAITOK | M_ZERO);
+	eb->eb_private = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
+	rw_enter_write(&eb->eb_lock);
+
+	error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_METADATA,
+	    nodesize, nodesize, &bytenr);
+	if (error != 0) {
+		rw_exit_write(&eb->eb_lock);
+		free(eb->eb_private, M_BTRFS, nodesize);
+		free(eb, M_BTRFS, sizeof(*eb));
+		return (error);
+	}
+
+	header = eb->eb_private;
+	memcpy(header, source_header, sizeof(*header));
+	memset(header->csum, 0, sizeof(header->csum));
+	header->bytenr = htole64(bytenr);
+	header->generation = htole64(trans->bt_generation);
+	flags = letoh64(header->flags);
+	header->flags = htole64(flags & ~BTRFS_HEADER_FLAG_WRITTEN);
+	header->nritems = htole32(0);
+	header->level = level;
+
+	eb->eb_mount = bmp;
+	eb->eb_transaction = trans;
+	eb->eb_bytenr = bytenr;
+	eb->eb_generation = trans->bt_generation;
+	eb->eb_owner = source->eb_owner;
+	eb->eb_refs = 2;	/* caller plus transaction dirty-list ownership */
+	eb->eb_level = level;
 	eb->eb_loaded = 1;
 	eb->eb_dirty = 1;
 
