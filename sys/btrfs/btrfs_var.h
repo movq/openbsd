@@ -74,11 +74,31 @@ struct btrfs_path {
 	uint32_t		 bp_slot[BTRFS_MAX_LEVEL];
 };
 
+#define BTRFS_SUPER_MIRROR_READABLE	0x01
+#define BTRFS_SUPER_MIRROR_VALID	0x02
+#define BTRFS_SUPER_MIRROR_CONSISTENT	0x04
+#define BTRFS_SUPER_MIRROR_SELECTED	0x08
+#define BTRFS_SUPER_MIRROR_STALE	0x10
+#define BTRFS_SUPER_MIRROR_FOREIGN	0x20
+
+struct btrfs_super_mirror {
+	uint64_t	bsm_bytenr;
+	uint64_t	bsm_generation;
+	int		bsm_error;
+	uint8_t		bsm_flags;
+};
+
 struct btrfs_mount {
 	struct mount			*bm_mount;
 	struct vnode			*bm_devvp;
 	dev_t				 bm_dev;
 	struct btrfs_super_block	 bm_super;
+	struct btrfs_super_mirror	 bm_super_mirrors[
+					    BTRFS_SUPER_MIRROR_MAX];
+	unsigned int			 bm_selected_super;
+	uint8_t				 bm_backup_roots_valid;
+	uint8_t				 bm_seeding;
+	uint8_t				 bm_subvol_readonly;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
 	uint64_t			 bm_treeid;
