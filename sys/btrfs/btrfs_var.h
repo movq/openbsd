@@ -182,6 +182,8 @@ TAILQ_HEAD(btrfs_free_extent_list, btrfs_free_extent);
 
 struct btrfs_mount;
 struct btrfs_transaction;
+struct btrfs_extent_buffer;
+TAILQ_HEAD(btrfs_dirty_extent_buffer_list, btrfs_extent_buffer);
 
 struct btrfs_block_group {
 	struct mutex			 bbg_lock;
@@ -236,6 +238,8 @@ struct btrfs_transaction {
 	struct btrfs_reserved_space_list bt_commit_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;
 	struct btrfs_trans_extent_list	 bt_pinned_extents;
+	struct btrfs_dirty_extent_buffer_list
+					 bt_dirty_extent_buffers;
 	uint64_t			 bt_generation;
 	uint64_t			 bt_commit_reserve_target;
 	uint64_t			 bt_commit_reserved_bytes;
@@ -305,7 +309,6 @@ struct btrfs_inode {
 };
 
 struct buf;
-struct btrfs_extent_buffer;
 struct btrfs_node;
 struct btrfs_root_entry;
 struct proc;
@@ -337,8 +340,11 @@ struct btrfs_root_entry {
 
 struct btrfs_extent_buffer {
 	LIST_ENTRY(btrfs_extent_buffer)	 eb_entry;
+	TAILQ_ENTRY(btrfs_extent_buffer) eb_dirty_entry;
 	struct btrfs_mount		*eb_mount;
+	struct btrfs_transaction	*eb_transaction;
 	struct buf			*eb_buf;
+	void				*eb_private;
 	struct rwlock			 eb_lock;
 	uint64_t			 eb_bytenr;
 	uint64_t			 eb_generation;
@@ -347,6 +353,10 @@ struct btrfs_extent_buffer {
 	int				 eb_error;
 	uint8_t				 eb_level;
 	uint8_t				 eb_loaded;
+	uint8_t				 eb_dirty;
+	uint8_t				 eb_writeback;
+	uint8_t				 eb_written;
+	uint8_t				 eb_stale;
 };
 
 struct btrfs_path {
@@ -467,8 +477,14 @@ int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    struct btrfs_chunk_map *);
 int	btrfs_extent_buffer_read(const struct btrfs_root *, uint64_t, uint64_t,
 	    uint64_t, uint8_t, struct btrfs_extent_buffer **);
+int	btrfs_extent_buffer_clone(struct btrfs_trans_handle *,
+	    const struct btrfs_extent_buffer *, struct btrfs_extent_buffer **);
 const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
+void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
+	    struct btrfs_extent_buffer *);
 void	btrfs_extent_buffer_put(struct btrfs_extent_buffer *);
+int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
+int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
 /*
  * An exact miss leaves path at the insertion point.  Paths must initially
  * be zeroed and retain item pointers until advanced or released.

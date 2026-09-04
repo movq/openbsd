@@ -46,17 +46,34 @@ Logical mapping and mirror-aware physical reads are centralized in
 inside the shared mirror loop, so a rejected copy is released before another
 DUP mirror is tried.  The interface can also return each mirror's error and the
 selected mirror.  Synchronous logical writes now submit every required SINGLE
-or DUP copy and retain each copy's error; they do not yet have metadata or
-ordered-data callers.  Device cache flushes remain part of the future
-transaction commit protocol rather than this block submission primitive.
+or DUP copy and retain each copy's error.  Metadata dirty writeback uses this
+primitive, but is not yet connected to a complete transaction commit;
+ordered-data callers also remain to be added.  Device cache flushes remain
+part of the future transaction commit protocol rather than this block
+submission primitive.
 
 `btrfs_extent_buffer.c` provides the logical identity missing from the device
 buffer cache.  Clean extent buffers are keyed by logical bytenr and validate
 generation, owner, and level before exposing a locked nodesize buffer.  DUP
 copies therefore share one logical object while mirror selection remains in
 the logical I/O layer.  Extent buffers are reference counted and mount-cached
-while referenced.  They do not yet have private mutable storage, transaction
-ownership, dirty/writeback state, or dirty-list linkage.
+while referenced.
+
+Transaction-owned extent buffers now use private nodesize storage so metadata
+mutation never aliases a clean physical device buffer.  A low-level clone
+operation consumes a handle's metadata reservation, allocates a new logical
+block, copies the source, updates its bytenr and generation, clears the WRITTEN
+flag and checksum, and adds it to the transaction dirty list.  Mutable access
+requires both the transaction handle and the extent-buffer write lock.
+Commit-side metadata writeback sets WRITTEN, computes and validates the final
+CRC32C, and submits all required mirrors.  The transaction retains dirty
+buffers until successful publication or abort; abort marks them stale before
+their allocated extents return to free space.
+
+This clone operation is deliberately not yet `btrfs_cow_block()`.  It creates
+an unreachable staging block but does not update a parent pointer or root
+location, pin the replaced block, or queue extent-reference changes.  Those
+steps must be implemented together by the B-tree mutation layer.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
@@ -100,7 +117,7 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed references, ordered extents, metadata COW, dirty metadata writeback,
+Delayed references, ordered extents, complete path COW, commit integration,
 and on-disk accounting updates are not implemented yet.
 
 ## Initial writable format
@@ -163,14 +180,20 @@ safe once chunk-tree changes are supported.
 The btrfs metadata wrapper is `struct btrfs_extent_buffer`.  It is keyed by
 logical bytenr and currently records:
 
-* A clean backing `struct buf`.
+* A clean backing `struct buf` or private nodesize bytes for a COW block.
 * Logical bytenr, owner, level, and generation.
 * Reference count and a sleepable read/write lock.
 * Loaded state and a retained validation or I/O error.
 * Logical-cache linkage.
+* Transaction owner, dirty/writeback/written/stale state, and transaction
+  dirty-list linkage.
 
-Metadata COW still needs private nodesize storage plus dirty, writeback,
-I/O-error, stale, transaction-owner, and dirty-list state.
+The transaction owns a reference to every dirty extent buffer, so ending the
+operation handle cannot discard modified metadata.  Successful transaction
+publication converts written private buffers to clean cached buffers.  Abort
+marks them stale and drops transaction ownership before allocator rollback.
+Subsequent cache lookup observes the retained error, while private bytes held
+by an existing caller cannot alias a physical block which is later reused.
 
 The existing device buffer cache should remain the backing store for clean
 physical reads where practical.  The extent-buffer layer supplies logical
@@ -196,7 +219,9 @@ Metadata dirtying must always be done through a transaction-aware
 a new logical metadata extent, copies the block, changes header bytenr and
 generation, updates the parent pointer (or root location), and queues delayed
 reference changes.  Later modifications in the same transaction reuse that
-dirty block.
+dirty block.  The implemented extent-buffer clone supplies the allocation,
+private-copy, and dirty-tracking portion; it must not be called directly by
+item-level mutation once `btrfs_cow_block()` exists.
 
 ### File data cache and ordered extents
 
@@ -258,11 +283,13 @@ struct btrfs_transaction {
         emergency commit reservations;
         allocated extents;
         pinned freed extents;
+        dirty metadata extent buffers;
 };
 ```
 
-Dirty metadata, roots, inodes, ordered extents, delayed references, and
-on-disk accounting deltas still need transaction-owned queues.
+Dirty metadata now has a transaction-owned queue.  Roots, inodes, ordered
+extents, delayed references, and on-disk accounting deltas still need their
+transaction-owned queues.
 
 A normal transaction handle represents one filesystem operation and its
 reservation.  The implemented lifecycle and allocator interface is:
@@ -435,6 +462,11 @@ be refused if the backing device cannot supply the required ordering and
 durability operation; silently ignoring an unsupported cache-sync ioctl is not
 an acceptable policy for btrfs commits.
 
+Steps 6 and 7 now have an extent-buffer implementation, but no transaction
+commit caller invokes it yet.  It must be called only after item mutation,
+delayed references, accounting, and root updates have reached their final
+state, and before the first device cache flush and superblock publication.
+
 ## VFS operation order
 
 Implement user-visible operations only after the transaction, allocator, and
@@ -500,6 +532,12 @@ The following write-path foundations are in place:
   report every required-copy failure.  The primitive deliberately does not
   claim stable-media durability; commit must still drain writes and issue the
   required device cache flushes.
+* Completed: add transaction-owned private metadata extent buffers.  The
+  low-level clone operation consumes reserved metadata space, initializes the
+  new COW identity and generation, gates mutable access by handle ownership,
+  and retains dirty blocks on a transaction queue.  Final writeback computes
+  and validates metadata checksums before mirrored logical writes; publication
+  and abort cleanup release or stale the buffers in allocator-safe order.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -523,9 +561,13 @@ but keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
-Implement COW, item mutation, splits, root updates, dirty metadata writeback,
-and an internal transaction commit on throwaway images.  Gate it behind a
-compile-time diagnostic option until crash tests are credible.
+Private COW-block allocation, transaction dirty tracking, and final metadata
+block submission are in place.  Next implement delayed metadata references
+and `btrfs_cow_block()` as one operation which updates a locked parent or root,
+pins the replaced block, and reuses an already-owned block.  Then add item
+mutation, splits, root updates, accounting materialization, and an internal
+transaction commit on throwaway images.  Gate it behind a compile-time
+diagnostic option until crash tests are credible.
 
 ### 4. Existing-file writes
 
@@ -574,8 +616,6 @@ merges, ordered extents, commit latency, and abort reason.
 
 The following are intentionally deferred:
 
-* Whether dirty COW extent-buffer bytes should use anonymous `struct buf`
-  objects or nodesize allocations with device buffers used only during I/O.
 * Whether to add a larger decompressed-cluster cache or read-ahead while
   retaining sector-sized vnode buffers.
 * Whether the first writable release supports existing snapshots or rejects
