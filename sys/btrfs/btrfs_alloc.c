@@ -54,6 +54,7 @@ static int	btrfs_space_ranges_overlap(uint64_t, uint64_t, uint64_t,
 		    uint64_t);
 static int	btrfs_space_range_is_free(const struct btrfs_block_group *,
 		    uint64_t, uint64_t);
+static void	btrfs_space_destroy_groups(struct btrfs_mount *, int);
 static unsigned int
 		btrfs_space_insert_free_locked(struct btrfs_block_group *,
 		    struct btrfs_free_extent *,
@@ -358,17 +359,27 @@ btrfs_space_init(struct btrfs_mount *bmp)
 
 	error = btrfs_iterate_block_groups(bmp,
 	    btrfs_space_add_block_group, &build);
-	if (error != 0)
+	if (error != 0) {
+		printf("btrfs: cannot load block groups: error %d\n", error);
 		goto fail;
+	}
 	error = btrfs_iterate_extent_items(bmp, btrfs_space_add_extent,
 	    NULL, &build);
-	if (error != 0)
+	if (error != 0) {
+		printf("btrfs: cannot load allocated extents: error %d\n",
+		    error);
 		goto fail;
+	}
 
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
 		group = &bmp->bm_block_groups[i];
 		if (group->bbg_length == 0 ||
 		    group->bbg_build_used != group->bbg_disk_used) {
+			printf("btrfs: block group %llu usage mismatch: "
+			    "extent tree %llu, block group %llu\n",
+			    (unsigned long long)group->bbg_bytenr,
+			    (unsigned long long)group->bbg_build_used,
+			    (unsigned long long)group->bbg_disk_used);
 			error = EINVAL;
 			goto fail;
 		}
@@ -379,6 +390,8 @@ btrfs_space_init(struct btrfs_mount *bmp)
 			goto fail;
 		if (group->bbg_free_bytes !=
 		    group->bbg_length - group->bbg_disk_used) {
+			printf("btrfs: block group %llu free-space mismatch\n",
+			    (unsigned long long)group->bbg_bytenr);
 			error = EINVAL;
 			goto fail;
 		}
@@ -389,18 +402,22 @@ btrfs_space_init(struct btrfs_mount *bmp)
 		mtx_leave(&group->bbg_lock);
 	}
 	if (build.bsb_bytes_used != letoh64(bmp->bm_super.bytes_used)) {
+		printf("btrfs: filesystem usage mismatch: extent tree %llu, "
+		    "superblock %llu\n",
+		    (unsigned long long)build.bsb_bytes_used,
+		    (unsigned long long)letoh64(bmp->bm_super.bytes_used));
 		error = EINVAL;
 		goto fail;
 	}
 	return (0);
 
 fail:
-	btrfs_space_destroy(bmp);
+	btrfs_space_destroy_groups(bmp, 0);
 	return (error);
 }
 
-void
-btrfs_space_destroy(struct btrfs_mount *bmp)
+static void
+btrfs_space_destroy_groups(struct btrfs_mount *bmp, int initialized)
 {
 	struct btrfs_block_group *group;
 	struct btrfs_free_extent *space;
@@ -411,10 +428,12 @@ btrfs_space_destroy(struct btrfs_mount *bmp)
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
 		group = &bmp->bm_block_groups[i];
 		mtx_enter(&group->bbg_lock);
-		btrfs_space_check_group(group);
-		KASSERT(group->bbg_reserved_bytes == 0);
-		KASSERT(group->bbg_allocated_bytes == 0);
-		KASSERT(group->bbg_pinned_bytes == 0);
+		if (initialized) {
+			btrfs_space_check_group(group);
+			KASSERT(group->bbg_reserved_bytes == 0);
+			KASSERT(group->bbg_allocated_bytes == 0);
+			KASSERT(group->bbg_pinned_bytes == 0);
+		}
 		mtx_leave(&group->bbg_lock);
 		while ((space = TAILQ_FIRST(&group->bbg_free_extents)) != NULL) {
 			TAILQ_REMOVE(&group->bbg_free_extents, space, bfe_entry);
@@ -425,6 +444,12 @@ btrfs_space_destroy(struct btrfs_mount *bmp)
 	    bmp->bm_nblock_groups * sizeof(*bmp->bm_block_groups));
 	bmp->bm_block_groups = NULL;
 	bmp->bm_nblock_groups = 0;
+}
+
+void
+btrfs_space_destroy(struct btrfs_mount *bmp)
+{
+	btrfs_space_destroy_groups(bmp, 1);
 }
 
 static int
