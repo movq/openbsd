@@ -31,6 +31,8 @@
 
 #include <btrfs/btrfs.h>
 
+#define BTRFS_MAX_LEVEL		8
+
 struct btrfs_chunk_map {
 	uint64_t	logical;
 	uint64_t	length;
@@ -52,7 +54,25 @@ typedef int (*btrfs_dir_iter_fn)(const struct btrfs_dir_entry *, void *);
 
 struct buf;
 struct btrfs_node;
+struct vnode;
 LIST_HEAD(btrfs_node_list, btrfs_node);
+
+struct btrfs_root {
+	struct vnode			*br_devvp;
+	const struct btrfs_super_block	*br_super;
+	const struct btrfs_chunk_map	*br_chunks;
+	unsigned int			 br_nchunks;
+	uint64_t			 br_bytenr;
+	uint64_t			 br_generation;
+	uint64_t			 br_owner;
+	uint8_t				 br_level;
+};
+
+struct btrfs_path {
+	struct btrfs_root	*bp_root;
+	struct buf		*bp_buf[BTRFS_MAX_LEVEL];
+	uint32_t		 bp_slot[BTRFS_MAX_LEVEL];
+};
 
 struct btrfs_mount {
 	struct mount			*bm_mount;
@@ -89,14 +109,28 @@ struct btrfs_node {
 
 extern const struct vops btrfs_vops;
 
-int	btrfs_iterate_directory(const struct btrfs_super_block *,
-	    const struct btrfs_header *, uint64_t, btrfs_dir_iter_fn, void *);
-int	btrfs_lookup_data_csum(struct btrfs_mount *,
-	    const struct btrfs_header *, uint64_t, uint32_t *);
-int	btrfs_read_csum_tree_root(struct btrfs_mount *, struct buf **);
+void	btrfs_init_fs_root(struct btrfs_mount *, struct btrfs_root *);
+void	btrfs_init_csum_root(struct btrfs_mount *, struct btrfs_root *);
+/*
+ * An exact miss leaves path at the insertion point.  Paths must initially
+ * be zeroed and retain item pointers until advanced or released.
+ */
+int	btrfs_search_slot(struct btrfs_root *, const struct btrfs_key *,
+	    struct btrfs_path *);
+int	btrfs_search_lower_bound(struct btrfs_root *,
+	    const struct btrfs_key *, struct btrfs_path *);
+int	btrfs_search_predecessor(struct btrfs_root *,
+	    const struct btrfs_key *, struct btrfs_path *);
+int	btrfs_next_item(struct btrfs_path *);
+int	btrfs_prev_item(struct btrfs_path *);
+int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
+	    const uint8_t **, uint32_t *);
+void	btrfs_release_path(struct btrfs_path *);
+int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
+	    btrfs_dir_iter_fn, void *);
+int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
 int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
 	    const uint32_t *, struct buf **);
-int	btrfs_read_fs_tree_root(struct btrfs_mount *, struct buf **);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 
 #endif
