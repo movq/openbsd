@@ -229,6 +229,69 @@ btrfs_roots_finish(struct btrfs_transaction *trans, int committed)
 }
 
 int
+btrfs_update_dirty_root_items(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_dirty_root *dirty;
+	struct btrfs_root *root, *root_tree;
+	struct btrfs_root_item *item;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key;
+	const uint8_t *data;
+	uint8_t *payload;
+	uint32_t size;
+	int error;
+
+	if (handle == NULL || handle->bth_transaction == NULL ||
+	    !handle->bth_commit)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	error = btrfs_get_root(trans->bt_mount, BTRFS_ROOT_TREE_OBJECTID,
+	    &root_tree);
+	if (error != 0)
+		return (error);
+	TAILQ_FOREACH(dirty, &trans->bt_dirty_roots, bdr_entry) {
+		root = dirty->bdr_root;
+		if (root->br_owner == BTRFS_ROOT_TREE_OBJECTID ||
+		    root->br_owner == BTRFS_CHUNK_TREE_OBJECTID)
+			continue;
+		memset(&key, 0, sizeof(key));
+		key.objectid = htole64(root->br_owner);
+		key.type = BTRFS_ROOT_ITEM_KEY;
+		error = btrfs_search_slot(root_tree, &key, &path);
+		if (error != 0)
+			goto out;
+		error = btrfs_path_item(&path, NULL, &data, &size);
+		if (error != 0)
+			goto out;
+		if (size < offsetof(struct btrfs_root_item, generation_v2)) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+		payload = malloc(size, M_BTRFS, M_WAITOK);
+		memcpy(payload, data, size);
+		btrfs_release_path(&path);
+
+		item = (struct btrfs_root_item *)payload;
+		item->bytenr = htole64(root->br_bytenr);
+		item->generation = htole64(root->br_generation);
+		item->level = root->br_level;
+		if (size >= offsetof(struct btrfs_root_item, generation_v2) +
+		    sizeof(item->generation_v2))
+			item->generation_v2 = htole64(root->br_generation);
+		error = btrfs_replace_item(handle, root_tree, &key, payload,
+		    size);
+		free(payload, M_BTRFS, size);
+		if (error != 0)
+			return (error);
+	}
+	return (0);
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+int
 btrfs_get_root(struct btrfs_mount *bmp, uint64_t owner,
     struct btrfs_root **rootp)
 {
