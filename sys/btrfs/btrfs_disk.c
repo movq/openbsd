@@ -179,7 +179,7 @@ btrfs_read_extent_item(struct btrfs_mount *bmp,
 	const uint8_t *p;
 	uint64_t flags, offset;
 	uint32_t sectorsize;
-	size_t body_size, remain;
+	size_t body_size, header_size, remain;
 	unsigned int chunk_index;
 	int error;
 
@@ -298,16 +298,17 @@ btrfs_read_extent_item(struct btrfs_mount *bmp,
 	}
 
 	while (remain != 0) {
-		if (remain < sizeof(*inline_ref))
+		header_size = offsetof(struct btrfs_extent_inline_ref, offset);
+		if (remain < header_size)
 			return (EINVAL);
 		inline_ref = (const struct btrfs_extent_inline_ref *)p;
-		offset = letoh64(inline_ref->offset);
 		body_size = 0;
 		switch (inline_ref->type) {
 		case BTRFS_TREE_BLOCK_REF_KEY:
 		case BTRFS_SHARED_BLOCK_REF_KEY:
 			if ((flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) == 0)
 				return (EINVAL);
+			header_size = sizeof(*inline_ref);
 			break;
 		case BTRFS_EXTENT_DATA_REF_KEY:
 			if ((flags & BTRFS_EXTENT_FLAG_DATA) == 0)
@@ -317,19 +318,22 @@ btrfs_read_extent_item(struct btrfs_mount *bmp,
 		case BTRFS_SHARED_DATA_REF_KEY:
 			if ((flags & BTRFS_EXTENT_FLAG_DATA) == 0)
 				return (EINVAL);
+			header_size = sizeof(*inline_ref);
 			body_size = sizeof(struct btrfs_shared_data_ref);
 			break;
 		default:
 			return (EINVAL);
 		}
-		if (body_size > remain - sizeof(*inline_ref))
+		if (header_size > remain || body_size > remain - header_size)
 			return (EINVAL);
+		offset = header_size == sizeof(*inline_ref) ?
+		    letoh64(inline_ref->offset) : 0;
 		error = btrfs_emit_backref(record->ber_bytenr,
-		    inline_ref->type, offset, p + sizeof(*inline_ref),
+		    inline_ref->type, offset, p + header_size,
 		    body_size, 1, refsp, backref_callback, arg);
 		if (error != 0)
 			return (error);
-		body_size += sizeof(*inline_ref);
+		body_size += header_size;
 		p += body_size;
 		remain -= body_size;
 	}

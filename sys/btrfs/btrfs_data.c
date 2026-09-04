@@ -28,7 +28,6 @@
 
 #include <btrfs/btrfs_var.h>
 
-static uint64_t	btrfs_data_ref_hash(uint64_t, uint64_t, uint64_t);
 static int	btrfs_set_data_csum(struct btrfs_trans_handle *, uint64_t,
 		    uint32_t);
 static int	btrfs_delete_data_csums(struct btrfs_trans_handle *, uint64_t,
@@ -40,21 +39,6 @@ static int	btrfs_find_separate_data_ref(struct btrfs_root *, uint64_t,
 		    struct btrfs_extent_data_ref *);
 static int	btrfs_materialize_data_ref(struct btrfs_trans_handle *,
 		    const struct btrfs_delayed_data_ref *);
-
-static uint64_t
-btrfs_data_ref_hash(uint64_t root, uint64_t objectid, uint64_t offset)
-{
-	uint64_t value;
-	uint32_t high_crc = UINT32_MAX, low_crc = UINT32_MAX;
-
-	value = htole64(root);
-	high_crc = crc32c(high_crc, (const uint8_t *)&value, sizeof(value));
-	value = htole64(objectid);
-	low_crc = crc32c(low_crc, (const uint8_t *)&value, sizeof(value));
-	value = htole64(offset);
-	low_crc = crc32c(low_crc, (const uint8_t *)&value, sizeof(value));
-	return (((uint64_t)high_crc << 31) ^ low_crc);
-}
 
 static int
 btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
@@ -445,7 +429,8 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 		btrfs_release_path(&path);
 		if (ref->bdr_ref_mod != 1)
 			return (EINVAL);
-		size = sizeof(*extent) + sizeof(*inline_ref) +
+		size = sizeof(*extent) +
+		    offsetof(struct btrfs_extent_inline_ref, offset) +
 		    sizeof(*data_ref);
 		payload = malloc(size, M_BTRFS, M_WAITOK | M_ZERO);
 		extent = (struct btrfs_extent_item *)payload;
@@ -454,9 +439,9 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 		extent->flags = htole64(BTRFS_EXTENT_FLAG_DATA);
 		inline_ref = (struct btrfs_extent_inline_ref *)(extent + 1);
 		inline_ref->type = BTRFS_EXTENT_DATA_REF_KEY;
-		inline_ref->offset = htole64(btrfs_data_ref_hash(ref->bdr_root,
-		    ref->bdr_objectid, ref->bdr_offset));
-		data_ref = (struct btrfs_extent_data_ref *)(inline_ref + 1);
+		data_ref = (struct btrfs_extent_data_ref *)
+		    ((uint8_t *)inline_ref +
+		    offsetof(struct btrfs_extent_inline_ref, offset));
 		data_ref->root = htole64(ref->bdr_root);
 		data_ref->objectid = htole64(ref->bdr_objectid);
 		data_ref->offset = htole64(ref->bdr_offset);
@@ -494,7 +479,8 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 	for (i = 0; i < remain; i += step) {
 		candidate = (const struct btrfs_extent_inline_ref *)
 		    ((const uint8_t *)inline_ref + i);
-		if (remain - i < sizeof(*candidate)) {
+		if (remain - i <
+		    offsetof(struct btrfs_extent_inline_ref, offset)) {
 			error = EINVAL;
 			goto done;
 		}
@@ -504,14 +490,17 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 			goto done;
 		}
 		if (candidate->type != BTRFS_EXTENT_DATA_REF_KEY ||
-		    remain - i < sizeof(*candidate) +
+		    remain - i <
+		    offsetof(struct btrfs_extent_inline_ref, offset) +
 		    sizeof(*candidate_data)) {
 			error = EINVAL;
 			goto done;
 		}
-		step = sizeof(*candidate) + sizeof(*candidate_data);
+		step = offsetof(struct btrfs_extent_inline_ref, offset) +
+		    sizeof(*candidate_data);
 		candidate_data = (const struct btrfs_extent_data_ref *)
-		    (candidate + 1);
+		    ((const uint8_t *)candidate +
+		    offsetof(struct btrfs_extent_inline_ref, offset));
 		if (letoh32(candidate_data->count) == 0) {
 			error = EINVAL;
 			goto done;
@@ -528,7 +517,7 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 			count = letoh32(candidate_data->count);
 			data_ref = (struct btrfs_extent_data_ref *)
 			    ((uint8_t *)inline_ref + i +
-			    sizeof(*candidate));
+			    offsetof(struct btrfs_extent_inline_ref, offset));
 			matched_inline = (struct btrfs_extent_inline_ref *)
 			    ((uint8_t *)inline_ref + i);
 		}
@@ -573,7 +562,8 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 
 	if (found_inline) {
 		if (count == 0) {
-			step = sizeof(*matched_inline) + sizeof(*data_ref);
+			step = offsetof(struct btrfs_extent_inline_ref, offset) +
+			    sizeof(*data_ref);
 			i = (uint8_t *)matched_inline - payload;
 			memmove(payload + i, payload + i + step,
 			    size - i - step);
