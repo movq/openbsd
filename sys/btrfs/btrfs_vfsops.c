@@ -246,6 +246,8 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
 	    sizeof(bmp->bm_chunk_tree_uuid));
 	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
+	LIST_INIT(&bmp->bm_extent_buffers);
+	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
 	LIST_INIT(&bmp->bm_nodes);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
 
@@ -296,6 +298,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	if (error != 0)
 		return (error);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
+	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 
 	devvp->v_specmountpoint = NULL;
 	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);

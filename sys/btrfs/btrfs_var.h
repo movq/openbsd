@@ -172,12 +172,16 @@ typedef int (*btrfs_free_space_iter_fn)(
 		    const struct btrfs_free_space_record *, void *);
 
 struct buf;
+struct btrfs_extent_buffer;
+struct btrfs_mount;
 struct btrfs_node;
 struct proc;
 struct vnode;
+LIST_HEAD(btrfs_extent_buffer_list, btrfs_extent_buffer);
 LIST_HEAD(btrfs_node_list, btrfs_node);
 
 struct btrfs_root {
+	struct btrfs_mount		*br_mount;
 	struct vnode			*br_devvp;
 	const struct btrfs_super_block	*br_super;
 	const struct btrfs_chunk_map	*br_chunks;
@@ -190,9 +194,24 @@ struct btrfs_root {
 	uint8_t				 br_level;
 };
 
+struct btrfs_extent_buffer {
+	LIST_ENTRY(btrfs_extent_buffer)	 eb_entry;
+	struct btrfs_mount		*eb_mount;
+	struct buf			*eb_buf;
+	struct rwlock			 eb_lock;
+	uint64_t			 eb_bytenr;
+	uint64_t			 eb_generation;
+	uint64_t			 eb_owner;
+	unsigned int			 eb_refs;
+	int				 eb_error;
+	uint8_t				 eb_level;
+	uint8_t				 eb_loaded;
+};
+
 struct btrfs_path {
 	struct btrfs_root	*bp_root;
-	struct buf		*bp_buf[BTRFS_MAX_LEVEL];
+	struct btrfs_extent_buffer
+				*bp_eb[BTRFS_MAX_LEVEL];
 	uint32_t		 bp_slot[BTRFS_MAX_LEVEL];
 };
 
@@ -258,6 +277,8 @@ struct btrfs_mount {
 	uint8_t				 bm_fs_root_level;
 	uint8_t				 bm_csum_root_level;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
+	struct btrfs_extent_buffer_list	 bm_extent_buffers;
+	struct mutex			 bm_ebmtx;
 	struct btrfs_node_list		 bm_nodes;
 	struct mutex			 bm_nodemtx;
 };
@@ -299,8 +320,10 @@ int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);
-int	btrfs_read_root_block(const struct btrfs_root *, uint64_t, uint64_t,
-	    uint64_t, uint8_t, struct buf **);
+int	btrfs_extent_buffer_read(const struct btrfs_root *, uint64_t, uint64_t,
+	    uint64_t, uint8_t, struct btrfs_extent_buffer **);
+const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
+void	btrfs_extent_buffer_put(struct btrfs_extent_buffer *);
 /*
  * An exact miss leaves path at the insertion point.  Paths must initially
  * be zeroed and retain item pointers until advanced or released.

@@ -823,6 +823,7 @@ file kern/vfs_vnops.c
 file kern/vfs_getcwd.c
 file kern/spec_vnops.c
 file btrfs/btrfs_alloc.c		btrfs
+file btrfs/btrfs_extent_buffer.c	btrfs
 file btrfs/btrfs_inode.c		btrfs
 file btrfs/btrfs_compression.c		btrfs
 file btrfs/btrfs_super.c		btrfs
