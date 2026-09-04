@@ -245,6 +245,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	error = btrfs_space_init(bmp);
 	if (error != 0)
 		goto out;
+	btrfs_trans_init(bmp);
 
 	mp->mnt_data = bmp;
 	mp->mnt_stat.f_fsid.val[0] = devvp->v_rdev;
@@ -266,6 +267,7 @@ out:
 		printf("btrfs: mount failed while %s: error %d\n", stage,
 		    error);
 		if (bmp != NULL) {
+			btrfs_trans_destroy(bmp);
 			btrfs_space_destroy(bmp);
 			KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 			btrfs_free_roots(bmp);
@@ -298,6 +300,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 		return (error);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
 	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
+	btrfs_trans_destroy(bmp);
 	btrfs_space_destroy(bmp);
 	btrfs_free_roots(bmp);
 

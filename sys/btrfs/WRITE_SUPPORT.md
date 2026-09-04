@@ -72,9 +72,21 @@ Allocation-tree decoding and validation is isolated in `btrfs_disk.c`.
 `btrfs_alloc.c` constructs a mount-owned, per-block-group free-space index by
 subtracting every allocated extent from the existing block-group ranges.  The
 mount scan rejects overlapping extents and reconciles each block group's used
-bytes, as well as their total, with the selected superblock.  Reservation,
-allocation, pinning, and delayed-reference operations do not consume or update
-the index yet.
+bytes, as well as their total, with the selected superblock.
+
+The mount also owns an open transaction at the generation after the selected
+superblock.  Transaction handles reserve data, metadata, and system space
+against specific compatible block groups before mutation.  Aligned first-fit
+allocation consumes only a handle's reservations.  Allocations and pinned
+frees remain transaction-owned: abort returns new allocations to free space,
+while successful commit publication accounts new allocations as committed and
+only then releases pinned extents.  Block-group diagnostics check the
+free-list and accounting invariants after each transition.  The public mount
+gate remains read-only, so no transaction can currently be joined through VFS
+operations.
+
+The commit reserve, delayed references, ordered extents, metadata COW, and
+on-disk accounting updates are not implemented yet.
 
 ## Initial writable format
 
@@ -240,17 +252,23 @@ A transaction handle represents one filesystem operation and its reservation.
 The expected interface is:
 
 ```
-btrfs_trans_join(mount, reservation, flags, &handle)
-btrfs_trans_use(handle, amount)
+btrfs_trans_join(mount, reservation, &handle)
+btrfs_space_alloc(handle, type, length, alignment, &bytenr)
+btrfs_space_pin(handle, bytenr, length)
 btrfs_trans_end(handle)
 btrfs_trans_abort(handle, error)
-btrfs_trans_commit(mount, minimum_generation, wait)
+btrfs_trans_close(mount, minimum_generation, &transaction)
+btrfs_trans_finish(mount, transaction, error)
 ```
 
 Joining takes a short mount transaction lock, obtains the open transaction,
 increments its writer count, and releases the lock.  It does not hold a global
 lock for the duration of the operation.  Vnode and extent-buffer locks protect
-the actual objects being changed.
+the actual objects being changed.  `close` elects one committer, changes OPEN
+to CLOSING, and waits for handles to leave.  After the future disk commit
+publishes or fails, `finish` performs the corresponding allocator transition
+and either installs the next open generation or leaves the mount aborted and
+read-only.
 
 Ending the last handle does not normally commit.  Commit requests are
 coalesced and can come from:
@@ -439,6 +457,10 @@ The following changes are useful before enabling writable mounts:
   construct per-block-group free-space indexes at mount.  The indexes retain
   separate committed-used, free, reserved, transaction-allocated, and pinned
   accounting in preparation for reservations.
+* Completed: add the single-open-transaction state machine, typed
+  block-group reservations, aligned allocation, transaction-owned allocation
+  and pin lists, abort rollback, and commit-publication finalization.  Exact
+  data/metadata/system groups are preferred before mixed groups.
 * Completed: centralize logical-to-physical read submission.  Metadata and
   data now use one SINGLE/DUP mirror loop, with caller validation participating
   in failover and optional per-mirror error reporting.
@@ -459,10 +481,11 @@ in place.  No writable mount is permitted.
 
 ### 2. Transaction and allocator core
 
-Free-space indexes are in place.  Add transaction handles, reservations,
-pinned extents, ordered extents, and delayed references.  Exercise them with
-kernel diagnostics or a small in-kernel test harness, but keep the public
-filesystem read-only.
+Transaction handles, free-space indexes, typed reservations, allocation,
+pinning, and commit/abort allocator transitions are in place.  Add a
+pessimistic metadata commit reserve, ordered extents, and delayed references.
+Exercise the mutation paths with a small in-kernel test harness as they gain
+callers, but keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
