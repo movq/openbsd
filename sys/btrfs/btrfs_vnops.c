@@ -44,6 +44,7 @@ static int	btrfs_close(void *);
 static int	btrfs_access(void *);
 static int	btrfs_getattr(void *);
 static int	btrfs_read(void *);
+static int	btrfs_strategy(void *);
 static int	btrfs_ioctl(void *);
 static int	btrfs_readdir(void *);
 static int	btrfs_readlink(void *);
@@ -84,7 +85,7 @@ const struct vops btrfs_vops = {
 	.vop_lock	= btrfs_lock,
 	.vop_unlock	= btrfs_unlock,
 	.vop_bmap	= eopnotsupp,
-	.vop_strategy	= vop_generic_badop,
+	.vop_strategy	= btrfs_strategy,
 	.vop_print	= btrfs_print,
 	.vop_islocked	= btrfs_islocked,
 	.vop_pathconf	= btrfs_pathconf,
@@ -347,27 +348,10 @@ btrfs_getattr(void *v)
 	return (0);
 }
 
-static const uint8_t btrfs_zeros[DEV_BSIZE];
-
-static int
-btrfs_uiomove_zeros(size_t size, struct uio *uio)
-{
-	size_t chunk;
-	int error;
-
-	while (size != 0) {
-		chunk = MIN(size, sizeof(btrfs_zeros));
-		error = uiomove((void *)btrfs_zeros, chunk, uio);
-		if (error != 0)
-			return (error);
-		size -= chunk;
-	}
-	return (0);
-}
-
 static int
 btrfs_read_regular_extent(struct btrfs_node *node,
-    const struct btrfs_file_extent *extent, size_t size, struct uio *uio)
+    const struct btrfs_file_extent *extent, uint64_t file_offset, size_t size,
+    uint8_t *destination)
 {
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct buf *bp = NULL;
@@ -382,7 +366,12 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	inode_flags = node->bn_inode.bi_flags;
-	relative = uio->uio_offset - extent->bfe_logical;
+	if (file_offset < extent->bfe_logical || destination == NULL)
+		return (EINVAL);
+	relative = file_offset - extent->bfe_logical;
+	if (relative > extent->bfe_length ||
+	    size > extent->bfe_length - relative)
+		return (EINVAL);
 	logical = extent->bfe_disk_bytenr + extent->bfe_disk_offset + relative;
 	csum_start = logical & ~((uint64_t)sectorsize - 1);
 	if (size > UINT64_MAX - (logical - csum_start))
@@ -414,11 +403,10 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 		error = btrfs_read_data_block(bmp, block, expectedp, &bp);
 		if (error != 0)
 			break;
-		error = uiomove((uint8_t *)bp->b_data + offset, chunk, uio);
+		memcpy(destination, (uint8_t *)bp->b_data + offset, chunk);
 		brelse(bp);
 		bp = NULL;
-		if (error != 0)
-			break;
+		destination += chunk;
 		logical += chunk;
 		size -= chunk;
 	}
@@ -432,40 +420,30 @@ out:
 }
 
 static int
-btrfs_read(void *v)
+btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
+    uint8_t *destination)
 {
-	struct vop_read_args *ap = v;
-	struct vnode *vp = ap->a_vp;
-	struct btrfs_node *node = VTOBTRFS(vp);
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
-	struct uio *uio = ap->a_uio;
-	uint64_t available, file_size, offset;
+	uint64_t available, end, file_size;
 	size_t size;
 	int error = 0;
 
-	KASSERT(VOP_ISLOCKED(vp));
-	if (vp->v_type != VREG)
-		return (EISDIR);
-	if (uio->uio_rw != UIO_READ || uio->uio_offset < 0)
-		return (EINVAL);
-	if (uio->uio_resid == 0)
-		return (0);
-
 	file_size = node->bn_inode.bi_size;
-	offset = uio->uio_offset;
-	if (offset >= file_size)
+	if (destination == NULL || offset > file_size ||
+	    length > file_size - offset)
+		return (EINVAL);
+	if (length == 0)
 		return (0);
+	end = offset + length;
 
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
 	if (error != 0)
 		return (error);
 
-	while (error == 0 && uio->uio_resid != 0 &&
-	    (uint64_t)uio->uio_offset < file_size) {
-		offset = uio->uio_offset;
+	while (error == 0 && offset < end) {
 		error = btrfs_find_file_extent(bmp, root, &path,
 		    node->bn_ino, offset, file_size, &extent);
 		if (error != 0)
@@ -477,9 +455,7 @@ btrfs_read(void *v)
 		}
 
 		available = extent.bfe_logical + extent.bfe_length - offset;
-		size = uio->uio_resid;
-		if (size > file_size - offset)
-			size = file_size - offset;
+		size = end - offset;
 		if (size > available)
 			size = available;
 
@@ -490,32 +466,125 @@ btrfs_read(void *v)
 					error = EINVAL;
 					break;
 				}
-				error = uiomove((void *)(extent.bfe_inline_data +
-				    offset - extent.bfe_logical), size, uio);
+				memcpy(destination, extent.bfe_inline_data +
+				    offset - extent.bfe_logical, size);
 			} else {
 				error = btrfs_read_compressed_extent(node, &extent,
-				    size, uio);
+				    offset, size, destination);
 			}
 			break;
 		case BTRFS_FILE_EXTENT_REG:
 			if (extent.bfe_compression == BTRFS_COMPRESS_NONE)
 				error = btrfs_read_regular_extent(node, &extent,
-				    size, uio);
+				    offset, size, destination);
 			else
 				error = btrfs_read_compressed_extent(node, &extent,
-				    size, uio);
+				    offset, size, destination);
 			break;
 		case BTRFS_FILE_EXTENT_PREALLOC:
 		case BTRFS_FILE_EXTENT_HOLE:
-			error = btrfs_uiomove_zeros(size, uio);
+			memset(destination, 0, size);
 			break;
 		default:
 			error = EINVAL;
 			break;
 		}
+		if (error == 0) {
+			offset += size;
+			destination += size;
+		}
 	}
 
 	btrfs_release_path(&path);
+	return (error);
+}
+
+static int
+btrfs_strategy(void *v)
+{
+	struct vop_strategy_args *ap = v;
+	struct buf *bp = ap->a_bp;
+	struct btrfs_node *node = VTOBTRFS(bp->b_vp);
+	uint64_t file_offset, file_size;
+	uint32_t sectorsize;
+	size_t length;
+	int error, s;
+
+	sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	error = 0;
+	if ((bp->b_flags & B_READ) == 0)
+		error = EROFS;
+	else if (bp->b_lblkno < 0 ||
+	    (uint64_t)bp->b_lblkno > UINT64_MAX / sectorsize ||
+	    bp->b_bcount != sectorsize)
+		error = EINVAL;
+
+	if (error == 0) {
+		file_offset = (uint64_t)bp->b_lblkno * sectorsize;
+		file_size = node->bn_inode.bi_size;
+		clrbuf(bp);
+		if (file_offset < file_size) {
+			length = MIN((uint64_t)bp->b_bcount,
+			    file_size - file_offset);
+			error = btrfs_read_file_range(node, file_offset,
+			    length, bp->b_data);
+		}
+	}
+	if (error != 0) {
+		bp->b_error = error;
+		bp->b_flags |= B_ERROR;
+	}
+
+	s = splbio();
+	biodone(bp);
+	splx(s);
+	return (error);
+}
+
+static int
+btrfs_read(void *v)
+{
+	struct vop_read_args *ap = v;
+	struct vnode *vp = ap->a_vp;
+	struct btrfs_node *node = VTOBTRFS(vp);
+	struct btrfs_mount *bmp = node->bn_mount;
+	struct buf *bp = NULL;
+	struct uio *uio = ap->a_uio;
+	uint64_t file_size;
+	uint32_t sectorsize;
+	daddr_t block;
+	size_t offset, size;
+	int error = 0;
+
+	KASSERT(VOP_ISLOCKED(vp));
+	if (vp->v_type != VREG)
+		return (EISDIR);
+	if (uio->uio_rw != UIO_READ || uio->uio_offset < 0)
+		return (EINVAL);
+	if (uio->uio_resid == 0)
+		return (0);
+
+	file_size = node->bn_inode.bi_size;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	while (uio->uio_resid != 0 &&
+	    (uint64_t)uio->uio_offset < file_size) {
+		block = (uint64_t)uio->uio_offset / sectorsize;
+		offset = (uint64_t)uio->uio_offset & (sectorsize - 1);
+		size = MIN((size_t)(sectorsize - offset), uio->uio_resid);
+		if (size > file_size - (uint64_t)uio->uio_offset)
+			size = file_size - (uint64_t)uio->uio_offset;
+
+		error = bread(vp, block, sectorsize, &bp);
+		if (error != 0)
+			break;
+		error = uiomove((uint8_t *)bp->b_data + offset, size, uio);
+		brelse(bp);
+		bp = NULL;
+		if (error != 0)
+			break;
+	}
+	if (bp != NULL)
+		brelse(bp);
 	return (error);
 }
 

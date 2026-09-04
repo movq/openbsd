@@ -35,10 +35,11 @@ The following rules are non-negotiable:
 
 ## Current architecture
 
-Tree metadata and regular uncompressed data are read with `bread()` on the
-device vnode.  Consequently, physical disk blocks are already cached by the
-OpenBSD buffer cache.  Adding a second cache containing untracked copies of the
-same bytes would waste memory and create coherency problems.
+Tree metadata and the physical sectors backing file data are read with
+`bread()` on the device vnode.  Consequently, physical disk blocks are already
+cached by the OpenBSD buffer cache.  Adding a second cache containing
+untracked copies of the same bytes would waste memory and create coherency
+problems.
 
 Logical mapping and mirror-aware physical reads are centralized in
 `btrfs_io.c`.  Metadata header validation and data checksum validation run
@@ -53,9 +54,12 @@ This physical cache is not, by itself, enough for writes:
 * DUP metadata has two physical copies but one logical identity.
 * A dirty COW block needs transaction ownership, locking, dirty-list linkage,
   and writeback status which are not represented by the current `struct buf`.
-* File writes need dirty data indexed by `(vnode, file offset)`.  The current
-  read path bypasses the file vnode's buffer cache and reads physical sectors
-  directly, so it cannot observe delayed-allocation writes.
+* Regular file reads now use sector-sized buffers indexed by `(vnode, file
+  offset)`.  `VOP_STRATEGY` fills a logical buffer from inline, hole,
+  uncompressed, or compressed extents, using the physical device buffers
+  underneath.  This lets reads observe a future delayed-allocation dirty
+  buffer before writeback.  The strategy write side and delayed allocation
+  are not implemented yet.
 * Mounted trees now use persistent roots and take a locked location snapshot
   for each search.  Root-location publication still needs to be tied to
   transaction commit before those locations can change.
@@ -163,10 +167,11 @@ dirty block.
 
 ### File data cache and ordered extents
 
-Regular file reads and writes should converge on buffers indexed by file
-logical block, rather than having reads bypass dirty vnode data.  The natural
-OpenBSD integration is the vnode buffer cache plus `VOP_STRATEGY`, but btrfs
-needs additional state:
+Regular file reads use buffers indexed by file logical sector.  The btrfs
+`VOP_STRATEGY` read side resolves extent items and fills these logical buffers,
+including across holes and compressed extents.  Physical data remains cached
+on the device vnode.  The write side will extend this OpenBSD vnode-buffer
+integration with additional state:
 
 * Delayed-allocation and metadata reservations are made before dirtying data.
 * A writeback request joins a transaction, allocates a COW data extent, and
@@ -181,10 +186,11 @@ needs additional state:
   extent items.  This prevents stale disk data from being returned after a
   buffered write.
 
-Compressed reads do not map one-to-one through `VOP_BMAP`.  Refactor the
-current extent readers so they can fill a logical file buffer as well as a
-`uio`; do not regress existing compressed-read support while introducing the
-logical data cache.
+Compressed reads do not map one-to-one through `VOP_BMAP`.  Extent readers now
+fill caller-provided memory, allowing `VOP_STRATEGY` to populate a logical file
+buffer without exposing physical mappings.  Compressed extents are currently
+decompressed once for each logical buffer they intersect; caching larger
+decompressed clusters is a later optimization.
 
 Dirty data need not join a transaction at the moment of `uiomove()`.  It can
 hold an allocator reservation and join during writeback.  Before returning
@@ -421,8 +427,10 @@ The following changes are useful before enabling writable mounts:
 
 * Completed: decode vnode inode state to host endian and add
   dirty/transaction fields.
-* Refactor regular and compressed extent reads to fill logical file buffers,
-  then implement vnode-buffer reads before writes.
+* Completed: refactor regular and compressed extent reads to fill logical file
+  buffers, then implement vnode-buffer reads before writes.  Logical buffers
+  are one filesystem sector so they align with data checksums and the minimum
+  COW unit.
 * Split `btrfs_alloc.c` decoders from mutable allocator code and construct
   per-block-group free-space indexes at mount.
 * Completed: centralize logical-to-physical read submission.  Metadata and
@@ -440,8 +448,8 @@ designed together with COW ownership and transaction lifetime.
 
 ### 1. Read-path architecture
 
-Host-endian mutable inode state is in place.  Finish logical vnode data
-buffers.  No writable mount is permitted.
+Completed: host-endian mutable inode state and logical vnode data buffers are
+in place.  No writable mount is permitted.
 
 ### 2. Transaction and allocator core
 
@@ -504,7 +512,8 @@ The following are intentionally deferred:
 
 * Whether extent-buffer bytes live directly in device `struct buf` objects or
   in nodesize memory with device buffers used only during I/O.
-* The exact vnode-buffer size and strategy for compressed extents.
+* Whether to add a larger decompressed-cluster cache or read-ahead while
+  retaining sector-sized vnode buffers.
 * Whether the first writable release supports existing snapshots or rejects
   them after a complete root/backreference scan.
 * When to allow the next transaction to run concurrently with commit I/O.

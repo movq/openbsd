@@ -98,7 +98,8 @@ out:
 
 int
 btrfs_read_compressed_extent(struct btrfs_node *node,
-    const struct btrfs_file_extent *extent, size_t size, struct uio *uio)
+    const struct btrfs_file_extent *extent, uint64_t offset, size_t size,
+    void *destination)
 {
 	uint8_t *compressed = NULL, *uncompressed = NULL;
 	uint64_t relative;
@@ -110,7 +111,9 @@ btrfs_read_compressed_extent(struct btrfs_node *node,
 	    extent->bfe_ram_bytes > BTRFS_MAX_UNCOMPRESSED)
 		return (EINVAL);
 
-	relative = uio->uio_offset - extent->bfe_logical;
+	if (offset < extent->bfe_logical || destination == NULL)
+		return (EINVAL);
+	relative = offset - extent->bfe_logical;
 	if (relative > extent->bfe_length ||
 	    size > extent->bfe_length - relative ||
 	    extent->bfe_disk_offset > extent->bfe_ram_bytes ||
@@ -147,7 +150,7 @@ btrfs_read_compressed_extent(struct btrfs_node *node,
 		error = EINVAL;
 		goto out;
 	}
-	error = uiomove(uncompressed + output_offset, size, uio);
+	memcpy(destination, uncompressed + output_offset, size);
 out:
 	if (uncompressed != NULL)
 		free(uncompressed, M_BTRFS, extent->bfe_ram_bytes);
