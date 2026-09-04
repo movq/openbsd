@@ -123,6 +123,27 @@ btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
 		nvalid++;
 	}
 
+	if (nvalid == 0 && result == EOPNOTSUPP) {
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			if ((mirrors[i].bsm_flags &
+			    BTRFS_SUPER_MIRROR_READABLE) == 0 ||
+			    mirrors[i].bsm_error != EOPNOTSUPP)
+				continue;
+			sb = &candidates[i].bsc_super;
+			if (letoh16(sb->csum_type) !=
+			    BTRFS_CSUM_TYPE_CRC32) {
+				printf("btrfs: unsupported checksum type %u\n",
+				    letoh16(sb->csum_type));
+			} else if (letoh64(sb->num_devices) != 1) {
+				printf("btrfs: unsupported device count %llu\n",
+				    (unsigned long long)
+				    letoh64(sb->num_devices));
+			} else {
+				printf("btrfs: unsupported superblock format\n");
+			}
+			break;
+		}
+	}
 	return (nvalid == 0 ? result : 0);
 }
 
@@ -141,13 +162,21 @@ btrfs_super_same_filesystem(const struct btrfs_super_block *a,
 int
 btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 {
-	uint64_t incompat;
+	uint64_t incompat, unsupported;
 
 	incompat = letoh64(sb->incompat_flags);
-	if (incompat & ~BTRFS_FEATURE_INCOMPAT_KNOWN)
+	unsupported = incompat & ~BTRFS_FEATURE_INCOMPAT_KNOWN;
+	if (unsupported != 0) {
+		printf("btrfs: unknown incompat features 0x%llx\n",
+		    (unsigned long long)unsupported);
 		return (EOPNOTSUPP);
-	if (incompat & ~BTRFS_FEATURE_INCOMPAT_SUPPORTED)
+	}
+	unsupported = incompat & ~BTRFS_FEATURE_INCOMPAT_SUPPORTED;
+	if (unsupported != 0) {
+		printf("btrfs: unsupported incompat features 0x%llx\n",
+		    (unsigned long long)unsupported);
 		return (EOPNOTSUPP);
+	}
 
 	if (!readonly) {
 		/*
@@ -538,14 +567,23 @@ btrfs_decode_chunk(const struct btrfs_super_block *sb,
 	    letoh32(chunk->sector_size) != sectorsize)
 		return (EINVAL);
 	if (type & ~(BTRFS_BLOCK_GROUP_TYPE_MASK |
-	    BTRFS_BLOCK_GROUP_PROFILE_MASK))
+	    BTRFS_BLOCK_GROUP_PROFILE_MASK)) {
+		printf("btrfs: unsupported chunk type 0x%llx\n",
+		    (unsigned long long)type);
 		return (EOPNOTSUPP);
+	}
 
 	if ((profile == 0 && nstripes != 1) ||
-	    (profile == BTRFS_BLOCK_GROUP_DUP && nstripes != 2))
+	    (profile == BTRFS_BLOCK_GROUP_DUP && nstripes != 2)) {
+		printf("btrfs: invalid stripe count %u for chunk profile "
+		    "0x%llx\n", nstripes, (unsigned long long)profile);
 		return (EOPNOTSUPP);
-	if (profile != 0 && profile != BTRFS_BLOCK_GROUP_DUP)
+	}
+	if (profile != 0 && profile != BTRFS_BLOCK_GROUP_DUP) {
+		printf("btrfs: unsupported chunk profile 0x%llx\n",
+		    (unsigned long long)profile);
 		return (EOPNOTSUPP);
+	}
 
 	map->logical = logical;
 	map->length = chunk_len;

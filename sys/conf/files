@@ -823,10 +823,35 @@ file kern/vfs_vnops.c
 file kern/vfs_getcwd.c
 file kern/spec_vnops.c
 file btrfs/btrfs_inode.c		btrfs
+file btrfs/btrfs_compression.c		btrfs
 file btrfs/btrfs_super.c		btrfs
 file btrfs/btrfs_tree.c			btrfs
 file btrfs/btrfs_vfsops.c		btrfs
 file btrfs/btrfs_vnops.c		btrfs
+file btrfs/btrfs_zstd.c			btrfs
+file btrfs/zstd/common/debug.c		btrfs
+file btrfs/zstd/common/entropy_common.c	btrfs
+file btrfs/zstd/common/error_private.c	btrfs
+file btrfs/zstd/common/fse_decompress.c	btrfs
+file btrfs/zstd/common/xxhash.c		btrfs
+file btrfs/zstd/common/zstd_common.c	btrfs
+file btrfs/zstd/compress/fse_compress.c	btrfs
+file btrfs/zstd/compress/hist.c		btrfs
+file btrfs/zstd/compress/huf_compress.c	btrfs
+file btrfs/zstd/compress/zstd_compress.c	btrfs
+file btrfs/zstd/compress/zstd_compress_literals.c btrfs
+file btrfs/zstd/compress/zstd_compress_sequences.c btrfs
+file btrfs/zstd/compress/zstd_compress_superblock.c btrfs
+file btrfs/zstd/compress/zstd_double_fast.c btrfs
+file btrfs/zstd/compress/zstd_fast.c	btrfs
+file btrfs/zstd/compress/zstd_lazy.c	btrfs
+file btrfs/zstd/compress/zstd_ldm.c	btrfs
+file btrfs/zstd/compress/zstd_opt.c	btrfs
+file btrfs/zstd/compress/zstd_preSplit.c	btrfs
+file btrfs/zstd/decompress/huf_decompress.c btrfs
+file btrfs/zstd/decompress/zstd_ddict.c	btrfs
+file btrfs/zstd/decompress/zstd_decompress.c btrfs
+file btrfs/zstd/decompress/zstd_decompress_block.c btrfs
 file miscfs/deadfs/dead_vnops.c
 file miscfs/fifofs/fifo_vnops.c		fifo
 file msdosfs/msdosfs_conv.c		msdosfs

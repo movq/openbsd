@@ -32,6 +32,8 @@
 #include <btrfs/btrfs.h>
 
 #define BTRFS_MAX_LEVEL		8
+#define BTRFS_MAX_COMPRESSED	(128 * 1024)
+#define BTRFS_MAX_UNCOMPRESSED	(128 * 1024)
 
 struct btrfs_chunk_map {
 	uint64_t	logical;
@@ -71,6 +73,7 @@ struct btrfs_file_extent {
 	uint64_t	 bfe_disk_bytenr;
 	uint64_t	 bfe_disk_num_bytes;
 	uint64_t	 bfe_disk_offset;
+	uint64_t	 bfe_ram_bytes;
 	size_t		 bfe_inline_size;
 	uint16_t	 bfe_other_encoding;
 	uint8_t		 bfe_compression;
@@ -219,6 +222,8 @@ int	btrfs_find_file_extent(const struct btrfs_mount *,
 int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
 int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
 	    const uint32_t *, struct buf **);
+int	btrfs_read_compressed_extent(struct btrfs_node *,
+	    const struct btrfs_file_extent *, size_t, struct uio *);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 int	btrfs_vget_tree(struct mount *, uint64_t, uint64_t, struct vnode **);
 

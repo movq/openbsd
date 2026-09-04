@@ -1,0 +1,24 @@
+Zstandard 1.5.7
+================
+
+These files are the single-threaded compression and decompression portions of
+upstream Zstandard 1.5.7 from https://github.com/facebook/zstd.  Dictionary
+building, legacy formats, multithreaded compression, the thread pool, tests,
+programs, and assembly are not imported.
+
+Local kernel adaptations are confined to:
+
+	common/zstd_kernel.h
+	common/zstd_deps.h
+	common/compiler.h
+	common/debug.h
+	common/mem.h
+	common/xxhash.h
+	common/zstd_trace.h
+	compress/zstd_preSplit.h
+	zstd.h
+
+They replace libc headers and allocation with OpenBSD kernel facilities,
+disable runtime CPU dispatch and assembly, strip diagnostics and unused
+stack-heavy helpers, and force one-shot compression contexts onto the heap.
+The upstream BSD license is in LICENSE.
