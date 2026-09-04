@@ -38,15 +38,17 @@ btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
 	trans->bt_generation = generation;
 	trans->bt_state = BTRFS_TRANS_OPEN;
 	mtx_init(&trans->bt_lock, IPL_NONE);
+	TAILQ_INIT(&trans->bt_commit_reservations);
 	TAILQ_INIT(&trans->bt_allocated_extents);
 	TAILQ_INIT(&trans->bt_pinned_extents);
 	return (trans);
 }
 
-void
+int
 btrfs_trans_init(struct btrfs_mount *bmp)
 {
 	uint64_t generation;
+	int error;
 
 	bmp->bm_last_transid = letoh64(bmp->bm_super.generation);
 	mtx_init(&bmp->bm_trans_mtx, IPL_NONE);
@@ -58,7 +60,23 @@ btrfs_trans_init(struct btrfs_mount *bmp)
 	if (generation == UINT64_MAX && bmp->bm_last_transid == UINT64_MAX) {
 		bmp->bm_transaction->bt_error = EOVERFLOW;
 		bmp->bm_transaction->bt_state = BTRFS_TRANS_ABORTED;
+		if ((bmp->bm_mount->mnt_flag & MNT_RDONLY) == 0) {
+			free(bmp->bm_transaction, M_BTRFS,
+			    sizeof(*bmp->bm_transaction));
+			bmp->bm_transaction = NULL;
+			return (EOVERFLOW);
+		}
 	}
+	if ((bmp->bm_mount->mnt_flag & MNT_RDONLY) == 0) {
+		error = btrfs_space_reserve_commit(bmp->bm_transaction);
+		if (error != 0) {
+			free(bmp->bm_transaction, M_BTRFS,
+			    sizeof(*bmp->bm_transaction));
+			bmp->bm_transaction = NULL;
+			return (error);
+		}
+	}
+	return (0);
 }
 
 void
@@ -70,8 +88,10 @@ btrfs_trans_destroy(struct btrfs_mount *bmp)
 		return;
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!bmp->bm_committer);
+	KASSERT(!trans->bt_commit_handle);
 	if (trans->bt_state != BTRFS_TRANS_COMMITTED)
 		btrfs_space_abort(trans);
+	KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
 	KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
 	free(trans, M_BTRFS, sizeof(*trans));
@@ -104,8 +124,17 @@ btrfs_trans_join(struct btrfs_mount *bmp,
 			return (error);
 		}
 		if (trans->bt_state == BTRFS_TRANS_OPEN &&
-		    !bmp->bm_committer)
+		    !bmp->bm_committer) {
+			if (trans->bt_commit_reserve_target == 0) {
+				trans->bt_error = ENOSPC;
+				trans->bt_state = BTRFS_TRANS_ABORTED;
+				bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+				mtx_leave(&bmp->bm_trans_mtx);
+				free(handle, M_BTRFS, sizeof(*handle));
+				return (ENOSPC);
+			}
 			break;
+		}
 		msleep(&bmp->bm_transaction, &bmp->bm_trans_mtx, PWAIT,
 		    "btrjoin", 0);
 	}
@@ -124,6 +153,38 @@ btrfs_trans_join(struct btrfs_mount *bmp,
 }
 
 int
+btrfs_trans_commit_handle(struct btrfs_transaction *trans,
+    struct btrfs_trans_handle **handlep)
+{
+	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_trans_handle *handle;
+	int error;
+
+	*handlep = NULL;
+	handle = malloc(sizeof(*handle), M_BTRFS, M_WAITOK | M_ZERO);
+	TAILQ_INIT(&handle->bth_reservations);
+
+	mtx_enter(&bmp->bm_trans_mtx);
+	if (bmp->bm_transaction != trans || !bmp->bm_committer ||
+	    trans->bt_state != BTRFS_TRANS_COMMITTING ||
+	    trans->bt_commit_handle ||
+	    trans->bt_commit_reserve_target == 0) {
+		error = trans->bt_error != 0 ? trans->bt_error : EINVAL;
+		mtx_leave(&bmp->bm_trans_mtx);
+		free(handle, M_BTRFS, sizeof(*handle));
+		return (error);
+	}
+	KASSERT(trans->bt_writers == 0);
+	trans->bt_commit_handle = 1;
+	handle->bth_transaction = trans;
+	handle->bth_commit = 1;
+	mtx_leave(&bmp->bm_trans_mtx);
+
+	*handlep = handle;
+	return (0);
+}
+
+int
 btrfs_trans_end(struct btrfs_trans_handle *handle)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
@@ -133,6 +194,17 @@ btrfs_trans_end(struct btrfs_trans_handle *handle)
 	btrfs_space_release(handle);
 	mtx_enter(&bmp->bm_trans_mtx);
 	KASSERT(trans == bmp->bm_transaction);
+	if (handle->bth_commit) {
+		KASSERT(bmp->bm_committer);
+		KASSERT(trans->bt_state == BTRFS_TRANS_COMMITTING ||
+		    trans->bt_state == BTRFS_TRANS_ABORTED);
+		KASSERT(trans->bt_commit_handle);
+		trans->bt_commit_handle = 0;
+		error = trans->bt_error;
+		mtx_leave(&bmp->bm_trans_mtx);
+		free(handle, M_BTRFS, sizeof(*handle));
+		return (error);
+	}
 	KASSERT(trans->bt_writers > 0);
 	trans->bt_writers--;
 	error = trans->bt_error;
@@ -206,10 +278,12 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 {
 	struct btrfs_transaction *next = NULL;
 	uint64_t generation;
+	int reserve_error = 0;
 
 	mtx_enter(&bmp->bm_trans_mtx);
 	if (bmp->bm_transaction != trans || !bmp->bm_committer ||
 	    trans->bt_writers != 0 ||
+	    trans->bt_commit_handle ||
 	    (trans->bt_state != BTRFS_TRANS_COMMITTING &&
 	    trans->bt_state != BTRFS_TRANS_ABORTED)) {
 		mtx_leave(&bmp->bm_trans_mtx);
@@ -223,8 +297,13 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 		error = EOVERFLOW;
 	if (error == 0) {
 		generation = trans->bt_generation + 1;
-		next = btrfs_trans_alloc(bmp, generation);
 		btrfs_space_commit(trans);
+		next = btrfs_trans_alloc(bmp, generation);
+		reserve_error = btrfs_space_reserve_commit(next);
+		if (reserve_error != 0) {
+			next->bt_error = reserve_error;
+			next->bt_state = BTRFS_TRANS_ABORTED;
+		}
 	} else {
 		btrfs_space_abort(trans);
 	}
@@ -237,6 +316,8 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 		trans->bt_state = BTRFS_TRANS_COMMITTED;
 		bmp->bm_last_transid = trans->bt_generation;
 		bmp->bm_transaction = next;
+		if (reserve_error != 0)
+			bmp->bm_mount->mnt_flag |= MNT_RDONLY;
 	} else {
 		if (trans->bt_error == 0)
 			trans->bt_error = error;

@@ -245,7 +245,10 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	error = btrfs_space_init(bmp);
 	if (error != 0)
 		goto out;
-	btrfs_trans_init(bmp);
+	stage = "initializing transaction";
+	error = btrfs_trans_init(bmp);
+	if (error != 0)
+		goto out;
 
 	mp->mnt_data = bmp;
 	mp->mnt_stat.f_fsid.val[0] = devvp->v_rdev;

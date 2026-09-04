@@ -233,19 +233,24 @@ enum btrfs_trans_state {
 struct btrfs_transaction {
 	struct btrfs_mount		*bt_mount;
 	struct mutex			 bt_lock;
+	struct btrfs_reserved_space_list bt_commit_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;
 	struct btrfs_trans_extent_list	 bt_pinned_extents;
 	uint64_t			 bt_generation;
+	uint64_t			 bt_commit_reserve_target;
+	uint64_t			 bt_commit_reserved_bytes;
 	uint64_t			 bt_allocated_bytes;
 	uint64_t			 bt_pinned_bytes;
 	unsigned int			 bt_writers;
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
+	uint8_t				 bt_commit_handle;
 };
 
 struct btrfs_trans_handle {
 	struct btrfs_transaction	*bth_transaction;
 	struct btrfs_reserved_space_list bth_reservations;
+	uint8_t				 bth_commit;
 };
 
 typedef int (*btrfs_extent_iter_fn)(const struct btrfs_extent_record *,
@@ -502,16 +507,19 @@ int	btrfs_space_init(struct btrfs_mount *);
 void	btrfs_space_destroy(struct btrfs_mount *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
+int	btrfs_space_reserve_commit(struct btrfs_transaction *);
 void	btrfs_space_release(struct btrfs_trans_handle *);
 int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
 	    uint64_t, uint64_t *);
 int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
 void	btrfs_space_commit(struct btrfs_transaction *);
 void	btrfs_space_abort(struct btrfs_transaction *);
-void	btrfs_trans_init(struct btrfs_mount *);
+int	btrfs_trans_init(struct btrfs_mount *);
 void	btrfs_trans_destroy(struct btrfs_mount *);
 int	btrfs_trans_join(struct btrfs_mount *,
 	    const struct btrfs_trans_reservation *,
+	    struct btrfs_trans_handle **);
+int	btrfs_trans_commit_handle(struct btrfs_transaction *,
 	    struct btrfs_trans_handle **);
 int	btrfs_trans_end(struct btrfs_trans_handle *);
 void	btrfs_trans_abort(struct btrfs_trans_handle *, int);
