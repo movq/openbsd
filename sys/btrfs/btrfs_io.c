@@ -21,6 +21,7 @@
 #include <sys/buf.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
+#include <sys/malloc.h>
 #include <sys/vnode.h>
 
 #include <lib/libkern/crc32c.h>
@@ -130,6 +131,65 @@ btrfs_read_logical(struct vnode *devvp,
 	}
 
 	return (error);
+}
+
+int
+btrfs_write_logical(struct vnode *devvp,
+    const struct btrfs_chunk_map *chunks, unsigned int nchunks,
+    uint64_t logical, uint32_t length, uint64_t type_mask,
+    const void *data, struct btrfs_io_result *result)
+{
+	struct btrfs_io_map map;
+	struct buf *bp;
+	void *copy;
+	unsigned int i;
+	int error, first_error = 0;
+
+	if (result != NULL) {
+		memset(result, 0, sizeof(*result));
+		result->bir_mirror = -1;
+	}
+	if (devvp == NULL || chunks == NULL || data == NULL || length == 0 ||
+	    length > MAXBSIZE || type_mask == 0)
+		return (EINVAL);
+
+	error = btrfs_lookup_logical(chunks, nchunks, logical, length, &map);
+	if (error != 0)
+		return (error);
+	if ((map.type & type_mask) == 0)
+		return (EINVAL);
+
+	for (i = 0; i < map.nmirrors; i++) {
+		if ((map.physical[i] & (DEV_BSIZE - 1)) != 0)
+			return (EINVAL);
+	}
+	if (result != NULL)
+		result->bir_nmirrors = map.nmirrors;
+
+	/*
+	 * Preserve one immutable source while each target buffer is acquired,
+	 * submitted, and released.
+	 */
+	copy = malloc(length, M_BTRFS, M_WAITOK);
+	memcpy(copy, data, length);
+	for (i = 0; i < map.nmirrors; i++) {
+		bp = getblk(devvp, map.physical[i] / DEV_BSIZE, length, 0,
+		    INFSLP);
+		memcpy(bp->b_data, copy, length);
+		/*
+		 * B_NOCACHE prevents bwrite() from becoming a delayed write
+		 * when the device vnode belongs to an asynchronous mount.
+		 */
+		SET(bp->b_flags, B_NOCACHE);
+		error = bwrite(bp);
+		if (result != NULL)
+			result->bir_error[i] = error;
+		if (error != 0 && first_error == 0)
+			first_error = error;
+	}
+	free(copy, M_BTRFS, length);
+
+	return (first_error);
 }
 
 static int
