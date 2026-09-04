@@ -60,8 +60,8 @@ struct btrfs_io_map {
 };
 
 /*
- * On success, mirrors through bir_mirror were attempted.  On failure, all
- * bir_nmirrors entries contain the error returned for that copy.
+ * Reads attempt mirrors through bir_mirror and select that copy.  Writes leave
+ * bir_mirror at -1, attempt all bir_nmirrors copies, and record every result.
  */
 struct btrfs_io_result {
 	int		bir_error[BTRFS_MAX_MIRRORS];
@@ -454,6 +454,9 @@ int	btrfs_read_logical(struct vnode *, const struct btrfs_chunk_map *,
 	    unsigned int, uint64_t, uint32_t, uint64_t,
 	    btrfs_io_validate_fn, void *, struct btrfs_io_result *,
 	    struct buf **);
+int	btrfs_write_logical(struct vnode *, const struct btrfs_chunk_map *,
+	    unsigned int, uint64_t, uint32_t, uint64_t, const void *,
+	    struct btrfs_io_result *);
 int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);
