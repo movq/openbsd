@@ -749,6 +749,7 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!trans->bt_commit_handle);
+	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	btrfs_space_check_commit_reserve(trans);
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
@@ -807,6 +808,7 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!trans->bt_commit_handle);
+	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	btrfs_space_check_commit_reserve(trans);
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
