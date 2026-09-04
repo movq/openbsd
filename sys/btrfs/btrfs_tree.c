@@ -36,14 +36,15 @@ static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
 static int	btrfs_read_tree_block(struct vnode *,
 		    const struct btrfs_super_block *, const struct btrfs_io_map *,
-		    uint64_t, uint64_t, uint64_t, uint8_t, struct buf **);
+		    uint64_t, uint64_t, uint64_t, uint64_t, uint8_t,
+		    struct buf **);
 static const struct btrfs_key *
 		btrfs_block_key(const struct btrfs_header *, uint32_t);
 static int	btrfs_read_child(struct btrfs_path *, uint8_t, uint32_t,
 		    struct buf **);
 static int	btrfs_validate_tree_block(const struct btrfs_super_block *,
 		    const struct btrfs_header *, uint64_t, uint64_t, uint64_t,
-		    uint8_t);
+		    uint64_t, uint8_t);
 static int	btrfs_key_cmp(const struct btrfs_key *,
 		    const struct btrfs_key *);
 
@@ -95,8 +96,8 @@ btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
 static int
 btrfs_read_tree_block(struct vnode *devvp,
     const struct btrfs_super_block *sb, const struct btrfs_io_map *map,
-    uint64_t logical, uint64_t generation, uint64_t owner, uint8_t level,
-    struct buf **bpp)
+    uint64_t logical, uint64_t generation, uint64_t view_generation,
+    uint64_t owner, uint8_t level, struct buf **bpp)
 {
 	struct buf *bp;
 	unsigned int i;
@@ -112,7 +113,7 @@ btrfs_read_tree_block(struct vnode *devvp,
 		if (error == 0)
 			error = btrfs_validate_tree_block(sb,
 			    (const struct btrfs_header *)bp->b_data,
-			    logical, generation, owner, level);
+			    logical, generation, view_generation, owner, level);
 		if (error == 0) {
 			*bpp = bp;
 			return (0);
@@ -126,7 +127,8 @@ btrfs_read_tree_block(struct vnode *devvp,
 
 int
 btrfs_read_root_block(const struct btrfs_root *root, uint64_t logical,
-    uint64_t generation, uint8_t level, struct buf **bpp)
+    uint64_t generation, uint64_t view_generation, uint8_t level,
+    struct buf **bpp)
 {
 	struct btrfs_io_map map;
 	int error;
@@ -139,7 +141,7 @@ btrfs_read_root_block(const struct btrfs_root *root, uint64_t logical,
 	    BTRFS_BLOCK_GROUP_SYSTEM)) == 0)
 		return (EINVAL);
 	return (btrfs_read_tree_block(root->br_devvp, root->br_super, &map,
-	    logical, generation, root->br_owner, level, bpp));
+	    logical, generation, view_generation, root->br_owner, level, bpp));
 }
 
 void
@@ -152,6 +154,7 @@ btrfs_init_root_tree(struct btrfs_mount *bmp, struct btrfs_root *root)
 	root->br_nchunks = bmp->bm_nchunks;
 	root->br_bytenr = letoh64(bmp->bm_super.root);
 	root->br_generation = letoh64(bmp->bm_super.generation);
+	root->br_view_generation = letoh64(bmp->bm_super.generation);
 	root->br_owner = BTRFS_ROOT_TREE_OBJECTID;
 	root->br_level = bmp->bm_super.root_level;
 }
@@ -169,6 +172,7 @@ btrfs_init_fs_root(struct btrfs_mount *bmp, uint64_t treeid,
 	root->br_super = &bmp->bm_super;
 	root->br_chunks = bmp->bm_chunks;
 	root->br_nchunks = bmp->bm_nchunks;
+	root->br_view_generation = letoh64(bmp->bm_super.generation);
 	root->br_owner = treeid;
 
 	if (treeid == bmp->bm_treeid) {
@@ -199,6 +203,7 @@ btrfs_init_csum_root(struct btrfs_mount *bmp, struct btrfs_root *root)
 	root->br_nchunks = bmp->bm_nchunks;
 	root->br_bytenr = bmp->bm_csum_root;
 	root->br_generation = bmp->bm_csum_root_generation;
+	root->br_view_generation = letoh64(bmp->bm_super.generation);
 	root->br_owner = BTRFS_CSUM_TREE_OBJECTID;
 	root->br_level = bmp->bm_csum_root_level;
 }
@@ -252,6 +257,7 @@ btrfs_init_special_root(struct btrfs_mount *bmp, uint64_t owner,
 	root->br_super = &bmp->bm_super;
 	root->br_chunks = bmp->bm_chunks;
 	root->br_nchunks = bmp->bm_nchunks;
+	root->br_view_generation = letoh64(bmp->bm_super.generation);
 	root->br_owner = owner;
 	return (0);
 }
@@ -287,7 +293,7 @@ btrfs_read_child(struct btrfs_path *path, uint8_t parent_level,
 	ptrs = (const struct btrfs_key_ptr *)(parent + 1);
 	error = btrfs_read_root_block(path->bp_root,
 	    letoh64(ptrs[slot].blockptr), letoh64(ptrs[slot].generation),
-	    parent_level - 1, bpp);
+	    path->bp_root->br_view_generation, parent_level - 1, bpp);
 	if (error != 0)
 		return (error);
 
@@ -349,7 +355,7 @@ btrfs_search_slot(struct btrfs_root *root, const struct btrfs_key *target,
 		return (EINVAL);
 	path->bp_root = root;
 	error = btrfs_read_root_block(root, root->br_bytenr,
-	    root->br_generation, root->br_level,
+	    root->br_generation, root->br_view_generation, root->br_level,
 	    &path->bp_buf[root->br_level]);
 	if (error != 0)
 		goto fail;
@@ -702,7 +708,7 @@ btrfs_read_data_block(struct btrfs_mount *bmp, uint64_t logical,
 static int
 btrfs_validate_tree_block(const struct btrfs_super_block *sb,
     const struct btrfs_header *header, uint64_t bytenr, uint64_t generation,
-    uint64_t owner, uint8_t level)
+    uint64_t view_generation, uint64_t owner, uint8_t level)
 {
 	const struct btrfs_item *items;
 	const struct btrfs_key_ptr *ptrs;
@@ -725,7 +731,7 @@ btrfs_validate_tree_block(const struct btrfs_super_block *sb,
 	if (memcmp(header->fsid, fsid, BTRFS_UUID_SIZE) != 0 ||
 	    bytenr == 0 ||
 	    (bytenr & (letoh32(sb->sectorsize) - 1)) != 0 ||
-	    generation == 0 || generation > letoh64(sb->generation) ||
+	    generation == 0 || generation > view_generation ||
 	    letoh64(header->bytenr) != bytenr ||
 	    letoh64(header->generation) != generation ||
 	    letoh64(header->owner) != owner || header->level != level ||
@@ -764,7 +770,7 @@ btrfs_validate_tree_block(const struct btrfs_super_block *sb,
 			    (letoh32(sb->sectorsize) - 1)) != 0 ||
 			    letoh64(ptrs[i].generation) == 0 ||
 			    letoh64(ptrs[i].generation) >
-			    letoh64(sb->generation))
+			    view_generation)
 				return (EINVAL);
 			if (i != 0 &&
 			    btrfs_key_cmp(&ptrs[i - 1].key,

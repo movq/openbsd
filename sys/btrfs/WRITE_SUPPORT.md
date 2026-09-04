@@ -139,9 +139,11 @@ Clean lookup proceeds as follows:
 4. Validate checksum, FSID, bytenr, owner, generation, level, and item layout.
 5. Retain the successful logical object and release failed mirror buffers.
 
-The current strict checks against `bm_super.generation` must instead use the
-caller's tree view.  A running transaction legitimately contains generations
-newer than the last committed superblock.
+Tree-block validation uses the root's explicit view generation rather than
+implicitly using `bm_super.generation`.  Read-only roots initialize that view
+to the committed generation.  A future running transaction can therefore use
+its own generation when it legitimately contains blocks newer than the last
+committed superblock.
 
 Metadata dirtying is always done through a transaction-aware
 `btrfs_cow_block()` operation.  On the first write in a generation it allocates
