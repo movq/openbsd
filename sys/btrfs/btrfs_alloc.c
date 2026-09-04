@@ -345,17 +345,16 @@ btrfs_iterate_extent_items(struct btrfs_mount *bmp,
 	const uint8_t *data;
 	struct btrfs_extent_record extent;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	uint64_t expected = 0, found = 0;
 	uint32_t size;
 	int active = 0;
 	int error;
 
-	error = btrfs_init_special_root(bmp, BTRFS_EXTENT_TREE_OBJECTID,
-	    &root);
+	error = btrfs_get_root(bmp, BTRFS_EXTENT_TREE_OBJECTID, &root);
 	if (error != 0)
 		return (error);
-	error = btrfs_first_item(&root, &path);
+	error = btrfs_first_item(root, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &size);
 		if (error != 0)
@@ -442,7 +441,7 @@ btrfs_iterate_block_groups(struct btrfs_mount *bmp,
 	const uint8_t *data;
 	struct btrfs_block_group_record record;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	uint8_t *seen = NULL;
 	uint64_t owner;
 	uint32_t size;
@@ -453,12 +452,12 @@ btrfs_iterate_block_groups(struct btrfs_mount *bmp,
 	if (letoh64(bmp->bm_super.compat_ro_flags) &
 	    BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
 		owner = BTRFS_BLOCK_GROUP_TREE_OBJECTID;
-	error = btrfs_init_special_root(bmp, owner, &root);
+	error = btrfs_get_root(bmp, owner, &root);
 	if (error != 0)
 		return (error);
 	seen = mallocarray(bmp->bm_nchunks, sizeof(*seen), M_BTRFS,
 	    M_WAITOK | M_ZERO);
-	error = btrfs_first_item(&root, &path);
+	error = btrfs_first_item(root, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &size);
 		if (error != 0)
@@ -524,15 +523,15 @@ btrfs_iterate_chunk_items(struct btrfs_mount *bmp,
 	const uint8_t *data;
 	struct btrfs_chunk_map chunk;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	uint32_t size;
 	unsigned int index = 0;
 	int error;
 
-	error = btrfs_init_special_root(bmp, BTRFS_CHUNK_TREE_OBJECTID, &root);
+	error = btrfs_get_root(bmp, BTRFS_CHUNK_TREE_OBJECTID, &root);
 	if (error != 0)
 		return (error);
-	error = btrfs_first_item(&root, &path);
+	error = btrfs_first_item(root, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &size);
 		if (error != 0)
@@ -577,19 +576,19 @@ btrfs_iterate_device_extents(struct btrfs_mount *bmp,
 	const uint8_t *data;
 	struct btrfs_dev_extent_record record;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	uint8_t *seen = NULL;
 	uint64_t end, last_end = 0;
 	uint32_t size;
 	unsigned int i, index, stripe;
 	int error;
 
-	error = btrfs_init_special_root(bmp, BTRFS_DEV_TREE_OBJECTID, &root);
+	error = btrfs_get_root(bmp, BTRFS_DEV_TREE_OBJECTID, &root);
 	if (error != 0)
 		return (error);
 	seen = mallocarray(bmp->bm_nchunks, sizeof(*seen), M_BTRFS,
 	    M_WAITOK | M_ZERO);
-	error = btrfs_first_item(&root, &path);
+	error = btrfs_first_item(root, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &size);
 		if (error != 0)
@@ -678,7 +677,7 @@ btrfs_iterate_free_space(struct btrfs_mount *bmp,
 	struct btrfs_free_space_record record;
 	struct btrfs_free_space_state *states = NULL;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
+	struct btrfs_root *root;
 	uint64_t compat_ro, end, nbits;
 	uint32_t sectorsize, size;
 	size_t expected_size;
@@ -690,14 +689,13 @@ btrfs_iterate_free_space(struct btrfs_mount *bmp,
 		return (ENOENT);
 	if ((compat_ro & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID) == 0)
 		return (ESTALE);
-	error = btrfs_init_special_root(bmp, BTRFS_FREE_SPACE_TREE_OBJECTID,
-	    &root);
+	error = btrfs_get_root(bmp, BTRFS_FREE_SPACE_TREE_OBJECTID, &root);
 	if (error != 0)
 		return (error);
 	states = mallocarray(bmp->bm_nchunks, sizeof(*states), M_BTRFS,
 	    M_WAITOK | M_ZERO);
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	error = btrfs_first_item(&root, &path);
+	error = btrfs_first_item(root, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &size);
 		if (error != 0)

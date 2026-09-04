@@ -50,8 +50,9 @@ This physical cache is not, by itself, enough for writes:
 * File writes need dirty data indexed by `(vnode, file offset)`.  The current
   read path bypasses the file vnode's buffer cache and reads physical sectors
   directly, so it cannot observe delayed-allocation writes.
-* `struct btrfs_root` is currently a short-lived copy of root and chunk
-  locations.  Those copies become stale when a transaction changes a root.
+* Mounted trees now use persistent roots and take a locked location snapshot
+  for each search.  Root-location publication still needs to be tied to
+  transaction commit before those locations can change.
 * `bn_inode` is an on-disk-endian snapshot.  It needs host-endian mutable state,
   dirty flags, and transaction sequencing before it can be written safely.
 
@@ -95,20 +96,20 @@ not to freeze the final C API.
 
 ### Filesystem roots
 
-Replace copied mount fields with persistent `struct btrfs_root` objects owned
-by the mount.  Keep at least the root, chunk, extent, device, checksum, and
-selected filesystem roots in a root table keyed by object ID.  A root contains:
+The mount owns persistent `struct btrfs_root` objects for the root, chunk,
+extent, device, checksum, optional feature, selected filesystem, and discovered
+subvolume trees.  They live in a root table keyed by object ID.  A root
+currently contains:
 
 * Current logical bytenr, level, and generation.
 * Owner/object ID and a pointer back to the mount.
 * A lock protecting the current root location.
-* The transaction generation in which it was last COWed.
-* Linkage on the current transaction's dirty-root list.
 
-Tree searches take a root-location snapshot from the selected committed or
-running transaction view.  Updating a root changes the persistent root object,
-not a stack-local copy.  Subvolume roots discovered through root items should
-be cached in the same table.
+Tree searches take a root-location snapshot for the committed view.  Updating
+a root will change the persistent root object, not a stack-local copy.
+Subvolume roots discovered through root items are cached in the same table.
+Before mutation, roots still need the transaction generation in which they
+were last COWed and linkage on the current transaction's dirty-root list.
 
 The chunk map should similarly be a mount-owned service with a lock and stable
 references.  A raw `bm_chunks` pointer copied into a stack root will not remain
@@ -408,15 +409,6 @@ starting redundant commits.
 
 The following changes are useful before enabling writable mounts:
 
-* Separate read-supported and write-supported incompat/compat-ro feature
-  masks.
-* Make roots persistent mount-owned objects and pass a tree view or transaction
-  through searches.  Stop treating stack root copies as mutable authority.
-* Add the logical extent-buffer wrapper while retaining `struct buf` as the
-  physical I/O/cache mechanism.
-* Convert tree paths from raw `struct buf *` to referenced extent buffers.
-* Make validation generation-aware: committed reads use the committed
-  generation, transaction reads use that transaction's generation.
 * Decode vnode inode state to host endian and add dirty/transaction fields.
 * Refactor regular and compressed extent reads to fill logical file buffers,
   then implement vnode-buffer reads before writes.
@@ -433,8 +425,8 @@ designed together with COW ownership and transaction lifetime.
 
 ### 1. Read-path architecture
 
-Add persistent roots, extent buffers, transaction-aware generation validation,
-and logical vnode data buffers.  No writable mount is permitted.
+Finish host-endian mutable inode state and logical vnode data buffers.  No
+writable mount is permitted.
 
 ### 2. Transaction and allocator core
 
