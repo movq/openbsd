@@ -45,7 +45,10 @@ Logical mapping and mirror-aware physical reads are centralized in
 `btrfs_io.c`.  Metadata header validation and data checksum validation run
 inside the shared mirror loop, so a rejected copy is released before another
 DUP mirror is tried.  The interface can also return each mirror's error and the
-selected mirror.  Mirrored write submission is not implemented yet.
+selected mirror.  Synchronous logical writes now submit every required SINGLE
+or DUP copy and retain each copy's error; they do not yet have metadata or
+ordered-data callers.  Device cache flushes remain part of the future
+transaction commit protocol rather than this block submission primitive.
 
 This physical cache is not, by itself, enough for writes:
 
@@ -464,9 +467,11 @@ The following changes are useful before enabling writable mounts:
 * Completed: centralize logical-to-physical read submission.  Metadata and
   data now use one SINGLE/DUP mirror loop, with caller validation participating
   in failover and optional per-mirror error reporting.
-* Extend the logical I/O layer with mirrored write submission so metadata/data
-  writes handle SINGLE and DUP consistently and report every required-copy
-  failure.
+* Completed: extend the logical I/O layer with synchronous mirrored write
+  submission so metadata/data writes handle SINGLE and DUP consistently and
+  report every required-copy failure.  The primitive deliberately does not
+  claim stable-media durability; commit must still drain writes and issue the
+  required device cache flushes.
 
 These should land in small changes which preserve read-only behavior.  Avoid
 adding an ad hoc metadata cache now; the logical extent-buffer API should be
