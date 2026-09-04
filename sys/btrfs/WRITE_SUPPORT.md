@@ -101,8 +101,10 @@ are discarded; successful finalization clears transaction ownership only
 after metadata publication.  The commit-only delayed-reference engine now
 materializes skinny metadata extent items and tree/shared block references to
 a fixed point.  It pins a replaced metadata block only after its reference
-count reaches zero.  Allocator accounting items and data references remain
-unfinished, so the full commit path is not enabled.
+count reaches zero.  Commit preparation also rewrites block-group usage and
+dirty root items until delayed references and allocator state stop changing.
+Data references and durable transaction publication remain unfinished, so the
+full commit path is not enabled.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
@@ -148,8 +150,8 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed data references, ordered extents, commit integration, and on-disk
-accounting updates are not implemented yet.
+Delayed data references, ordered extents, durable commit integration, and
+superblock publication are not implemented yet.
 
 ## Initial writable format
 
@@ -202,8 +204,10 @@ write search keeps the root write-locked until its path is released, and the
 first root COW saves the prior location in a transaction-owned dirty-root
 record.  Updating a root changes the persistent root object, not a stack-local
 copy.  Subvolume roots discovered through root items are cached in the same
-table.  Abort restores the saved location; commit-side root-item and
-superblock encoding remains to be implemented.
+table.  Abort restores the saved location.  Commit preparation now rewrites
+the location, generation, level, and generation-v2 fields of every dirty
+non-superblock root item; final root-tree and chunk-tree locations still need
+superblock encoding.
 
 The chunk map should similarly be a mount-owned service with a lock and stable
 references.  A raw `bm_chunks` pointer copied into a stack root will not remain
@@ -431,9 +435,12 @@ delayed-reference and checksum reservation to the transaction.  A writable
 mount which cannot establish the full reserve must fail; a transaction which
 cannot replenish it after publishing a generation cannot admit more writers.
 
-Allocation updates only in-memory indexes immediately.  Extent items,
-backreferences, block-group `used`, device `bytes_used`, and superblock
-`bytes_used` are transaction deltas materialized through delayed references.
+Allocation updates only in-memory indexes immediately.  Extent items and
+backreferences are materialized through delayed references.  Commit
+preparation rewrites each block-group `used` value from committed usage plus
+new allocations minus pinned frees and retains the resulting total for the
+new superblock.  Device-item `bytes_used` does not change because the initial
+writer neither allocates nor removes chunks.
 
 Delayed metadata references combine signed add/drop operations with the same
 extent, parent, owning root, and level identity.  They are essential both for
@@ -449,6 +456,13 @@ A replaced metadata block is not immediately passed to
 `btrfs_space_pin()`.  It may still be referenced by a snapshot or shared tree.
 The materializer first applies the drop to the on-disk reference count and
 pins the extent only if that count becomes zero.
+
+Accounting and dirty-root updates can COW the extent and root trees, creating
+more delayed references and changing allocation state.  Commit preparation
+therefore repeats delayed-reference materialization, block-group accounting,
+and root-item updates until both the delayed-reference queue and an explicit
+space-change sequence are stable.  The sequence avoids mistaking equal-sized
+allocation and cancellation activity for a fixed point.
 
 ## B-tree mutation
 
@@ -639,6 +653,11 @@ The following write-path foundations are in place:
   context.  The fixed-point runner creates and updates metadata extent items,
   supports inline and separate tree/shared block references, and pins an old
   metadata extent only after its final reference is removed.
+* Completed: stabilize commit-time metadata accounting and roots.  The
+  commit-only preparation loop rewrites block-group usage, captures total
+  bytes used for superblock publication, updates dirty root items, and repeats
+  whenever those operations create delayed references or change allocator
+  state.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -657,10 +676,11 @@ mount is permitted.
 Transaction handles, free-space indexes, typed reservations, allocation,
 pinning, commit/abort allocator transitions, and the emergency metadata commit
 reserve are in place.  Delayed metadata-reference ownership and merging are in
-place, along with skinny-metadata extent-tree materialization.  Delayed data
-refs, on-disk allocator accounting, and ordered extents remain.  Exercise the
-mutation paths with a small in-kernel test harness as they gain callers, but
-keep the public filesystem read-only.
+place, along with skinny-metadata extent-tree materialization and commit-time
+block-group accounting.  Delayed data refs, ordered extents, and durable
+superblock publication remain.  Exercise the mutation paths with a small
+in-kernel test harness as they gain callers, but keep the public filesystem
+read-only.
 
 ### 3. B-tree writer
 
@@ -670,10 +690,10 @@ dirty tracking, leaf item insert/replace/delete with compaction and
 separator-key propagation, two-way leaf and recursive internal-node splitting,
 three-way leaf fallback, root growth, and final metadata block submission are
 in place, as are empty-node removal, root shrinking, and delayed skinny
-metadata-reference materialization.  Next add allocator accounting, dirty
-root-item updates, and an internal transaction commit on throwaway images.
-Gate it behind a compile-time diagnostic option until crash tests are
-credible.
+metadata-reference materialization.  Commit preparation now stabilizes
+allocator accounting and dirty root items.  Next add durable transaction and
+superblock publication for internal testing on throwaway images.  Gate it
+behind a compile-time diagnostic option until crash tests are credible.
 
 ### 4. Existing-file writes
 
