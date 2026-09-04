@@ -173,6 +173,29 @@ struct btrfs_free_space_record {
 	uint8_t		 bfs_type;
 };
 
+struct btrfs_free_extent {
+	TAILQ_ENTRY(btrfs_free_extent)	 bfe_entry;
+	uint64_t			 bfe_bytenr;
+	uint64_t			 bfe_length;
+};
+TAILQ_HEAD(btrfs_free_extent_list, btrfs_free_extent);
+
+struct btrfs_block_group {
+	struct mutex			 bbg_lock;
+	struct btrfs_free_extent_list	 bbg_free_extents;
+	uint64_t			 bbg_bytenr;
+	uint64_t			 bbg_length;
+	uint64_t			 bbg_disk_used;
+	uint64_t			 bbg_free_bytes;
+	uint64_t			 bbg_reserved_bytes;
+	uint64_t			 bbg_allocated_bytes;
+	uint64_t			 bbg_pinned_bytes;
+	uint64_t			 bbg_flags;
+	/* Scratch fields used only while constructing the mount-time index. */
+	uint64_t			 bbg_build_cursor;
+	uint64_t			 bbg_build_used;
+};
+
 typedef int (*btrfs_extent_iter_fn)(const struct btrfs_extent_record *,
 		    void *);
 typedef int (*btrfs_backref_iter_fn)(const struct btrfs_backref_record *,
@@ -328,6 +351,8 @@ struct btrfs_mount {
 	uint8_t				 bm_subvol_readonly;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
+	struct btrfs_block_group	*bm_block_groups;
+	unsigned int			 bm_nblock_groups;
 	uint64_t			 bm_treeid;
 	uint64_t			 bm_root_dirid;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
@@ -415,6 +440,8 @@ int	btrfs_iterate_device_extents(struct btrfs_mount *,
 	    btrfs_dev_extent_iter_fn, void *);
 int	btrfs_iterate_free_space(struct btrfs_mount *,
 	    btrfs_free_space_iter_fn, void *);
+int	btrfs_space_init(struct btrfs_mount *);
+void	btrfs_space_destroy(struct btrfs_mount *);
 int	btrfs_read_data_csums(struct btrfs_mount *, uint64_t, uint64_t,
 	    uint32_t *);
 int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
