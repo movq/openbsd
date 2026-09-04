@@ -46,10 +46,9 @@ Logical mapping and mirror-aware physical reads are centralized in
 inside the shared mirror loop, so a rejected copy is released before another
 DUP mirror is tried.  The interface can also return each mirror's error and the
 selected mirror.  Synchronous logical writes now submit every required SINGLE
-or DUP copy and retain each copy's error.  Metadata dirty writeback uses this
-primitive, but is not yet connected to a complete transaction commit;
-ordered-data callers also remain to be added.  Device cache flushes remain
-part of the future transaction commit protocol rather than this block
+or DUP copy and retain each copy's error.  Metadata dirty writeback and
+transaction-owned ordered data use this primitive.  Device cache flushes
+remain part of the transaction commit protocol rather than this block
 submission primitive.
 
 `btrfs_extent_buffer.c` provides the logical identity missing from the device
@@ -106,13 +105,17 @@ dirty root items until delayed references and allocator state stop changing.
 The durable commit path writes finalized metadata, forces it through the
 device cache, writes all readable superblock mirrors, forces a second cache
 barrier, and only then publishes the generation in memory.  Data references
-remain unfinished, so the full path is not exposed through VFS operations.
+are now included, but the full path is not exposed through VFS operations.
 
 Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
 `VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
 compressed extents, using the physical device buffers underneath.  This lets
-reads observe a future delayed-allocation dirty buffer before writeback.  The
-strategy write side and delayed allocation are not implemented yet.
+reads observe a delayed-allocation dirty buffer before writeback.  The
+strategy write side and delayed allocation are not connected yet, but the
+lower data writer can now allocate one uncompressed COW sector, retain its
+ordered payload, replace an overlapping file-extent item while preserving
+left and right mappings, update its physical checksum, and serialize inode
+size and allocated-byte changes.
 
 Mounted trees use persistent roots and take a locked location snapshot for
 each read search.  A write search retains the root write lock and publishes
@@ -154,8 +157,9 @@ available; failure to replenish leaves the completed generation committed but
 forces the mount read-only.  Read-only mounts do not retain this unused
 writer-only space.
 
-Delayed data references, ordered extents, and VFS commit integration are not
-implemented yet.
+Ordered data extents and implicit data-reference materialization are
+implemented below VFS.  Initial write VOPs and mount-time write-format
+validation are not implemented yet.
 
 ## Initial writable format
 
@@ -276,21 +280,28 @@ constructor or open-code leaf and node layout changes.
 Regular file reads use buffers indexed by file logical sector.  The btrfs
 `VOP_STRATEGY` read side resolves extent items and fills these logical buffers,
 including across holes and compressed extents.  Physical data remains cached
-on the device vnode.  The write side will extend this OpenBSD vnode-buffer
-integration with additional state:
+on the device vnode.  The write side will connect this OpenBSD vnode-buffer
+integration to the implemented sector writer:
 
 * Delayed-allocation and metadata reservations are made before dirtying data.
-* A writeback request joins a transaction, allocates a COW data extent, and
-  creates an ordered extent before submitting device I/O.
-* An ordered extent records file range, disk bytenr and length, checksums,
-  transaction, pending I/O count, and final error.
-* Data-I/O completion wakes waiters but does not itself perform complex tree
-  mutation.
-* The writeback owner inserts checksum and file-extent items only in the
-  transaction associated with the ordered extent.
+* The lower writer allocates one sector from a data block group, records its
+  file and physical identity, and retains an immutable transaction-owned
+  payload until commit.
+* Repeated writes to the same file sector in one transaction replace that
+  payload and checksum without leaking the earlier allocation.
+* File-extent and checksum items are inserted by the vnode-locked operation;
+  commit performs ordered I/O and delayed-reference materialization.
+* Commit writes every ordered sector to all required mirrors before preparing
+  or writing metadata.
 * Reads first observe dirty file buffers, then ordered extents, then committed
   extent items.  This prevents stale disk data from being returned after a
   buffered write.
+
+The initial lower writer rejects inline files, compressed overlap, encoded
+data, and NODATASUM files.  Existing regular and preallocated uncompressed
+mappings can be split on sector boundaries.  Public write enablement must
+additionally refuse shared data or metadata references until shared-leaf
+reference conversion is implemented.
 
 Compressed reads do not map one-to-one through `VOP_BMAP`.  Extent readers now
 fill caller-provided memory, allowing `VOP_STRATEGY` to populate a logical file
@@ -333,15 +344,16 @@ struct btrfs_transaction {
         pinned freed extents;
         dirty metadata extent buffers;
         delayed metadata references;
+        delayed data references;
+        ordered data extents;
         dirty roots with saved committed locations;
 };
 ```
 
-Dirty metadata, dirty roots, and delayed metadata references now have
-transaction-owned queues.  Inode items are serialized by their vnode-locked
-operation before its handle ends, so closed commit does not need to acquire
-arbitrary vnode locks.  Ordered extents and delayed data references still need
-transaction-owned queues.
+Dirty metadata, dirty roots, delayed metadata and data references, and ordered
+data extents have transaction-owned queues.  Inode items are serialized by
+their vnode-locked operation before its handle ends, so closed commit does not
+need to acquire arbitrary vnode locks.
 
 A normal transaction handle represents one filesystem operation and its
 reservation.  The implemented lifecycle and allocator interface is:
@@ -467,6 +479,16 @@ A replaced metadata block is not immediately passed to
 The materializer first applies the drop to the on-disk reference count and
 pins the extent only if that count becomes zero.
 
+Delayed implicit data references combine changes by physical extent and the
+`(root, inode, file-base)` identity.  Splitting an old file mapping into two
+retained sides adds one reference, retaining one side leaves the count
+unchanged, and replacing the whole mapping drops one.  New sector extents use
+an inline data reference with the standard CRC32C-derived hash.  Existing
+inline or separate implicit references can have their count adjusted.  A
+final drop removes all checksums covering the physical extent, preserves
+neighboring checksum prefixes and suffixes, and pins the extent until
+publication.
+
 Accounting and dirty-root updates can COW the extent and root trees, creating
 more delayed references and changing allocation state.  Commit preparation
 therefore repeats delayed-reference materialization, block-group accounting,
@@ -519,20 +541,19 @@ fields according to the on-disk format.
 
 ## Commit protocol
 
-The implemented metadata commit has an explicit state machine.  Ordered data
-and fault-injection points remain to be added.  At a high level:
+The implemented commit has an explicit state machine.  VFS writeback
+integration and fault-injection points remain to be added.  At a high level:
 
-1. The future data-write caller flushes required data into ordered extents.  A
-   mount-wide sync will do this for all dirty btrfs vnodes before closing the
-   transaction.
+1. The future data-write caller converts dirty vnode buffers into the
+   implemented ordered extents.  A mount-wide sync will do this for all dirty
+   btrfs vnodes before closing the transaction.
 2. Serialize with another committer, mark the transaction CLOSING, stop joins,
    and wait for active handles to leave.
-3. The future data path waits for all ordered data I/O in the transaction.  If
-   any failed, it aborts.  Metadata-only callers already enter after this
-   conceptual point.
-4. Data callers will insert checksum and file-extent items.  Inode fields are
-   encoded into their tree items while the vnode and ordinary handle are
-   still held, before transaction close.
+3. Write all transaction-owned ordered sectors synchronously to every
+   required mirror.  Any failed copy aborts the transaction before metadata
+   writeback.
+4. Checksum, file-extent, and inode items were inserted while the vnode and
+   ordinary handle were still held, before transaction close.
 5. Run delayed references and allocator accounting until no work remains,
    using the commit reserve.  Finalize dirty root items and COW-only roots.
 6. Set metadata headers to the transaction generation and compute metadata
@@ -565,12 +586,12 @@ be refused if the backing device cannot supply the required ordering and
 durability operation; silently ignoring an unsupported cache-sync ioctl is not
 an acceptable policy for btrfs commits.
 
-Steps 5 through 10 are now connected for metadata-only transactions.
+Steps 3 through 10 are connected for transactions containing ordered data.
 Superblock construction updates the generation, root/chunk locations and
 levels, bytes used, log-root fields, and one rotating backup-root slot.  Each
 readable in-range mirror gets its own physical `bytenr` and CRC32C.  Public
-write paths remain gated until ordered data and initial VOP integration are
-complete.
+write paths remain gated until initial VOP integration and strict writable
+format validation are complete.
 
 ## VFS operation order
 
@@ -683,6 +704,15 @@ The following write-path foundations are in place:
   cache, writes every readable superblock mirror with an updated backup root,
   repeats the durability barrier, and only then commits roots and allocator
   state in memory.
+* Completed: add sector-sized ordered uncompressed data writes.  The lower
+  writer allocates COW data, updates or inserts physical checksums, preserves
+  left and right portions of overlapping regular/preallocated mappings,
+  updates inode accounting, and coalesces repeated writes to one file sector.
+  Commit submits ordered data before metadata preparation.
+* Completed: materialize delayed implicit data references.  The commit runner
+  updates inline or separate reference counts, creates new data extent items
+  with inline references, removes checksum ranges on a final drop, and pins
+  freed data until superblock publication.
 
 These changes preserve public read-only behavior.  The next layers should
 continue using the logical extent-buffer and transaction allocator APIs rather
@@ -702,10 +732,10 @@ Transaction handles, free-space indexes, typed reservations, allocation,
 pinning, commit/abort allocator transitions, and the emergency metadata commit
 reserve are in place.  Delayed metadata-reference ownership and merging are in
 place, along with skinny-metadata extent-tree materialization and commit-time
-block-group accounting.  Delayed data refs and ordered data extents remain;
-metadata-only transactions now have durable superblock publication.  Exercise
-the mutation paths with a small in-kernel test harness as they gain callers,
-but keep the public filesystem read-only.
+block-group accounting.  Delayed implicit data references, ordered sector
+writes, and durable superblock publication are in place.  Exercise the
+mutation paths with a small in-kernel test harness as they gain callers, but
+keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
@@ -718,8 +748,9 @@ in place, as are empty-node removal, root shrinking, and delayed skinny
 metadata-reference materialization.  Commit preparation now stabilizes
 allocator accounting and dirty root items, and the transaction path now
 publishes finalized metadata through two device cache barriers and mirrored
-superblocks.  Next add ordered data extents and VFS callers for testing on
-throwaway images.  Keep public writes gated until crash tests are credible.
+superblocks.  Ordered data and data-reference materialization are also in
+place.  Next add VFS callers for testing on throwaway images.  Keep public
+writes gated until crash tests are credible.
 
 ### 4. Existing-file writes
 

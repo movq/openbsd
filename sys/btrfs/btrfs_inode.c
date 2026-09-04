@@ -38,8 +38,8 @@ static void	btrfs_encode_timespec(const struct timespec *,
 static void	btrfs_decode_inode(const struct btrfs_inode_item *,
 		    struct btrfs_inode *);
 static int	btrfs_decode_file_extent(const struct btrfs_mount *,
-		    const struct btrfs_key *, const uint8_t *, uint32_t,
-		    struct btrfs_file_extent *);
+		    uint64_t, const struct btrfs_key *, const uint8_t *,
+		    uint32_t, struct btrfs_file_extent *);
 
 static int
 btrfs_ref_name_valid(const uint8_t *name, uint16_t namelen)
@@ -483,8 +483,8 @@ out:
 
 static int
 btrfs_decode_file_extent(const struct btrfs_mount *bmp,
-    const struct btrfs_key *key, const uint8_t *data, uint32_t item_size,
-    struct btrfs_file_extent *decoded)
+    uint64_t view_generation, const struct btrfs_key *key,
+    const uint8_t *data, uint32_t item_size, struct btrfs_file_extent *decoded)
 {
 	const struct btrfs_file_extent_item *extent;
 	uint64_t disk_end, extent_end, generation, ram_bytes;
@@ -500,7 +500,7 @@ btrfs_decode_file_extent(const struct btrfs_mount *bmp,
 	generation = letoh64(extent->generation);
 	ram_bytes = letoh64(extent->ram_bytes);
 	if (generation == 0 ||
-	    generation > letoh64(bmp->bm_super.generation) ||
+	    generation > view_generation ||
 	    extent->compression > BTRFS_COMPRESS_ZSTD ||
 	    extent->type > BTRFS_FILE_EXTENT_PREALLOC)
 		return (EINVAL);
@@ -511,6 +511,7 @@ btrfs_decode_file_extent(const struct btrfs_mount *bmp,
 	decoded->bfe_other_encoding = letoh16(extent->other_encoding);
 	decoded->bfe_type = extent->type;
 	decoded->bfe_ram_bytes = ram_bytes;
+	decoded->bfe_item_present = 1;
 
 	if (extent->type == BTRFS_FILE_EXTENT_INLINE) {
 		if (decoded->bfe_logical != 0 || ram_bytes == 0 ||
@@ -595,8 +596,9 @@ btrfs_find_file_extent(const struct btrfs_mount *bmp,
 			return (error);
 		if (letoh64(key->objectid) == objectid &&
 		    key->type == BTRFS_EXTENT_DATA_KEY) {
-			error = btrfs_decode_file_extent(bmp, key, data,
-			    item_size, &decoded);
+			error = btrfs_decode_file_extent(bmp,
+			    path->bp_view_generation, key, data, item_size,
+			    &decoded);
 			if (error != 0)
 				return (error);
 			end = decoded.bfe_logical + decoded.bfe_length;
@@ -623,8 +625,9 @@ btrfs_find_file_extent(const struct btrfs_mount *bmp,
 			return (error);
 		if (letoh64(key->objectid) == objectid &&
 		    key->type == BTRFS_EXTENT_DATA_KEY) {
-			error = btrfs_decode_file_extent(bmp, key, data,
-			    item_size, &decoded);
+			error = btrfs_decode_file_extent(bmp,
+			    path->bp_view_generation, key, data, item_size,
+			    &decoded);
 			if (error != 0)
 				return (error);
 			if (decoded.bfe_logical < previous_end)

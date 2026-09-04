@@ -101,6 +101,7 @@ struct btrfs_file_extent {
 	uint8_t		 bfe_compression;
 	uint8_t		 bfe_encryption;
 	uint8_t		 bfe_type;
+	uint8_t		 bfe_item_present;
 };
 
 struct btrfs_root_location {
@@ -201,6 +202,29 @@ struct btrfs_delayed_tree_ref {
 };
 TAILQ_HEAD(btrfs_delayed_tree_ref_list, btrfs_delayed_tree_ref);
 
+struct btrfs_delayed_data_ref {
+	TAILQ_ENTRY(btrfs_delayed_data_ref) bdr_entry;
+	uint64_t			 bdr_bytenr;
+	uint64_t			 bdr_length;
+	uint64_t			 bdr_root;
+	uint64_t			 bdr_objectid;
+	uint64_t			 bdr_offset;
+	int64_t				 bdr_ref_mod;
+};
+TAILQ_HEAD(btrfs_delayed_data_ref_list, btrfs_delayed_data_ref);
+
+struct btrfs_ordered_extent {
+	TAILQ_ENTRY(btrfs_ordered_extent) boe_entry;
+	void				*boe_data;
+	uint64_t			 boe_treeid;
+	uint64_t			 boe_objectid;
+	uint64_t			 boe_file_offset;
+	uint64_t			 boe_bytenr;
+	uint32_t			 boe_length;
+	uint8_t				 boe_written;
+};
+TAILQ_HEAD(btrfs_ordered_extent_list, btrfs_ordered_extent);
+
 struct btrfs_dirty_root {
 	TAILQ_ENTRY(btrfs_dirty_root)	 bdr_entry;
 	struct btrfs_root		*bdr_root;
@@ -266,6 +290,9 @@ struct btrfs_transaction {
 					 bt_dirty_extent_buffers;
 	struct btrfs_delayed_tree_ref_list
 					 bt_delayed_tree_refs;
+	struct btrfs_delayed_data_ref_list
+					 bt_delayed_data_refs;
+	struct btrfs_ordered_extent_list bt_ordered_extents;
 	struct btrfs_dirty_root_list	 bt_dirty_roots;
 	uint64_t			 bt_generation;
 	uint64_t			 bt_commit_reserve_target;
@@ -529,9 +556,15 @@ int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
 int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_ref_add(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t, uint64_t, uint8_t, int);
+int	btrfs_delayed_data_ref_add(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t, uint64_t, uint64_t, uint64_t, int);
 int	btrfs_run_delayed_refs(struct btrfs_trans_handle *);
+int	btrfs_run_delayed_data_refs(struct btrfs_trans_handle *);
 int	btrfs_prepare_metadata_commit(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
+int	btrfs_delayed_data_refs_finish(struct btrfs_transaction *, int);
+int	btrfs_ordered_extents_finish(struct btrfs_transaction *, int);
+int	btrfs_write_ordered_extents(struct btrfs_transaction *);
 int	btrfs_roots_finish(struct btrfs_transaction *, int);
 int	btrfs_update_dirty_root_items(struct btrfs_trans_handle *);
 /*
@@ -577,6 +610,8 @@ int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
 int	btrfs_find_file_extent(const struct btrfs_mount *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
+int	btrfs_write_file_sector(struct btrfs_trans_handle *,
+	    struct btrfs_node *, uint64_t, const void *, uint64_t);
 int	btrfs_iterate_extent_items(struct btrfs_mount *,
 	    btrfs_extent_iter_fn, btrfs_backref_iter_fn, void *);
 int	btrfs_iterate_block_groups(struct btrfs_mount *,
