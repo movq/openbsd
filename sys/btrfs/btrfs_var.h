@@ -272,6 +272,8 @@ struct btrfs_transaction {
 	uint64_t			 bt_commit_reserved_bytes;
 	uint64_t			 bt_allocated_bytes;
 	uint64_t			 bt_pinned_bytes;
+	uint64_t			 bt_bytes_used;
+	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
@@ -523,8 +525,10 @@ int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_ref_add(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t, uint64_t, uint8_t, int);
 int	btrfs_run_delayed_refs(struct btrfs_trans_handle *);
+int	btrfs_prepare_metadata_commit(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_roots_finish(struct btrfs_transaction *, int);
+int	btrfs_update_dirty_root_items(struct btrfs_trans_handle *);
 /*
  * An exact miss leaves path at the insertion point.  Paths must initially
  * be zeroed and retain item pointers until advanced or released.  A write
@@ -587,6 +591,7 @@ int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
 	    uint64_t, uint64_t *);
 int	btrfs_space_cancel_alloc(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t);
+int	btrfs_update_space_items(struct btrfs_trans_handle *);
 int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
 void	btrfs_space_commit(struct btrfs_transaction *);
 void	btrfs_space_abort(struct btrfs_transaction *);

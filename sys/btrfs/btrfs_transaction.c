@@ -479,6 +479,44 @@ btrfs_run_delayed_refs(struct btrfs_trans_handle *handle)
 }
 
 int
+btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans;
+	uint64_t space_seq;
+	unsigned int pass;
+	int error, pending;
+
+	if (handle == NULL || !handle->bth_commit)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	for (pass = 0; pass < BTRFS_MAX_LEVEL * 4; pass++) {
+		error = btrfs_run_delayed_refs(handle);
+		if (error != 0)
+			return (error);
+		mtx_enter(&trans->bt_lock);
+		space_seq = trans->bt_space_seq;
+		mtx_leave(&trans->bt_lock);
+
+		error = btrfs_update_space_items(handle);
+		if (error == 0)
+			error = btrfs_update_dirty_root_items(handle);
+		if (error != 0) {
+			btrfs_trans_abort(handle, error);
+			return (error);
+		}
+
+		mtx_enter(&trans->bt_lock);
+		pending = !TAILQ_EMPTY(&trans->bt_delayed_tree_refs) ||
+		    space_seq != trans->bt_space_seq;
+		mtx_leave(&trans->bt_lock);
+		if (!pending)
+			return (0);
+	}
+	btrfs_trans_abort(handle, ELOOP);
+	return (ELOOP);
+}
+
+int
 btrfs_delayed_refs_finish(struct btrfs_transaction *trans, int committed)
 {
 	struct btrfs_delayed_tree_ref *ref;

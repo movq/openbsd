@@ -652,6 +652,7 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
 				trans->bt_commit_reserved_bytes -= length;
 			}
 			trans->bt_allocated_bytes += length;
+			trans->bt_space_seq++;
 			TAILQ_INSERT_TAIL(&trans->bt_allocated_extents,
 			    allocated, bte_entry);
 			btrfs_space_check_commit_reserve(trans);
@@ -740,6 +741,7 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	group->bbg_reserved_bytes += length;
 	reservation->brs_bytes += length;
 	trans->bt_allocated_bytes -= length;
+	trans->bt_space_seq++;
 	if (handle->bth_commit) {
 		KASSERT(trans->bt_commit_reserved_bytes <=
 		    UINT64_MAX - length);
@@ -761,6 +763,81 @@ unlock:
 	} else {
 		free(space, M_BTRFS, sizeof(*space));
 	}
+	return (error);
+}
+
+int
+btrfs_update_space_items(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_block_group *group;
+	struct btrfs_block_group_item item;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_key key;
+	const uint8_t *data;
+	uint64_t allocated, pinned, total = 0, used;
+	uint32_t size;
+	unsigned int i;
+	int error;
+
+	if (handle == NULL || handle->bth_transaction == NULL ||
+	    !handle->bth_commit)
+		return (EINVAL);
+	error = btrfs_get_root(bmp, BTRFS_EXTENT_TREE_OBJECTID, &root);
+	if (error != 0)
+		return (error);
+
+	for (i = 0; i < bmp->bm_nblock_groups; i++) {
+		group = &bmp->bm_block_groups[i];
+		mtx_enter(&group->bbg_lock);
+		allocated = group->bbg_allocated_bytes;
+		pinned = group->bbg_pinned_bytes;
+		if (group->bbg_disk_used > group->bbg_length ||
+		    allocated > group->bbg_length - group->bbg_disk_used ||
+		    pinned > group->bbg_disk_used) {
+			mtx_leave(&group->bbg_lock);
+			return (EINVAL);
+		}
+		used = group->bbg_disk_used + allocated - pinned;
+		mtx_leave(&group->bbg_lock);
+		if (total > UINT64_MAX - used)
+			return (EOVERFLOW);
+		total += used;
+
+		memset(&key, 0, sizeof(key));
+		key.objectid = htole64(group->bbg_bytenr);
+		key.type = BTRFS_BLOCK_GROUP_ITEM_KEY;
+		key.offset = htole64(group->bbg_length);
+		error = btrfs_search_slot(root, &key, &path);
+		if (error != 0)
+			goto out;
+		error = btrfs_path_item(&path, NULL, &data, &size);
+		if (error != 0)
+			goto out;
+		if (size != sizeof(item)) {
+			error = EINVAL;
+			goto out;
+		}
+		memcpy(&item, data, sizeof(item));
+		btrfs_release_path(&path);
+		if (letoh64(item.chunk_objectid) !=
+		    BTRFS_FIRST_CHUNK_TREE_OBJECTID ||
+		    letoh64(item.flags) != group->bbg_flags) {
+			error = EINVAL;
+			goto out;
+		}
+		item.used = htole64(used);
+		error = btrfs_replace_item(handle, root, &key, &item,
+		    sizeof(item));
+		if (error != 0)
+			return (error);
+	}
+	trans->bt_bytes_used = total;
+	return (0);
+out:
+	btrfs_release_path(&path);
 	return (error);
 }
 
@@ -818,6 +895,7 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	pinned->bte_length = length;
 	group->bbg_pinned_bytes += length;
 	trans->bt_pinned_bytes += length;
+	trans->bt_space_seq++;
 	TAILQ_INSERT_TAIL(&trans->bt_pinned_extents, pinned, bte_entry);
 	pinned = NULL;
 unlock:
