@@ -29,8 +29,11 @@ static const uint64_t superblock_addrs[BTRFS_SUPER_MIRROR_MAX] = {
 #define BTRFS_ROOT_REF_KEY              0x9C
 #define BTRFS_EXTENT_ITEM_KEY           0xA8
 #define BTRFS_METADATA_ITEM_KEY         0xA9
+#define BTRFS_TREE_BLOCK_INFO_KEY       0xAA
+#define BTRFS_EXTENT_OWNER_REF_KEY      0xAC
 #define BTRFS_TREE_BLOCK_REF_KEY        0xB0
 #define BTRFS_EXTENT_DATA_REF_KEY       0xB2
+#define BTRFS_EXTENT_REF_V0_KEY         0xB4
 #define BTRFS_SHARED_BLOCK_REF_KEY      0xB6
 #define BTRFS_SHARED_DATA_REF_KEY       0xB8
 #define BTRFS_BLOCK_GROUP_ITEM_KEY      0xC0
@@ -443,6 +446,13 @@ struct btrfs_tree_block_info {
 
 struct btrfs_extent_item_v0 {
     uint32_t refs;
+} __packed;
+
+struct btrfs_extent_ref_v0 {
+    uint64_t root;
+    uint64_t generation;
+    uint64_t objectid;
+    uint32_t count;
 } __packed;
 
 struct btrfs_extent_inline_ref {

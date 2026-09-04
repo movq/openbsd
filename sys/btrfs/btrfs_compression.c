@@ -49,27 +49,37 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 {
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct buf *bp = NULL;
+	uint32_t *csums = NULL;
 	uint64_t inode_flags, logical;
 	const uint32_t *expectedp;
-	uint32_t expected, sectorsize;
+	uint32_t sectorsize;
+	size_t nsectors;
 	size_t offset;
 	int error = 0;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	inode_flags = letoh64(node->bn_inode.flags);
+	if ((extent->bfe_disk_num_bytes & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	nsectors = extent->bfe_disk_num_bytes / sectorsize;
+	if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
+		csums = mallocarray(nsectors, sizeof(*csums), M_BTRFS,
+		    M_WAITOK);
+		error = btrfs_read_data_csums(bmp, extent->bfe_disk_bytenr,
+		    extent->bfe_disk_num_bytes, csums);
+		if (error != 0) {
+			if (error == ENOENT)
+				error = EINVAL;
+			goto out;
+		}
+	}
+
 	for (offset = 0; offset < extent->bfe_disk_num_bytes;
 	    offset += sectorsize) {
 		logical = extent->bfe_disk_bytenr + offset;
 		expectedp = NULL;
-		if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
-			error = btrfs_lookup_data_csum(bmp, logical, &expected);
-			if (error != 0) {
-				if (error == ENOENT)
-					error = EINVAL;
-				break;
-			}
-			expectedp = &expected;
-		}
+		if (csums != NULL)
+			expectedp = &csums[offset / sectorsize];
 		error = btrfs_read_data_block(bmp, logical, expectedp, &bp);
 		if (error != 0)
 			break;
@@ -78,8 +88,11 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 		bp = NULL;
 	}
 
+out:
 	if (bp != NULL)
 		brelse(bp);
+	if (csums != NULL)
+		free(csums, M_BTRFS, nsectors * sizeof(*csums));
 	return (error);
 }
 

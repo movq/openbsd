@@ -39,8 +39,16 @@ struct btrfs_chunk_map {
 	uint64_t	logical;
 	uint64_t	length;
 	uint64_t	type;
+	uint64_t	owner;
+	uint64_t	stripe_len;
 	uint64_t	physical[2];
+	uint64_t	devid[2];
+	uint32_t	io_align;
+	uint32_t	io_width;
+	uint32_t	sector_size;
+	uint16_t	sub_stripes;
 	unsigned int	nmirrors;
+	uint8_t		dev_uuid[2][BTRFS_UUID_SIZE];
 };
 
 struct btrfs_io_map {
@@ -80,6 +88,88 @@ struct btrfs_file_extent {
 	uint8_t		 bfe_encryption;
 	uint8_t		 bfe_type;
 };
+
+struct btrfs_root_location {
+	uint64_t	brl_bytenr;
+	uint64_t	brl_generation;
+	uint8_t		brl_level;
+};
+
+/*
+ * Allocation iterators return host-endian records.  Any pointer in a record
+ * refers to the current leaf and is valid only for the callback invocation.
+ */
+struct btrfs_extent_record {
+	uint64_t	ber_bytenr;
+	uint64_t	ber_length;
+	uint64_t	ber_refs;
+	uint64_t	ber_generation;
+	uint64_t	ber_flags;
+	uint64_t	ber_owner_root;
+	uint64_t	ber_tree_objectid;
+	uint64_t	ber_tree_offset;
+	uint8_t		ber_tree_type;
+	uint8_t		ber_level;
+	uint8_t		ber_skinny;
+	uint8_t		ber_legacy;
+	uint8_t		ber_has_owner;
+};
+
+struct btrfs_backref_record {
+	uint64_t	bbr_bytenr;
+	uint64_t	bbr_root;
+	uint64_t	bbr_objectid;
+	uint64_t	bbr_offset;
+	uint64_t	bbr_key_offset;
+	uint64_t	bbr_parent;
+	uint64_t	bbr_generation;
+	uint32_t	bbr_count;
+	uint8_t		bbr_type;
+	uint8_t		bbr_inline;
+};
+
+struct btrfs_block_group_record {
+	uint64_t	bbg_bytenr;
+	uint64_t	bbg_length;
+	uint64_t	bbg_used;
+	uint64_t	bbg_chunk_objectid;
+	uint64_t	bbg_flags;
+};
+
+struct btrfs_dev_extent_record {
+	uint64_t	bde_devid;
+	uint64_t	bde_physical;
+	uint64_t	bde_length;
+	uint64_t	bde_chunk_tree;
+	uint64_t	bde_chunk_objectid;
+	uint64_t	bde_chunk_offset;
+};
+
+#define BTRFS_FREE_SPACE_RECORD_INFO		1
+#define BTRFS_FREE_SPACE_RECORD_EXTENT		2
+#define BTRFS_FREE_SPACE_RECORD_BITMAP		3
+
+struct btrfs_free_space_record {
+	const uint8_t	*bfs_bitmap;
+	uint64_t	 bfs_bytenr;
+	uint64_t	 bfs_length;
+	uint32_t	 bfs_extent_count;
+	uint32_t	 bfs_flags;
+	uint32_t	 bfs_bitmap_size;
+	uint8_t		 bfs_type;
+};
+
+typedef int (*btrfs_extent_iter_fn)(const struct btrfs_extent_record *,
+		    void *);
+typedef int (*btrfs_backref_iter_fn)(const struct btrfs_backref_record *,
+		    void *);
+typedef int (*btrfs_block_group_iter_fn)(
+		    const struct btrfs_block_group_record *, void *);
+typedef int (*btrfs_chunk_iter_fn)(const struct btrfs_chunk_map *, void *);
+typedef int (*btrfs_dev_extent_iter_fn)(
+		    const struct btrfs_dev_extent_record *, void *);
+typedef int (*btrfs_free_space_iter_fn)(
+		    const struct btrfs_free_space_record *, void *);
 
 struct buf;
 struct btrfs_node;
@@ -126,6 +216,10 @@ struct btrfs_super_candidate {
 struct btrfs_bootstrap {
 	struct btrfs_chunk_map	*bb_chunks;
 	unsigned int		 bb_nchunks;
+	struct btrfs_root_location bb_extent_root;
+	struct btrfs_root_location bb_dev_root;
+	struct btrfs_root_location bb_free_space_root;
+	struct btrfs_root_location bb_block_group_root;
 	uint64_t		 bb_fs_root;
 	uint64_t		 bb_fs_root_generation;
 	uint64_t		 bb_csum_root;
@@ -133,6 +227,7 @@ struct btrfs_bootstrap {
 	uint64_t		 bb_fs_root_flags;
 	uint8_t			 bb_fs_root_level;
 	uint8_t			 bb_csum_root_level;
+	uint8_t			 bb_chunk_tree_uuid[BTRFS_UUID_SIZE];
 };
 
 struct btrfs_mount {
@@ -148,6 +243,10 @@ struct btrfs_mount {
 	uint8_t				 bm_subvol_readonly;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
+	struct btrfs_root_location	 bm_extent_root;
+	struct btrfs_root_location	 bm_dev_root;
+	struct btrfs_root_location	 bm_free_space_root;
+	struct btrfs_root_location	 bm_block_group_root;
 	uint64_t			 bm_treeid;
 	uint64_t			 bm_fs_root;
 	uint64_t			 bm_fs_root_generation;
@@ -156,6 +255,7 @@ struct btrfs_mount {
 	uint64_t			 bm_root_dirid;
 	uint8_t				 bm_fs_root_level;
 	uint8_t				 bm_csum_root_level;
+	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
 	struct btrfs_node_list		 bm_nodes;
 	struct mutex			 bm_nodemtx;
 };
@@ -188,10 +288,15 @@ void	btrfs_init_root_tree(struct btrfs_mount *, struct btrfs_root *);
 int	btrfs_init_fs_root(struct btrfs_mount *, uint64_t,
 	    struct btrfs_root *);
 void	btrfs_init_csum_root(struct btrfs_mount *, struct btrfs_root *);
+int	btrfs_init_special_root(struct btrfs_mount *, uint64_t,
+	    struct btrfs_root *);
 int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
 	    struct btrfs_root_item *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 	    uint64_t, uint32_t, struct btrfs_io_map *);
+int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
+	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
+	    struct btrfs_chunk_map *);
 int	btrfs_read_root_block(const struct btrfs_root *, uint64_t, uint64_t,
 	    uint8_t, struct buf **);
 /*
@@ -219,6 +324,18 @@ int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
 int	btrfs_find_file_extent(const struct btrfs_mount *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
+int	btrfs_iterate_extent_items(struct btrfs_mount *,
+	    btrfs_extent_iter_fn, btrfs_backref_iter_fn, void *);
+int	btrfs_iterate_block_groups(struct btrfs_mount *,
+	    btrfs_block_group_iter_fn, void *);
+int	btrfs_iterate_chunk_items(struct btrfs_mount *,
+	    btrfs_chunk_iter_fn, void *);
+int	btrfs_iterate_device_extents(struct btrfs_mount *,
+	    btrfs_dev_extent_iter_fn, void *);
+int	btrfs_iterate_free_space(struct btrfs_mount *,
+	    btrfs_free_space_iter_fn, void *);
+int	btrfs_read_data_csums(struct btrfs_mount *, uint64_t, uint64_t,
+	    uint32_t *);
 int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
 int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
 	    const uint32_t *, struct buf **);

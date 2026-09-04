@@ -203,6 +203,59 @@ btrfs_init_csum_root(struct btrfs_mount *bmp, struct btrfs_root *root)
 	root->br_level = bmp->bm_csum_root_level;
 }
 
+int
+btrfs_init_special_root(struct btrfs_mount *bmp, uint64_t owner,
+    struct btrfs_root *root)
+{
+	const struct btrfs_root_location *location;
+
+	location = NULL;
+	switch (owner) {
+	case BTRFS_ROOT_TREE_OBJECTID:
+		btrfs_init_root_tree(bmp, root);
+		return (0);
+	case BTRFS_CHUNK_TREE_OBJECTID:
+		memset(root, 0, sizeof(*root));
+		root->br_bytenr = letoh64(bmp->bm_super.chunk_root);
+		root->br_generation =
+		    letoh64(bmp->bm_super.chunk_root_generation);
+		root->br_level = bmp->bm_super.chunk_root_level;
+		break;
+	case BTRFS_CSUM_TREE_OBJECTID:
+		btrfs_init_csum_root(bmp, root);
+		return (0);
+	case BTRFS_EXTENT_TREE_OBJECTID:
+		location = &bmp->bm_extent_root;
+		break;
+	case BTRFS_DEV_TREE_OBJECTID:
+		location = &bmp->bm_dev_root;
+		break;
+	case BTRFS_FREE_SPACE_TREE_OBJECTID:
+		location = &bmp->bm_free_space_root;
+		break;
+	case BTRFS_BLOCK_GROUP_TREE_OBJECTID:
+		location = &bmp->bm_block_group_root;
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	if (owner != BTRFS_CHUNK_TREE_OBJECTID) {
+		if (location->brl_bytenr == 0)
+			return (ENOENT);
+		memset(root, 0, sizeof(*root));
+		root->br_bytenr = location->brl_bytenr;
+		root->br_generation = location->brl_generation;
+		root->br_level = location->brl_level;
+	}
+	root->br_devvp = bmp->bm_devvp;
+	root->br_super = &bmp->bm_super;
+	root->br_chunks = bmp->bm_chunks;
+	root->br_nchunks = bmp->bm_nchunks;
+	root->br_owner = owner;
+	return (0);
+}
+
 static const struct btrfs_key *
 btrfs_block_key(const struct btrfs_header *header, uint32_t slot)
 {
@@ -495,22 +548,31 @@ btrfs_search_predecessor(struct btrfs_root *root,
 }
 
 int
-btrfs_lookup_data_csum(struct btrfs_mount *bmp, uint64_t logical,
-    uint32_t *csump)
+btrfs_read_data_csums(struct btrfs_mount *bmp, uint64_t logical,
+    uint64_t length, uint32_t *csums)
 {
 	const struct btrfs_key *key;
 	const uint8_t *data;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root root;
 	struct btrfs_key target;
-	uint64_t end, span, start;
+	uint64_t cursor, end, item_end, span, start;
 	uint32_t csum, item_size, sectorsize;
-	size_t csum_offset;
+	size_t csum_index, csum_offset, navailable, ncopy, i;
+	int first = 1;
 	int error;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	if ((logical & (sectorsize - 1)) != 0)
+	if ((logical & (sectorsize - 1)) != 0 ||
+	    (length & (sectorsize - 1)) != 0)
 		return (EINVAL);
+	if (length == 0)
+		return (0);
+	if (csums == NULL)
+		return (EINVAL);
+	if (logical > UINT64_MAX - length)
+		return (EINVAL);
+	end = logical + length;
 
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(BTRFS_EXTENT_CSUM_OBJECTID);
@@ -518,40 +580,76 @@ btrfs_lookup_data_csum(struct btrfs_mount *bmp, uint64_t logical,
 	target.offset = htole64(logical);
 	btrfs_init_csum_root(bmp, &root);
 	error = btrfs_search_predecessor(&root, &target, &path);
+	if (error == ENOENT)
+		error = btrfs_search_lower_bound(&root, &target, &path);
 	if (error != 0)
 		goto out;
-	error = btrfs_path_item(&path, &key, &data, &item_size);
-	if (error != 0)
-		goto out;
-	if (letoh64(key->objectid) != BTRFS_EXTENT_CSUM_OBJECTID ||
-	    key->type != BTRFS_EXTENT_CSUM_KEY) {
-		error = ENOENT;
-		goto out;
-	}
 
-	start = letoh64(key->offset);
-	if ((start & (sectorsize - 1)) != 0 || item_size == 0 ||
-	    item_size % sizeof(csum) != 0) {
-		error = EINVAL;
-		goto out;
+	cursor = logical;
+	csum_index = 0;
+	while (cursor < end) {
+		error = btrfs_path_item(&path, &key, &data, &item_size);
+		if (error != 0)
+			goto out;
+		if (letoh64(key->objectid) != BTRFS_EXTENT_CSUM_OBJECTID ||
+		    key->type != BTRFS_EXTENT_CSUM_KEY) {
+			error = ENOENT;
+			goto out;
+		}
+
+		start = letoh64(key->offset);
+		if ((start & (sectorsize - 1)) != 0 || item_size == 0 ||
+		    item_size % sizeof(csum) != 0) {
+			error = EINVAL;
+			goto out;
+		}
+		span = (uint64_t)(item_size / sizeof(csum)) * sectorsize;
+		if (start > UINT64_MAX - span) {
+			error = EINVAL;
+			goto out;
+		}
+		item_end = start + span;
+		if (cursor >= item_end) {
+			first = 0;
+			error = btrfs_next_item(&path);
+			if (error != 0)
+				goto out;
+			continue;
+		}
+		if ((!first && start != cursor) || cursor < start) {
+			error = start > cursor ? ENOENT : EINVAL;
+			goto out;
+		}
+
+		csum_offset = (cursor - start) / sectorsize;
+		navailable = item_size / sizeof(csum) - csum_offset;
+		ncopy = MIN(navailable, (size_t)((end - cursor) / sectorsize));
+		for (i = 0; i < ncopy; i++) {
+			memcpy(&csum, data +
+			    (csum_offset + i) * sizeof(csum), sizeof(csum));
+			csums[csum_index + i] = letoh32(csum);
+		}
+		csum_index += ncopy;
+		cursor += (uint64_t)ncopy * sectorsize;
+		if (cursor == end)
+			break;
+		first = 0;
+		error = btrfs_next_item(&path);
+		if (error != 0)
+			goto out;
 	}
-	span = (uint64_t)(item_size / sizeof(csum)) * sectorsize;
-	if (start > UINT64_MAX - span) {
-		error = EINVAL;
-		goto out;
-	}
-	end = start + span;
-	if (logical < start || logical >= end) {
-		error = ENOENT;
-		goto out;
-	}
-	csum_offset = (logical - start) / sectorsize * sizeof(csum);
-	memcpy(&csum, data + csum_offset, sizeof(csum));
-	*csump = letoh32(csum);
 	error = 0;
 out:
 	btrfs_release_path(&path);
 	return (error);
+}
+
+int
+btrfs_lookup_data_csum(struct btrfs_mount *bmp, uint64_t logical,
+    uint32_t *csump)
+{
+	return (btrfs_read_data_csums(bmp, logical,
+	    letoh32(bmp->bm_super.sectorsize), csump));
 }
 
 int

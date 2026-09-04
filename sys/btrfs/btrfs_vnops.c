@@ -378,33 +378,46 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 {
 	struct btrfs_mount *bmp = node->bn_mount;
 	struct buf *bp = NULL;
+	uint32_t *csums = NULL;
 	uint64_t block, logical, relative;
+	uint64_t csum_length, csum_start;
 	uint64_t inode_flags;
 	const uint32_t *expectedp;
-	uint32_t expected;
 	uint32_t sectorsize;
-	size_t chunk, offset;
+	size_t chunk, nsectors, offset;
 	int error = 0;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	inode_flags = letoh64(node->bn_inode.flags);
 	relative = uio->uio_offset - extent->bfe_logical;
 	logical = extent->bfe_disk_bytenr + extent->bfe_disk_offset + relative;
+	csum_start = logical & ~((uint64_t)sectorsize - 1);
+	if (size > UINT64_MAX - (logical - csum_start))
+		return (EINVAL);
+	csum_length = logical - csum_start + size;
+	if (csum_length > UINT64_MAX - (sectorsize - 1))
+		return (EINVAL);
+	csum_length = roundup(csum_length, sectorsize);
+	nsectors = csum_length / sectorsize;
+	if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
+		csums = mallocarray(nsectors, sizeof(*csums), M_BTRFS,
+		    M_WAITOK);
+		error = btrfs_read_data_csums(bmp, csum_start, csum_length,
+		    csums);
+		if (error != 0) {
+			if (error == ENOENT)
+				error = EINVAL;
+			goto out;
+		}
+	}
 
 	while (size != 0) {
 		block = logical & ~((uint64_t)sectorsize - 1);
 		offset = logical - block;
 		chunk = MIN(size, sectorsize - offset);
 		expectedp = NULL;
-		if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
-			error = btrfs_lookup_data_csum(bmp, block, &expected);
-			if (error != 0) {
-				if (error == ENOENT)
-					error = EINVAL;
-				break;
-			}
-			expectedp = &expected;
-		}
+		if (csums != NULL)
+			expectedp = &csums[(block - csum_start) / sectorsize];
 		error = btrfs_read_data_block(bmp, block, expectedp, &bp);
 		if (error != 0)
 			break;
@@ -417,8 +430,11 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 		size -= chunk;
 	}
 
+out:
 	if (bp != NULL)
 		brelse(bp);
+	if (csums != NULL)
+		free(csums, M_BTRFS, nsectors * sizeof(*csums));
 	return (error);
 }
 
