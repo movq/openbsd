@@ -421,7 +421,7 @@ int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
 int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
 	    const uint32_t *, struct buf **);
 int	btrfs_read_compressed_extent(struct btrfs_node *,
-	    const struct btrfs_file_extent *, size_t, struct uio *);
+	    const struct btrfs_file_extent *, uint64_t, size_t, void *);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 int	btrfs_vget_tree(struct mount *, uint64_t, uint64_t, struct vnode **);
 
