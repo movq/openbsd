@@ -27,6 +27,8 @@
 
 static struct btrfs_transaction *
 	btrfs_trans_alloc(struct btrfs_mount *, uint64_t);
+static int	btrfs_materialize_tree_ref(struct btrfs_trans_handle *,
+		    const struct btrfs_delayed_tree_ref *);
 
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
@@ -293,6 +295,187 @@ btrfs_delayed_ref_add(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	if (new != NULL)
 		free(new, M_BTRFS, sizeof(*new));
 	return (0);
+}
+
+static int
+btrfs_materialize_tree_ref(struct btrfs_trans_handle *handle,
+    const struct btrfs_delayed_tree_ref *ref)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_extent_item *extent;
+	struct btrfs_extent_inline_ref *candidate, *inline_ref;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_key extent_key, backref_key;
+	const struct btrfs_key *found_key;
+	const uint8_t *data;
+	uint8_t *payload = NULL;
+	uint64_t refs;
+	uint32_t alloc_size = 0, i, remain, size;
+	uint8_t type;
+	int error, found_inline = 0;
+
+	if ((letoh64(bmp->bm_super.incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) == 0 ||
+	    ref->bdr_ref_mod < -1 || ref->bdr_ref_mod > 1 ||
+	    ref->bdr_ref_mod == 0)
+		return (EOPNOTSUPP);
+	error = btrfs_get_root(bmp, BTRFS_EXTENT_TREE_OBJECTID, &root);
+	if (error != 0)
+		return (error);
+
+	memset(&extent_key, 0, sizeof(extent_key));
+	extent_key.objectid = htole64(ref->bdr_bytenr);
+	extent_key.type = BTRFS_METADATA_ITEM_KEY;
+	extent_key.offset = htole64(ref->bdr_level);
+	type = ref->bdr_parent != 0 ? BTRFS_SHARED_BLOCK_REF_KEY :
+	    BTRFS_TREE_BLOCK_REF_KEY;
+	memset(&backref_key, 0, sizeof(backref_key));
+	backref_key.objectid = htole64(ref->bdr_bytenr);
+	backref_key.type = type;
+	backref_key.offset = htole64(ref->bdr_parent != 0 ?
+	    ref->bdr_parent : ref->bdr_root);
+
+	error = btrfs_search_slot(root, &extent_key, &path);
+	if (error == ENOENT) {
+		btrfs_release_path(&path);
+		if (ref->bdr_ref_mod < 0)
+			return (EINVAL);
+		size = sizeof(*extent) + sizeof(*inline_ref);
+		payload = malloc(size, M_BTRFS, M_WAITOK | M_ZERO);
+		extent = (struct btrfs_extent_item *)payload;
+		extent->refs = htole64(1);
+		extent->generation = htole64(trans->bt_generation);
+		extent->flags = htole64(BTRFS_EXTENT_FLAG_TREE_BLOCK);
+		inline_ref = (struct btrfs_extent_inline_ref *)(extent + 1);
+		inline_ref->type = type;
+		inline_ref->offset = backref_key.offset;
+		error = btrfs_insert_item(handle, root, &extent_key, payload,
+		    size);
+		free(payload, M_BTRFS, size);
+		return (error);
+	}
+	if (error != 0)
+		return (error);
+	error = btrfs_path_item(&path, &found_key, &data, &size);
+	if (error != 0)
+		goto out;
+	if (memcmp(found_key, &extent_key, sizeof(*found_key)) != 0 ||
+	    size < sizeof(*extent)) {
+		error = EINVAL;
+		goto out;
+	}
+	payload = malloc(size, M_BTRFS, M_WAITOK);
+	alloc_size = size;
+	memcpy(payload, data, size);
+	btrfs_release_path(&path);
+
+	extent = (struct btrfs_extent_item *)payload;
+	refs = letoh64(extent->refs);
+	if (refs == 0 ||
+	    letoh64(extent->flags) != BTRFS_EXTENT_FLAG_TREE_BLOCK ||
+	    letoh64(extent->generation) > trans->bt_generation) {
+		error = EINVAL;
+		goto done;
+	}
+	remain = size - sizeof(*extent);
+	inline_ref = (struct btrfs_extent_inline_ref *)(extent + 1);
+	for (i = 0; i < remain; i += sizeof(*inline_ref)) {
+		candidate = (struct btrfs_extent_inline_ref *)
+		    ((uint8_t *)inline_ref + i);
+		if (remain - i < sizeof(*candidate) ||
+		    (candidate->type != BTRFS_TREE_BLOCK_REF_KEY &&
+		    candidate->type != BTRFS_SHARED_BLOCK_REF_KEY)) {
+			error = EOPNOTSUPP;
+			goto done;
+		}
+		if (candidate->type == type &&
+		    candidate->offset == backref_key.offset) {
+			found_inline = 1;
+			break;
+		}
+	}
+
+	if (ref->bdr_ref_mod > 0) {
+		if (found_inline || refs == UINT64_MAX) {
+			error = EINVAL;
+			goto done;
+		}
+		error = btrfs_search_slot(root, &backref_key, &path);
+		if (error == 0) {
+			btrfs_release_path(&path);
+			error = EINVAL;
+			goto done;
+		}
+		btrfs_release_path(&path);
+		if (error != ENOENT)
+			goto done;
+		error = btrfs_insert_item(handle, root, &backref_key, NULL, 0);
+		if (error != 0)
+			goto done;
+		extent->refs = htole64(refs + 1);
+		error = btrfs_replace_item(handle, root, &extent_key, payload,
+		    size);
+		goto done;
+	}
+
+	if (found_inline) {
+		memmove((uint8_t *)inline_ref + i,
+		    (uint8_t *)inline_ref + i + sizeof(*inline_ref),
+		    remain - i - sizeof(*inline_ref));
+		size -= sizeof(*inline_ref);
+	} else {
+		error = btrfs_delete_item(handle, root, &backref_key);
+		if (error != 0)
+			goto done;
+	}
+	if (refs == 1) {
+		error = btrfs_delete_item(handle, root, &extent_key);
+		if (error == 0)
+			error = btrfs_space_pin(handle, ref->bdr_bytenr,
+			    letoh32(bmp->bm_super.nodesize));
+	} else {
+		extent->refs = htole64(refs - 1);
+		error = btrfs_replace_item(handle, root, &extent_key, payload,
+		    size);
+	}
+	goto done;
+
+out:
+	btrfs_release_path(&path);
+done:
+	if (payload != NULL)
+		free(payload, M_BTRFS, alloc_size);
+	return (error);
+}
+
+int
+btrfs_run_delayed_refs(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_delayed_tree_ref *ref;
+	int error;
+
+	if (handle == NULL || !handle->bth_commit)
+		return (EINVAL);
+	trans = handle->bth_transaction;
+	for (;;) {
+		mtx_enter(&trans->bt_lock);
+		ref = TAILQ_FIRST(&trans->bt_delayed_tree_refs);
+		if (ref != NULL)
+			TAILQ_REMOVE(&trans->bt_delayed_tree_refs, ref,
+			    bdr_entry);
+		mtx_leave(&trans->bt_lock);
+		if (ref == NULL)
+			return (0);
+		error = btrfs_materialize_tree_ref(handle, ref);
+		free(ref, M_BTRFS, sizeof(*ref));
+		if (error != 0) {
+			btrfs_trans_abort(handle, error);
+			return (error);
+		}
+	}
 }
 
 int

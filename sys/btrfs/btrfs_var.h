@@ -522,6 +522,7 @@ int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
 int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_ref_add(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t, uint64_t, uint8_t, int);
+int	btrfs_run_delayed_refs(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_roots_finish(struct btrfs_transaction *, int);
 /*
