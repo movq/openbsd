@@ -53,12 +53,11 @@ static int	btrfs_validate_super(const struct btrfs_super_block *,
 		    uint64_t);
 static int	btrfs_parse_system_chunks(const struct btrfs_super_block *,
 		    struct btrfs_chunk_map **, unsigned int *);
-static int	btrfs_decode_chunk(const struct btrfs_super_block *,
-		    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
-		    struct btrfs_chunk_map *);
 static int	btrfs_load_chunk_tree(struct btrfs_root *,
 		    const struct btrfs_io_map *,
 		    struct btrfs_chunk_map **, unsigned int *);
+static int	btrfs_load_root_location(struct btrfs_root *, uint64_t,
+		    struct btrfs_root_location *);
 static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
@@ -206,9 +205,16 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_map *system_chunks = NULL;
 	struct btrfs_root chunk_tree, csum_tree, fs_tree, root_tree;
+	struct btrfs_root_location block_group_root = { 0 };
+	struct btrfs_root_location dev_root = { 0 };
+	struct btrfs_root_location extent_root = { 0 };
+	struct btrfs_root_location free_space_root = { 0 };
 	struct btrfs_io_map map;
 	struct buf *bp = NULL;
+	const struct btrfs_header *header;
+	uint8_t chunk_tree_uuid[BTRFS_UUID_SIZE];
 	uint64_t chunk_root, generation, root;
+	uint64_t compat_ro;
 	uint32_t nodesize;
 	unsigned int nchunks = 0, nsystem_chunks = 0;
 	int error;
@@ -236,6 +242,15 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	chunk_tree.br_generation = letoh64(sb->chunk_root_generation);
 	chunk_tree.br_owner = BTRFS_CHUNK_TREE_OBJECTID;
 	chunk_tree.br_level = sb->chunk_root_level;
+	error = btrfs_read_root_block(&chunk_tree, chunk_tree.br_bytenr,
+	    chunk_tree.br_generation, chunk_tree.br_level, &bp);
+	if (error != 0)
+		goto out;
+	header = (const struct btrfs_header *)bp->b_data;
+	memcpy(chunk_tree_uuid, header->chunk_tree_uuid,
+	    sizeof(chunk_tree_uuid));
+	brelse(bp);
+	bp = NULL;
 	error = btrfs_load_chunk_tree(&chunk_tree, &map, &chunks, &nchunks);
 	if (error != 0)
 		goto out;
@@ -263,6 +278,28 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	    &csum_root_item);
 	if (error != 0)
 		goto out;
+	error = btrfs_load_root_location(&root_tree,
+	    BTRFS_EXTENT_TREE_OBJECTID, &extent_root);
+	if (error != 0)
+		goto out;
+	error = btrfs_load_root_location(&root_tree, BTRFS_DEV_TREE_OBJECTID,
+	    &dev_root);
+	if (error != 0)
+		goto out;
+
+	compat_ro = letoh64(sb->compat_ro_flags);
+	if (compat_ro & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE) {
+		error = btrfs_load_root_location(&root_tree,
+		    BTRFS_FREE_SPACE_TREE_OBJECTID, &free_space_root);
+		if (error != 0)
+			goto out;
+	}
+	if (compat_ro & BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE) {
+		error = btrfs_load_root_location(&root_tree,
+		    BTRFS_BLOCK_GROUP_TREE_OBJECTID, &block_group_root);
+		if (error != 0)
+			goto out;
+	}
 
 	memset(&csum_tree, 0, sizeof(csum_tree));
 	csum_tree.br_devvp = devvp;
@@ -300,6 +337,10 @@ btrfs_bootstrap_super(struct vnode *devvp,
 
 	bootstrap->bb_chunks = chunks;
 	bootstrap->bb_nchunks = nchunks;
+	bootstrap->bb_extent_root = extent_root;
+	bootstrap->bb_dev_root = dev_root;
+	bootstrap->bb_free_space_root = free_space_root;
+	bootstrap->bb_block_group_root = block_group_root;
 	bootstrap->bb_fs_root = letoh64(fs_root_item.bytenr);
 	bootstrap->bb_fs_root_generation =
 	    letoh64(fs_root_item.generation);
@@ -309,6 +350,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	bootstrap->bb_csum_root_generation =
 	    letoh64(csum_root_item.generation);
 	bootstrap->bb_csum_root_level = csum_root_item.level;
+	memcpy(bootstrap->bb_chunk_tree_uuid, chunk_tree_uuid,
+	    sizeof(bootstrap->bb_chunk_tree_uuid));
 	chunks = NULL;
 	error = 0;
 out:
@@ -475,7 +518,7 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 		entry_size = sizeof(*key) + chunk_base +
 		    nstripes * sizeof(struct btrfs_stripe);
 
-		error = btrfs_decode_chunk(sb, key, chunk,
+		error = btrfs_decode_chunk_item(sb, key, chunk,
 		    entry_size - sizeof(*key), &chunk_map);
 		if (error != 0)
 			return (error);
@@ -505,7 +548,7 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 		nstripes = letoh16(chunk->num_stripes);
 		entry_size = sizeof(*key) + chunk_base +
 		    nstripes * sizeof(struct btrfs_stripe);
-		error = btrfs_decode_chunk(sb, key, chunk,
+		error = btrfs_decode_chunk_item(sb, key, chunk,
 		    entry_size - sizeof(*key), &chunks[nchunks]);
 		if (error != 0) {
 			free(chunks, M_BTRFS, total * sizeof(*chunks));
@@ -521,8 +564,8 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 	return (0);
 }
 
-static int
-btrfs_decode_chunk(const struct btrfs_super_block *sb,
+int
+btrfs_decode_chunk_item(const struct btrfs_super_block *sb,
     const struct btrfs_key *key, const struct btrfs_chunk *chunk,
     size_t item_size, struct btrfs_chunk_map *map)
 {
@@ -559,6 +602,7 @@ btrfs_decode_chunk(const struct btrfs_super_block *sb,
 	profile = type & BTRFS_BLOCK_GROUP_PROFILE_MASK;
 
 	if (chunk_len == 0 || logical > UINT64_MAX - chunk_len ||
+	    letoh64(chunk->owner) != BTRFS_EXTENT_TREE_OBJECTID ||
 	    (type & BTRFS_BLOCK_GROUP_TYPE_MASK) == 0 ||
 	    (logical & (sectorsize - 1)) != 0 ||
 	    (chunk_len & (sectorsize - 1)) != 0 ||
@@ -588,6 +632,12 @@ btrfs_decode_chunk(const struct btrfs_super_block *sb,
 	map->logical = logical;
 	map->length = chunk_len;
 	map->type = type;
+	map->owner = letoh64(chunk->owner);
+	map->stripe_len = stripe_len;
+	map->io_align = letoh32(chunk->io_align);
+	map->io_width = letoh32(chunk->io_width);
+	map->sector_size = letoh32(chunk->sector_size);
+	map->sub_stripes = letoh16(chunk->sub_stripes);
 	map->nmirrors = nstripes;
 	for (i = 0; i < nstripes; i++) {
 		stripe = &chunk->stripe[i];
@@ -600,6 +650,9 @@ btrfs_decode_chunk(const struct btrfs_super_block *sb,
 		    chunk_len > dev_bytes - stripe_offset)
 			return (EINVAL);
 		map->physical[i] = stripe_offset;
+		map->devid[i] = letoh64(stripe->devid);
+		memcpy(map->dev_uuid[i], stripe->dev_uuid,
+		    sizeof(map->dev_uuid[i]));
 	}
 
 	return (0);
@@ -669,7 +722,7 @@ count_out:
 			continue;
 		}
 
-		error = btrfs_decode_chunk(sb, key,
+		error = btrfs_decode_chunk_item(sb, key,
 		    (const struct btrfs_chunk *)item_data, size,
 		    &chunks[chunk_index]);
 		if (error != 0)
@@ -719,6 +772,23 @@ fail:
 	free(chunks, M_BTRFS, *nchunksp * sizeof(*chunks));
 	*nchunksp = 0;
 	return (error);
+}
+
+static int
+btrfs_load_root_location(struct btrfs_root *root_tree, uint64_t objectid,
+    struct btrfs_root_location *location)
+{
+	struct btrfs_root_item item;
+	int error;
+
+	memset(location, 0, sizeof(*location));
+	error = btrfs_find_root_item(root_tree, objectid, 0, &item);
+	if (error != 0)
+		return (error);
+	location->brl_bytenr = letoh64(item.bytenr);
+	location->brl_generation = letoh64(item.generation);
+	location->brl_level = item.level;
+	return (0);
 }
 
 int
