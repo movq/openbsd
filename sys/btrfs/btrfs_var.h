@@ -28,6 +28,7 @@
 #include <sys/mutex.h>
 #include <sys/queue.h>
 #include <sys/rwlock.h>
+#include <sys/time.h>
 
 #include <btrfs/btrfs.h>
 
@@ -171,6 +172,45 @@ typedef int (*btrfs_dev_extent_iter_fn)(
 typedef int (*btrfs_free_space_iter_fn)(
 		    const struct btrfs_free_space_record *, void *);
 
+/*
+ * Mutable inode state is host-endian.  Dirty fields and the transaction which
+ * owns them are kept separate from the generation stored in the inode item.
+ */
+#define BTRFS_INODE_DIRTY_SIZE		0x00000001
+#define BTRFS_INODE_DIRTY_NBYTES	0x00000002
+#define BTRFS_INODE_DIRTY_NLINK		0x00000004
+#define BTRFS_INODE_DIRTY_UID		0x00000008
+#define BTRFS_INODE_DIRTY_GID		0x00000010
+#define BTRFS_INODE_DIRTY_MODE		0x00000020
+#define BTRFS_INODE_DIRTY_RDEV		0x00000040
+#define BTRFS_INODE_DIRTY_FLAGS		0x00000080
+#define BTRFS_INODE_DIRTY_SEQUENCE	0x00000100
+#define BTRFS_INODE_DIRTY_ATIME		0x00000200
+#define BTRFS_INODE_DIRTY_CTIME		0x00000400
+#define BTRFS_INODE_DIRTY_MTIME		0x00000800
+#define BTRFS_INODE_DIRTY_OTIME		0x00001000
+
+struct btrfs_inode {
+	uint64_t	bi_generation;
+	uint64_t	bi_transid;
+	uint64_t	bi_size;
+	uint64_t	bi_nbytes;
+	uint64_t	bi_block_group;
+	uint64_t	bi_rdev;
+	uint64_t	bi_flags;
+	uint64_t	bi_sequence;
+	uint64_t	bi_last_dirty_transid;
+	struct timespec	bi_atime;
+	struct timespec	bi_ctime;
+	struct timespec	bi_mtime;
+	struct timespec	bi_otime;
+	uint32_t	bi_nlink;
+	uint32_t	bi_uid;
+	uint32_t	bi_gid;
+	uint32_t	bi_mode;
+	uint32_t	bi_dirty_fields;
+};
+
 struct buf;
 struct btrfs_extent_buffer;
 struct btrfs_mount;
@@ -294,7 +334,7 @@ struct btrfs_node {
 	uint64_t			 bn_treeid;
 	uint64_t			 bn_ino;
 	int				 bn_hashed;
-	struct btrfs_inode_item		 bn_inode;
+	struct btrfs_inode		 bn_inode;
 };
 
 #define VFSTOBTRFS(mp)	((struct btrfs_mount *)(mp)->mnt_data)
@@ -339,8 +379,7 @@ int	btrfs_prev_item(struct btrfs_path *);
 int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
 	    const uint8_t **, uint32_t *);
 void	btrfs_release_path(struct btrfs_path *);
-int	btrfs_find_inode_item(struct btrfs_root *, uint64_t,
-	    struct btrfs_inode_item *);
+int	btrfs_find_inode(struct btrfs_root *, uint64_t, struct btrfs_inode *);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_mount *, uint64_t, uint64_t *,
 	    uint64_t *);

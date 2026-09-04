@@ -31,6 +31,10 @@
 #include <btrfs/btrfs_var.h>
 
 static int	btrfs_ref_name_valid(const uint8_t *, uint16_t);
+static void	btrfs_decode_timespec(const struct btrfs_timespec *,
+		    struct timespec *);
+static void	btrfs_decode_inode(const struct btrfs_inode_item *,
+		    struct btrfs_inode *);
 static int	btrfs_decode_file_extent(const struct btrfs_mount *,
 		    const struct btrfs_key *, const uint8_t *, uint32_t,
 		    struct btrfs_file_extent *);
@@ -47,19 +51,49 @@ btrfs_ref_name_valid(const uint8_t *name, uint16_t namelen)
 	return (1);
 }
 
+static void
+btrfs_decode_timespec(const struct btrfs_timespec *disk,
+    struct timespec *host)
+{
+	host->tv_sec = letoh64(disk->sec);
+	host->tv_nsec = letoh32(disk->nsec);
+}
+
+static void
+btrfs_decode_inode(const struct btrfs_inode_item *disk,
+    struct btrfs_inode *inode)
+{
+	memset(inode, 0, sizeof(*inode));
+	inode->bi_generation = letoh64(disk->generation);
+	inode->bi_transid = letoh64(disk->transid);
+	inode->bi_size = letoh64(disk->size);
+	inode->bi_nbytes = letoh64(disk->nbytes);
+	inode->bi_block_group = letoh64(disk->block_group);
+	inode->bi_nlink = letoh32(disk->nlink);
+	inode->bi_uid = letoh32(disk->uid);
+	inode->bi_gid = letoh32(disk->gid);
+	inode->bi_mode = letoh32(disk->mode);
+	inode->bi_rdev = letoh64(disk->rdev);
+	inode->bi_flags = letoh64(disk->flags);
+	inode->bi_sequence = letoh64(disk->sequence);
+	btrfs_decode_timespec(&disk->atime, &inode->bi_atime);
+	btrfs_decode_timespec(&disk->ctime, &inode->bi_ctime);
+	btrfs_decode_timespec(&disk->mtime, &inode->bi_mtime);
+	btrfs_decode_timespec(&disk->otime, &inode->bi_otime);
+}
+
 int
-btrfs_find_inode_item(struct btrfs_root *root, uint64_t objectid,
-    struct btrfs_inode_item *result)
+btrfs_find_inode(struct btrfs_root *root, uint64_t objectid,
+    struct btrfs_inode *result)
 {
 	const uint8_t *data;
 	const struct btrfs_inode_item *inode_item;
-	const struct btrfs_super_block *sb = root->br_super;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key target;
-	uint64_t generation, transid;
-	uint32_t mode, nlink, size;
+	uint32_t size;
 	int error;
 
+	memset(result, 0, sizeof(*result));
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(objectid);
 	target.type = BTRFS_INODE_ITEM_KEY;
@@ -72,24 +106,26 @@ btrfs_find_inode_item(struct btrfs_root *root, uint64_t objectid,
 	if (size != sizeof(*inode_item))
 		goto invalid;
 	inode_item = (const struct btrfs_inode_item *)data;
-
-	generation = letoh64(inode_item->generation);
-	transid = letoh64(inode_item->transid);
-	mode = letoh32(inode_item->mode);
-	nlink = letoh32(inode_item->nlink);
-	if (generation == 0 || generation > letoh64(sb->generation) ||
-	    transid > letoh64(sb->generation) ||
-	    IFTOVT(mode) == VNON || IFTOVT(mode) == VBAD || nlink == 0 ||
-	    letoh32(inode_item->atime.nsec) >= 1000000000 ||
-	    letoh32(inode_item->ctime.nsec) >= 1000000000 ||
-	    letoh32(inode_item->mtime.nsec) >= 1000000000 ||
-	    letoh32(inode_item->otime.nsec) >= 1000000000)
+	btrfs_decode_inode(inode_item, result);
+	if (result->bi_generation == 0 ||
+	    result->bi_generation > root->br_view_generation ||
+	    result->bi_transid > root->br_view_generation ||
+	    IFTOVT(result->bi_mode) == VNON ||
+	    IFTOVT(result->bi_mode) == VBAD || result->bi_nlink == 0 ||
+	    result->bi_atime.tv_nsec < 0 ||
+	    result->bi_atime.tv_nsec >= 1000000000 ||
+	    result->bi_ctime.tv_nsec < 0 ||
+	    result->bi_ctime.tv_nsec >= 1000000000 ||
+	    result->bi_mtime.tv_nsec < 0 ||
+	    result->bi_mtime.tv_nsec >= 1000000000 ||
+	    result->bi_otime.tv_nsec < 0 ||
+	    result->bi_otime.tv_nsec >= 1000000000)
 		goto invalid;
 
-	memcpy(result, inode_item, sizeof(*result));
 	error = 0;
 	goto out;
 invalid:
+	memset(result, 0, sizeof(*result));
 	error = EINVAL;
 out:
 	btrfs_release_path(&path);

@@ -58,7 +58,7 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 	int error = 0;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	inode_flags = letoh64(node->bn_inode.flags);
+	inode_flags = node->bn_inode.bi_flags;
 	if ((extent->bfe_disk_num_bytes & (sectorsize - 1)) != 0)
 		return (EINVAL);
 	nsectors = extent->bfe_disk_num_bytes / sectorsize;

@@ -310,17 +310,10 @@ btrfs_access(void *v)
 
 	if (ap->a_mode & VWRITE)
 		return (EROFS);
-	mode = letoh32(node->bn_inode.mode);
+	mode = node->bn_inode.bi_mode;
 	return (vaccess(ap->a_vp->v_type, mode & ALLPERMS,
-	    letoh32(node->bn_inode.uid), letoh32(node->bn_inode.gid),
+	    node->bn_inode.bi_uid, node->bn_inode.bi_gid,
 	    ap->a_mode, ap->a_cred));
-}
-
-static void
-btrfs_timespec(const struct btrfs_timespec *disk, struct timespec *host)
-{
-	host->tv_sec = letoh64(disk->sec);
-	host->tv_nsec = letoh32(disk->nsec);
 }
 
 static int
@@ -329,27 +322,27 @@ btrfs_getattr(void *v)
 	struct vop_getattr_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	const struct btrfs_inode_item *inode = &node->bn_inode;
+	const struct btrfs_inode *inode = &node->bn_inode;
 	struct vattr *vap = ap->a_vap;
 
 	vattr_null(vap);
 	vap->va_fsid = node->bn_mount->bm_dev;
 	vap->va_fileid = node->bn_ino;
-	vap->va_mode = letoh32(inode->mode) & ALLPERMS;
-	vap->va_nlink = letoh32(inode->nlink);
-	vap->va_uid = letoh32(inode->uid);
-	vap->va_gid = letoh32(inode->gid);
-	btrfs_timespec(&inode->atime, &vap->va_atime);
-	btrfs_timespec(&inode->mtime, &vap->va_mtime);
-	btrfs_timespec(&inode->ctime, &vap->va_ctime);
-	vap->va_rdev = letoh64(inode->rdev);
-	vap->va_size = letoh64(inode->size);
+	vap->va_mode = inode->bi_mode & ALLPERMS;
+	vap->va_nlink = inode->bi_nlink;
+	vap->va_uid = inode->bi_uid;
+	vap->va_gid = inode->bi_gid;
+	vap->va_atime = inode->bi_atime;
+	vap->va_mtime = inode->bi_mtime;
+	vap->va_ctime = inode->bi_ctime;
+	vap->va_rdev = inode->bi_rdev;
+	vap->va_size = inode->bi_size;
 	vap->va_flags = 0;
-	vap->va_gen = letoh64(inode->generation);
+	vap->va_gen = inode->bi_generation;
 	vap->va_blocksize = letoh32(node->bn_mount->bm_super.nodesize);
-	vap->va_bytes = letoh64(inode->nbytes);
+	vap->va_bytes = inode->bi_nbytes;
 	vap->va_type = vp->v_type;
-	vap->va_filerev = letoh64(inode->transid);
+	vap->va_filerev = inode->bi_transid;
 	vap->va_vaflags = 0;
 	return (0);
 }
@@ -388,7 +381,7 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 	int error = 0;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	inode_flags = letoh64(node->bn_inode.flags);
+	inode_flags = node->bn_inode.bi_flags;
 	relative = uio->uio_offset - extent->bfe_logical;
 	logical = extent->bfe_disk_bytenr + extent->bfe_disk_offset + relative;
 	csum_start = logical & ~((uint64_t)sectorsize - 1);
@@ -461,7 +454,7 @@ btrfs_read(void *v)
 	if (uio->uio_resid == 0)
 		return (0);
 
-	file_size = letoh64(node->bn_inode.size);
+	file_size = node->bn_inode.bi_size;
 	offset = uio->uio_offset;
 	if (offset >= file_size)
 		return (0);
@@ -554,7 +547,7 @@ btrfs_readlink(void *v)
 	if (uio->uio_rw != UIO_READ || uio->uio_offset != 0)
 		return (EINVAL);
 
-	file_size = letoh64(node->bn_inode.size);
+	file_size = node->bn_inode.bi_size;
 	if (file_size == 0)
 		return (EINVAL);
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
