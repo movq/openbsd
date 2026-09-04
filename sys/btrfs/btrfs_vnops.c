@@ -300,6 +300,7 @@ btrfs_open(void *v)
 	if (ap->a_mode & FWRITE) {
 		if ((ap->a_vp->v_mount->mnt_flag & MNT_RDONLY) ||
 		    node->bn_mount->bm_subvol_readonly ||
+		    node->bn_treeid != node->bn_mount->bm_treeid ||
 		    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
@@ -324,6 +325,7 @@ btrfs_access(void *v)
 	if (ap->a_mode & VWRITE) {
 		if ((ap->a_vp->v_mount->mnt_flag & MNT_RDONLY) ||
 		    node->bn_mount->bm_subvol_readonly ||
+		    node->bn_treeid != node->bn_mount->bm_treeid ||
 		    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
@@ -401,6 +403,7 @@ btrfs_setattr(void *v)
 		return (EINVAL);
 	if ((vp->v_mount->mnt_flag & MNT_RDONLY) ||
 	    bmp->bm_subvol_readonly ||
+	    node->bn_treeid != bmp->bm_treeid ||
 	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
 		return (EROFS);
 	if (node->bn_inode.bi_flags &
@@ -776,6 +779,7 @@ btrfs_write(void *v)
 		return (EOPNOTSUPP);
 	if ((vp->v_mount->mnt_flag & MNT_RDONLY) ||
 	    bmp->bm_subvol_readonly ||
+	    node->bn_treeid != bmp->bm_treeid ||
 	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
 		return (EROFS);
 	if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)

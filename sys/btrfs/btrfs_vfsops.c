@@ -326,18 +326,11 @@ static int
 btrfs_write_backref_valid(const struct btrfs_backref_record *backref,
     void *arg)
 {
-	struct btrfs_mount *bmp = arg;
+	(void)arg;
 
 	if (backref->bbr_type == BTRFS_SHARED_BLOCK_REF_KEY ||
 	    backref->bbr_type == BTRFS_SHARED_DATA_REF_KEY) {
 		printf("btrfs: shared extents are not writable\n");
-		return (EOPNOTSUPP);
-	}
-	if ((backref->bbr_type == BTRFS_TREE_BLOCK_REF_KEY &&
-	    backref->bbr_root >= BTRFS_FIRST_FREE_OBJECTID) ||
-	    (backref->bbr_type == BTRFS_EXTENT_DATA_REF_KEY &&
-	    backref->bbr_root != bmp->bm_treeid)) {
-		printf("btrfs: subvolumes are not writable\n");
 		return (EOPNOTSUPP);
 	}
 	return (0);
