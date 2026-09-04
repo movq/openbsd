@@ -232,6 +232,10 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	    (bootstrap.bb_fs_root_flags & BTRFS_ROOT_SUBVOL_RDONLY) != 0;
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
+	bmp->bm_extent_root = bootstrap.bb_extent_root;
+	bmp->bm_dev_root = bootstrap.bb_dev_root;
+	bmp->bm_free_space_root = bootstrap.bb_free_space_root;
+	bmp->bm_block_group_root = bootstrap.bb_block_group_root;
 	bmp->bm_treeid = BTRFS_FS_TREE_OBJECTID;
 	bmp->bm_fs_root = bootstrap.bb_fs_root;
 	bmp->bm_fs_root_generation = bootstrap.bb_fs_root_generation;
@@ -239,6 +243,8 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	bmp->bm_csum_root = bootstrap.bb_csum_root;
 	bmp->bm_csum_root_generation = bootstrap.bb_csum_root_generation;
 	bmp->bm_csum_root_level = bootstrap.bb_csum_root_level;
+	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
+	    sizeof(bmp->bm_chunk_tree_uuid));
 	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
 	LIST_INIT(&bmp->bm_nodes);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
