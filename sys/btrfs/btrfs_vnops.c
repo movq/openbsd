@@ -461,8 +461,7 @@ btrfs_read(void *v)
 		    node->bn_ino, offset, file_size, &extent);
 		if (error != 0)
 			break;
-		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
-		    extent.bfe_encryption != 0 ||
+		if (extent.bfe_encryption != 0 ||
 		    extent.bfe_other_encoding != 0) {
 			error = EOPNOTSUPP;
 			break;
@@ -477,15 +476,25 @@ btrfs_read(void *v)
 
 		switch (extent.bfe_type) {
 		case BTRFS_FILE_EXTENT_INLINE:
-			if (extent.bfe_inline_size != extent.bfe_length) {
-				error = EINVAL;
-				break;
+			if (extent.bfe_compression == BTRFS_COMPRESS_NONE) {
+				if (extent.bfe_inline_size != extent.bfe_length) {
+					error = EINVAL;
+					break;
+				}
+				error = uiomove((void *)(extent.bfe_inline_data +
+				    offset - extent.bfe_logical), size, uio);
+			} else {
+				error = btrfs_read_compressed_extent(node, &extent,
+				    size, uio);
 			}
-			error = uiomove((void *)(extent.bfe_inline_data +
-			    offset - extent.bfe_logical), size, uio);
 			break;
 		case BTRFS_FILE_EXTENT_REG:
-			error = btrfs_read_regular_extent(node, &extent, size, uio);
+			if (extent.bfe_compression == BTRFS_COMPRESS_NONE)
+				error = btrfs_read_regular_extent(node, &extent,
+				    size, uio);
+			else
+				error = btrfs_read_compressed_extent(node, &extent,
+				    size, uio);
 			break;
 		case BTRFS_FILE_EXTENT_PREALLOC:
 		case BTRFS_FILE_EXTENT_HOLE:

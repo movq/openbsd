@@ -374,9 +374,12 @@ btrfs_decode_file_extent(const struct btrfs_mount *bmp,
 	decoded->bfe_encryption = extent->encryption;
 	decoded->bfe_other_encoding = letoh16(extent->other_encoding);
 	decoded->bfe_type = extent->type;
+	decoded->bfe_ram_bytes = ram_bytes;
 
 	if (extent->type == BTRFS_FILE_EXTENT_INLINE) {
-		if (decoded->bfe_logical != 0 || ram_bytes == 0)
+		if (decoded->bfe_logical != 0 || ram_bytes == 0 ||
+		    (decoded->bfe_compression != BTRFS_COMPRESS_NONE &&
+		    ram_bytes > BTRFS_MAX_UNCOMPRESSED))
 			return (EINVAL);
 		decoded->bfe_length = ram_bytes;
 		decoded->bfe_inline_data = data + prefix_size;
@@ -422,6 +425,10 @@ btrfs_decode_file_extent(const struct btrfs_mount *bmp,
 		extent_end = decoded->bfe_disk_offset + decoded->bfe_length;
 		if (extent_end > disk_end)
 			return (EINVAL);
+	} else if (extent->type != BTRFS_FILE_EXTENT_REG ||
+	    decoded->bfe_disk_num_bytes > BTRFS_MAX_COMPRESSED ||
+	    ram_bytes > BTRFS_MAX_UNCOMPRESSED) {
+		return (EINVAL);
 	}
 	return (0);
 }

@@ -148,13 +148,14 @@ static const uint64_t superblock_addrs[BTRFS_SUPER_MIRROR_MAX] = {
 
 /*
  * Features whose on-disk metadata this driver can safely interpret.
- * Compression and non-single-device allocation features are deliberately
- * omitted until their data and chunk mappings are implemented.
+ * Unsupported compression and non-single-device allocation features are
+ * deliberately omitted until their data and chunk mappings are implemented.
  */
 #define BTRFS_FEATURE_INCOMPAT_SUPPORTED			\
     (BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF |		\
     BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL |		\
     BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS |		\
+    BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD |		\
     BTRFS_FEATURE_INCOMPAT_BIG_METADATA |		\
     BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF |		\
     BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA |		\
