@@ -46,6 +46,7 @@ static int	btrfs_getattr(void *);
 static int	btrfs_read(void *);
 static int	btrfs_ioctl(void *);
 static int	btrfs_readdir(void *);
+static int	btrfs_readlink(void *);
 static int	btrfs_inactive(void *);
 static int	btrfs_reclaim(void *);
 static int	btrfs_lock(void *);
@@ -76,7 +77,7 @@ const struct vops btrfs_vops = {
 	.vop_rmdir	= eopnotsupp,
 	.vop_symlink	= eopnotsupp,
 	.vop_readdir	= btrfs_readdir,
-	.vop_readlink	= eopnotsupp,
+	.vop_readlink	= btrfs_readlink,
 	.vop_abortop	= vop_generic_abortop,
 	.vop_inactive	= btrfs_inactive,
 	.vop_reclaim	= btrfs_reclaim,
@@ -647,6 +648,60 @@ static int
 btrfs_ioctl(void *v)
 {
 	return (ENOTTY);
+}
+
+static int
+btrfs_readlink(void *v)
+{
+	struct vop_readlink_args *ap = v;
+	struct vnode *vp = ap->a_vp;
+	struct btrfs_node *node = VTOBTRFS(vp);
+	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_file_extent extent;
+	const struct btrfs_header *header;
+	struct buf *bp = NULL;
+	struct uio *uio = ap->a_uio;
+	uint64_t file_size;
+	size_t size;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(vp));
+	KASSERT(uio->uio_offset == 0);
+	if (vp->v_type != VLNK)
+		return (EINVAL);
+	if (uio->uio_rw != UIO_READ || uio->uio_offset != 0)
+		return (EINVAL);
+
+	file_size = letoh64(node->bn_inode.size);
+	if (file_size == 0)
+		return (EINVAL);
+	error = btrfs_read_fs_tree_root(bmp, &bp);
+	if (error != 0)
+		return (error);
+	header = (const struct btrfs_header *)bp->b_data;
+	error = btrfs_find_file_extent(bmp, header, node->bn_ino, 0,
+	    file_size, &extent);
+	if (error != 0)
+		goto out;
+	if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+	    extent.bfe_encryption != 0 || extent.bfe_other_encoding != 0) {
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	if (extent.bfe_type != BTRFS_FILE_EXTENT_INLINE ||
+	    extent.bfe_logical != 0 || extent.bfe_length != file_size ||
+	    extent.bfe_inline_size != file_size) {
+		error = EINVAL;
+		goto out;
+	}
+
+	size = uio->uio_resid;
+	if (size > file_size)
+		size = file_size;
+	error = uiomove((void *)extent.bfe_inline_data, size, uio);
+out:
+	brelse(bp);
+	return (error);
 }
 
 #define BTRFS_DIR_OFFSET_DOT		0
