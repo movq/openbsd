@@ -35,11 +35,21 @@
 
 static int	btrfs_extent_buffer_load(const struct btrfs_root *,
 		    struct btrfs_extent_buffer *, uint64_t);
+static int	btrfs_extent_buffer_validate(const void *, size_t, void *);
 static int	btrfs_validate_tree_block(const struct btrfs_super_block *,
 		    const struct btrfs_header *, uint64_t, uint64_t, uint64_t,
 		    uint64_t, uint8_t);
 static int	btrfs_key_cmp(const struct btrfs_key *,
 		    const struct btrfs_key *);
+
+struct btrfs_extent_buffer_validation {
+	const struct btrfs_super_block	*ebv_super;
+	uint64_t			 ebv_bytenr;
+	uint64_t			 ebv_generation;
+	uint64_t			 ebv_view_generation;
+	uint64_t			 ebv_owner;
+	uint8_t				 ebv_level;
+};
 
 static int
 btrfs_extent_buffer_matches(const struct btrfs_extent_buffer *eb,
@@ -187,41 +197,40 @@ static int
 btrfs_extent_buffer_load(const struct btrfs_root *root,
     struct btrfs_extent_buffer *eb, uint64_t view_generation)
 {
-	struct btrfs_io_map map;
+	struct btrfs_extent_buffer_validation validation;
 	struct buf *bp;
-	unsigned int i;
 	int error;
 
 	rw_assert_wrlock(&eb->eb_lock);
-	error = btrfs_lookup_logical(root->br_chunks, root->br_nchunks,
-	    eb->eb_bytenr, letoh32(root->br_super->nodesize), &map);
-	if (error != 0)
-		return (error == ENOENT ? EINVAL : error);
-	if ((map.type & (BTRFS_BLOCK_GROUP_METADATA |
-	    BTRFS_BLOCK_GROUP_SYSTEM)) == 0)
-		return (EINVAL);
-
-	error = EIO;
-	for (i = 0; i < map.nmirrors; i++) {
-		bp = NULL;
-		error = bread(root->br_devvp, map.physical[i] / DEV_BSIZE,
-		    letoh32(root->br_super->nodesize), &bp);
-		if (error == 0 && bp->b_resid != 0)
-			error = EIO;
-		if (error == 0)
-			error = btrfs_validate_tree_block(root->br_super,
-			    (const struct btrfs_header *)bp->b_data,
-			    eb->eb_bytenr, eb->eb_generation, view_generation,
-			    eb->eb_owner, eb->eb_level);
-		if (error == 0) {
-			eb->eb_buf = bp;
-			return (0);
-		}
-		if (bp != NULL)
-			brelse(bp);
-	}
-
+	validation.ebv_super = root->br_super;
+	validation.ebv_bytenr = eb->eb_bytenr;
+	validation.ebv_generation = eb->eb_generation;
+	validation.ebv_view_generation = view_generation;
+	validation.ebv_owner = eb->eb_owner;
+	validation.ebv_level = eb->eb_level;
+	error = btrfs_read_logical(root->br_devvp, root->br_chunks,
+	    root->br_nchunks, eb->eb_bytenr,
+	    letoh32(root->br_super->nodesize),
+	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM,
+	    btrfs_extent_buffer_validate, &validation, NULL, &bp);
+	if (error == 0)
+		eb->eb_buf = bp;
+	else if (error == ENOENT)
+		error = EINVAL;
 	return (error);
+}
+
+static int
+btrfs_extent_buffer_validate(const void *data, size_t length, void *arg)
+{
+	const struct btrfs_extent_buffer_validation *validation = arg;
+
+	if (length != letoh32(validation->ebv_super->nodesize))
+		return (EINVAL);
+	return (btrfs_validate_tree_block(validation->ebv_super,
+	    data, validation->ebv_bytenr, validation->ebv_generation,
+	    validation->ebv_view_generation, validation->ebv_owner,
+	    validation->ebv_level));
 }
 
 static int

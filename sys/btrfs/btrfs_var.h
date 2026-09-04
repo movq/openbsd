@@ -35,6 +35,7 @@
 #define BTRFS_MAX_LEVEL		8
 #define BTRFS_MAX_COMPRESSED	(128 * 1024)
 #define BTRFS_MAX_UNCOMPRESSED	(128 * 1024)
+#define BTRFS_MAX_MIRRORS	2
 
 struct btrfs_chunk_map {
 	uint64_t	logical;
@@ -42,21 +43,33 @@ struct btrfs_chunk_map {
 	uint64_t	type;
 	uint64_t	owner;
 	uint64_t	stripe_len;
-	uint64_t	physical[2];
-	uint64_t	devid[2];
+	uint64_t	physical[BTRFS_MAX_MIRRORS];
+	uint64_t	devid[BTRFS_MAX_MIRRORS];
 	uint32_t	io_align;
 	uint32_t	io_width;
 	uint32_t	sector_size;
 	uint16_t	sub_stripes;
 	unsigned int	nmirrors;
-	uint8_t		dev_uuid[2][BTRFS_UUID_SIZE];
+	uint8_t		dev_uuid[BTRFS_MAX_MIRRORS][BTRFS_UUID_SIZE];
 };
 
 struct btrfs_io_map {
-	uint64_t	physical[2];
+	uint64_t	physical[BTRFS_MAX_MIRRORS];
 	uint64_t	type;
 	unsigned int	nmirrors;
 };
+
+/*
+ * On success, mirrors through bir_mirror were attempted.  On failure, all
+ * bir_nmirrors entries contain the error returned for that copy.
+ */
+struct btrfs_io_result {
+	int		bir_error[BTRFS_MAX_MIRRORS];
+	unsigned int	bir_nmirrors;
+	int		bir_mirror;
+};
+
+typedef int (*btrfs_io_validate_fn)(const void *, size_t, void *);
 
 struct btrfs_dir_entry {
 	const uint8_t	*bde_name;
@@ -357,6 +370,10 @@ int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
 	    struct btrfs_root_item *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 	    uint64_t, uint32_t, struct btrfs_io_map *);
+int	btrfs_read_logical(struct vnode *, const struct btrfs_chunk_map *,
+	    unsigned int, uint64_t, uint32_t, uint64_t,
+	    btrfs_io_validate_fn, void *, struct btrfs_io_result *,
+	    struct buf **);
 int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);

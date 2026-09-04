@@ -23,18 +23,13 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/buf.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/malloc.h>
 #include <sys/vnode.h>
 
-#include <lib/libkern/crc32c.h>
-
 #include <btrfs/btrfs_var.h>
 
-static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
-		    uint32_t, struct btrfs_io_map *);
 static void	btrfs_root_init(struct btrfs_mount *, struct btrfs_root *,
 		    struct rwlock *, uint64_t,
 		    const struct btrfs_root_location *);
@@ -48,51 +43,6 @@ static int	btrfs_read_child(struct btrfs_path *, uint8_t, uint32_t,
 		    struct btrfs_extent_buffer **);
 static int	btrfs_key_cmp(const struct btrfs_key *,
 		    const struct btrfs_key *);
-
-static int
-btrfs_map_logical(const struct btrfs_chunk_map *chunk, uint64_t logical,
-    uint32_t length, struct btrfs_io_map *map)
-{
-	uint64_t delta;
-	unsigned int i;
-
-	if (chunk->length < length || logical < chunk->logical)
-		return (ENOENT);
-	delta = logical - chunk->logical;
-	if (delta > chunk->length - length)
-		return (ENOENT);
-
-	memset(map, 0, sizeof(*map));
-	map->type = chunk->type;
-	map->nmirrors = chunk->nmirrors;
-	for (i = 0; i < chunk->nmirrors; i++) {
-		if (chunk->physical[i] > UINT64_MAX - delta)
-			return (EINVAL);
-		map->physical[i] = chunk->physical[i] + delta;
-	}
-	return (0);
-}
-
-int
-btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
-    unsigned int nchunks, uint64_t logical, uint32_t length,
-    struct btrfs_io_map *map)
-{
-	unsigned int i;
-	int error;
-
-	for (i = 0; i < nchunks; i++) {
-		error = btrfs_map_logical(&chunks[i], logical, length, map);
-		if (error == 0)
-			return (0);
-		if (error != ENOENT)
-			return (error);
-		if (logical < chunks[i].logical)
-			break;
-	}
-
-	return (ENOENT);
-}
 
 static void
 btrfs_root_init(struct btrfs_mount *bmp, struct btrfs_root *root,
@@ -662,53 +612,6 @@ btrfs_lookup_data_csum(struct btrfs_mount *bmp, uint64_t logical,
 {
 	return (btrfs_read_data_csums(bmp, logical,
 	    letoh32(bmp->bm_super.sectorsize), csump));
-}
-
-int
-btrfs_read_data_block(struct btrfs_mount *bmp, uint64_t logical,
-    const uint32_t *expected_csum, struct buf **bpp)
-{
-	struct btrfs_io_map map;
-	struct buf *bp;
-	uint32_t actual_csum;
-	uint32_t sectorsize;
-	unsigned int i;
-	int error = EIO;
-
-	*bpp = NULL;
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	if ((logical & (sectorsize - 1)) != 0)
-		return (EINVAL);
-	error = btrfs_lookup_logical(bmp->bm_chunks, bmp->bm_nchunks,
-	    logical, sectorsize, &map);
-	if (error != 0)
-		return (error == ENOENT ? EINVAL : error);
-	if ((map.type & BTRFS_BLOCK_GROUP_DATA) == 0)
-		return (EINVAL);
-
-	for (i = 0; i < map.nmirrors; i++) {
-		bp = NULL;
-		error = bread(bmp->bm_devvp, map.physical[i] / DEV_BSIZE,
-		    sectorsize, &bp);
-		if (error == 0 && bp->b_resid == 0) {
-			if (expected_csum == NULL) {
-				*bpp = bp;
-				return (0);
-			}
-			actual_csum = crc32c(0, bp->b_data, sectorsize);
-			if (actual_csum == *expected_csum) {
-				*bpp = bp;
-				return (0);
-			}
-			error = EIO;
-		}
-		if (bp != NULL)
-			brelse(bp);
-		if (error == 0)
-			error = EIO;
-	}
-
-	return (error);
 }
 
 static int
