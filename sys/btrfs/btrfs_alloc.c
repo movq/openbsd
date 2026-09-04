@@ -29,6 +29,13 @@ struct btrfs_space_build {
 	uint64_t		 bsb_bytes_used;
 };
 
+/*
+ * Keep enough metadata for four full-height COW paths which each split at
+ * every level, plus a small margin for root and accounting updates.  Normal
+ * operations must still reserve their own worst case before mutation.
+ */
+#define BTRFS_COMMIT_METADATA_BLOCKS	(BTRFS_MAX_LEVEL * 8 + 8)
+
 static int	btrfs_space_add_block_group(
 		    const struct btrfs_block_group_record *, void *);
 static int	btrfs_space_add_extent(const struct btrfs_extent_record *,
@@ -38,8 +45,10 @@ static int	btrfs_space_add_free(struct btrfs_block_group *, uint64_t,
 static int	btrfs_space_check_type(uint64_t);
 static int	btrfs_space_group_matches(const struct btrfs_block_group *,
 		    uint64_t, int);
-static int	btrfs_space_reserve_type(struct btrfs_trans_handle *,
-		    uint64_t, uint64_t);
+static int	btrfs_space_reserve_type(struct btrfs_mount *,
+		    struct btrfs_reserved_space_list *, uint64_t, uint64_t);
+static void	btrfs_space_release_list(
+		    struct btrfs_reserved_space_list *);
 static int	btrfs_space_handle_error(struct btrfs_trans_handle *);
 static int	btrfs_space_ranges_overlap(uint64_t, uint64_t, uint64_t,
 		    uint64_t);
@@ -50,6 +59,8 @@ static unsigned int
 		    struct btrfs_free_extent *,
 		    struct btrfs_free_extent **);
 static void	btrfs_space_check_group(struct btrfs_block_group *);
+static void	btrfs_space_check_commit_reserve(
+		    struct btrfs_transaction *);
 static struct btrfs_block_group *
 		btrfs_space_find_group(struct btrfs_mount *, uint64_t,
 		    uint64_t);
@@ -244,6 +255,28 @@ btrfs_space_check_group(struct btrfs_block_group *group)
 #endif
 }
 
+static void
+btrfs_space_check_commit_reserve(struct btrfs_transaction *trans)
+{
+#ifdef DIAGNOSTIC
+	struct btrfs_reserved_space *reservation;
+	uint64_t bytes = 0;
+
+	TAILQ_FOREACH(reservation, &trans->bt_commit_reservations,
+	    brs_entry) {
+		KASSERT(reservation->brs_type == BTRFS_BLOCK_GROUP_METADATA);
+		KASSERT(bytes <= UINT64_MAX - reservation->brs_bytes);
+		bytes += reservation->brs_bytes;
+	}
+	KASSERT(bytes == trans->bt_commit_reserved_bytes);
+	KASSERT(bytes <= trans->bt_commit_reserve_target);
+	if (trans->bt_commit_reserve_target == 0)
+		KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
+#else
+	(void)trans;
+#endif
+}
+
 static int
 btrfs_space_add_block_group(const struct btrfs_block_group_record *record,
     void *arg)
@@ -395,10 +428,10 @@ btrfs_space_destroy(struct btrfs_mount *bmp)
 }
 
 static int
-btrfs_space_reserve_type(struct btrfs_trans_handle *handle, uint64_t type,
+btrfs_space_reserve_type(struct btrfs_mount *bmp,
+    struct btrfs_reserved_space_list *reservations, uint64_t type,
     uint64_t bytes)
 {
-	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
 	struct btrfs_reserved_space *reservation;
 	struct btrfs_block_group *group;
 	uint64_t take;
@@ -422,7 +455,7 @@ btrfs_space_reserve_type(struct btrfs_trans_handle *handle, uint64_t type,
 				reservation->brs_group = group;
 				reservation->brs_bytes = take;
 				reservation->brs_type = type;
-				TAILQ_INSERT_TAIL(&handle->bth_reservations,
+				TAILQ_INSERT_TAIL(reservations,
 				    reservation, brs_entry);
 				bytes -= take;
 			}
@@ -436,51 +469,14 @@ btrfs_space_reserve_type(struct btrfs_trans_handle *handle, uint64_t type,
 	return (bytes == 0 ? 0 : ENOSPC);
 }
 
-int
-btrfs_space_reserve(struct btrfs_trans_handle *handle,
-    const struct btrfs_trans_reservation *request)
-{
-	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
-	uint32_t sectorsize;
-	int error;
-
-	if (request == NULL)
-		return (0);
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	if ((request->btr_data & (sectorsize - 1)) != 0 ||
-	    (request->btr_metadata & (sectorsize - 1)) != 0 ||
-	    (request->btr_system & (sectorsize - 1)) != 0)
-		return (EINVAL);
-	error = btrfs_space_handle_error(handle);
-	if (error != 0)
-		return (error);
-
-	/*
-	 * Protect system and metadata promises before data can consume mixed
-	 * block groups.
-	 */
-	error = btrfs_space_reserve_type(handle, BTRFS_BLOCK_GROUP_SYSTEM,
-	    request->btr_system);
-	if (error == 0)
-		error = btrfs_space_reserve_type(handle,
-		    BTRFS_BLOCK_GROUP_METADATA, request->btr_metadata);
-	if (error == 0)
-		error = btrfs_space_reserve_type(handle,
-		    BTRFS_BLOCK_GROUP_DATA, request->btr_data);
-	if (error != 0)
-		btrfs_space_release(handle);
-	return (error);
-}
-
-void
-btrfs_space_release(struct btrfs_trans_handle *handle)
+static void
+btrfs_space_release_list(struct btrfs_reserved_space_list *reservations)
 {
 	struct btrfs_reserved_space *reservation;
 	struct btrfs_block_group *group;
 
-	while ((reservation = TAILQ_FIRST(&handle->bth_reservations)) !=
-	    NULL) {
-		TAILQ_REMOVE(&handle->bth_reservations, reservation, brs_entry);
+	while ((reservation = TAILQ_FIRST(reservations)) != NULL) {
+		TAILQ_REMOVE(reservations, reservation, brs_entry);
 		group = reservation->brs_group;
 		mtx_enter(&group->bbg_lock);
 		KASSERT(group->bbg_reserved_bytes >=
@@ -496,11 +492,85 @@ btrfs_space_release(struct btrfs_trans_handle *handle)
 }
 
 int
+btrfs_space_reserve(struct btrfs_trans_handle *handle,
+    const struct btrfs_trans_reservation *request)
+{
+	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
+	uint32_t sectorsize;
+	int error;
+
+	if (handle->bth_commit)
+		return (EINVAL);
+	if (request == NULL)
+		return (0);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if ((request->btr_data & (sectorsize - 1)) != 0 ||
+	    (request->btr_metadata & (sectorsize - 1)) != 0 ||
+	    (request->btr_system & (sectorsize - 1)) != 0)
+		return (EINVAL);
+	error = btrfs_space_handle_error(handle);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * Protect system and metadata promises before data can consume mixed
+	 * block groups.
+	 */
+	error = btrfs_space_reserve_type(bmp, &handle->bth_reservations,
+	    BTRFS_BLOCK_GROUP_SYSTEM, request->btr_system);
+	if (error == 0)
+		error = btrfs_space_reserve_type(bmp,
+		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_METADATA,
+		    request->btr_metadata);
+	if (error == 0)
+		error = btrfs_space_reserve_type(bmp,
+		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_DATA,
+		    request->btr_data);
+	if (error != 0)
+		btrfs_space_release(handle);
+	return (error);
+}
+
+int
+btrfs_space_reserve_commit(struct btrfs_transaction *trans)
+{
+	struct btrfs_mount *bmp = trans->bt_mount;
+	uint64_t bytes;
+	uint32_t nodesize;
+	int error;
+
+	KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
+	KASSERT(trans->bt_commit_reserve_target == 0);
+	KASSERT(trans->bt_commit_reserved_bytes == 0);
+
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	bytes = nodesize * BTRFS_COMMIT_METADATA_BLOCKS;
+	error = btrfs_space_reserve_type(bmp,
+	    &trans->bt_commit_reservations, BTRFS_BLOCK_GROUP_METADATA,
+	    bytes);
+	if (error != 0) {
+		btrfs_space_release_list(&trans->bt_commit_reservations);
+		return (error);
+	}
+	trans->bt_commit_reserve_target = bytes;
+	trans->bt_commit_reserved_bytes = bytes;
+	btrfs_space_check_commit_reserve(trans);
+	return (0);
+}
+
+void
+btrfs_space_release(struct btrfs_trans_handle *handle)
+{
+	btrfs_space_release_list(&handle->bth_reservations);
+}
+
+int
 btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
     uint64_t length, uint64_t alignment, uint64_t *bytenrp)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_reserved_space_list *reservations;
 	struct btrfs_reserved_space *reservation;
 	struct btrfs_trans_extent *allocated;
 	struct btrfs_free_extent *space, *split, *removed = NULL;
@@ -524,7 +594,11 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
 
 	allocated = malloc(sizeof(*allocated), M_BTRFS, M_WAITOK | M_ZERO);
 	split = malloc(sizeof(*split), M_BTRFS, M_WAITOK | M_ZERO);
-	TAILQ_FOREACH(reservation, &handle->bth_reservations, brs_entry) {
+	if (handle->bth_commit)
+		reservations = &trans->bt_commit_reservations;
+	else
+		reservations = &handle->bth_reservations;
+	TAILQ_FOREACH(reservation, reservations, brs_entry) {
 		if (reservation->brs_type != type ||
 		    reservation->brs_bytes < length)
 			continue;
@@ -572,9 +646,15 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
 			mtx_enter(&trans->bt_lock);
 			KASSERT(trans->bt_allocated_bytes <=
 			    UINT64_MAX - length);
+			if (handle->bth_commit) {
+				KASSERT(trans->bt_commit_reserved_bytes >=
+				    length);
+				trans->bt_commit_reserved_bytes -= length;
+			}
 			trans->bt_allocated_bytes += length;
 			TAILQ_INSERT_TAIL(&trans->bt_allocated_extents,
 			    allocated, bte_entry);
+			btrfs_space_check_commit_reserve(trans);
 			mtx_leave(&trans->bt_lock);
 			btrfs_space_check_group(group);
 			mtx_leave(&group->bbg_lock);
@@ -668,6 +748,8 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 	unsigned int i, ngarbage;
 
 	KASSERT(trans->bt_writers == 0);
+	KASSERT(!trans->bt_commit_handle);
+	btrfs_space_check_commit_reserve(trans);
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
 		group = extent->bte_group;
@@ -709,6 +791,10 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 	}
 	KASSERT(trans->bt_allocated_bytes == 0);
 	KASSERT(trans->bt_pinned_bytes == 0);
+	btrfs_space_release_list(&trans->bt_commit_reservations);
+	trans->bt_commit_reserve_target = 0;
+	trans->bt_commit_reserved_bytes = 0;
+	btrfs_space_check_commit_reserve(trans);
 }
 
 void
@@ -720,6 +806,8 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 	unsigned int i, ngarbage;
 
 	KASSERT(trans->bt_writers == 0);
+	KASSERT(!trans->bt_commit_handle);
+	btrfs_space_check_commit_reserve(trans);
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
 		group = extent->bte_group;
@@ -756,4 +844,8 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 	}
 	KASSERT(trans->bt_allocated_bytes == 0);
 	KASSERT(trans->bt_pinned_bytes == 0);
+	btrfs_space_release_list(&trans->bt_commit_reservations);
+	trans->bt_commit_reserve_target = 0;
+	trans->bt_commit_reserved_bytes = 0;
+	btrfs_space_check_commit_reserve(trans);
 }

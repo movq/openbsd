@@ -1,8 +1,8 @@
 # Btrfs write support
 
-This document describes a path from the current read-only implementation to a
-transactional writer.  It is a design note, not a claim that the write path is
-implemented.
+This document tracks the implemented write-path foundation and the remaining
+work needed for a transactional writer.  The public filesystem is still
+read-only: writable mounts and VFS mutation operations are not enabled.
 
 The first writer should batch changes from multiple operations in one
 transaction.  It should not commit after each operation.  It is acceptable for
@@ -50,26 +50,27 @@ or DUP copy and retain each copy's error; they do not yet have metadata or
 ordered-data callers.  Device cache flushes remain part of the future
 transaction commit protocol rather than this block submission primitive.
 
-This physical cache is not, by itself, enough for writes:
+`btrfs_extent_buffer.c` provides the logical identity missing from the device
+buffer cache.  Clean extent buffers are keyed by logical bytenr and validate
+generation, owner, and level before exposing a locked nodesize buffer.  DUP
+copies therefore share one logical object while mirror selection remains in
+the logical I/O layer.  Extent buffers are reference counted and mount-cached
+while referenced.  They do not yet have private mutable storage, transaction
+ownership, dirty/writeback state, or dirty-list linkage.
 
-* A btrfs metadata block is identified by logical bytenr, owner, level, and
-  generation.  A `struct buf` is identified by device vnode and physical block.
-* DUP metadata has two physical copies but one logical identity.
-* A dirty COW block needs transaction ownership, locking, dirty-list linkage,
-  and writeback status which are not represented by the current `struct buf`.
-* Regular file reads now use sector-sized buffers indexed by `(vnode, file
-  offset)`.  `VOP_STRATEGY` fills a logical buffer from inline, hole,
-  uncompressed, or compressed extents, using the physical device buffers
-  underneath.  This lets reads observe a future delayed-allocation dirty
-  buffer before writeback.  The strategy write side and delayed allocation
-  are not implemented yet.
-* Mounted trees now use persistent roots and take a locked location snapshot
-  for each search.  Root-location publication still needs to be tied to
-  transaction commit before those locations can change.
-* `bn_inode` is now host-endian mutable state decoded at inode-item lookup.
-  Dirty-field bits and the last dirty transaction are represented but remain
-  clear while the filesystem is read-only; mutation and writeback still need
-  to connect them to transaction ownership.
+Regular file reads use sector-sized buffers indexed by `(vnode, file offset)`.
+`VOP_STRATEGY` fills a logical buffer from inline, hole, uncompressed, or
+compressed extents, using the physical device buffers underneath.  This lets
+reads observe a future delayed-allocation dirty buffer before writeback.  The
+strategy write side and delayed allocation are not implemented yet.
+
+Mounted trees use persistent roots and take a locked location snapshot for
+each search.  Root-location publication still needs to be tied to transaction
+commit before those locations can change.  `bn_inode` is host-endian mutable
+state decoded at inode-item lookup.  Dirty-field bits and the last dirty
+transaction are represented but remain clear while the filesystem is
+read-only; mutation and writeback still need to connect them to transaction
+ownership.
 
 Allocation-tree decoding and validation is isolated in `btrfs_disk.c`.
 `btrfs_alloc.c` constructs a mount-owned, per-block-group free-space index by
@@ -88,8 +89,19 @@ free-list and accounting invariants after each transition.  The public mount
 gate remains read-only, so no transaction can currently be joined through VFS
 operations.
 
-The commit reserve, delayed references, ordered extents, metadata COW, and
-on-disk accounting updates are not implemented yet.
+A writable transaction also retains an emergency metadata commit reserve
+before any ordinary handle can join.  It is sized for four full-height COW
+paths splitting at every level, plus accounting margin.  Ordinary handles
+cannot consume it.  After transaction close, the elected committer can obtain
+a commit-only handle which allocates from that reserve; only one such handle
+may be active at a time.  Commit and abort both release its unused portion.  A
+successful commit replenishes the reserve before the next transaction is made
+available; failure to replenish leaves the completed generation committed but
+forces the mount read-only.  Read-only mounts do not retain this unused
+writer-only space.
+
+Delayed references, ordered extents, metadata COW, dirty metadata writeback,
+and on-disk accounting updates are not implemented yet.
 
 ## Initial writable format
 
@@ -122,8 +134,8 @@ and device trees.
 
 ## Main in-memory objects
 
-Names below are illustrative.  They are intended to make ownership explicit,
-not to freeze the final C API.
+The sections below distinguish the current objects from fields and behavior
+which still need to be added.
 
 ### Filesystem roots
 
@@ -139,8 +151,8 @@ currently contains:
 Tree searches take a root-location snapshot for the committed view.  Updating
 a root will change the persistent root object, not a stack-local copy.
 Subvolume roots discovered through root items are cached in the same table.
-Before mutation, roots still need the transaction generation in which they
-were last COWed and linkage on the current transaction's dirty-root list.
+Roots still need the transaction generation in which they were last COWed and
+linkage on the current transaction's dirty-root list before mutation begins.
 
 The chunk map should similarly be a mount-owned service with a lock and stable
 references.  A raw `bm_chunks` pointer copied into a stack root will not remain
@@ -148,15 +160,17 @@ safe once chunk-tree changes are supported.
 
 ### Metadata extent buffers
 
-Introduce a btrfs metadata wrapper, referred to here as an extent buffer.  It
-is keyed by logical bytenr and records:
+The btrfs metadata wrapper is `struct btrfs_extent_buffer`.  It is keyed by
+logical bytenr and currently records:
 
-* Backing `struct buf` objects or an equivalent nodesize allocation.
+* A clean backing `struct buf`.
 * Logical bytenr, owner, level, and generation.
 * Reference count and a sleepable read/write lock.
-* Uptodate, dirty, writeback, I/O-error, and stale states.
-* The transaction which owns a dirty COW copy.
-* Dirty-list and logical-cache linkage.
+* Loaded state and a retained validation or I/O error.
+* Logical-cache linkage.
+
+Metadata COW still needs private nodesize storage plus dirty, writeback,
+I/O-error, stale, transaction-owner, and dirty-list state.
 
 The existing device buffer cache should remain the backing store for clean
 physical reads where practical.  The extent-buffer layer supplies logical
@@ -177,7 +191,7 @@ to the committed generation.  A future running transaction can therefore use
 its own generation when it legitimately contains blocks newer than the last
 committed superblock.
 
-Metadata dirtying is always done through a transaction-aware
+Metadata dirtying must always be done through a transaction-aware
 `btrfs_cow_block()` operation.  On the first write in a generation it allocates
 a new logical metadata extent, copies the block, changes header bytenr and
 generation, updates the parent pointer (or root location), and queues delayed
@@ -241,18 +255,17 @@ struct btrfs_transaction {
         unsigned int writers;
         int error;
 
-        dirty metadata blocks;
-        dirty roots and inodes;
-        ordered extents;
-        delayed references;
+        emergency commit reservations;
         allocated extents;
         pinned freed extents;
-        space reservations and accounting deltas;
 };
 ```
 
-A transaction handle represents one filesystem operation and its reservation.
-The expected interface is:
+Dirty metadata, roots, inodes, ordered extents, delayed references, and
+on-disk accounting deltas still need transaction-owned queues.
+
+A normal transaction handle represents one filesystem operation and its
+reservation.  The implemented lifecycle and allocator interface is:
 
 ```
 btrfs_trans_join(mount, reservation, &handle)
@@ -261,6 +274,7 @@ btrfs_space_pin(handle, bytenr, length)
 btrfs_trans_end(handle)
 btrfs_trans_abort(handle, error)
 btrfs_trans_close(mount, minimum_generation, &transaction)
+btrfs_trans_commit_handle(transaction, &handle)
 btrfs_trans_finish(mount, transaction, error)
 ```
 
@@ -268,10 +282,12 @@ Joining takes a short mount transaction lock, obtains the open transaction,
 increments its writer count, and releases the lock.  It does not hold a global
 lock for the duration of the operation.  Vnode and extent-buffer locks protect
 the actual objects being changed.  `close` elects one committer, changes OPEN
-to CLOSING, and waits for handles to leave.  After the future disk commit
-publishes or fails, `finish` performs the corresponding allocator transition
-and either installs the next open generation or leaves the mount aborted and
-read-only.
+to CLOSING, and waits for handles to leave.  The committer can then obtain one
+active commit-only handle at a time without incrementing the writer count.
+That handle sees only the transaction's emergency metadata reserve.  After
+the future disk commit publishes or fails, `finish` performs the corresponding
+allocator transition and either installs the next open generation or leaves
+the mount aborted and read-only.
 
 Ending the last handle does not normally commit.  Commit requests are
 coalesced and can come from:
@@ -281,12 +297,12 @@ coalesced and can come from:
 * Dirty-metadata, delayed-reference, or reservation high-water marks.
 * Memory pressure or explicit administrative sync.
 
-The first implementation can have one transaction generation at a time.  A
+The implemented state machine has one transaction generation at a time.  A
 committer changes OPEN to CLOSING, prevents new joins, and waits for existing
-handles.  New writers sleep until the commit publishes a fresh OPEN
-transaction.  This pauses modification during commit I/O, but it still batches
-many concurrent operations and is substantially different from serializing
-and committing every change.
+handles.  New writers sleep until the future commit path publishes a fresh
+OPEN transaction.  This will pause modification during commit I/O, but still
+batches many concurrent operations and is substantially different from
+serializing and committing every change.
 
 A later version may create transaction N+1 while N commits.  That requires
 careful root versioning, pinned-space ownership, ordered-extent assignment, and
@@ -319,10 +335,10 @@ for without a vnode scan.
 
 ## Reservations and allocation
 
-Build a free-space index per block group at writable mount.  Until free-space
-tree writing exists, derive it from block-group bounds minus allocated extents
-in the extent tree.  Validate that the result agrees with block-group and
-superblock accounting.
+The mount builds a free-space index per block group from block-group bounds
+minus allocated extents in the extent tree.  It validates the result against
+block-group and superblock accounting.  This remains the writable source of
+free space until free-space-tree writing exists.
 
 Maintain separate concepts:
 
@@ -332,11 +348,17 @@ Maintain separate concepts:
 * Pinned space: freed in the running transaction but still reachable from the
   committed superblock.
 
-Reservations should distinguish data and metadata, while handling mixed block
-groups.  Metadata reservations must be pessimistic enough for tree splits,
-root COW, extent/checksum items, and delayed-reference expansion.  Keep a
-small commit reserve which ordinary operations cannot consume, otherwise
-ENOSPC can make the transaction impossible to commit.
+Reservations distinguish data, metadata, and system space while handling
+mixed block groups.  Metadata reservations must be pessimistic enough for tree
+splits, root COW, extent/checksum items, and delayed-reference expansion.
+
+The implemented emergency commit reserve protects 72 nodesize metadata blocks
+from ordinary operations.  This covers four maximum-height paths with a COW
+and split at every level, plus eight blocks for root and accounting updates.
+It is a last-resort pool, not a replacement for transferring each operation's
+delayed-reference and checksum reservation to the transaction.  A writable
+mount which cannot establish the full reserve must fail; a transaction which
+cannot replenish it after publishing a generation cannot admit more writers.
 
 Allocation updates only in-memory indexes immediately.  Extent items,
 backreferences, block-group `used`, device `bytes_used`, and superblock
@@ -446,9 +468,9 @@ Writable mount recovery of orphan items must exist before unlink is enabled.
 Concurrent `fsync` calls should wait on and share the same commit rather than
 starting redundant commits.
 
-## Preparatory refactors
+## Completed preparatory refactors
 
-The following changes are useful before enabling writable mounts:
+The following write-path foundations are in place:
 
 * Completed: decode vnode inode state to host endian and add
   dirty/transaction fields.
@@ -456,6 +478,8 @@ The following changes are useful before enabling writable mounts:
   buffers, then implement vnode-buffer reads before writes.  Logical buffers
   are one filesystem sector so they align with data checksums and the minimum
   COW unit.
+* Completed: add persistent mount-owned roots with locked location snapshots
+  and logical, validated, reference-counted metadata extent buffers.
 * Completed: split allocation-tree decoders from mutable allocator code and
   construct per-block-group free-space indexes at mount.  The indexes retain
   separate committed-used, free, reserved, transaction-allocated, and pinned
@@ -464,6 +488,10 @@ The following changes are useful before enabling writable mounts:
   block-group reservations, aligned allocation, transaction-owned allocation
   and pin lists, abort rollback, and commit-publication finalization.  Exact
   data/metadata/system groups are preferred before mixed groups.
+* Completed: retain a transaction-owned emergency metadata commit reserve
+  outside ordinary handles.  Only the elected committer can consume it, and
+  commit/abort cleanup plus next-transaction replenishment preserve allocator
+  accounting and fail safely on ENOSPC.
 * Completed: centralize logical-to-physical read submission.  Metadata and
   data now use one SINGLE/DUP mirror loop, with caller validation participating
   in failover and optional per-mirror error reporting.
@@ -473,24 +501,25 @@ The following changes are useful before enabling writable mounts:
   claim stable-media durability; commit must still drain writes and issue the
   required device cache flushes.
 
-These should land in small changes which preserve read-only behavior.  Avoid
-adding an ad hoc metadata cache now; the logical extent-buffer API should be
-designed together with COW ownership and transaction lifetime.
+These changes preserve public read-only behavior.  The next layers should
+continue using the logical extent-buffer and transaction allocator APIs rather
+than adding parallel caches or ad hoc reservations.
 
 ## Milestones
 
 ### 1. Read-path architecture
 
-Completed: host-endian mutable inode state and logical vnode data buffers are
-in place.  No writable mount is permitted.
+Completed: persistent roots, logical metadata extent buffers, host-endian
+mutable inode state, and logical vnode data buffers are in place.  No writable
+mount is permitted.
 
 ### 2. Transaction and allocator core
 
 Transaction handles, free-space indexes, typed reservations, allocation,
-pinning, and commit/abort allocator transitions are in place.  Add a
-pessimistic metadata commit reserve, ordered extents, and delayed references.
-Exercise the mutation paths with a small in-kernel test harness as they gain
-callers, but keep the public filesystem read-only.
+pinning, commit/abort allocator transitions, and the emergency metadata commit
+reserve are in place.  Add ordered extents and delayed references.  Exercise
+the mutation paths with a small in-kernel test harness as they gain callers,
+but keep the public filesystem read-only.
 
 ### 3. B-tree writer
 
@@ -545,8 +574,8 @@ merges, ordered extents, commit latency, and abort reason.
 
 The following are intentionally deferred:
 
-* Whether extent-buffer bytes live directly in device `struct buf` objects or
-  in nodesize memory with device buffers used only during I/O.
+* Whether dirty COW extent-buffer bytes should use anonymous `struct buf`
+  objects or nodesize allocations with device buffers used only during I/O.
 * Whether to add a larger decompressed-cluster cache or read-ahead while
   retaining sector-sized vnode buffers.
 * Whether the first writable release supports existing snapshots or rejects
