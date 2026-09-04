@@ -97,7 +97,7 @@ out:
 }
 
 int
-btrfs_find_dir_parent(struct btrfs_mount *bmp, uint64_t objectid,
+btrfs_find_dir_parent(struct btrfs_root *root, uint64_t objectid,
     uint64_t *parentp)
 {
 	const struct btrfs_inode_extref *extref;
@@ -105,7 +105,6 @@ btrfs_find_dir_parent(struct btrfs_mount *bmp, uint64_t objectid,
 	const struct btrfs_key *key;
 	const uint8_t *data, *name;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root root;
 	struct btrfs_key target;
 	uint64_t parent;
 	uint32_t item_size;
@@ -114,7 +113,7 @@ btrfs_find_dir_parent(struct btrfs_mount *bmp, uint64_t objectid,
 	unsigned int nrefs = 0;
 	int error;
 
-	if (objectid == bmp->bm_root_dirid) {
+	if (objectid == BTRFS_FIRST_FREE_OBJECTID) {
 		*parentp = objectid;
 		return (0);
 	}
@@ -122,8 +121,7 @@ btrfs_find_dir_parent(struct btrfs_mount *bmp, uint64_t objectid,
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(objectid);
 	target.type = BTRFS_INODE_REF_KEY;
-	btrfs_init_fs_root(bmp, &root);
-	error = btrfs_search_lower_bound(&root, &target, &path);
+	error = btrfs_search_lower_bound(root, &target, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, &data, &item_size);
 		if (error != 0)
@@ -176,6 +174,75 @@ btrfs_find_dir_parent(struct btrfs_mount *bmp, uint64_t objectid,
 				remaining -= record_size;
 			}
 		}
+		error = btrfs_next_item(&path);
+	}
+	if (error == ENOENT)
+		error = 0;
+	if (error == 0 && nrefs != 1)
+		error = EINVAL;
+	goto out;
+invalid:
+	error = EINVAL;
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+int
+btrfs_find_subvol_parent(struct btrfs_mount *bmp, uint64_t treeid,
+    uint64_t *parent_treeidp, uint64_t *parent_diridp)
+{
+	const struct btrfs_root_ref *ref;
+	const struct btrfs_key *key;
+	const uint8_t *data, *name;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root root;
+	struct btrfs_key target;
+	uint64_t parent_treeid, parent_dirid;
+	uint32_t size;
+	uint16_t namelen;
+	unsigned int nrefs = 0;
+	int error;
+
+	if (treeid == bmp->bm_treeid) {
+		*parent_treeidp = treeid;
+		*parent_diridp = bmp->bm_root_dirid;
+		return (0);
+	}
+
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(treeid);
+	target.type = BTRFS_ROOT_BACKREF_KEY;
+	btrfs_init_root_tree(bmp, &root);
+	error = btrfs_search_lower_bound(&root, &target, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &key, &data, &size);
+		if (error != 0)
+			break;
+		if (letoh64(key->objectid) != treeid ||
+		    key->type != BTRFS_ROOT_BACKREF_KEY)
+			break;
+		if (size < sizeof(*ref))
+			goto invalid;
+		ref = (const struct btrfs_root_ref *)data;
+		namelen = letoh16(ref->name_len);
+		if (namelen != size - sizeof(*ref))
+			goto invalid;
+		name = data + sizeof(*ref);
+		if (!btrfs_ref_name_valid(name, namelen))
+			goto invalid;
+
+		parent_treeid = letoh64(key->offset);
+		parent_dirid = letoh64(ref->dirid);
+		if ((parent_treeid != bmp->bm_treeid &&
+		    (parent_treeid < BTRFS_FIRST_FREE_OBJECTID ||
+		    parent_treeid > BTRFS_LAST_FREE_OBJECTID)) ||
+		    parent_dirid < BTRFS_FIRST_FREE_OBJECTID ||
+		    parent_dirid > BTRFS_LAST_FREE_OBJECTID ||
+		    ++nrefs != 1)
+			goto invalid;
+		*parent_treeidp = parent_treeid;
+		*parent_diridp = parent_dirid;
 		error = btrfs_next_item(&path);
 	}
 	if (error == ENOENT)
