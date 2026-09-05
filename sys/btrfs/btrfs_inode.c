@@ -278,7 +278,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	uint8_t *link_item = NULL;
 	uint8_t record[sizeof(*entry) + BTRFS_NAME_MAX];
 	uint8_t reference[sizeof(*ref) + BTRFS_NAME_MAX];
-	uint64_t ino, index = 2, generation, rdev = 0;
+	uint64_t ino, index = 2, generation, rdev = 0, flags;
 	uint32_t nodesize, bucket_size = 0, record_size;
 	size_t linklen = 0, link_size = 0;
 	int error, end_error;
@@ -310,13 +310,11 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 		return (EINVAL);
 	if (dir->bn_inode.bi_size > UINT64_MAX - namelen * 2)
 		return (EOVERFLOW);
-	/* Inheritance of ACLs and other directory xattrs is not implemented. */
-	if (dir->bn_inode.bi_flags & BTRFS_INODE_NODATACOW)
-		return (EOPNOTSUPP);
 	rw_enter_write(&bmp->bm_namespace_lock);
 	error = btrfs_get_root(bmp, dir->bn_treeid, &root);
 	if (error != 0)
 		goto out;
+	/* Inheritance of ACLs and other directory xattrs is not implemented. */
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(dir->bn_ino);
 	target.type = BTRFS_XATTR_ITEM_KEY;
@@ -414,8 +412,11 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	inode.rdev = htole64(rdev);
 	inode.size = inode.nbytes = htole64(linklen);
 	inode.sequence = htole64(1);
-	inode.flags = htole64(dir->bn_inode.bi_flags &
-	    (BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_COMPRESS));
+	flags = dir->bn_inode.bi_flags & (BTRFS_INODE_NOCOMPRESS |
+	    BTRFS_INODE_COMPRESS | BTRFS_INODE_NODATACOW);
+	if ((flags & BTRFS_INODE_NODATACOW) && S_ISREG(mode))
+		flags |= BTRFS_INODE_NODATASUM;
+	inode.flags = htole64(flags);
 	btrfs_encode_timespec(&now, &inode.atime);
 	inode.ctime = inode.mtime = inode.otime = inode.atime;
 	btrfs_decode_inode(&inode, &VTOBTRFS(*vpp)->bn_inode);
