@@ -44,12 +44,15 @@ Current limits:
   A read-only view may join a writable filesystem; a filesystem first opened
   read-only cannot gain writable views until all views have been unmounted.
   Remount updates and subvolume creation/property changes are unsupported.
-* Regular-file `truncate`/`ftruncate` support unchanged sizes and sparse growth.
+* Regular-file `truncate`/`ftruncate` and `O_TRUNC` support shrinking
+  uncompressed regular/preallocated mappings and supported inline files,
+  unchanged sizes, and sparse growth.
   Growth converts supported inline data and COWs partial data sectors with zero
   tails before exposing the new size. It rejects
   compressed/encoded overlap and regular mappings beyond the old
-  rounded EOF; preallocation remains zero-filled. Shrinking, unlink, rmdir,
-  and rename are unsupported.
+  rounded EOF; preallocation remains zero-filled. Shrinking reserves the
+  entire range deletion in one transaction and may return `ENOSPC` for highly
+  fragmented files. Unlink, rmdir, and rename are unsupported.
 * Writes and growth convert uncompressed or Zstd inline files of at most one
   decoded sector to regular extents. Larger inline files, other compression
   codecs, encoded mappings, and compressed regular overlap remain
@@ -163,9 +166,14 @@ Delayed references merge by extent and ownership. Only the final drop pins an
 extent; for data it also removes its checksum range, preserving neighbors.
 Hard links change inode references, not data ownership `(root, inode, file-base)`.
 
+Shrinking COWs a retained partial data sector with a zero tail, removes mappings
+through the last extent (including preallocation beyond EOF), and invalidates
+vnode buffers and mapped pages. Pending sectors that are removed cancel their
+delayed adds, checksums, payloads, and unpublished allocations together.
+
 ## Dependencies for further work
 
-Shrinking/range deletion and orphan recovery precede last-link removal.
+Orphan recovery and bounded, restartable range deletion precede last-link removal.
 Writable mount must recover orphans before unlink is exposed. Rename requires
 multi-vnode locking and atomic destination replacement.
 

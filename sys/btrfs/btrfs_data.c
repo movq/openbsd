@@ -967,6 +967,184 @@ out:
 	return (error);
 }
 
+/*
+ * An ordered sector has never been published and its delayed add cancels
+ * the drop. Remove its checksum and payload before returning the allocation
+ * to the reservation pool; a later write must not find the old payload.
+ */
+static int
+btrfs_cancel_ordered_sector(struct btrfs_trans_handle *handle,
+    struct btrfs_node *node, const struct btrfs_file_extent *extent)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_ordered_extent *ordered;
+	int error;
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_FOREACH(ordered, &trans->bt_ordered_extents, boe_entry) {
+		if (ordered->boe_treeid == node->bn_treeid &&
+		    ordered->boe_objectid == node->bn_ino &&
+		    ordered->boe_file_offset == extent->bfe_logical)
+			break;
+	}
+	if (ordered == NULL) {
+		mtx_leave(&trans->bt_lock);
+		return (0);
+	}
+	if (ordered->boe_bytenr != extent->bfe_disk_bytenr ||
+	    ordered->boe_length != extent->bfe_disk_num_bytes ||
+	    extent->bfe_disk_offset != 0 ||
+	    extent->bfe_length != ordered->boe_length) {
+		mtx_leave(&trans->bt_lock);
+		return (EINVAL);
+	}
+	TAILQ_REMOVE(&trans->bt_ordered_extents, ordered, boe_entry);
+	mtx_leave(&trans->bt_lock);
+	error = btrfs_delete_data_csums(handle, ordered->boe_bytenr,
+	    ordered->boe_length);
+	if (error == 0)
+		error = btrfs_space_cancel_alloc(handle, ordered->boe_bytenr,
+		    ordered->boe_length);
+	free(ordered->boe_data, M_BTRFS, ordered->boe_length);
+	free(ordered, M_BTRFS, sizeof(*ordered));
+	return (error);
+}
+
+/*
+ * Walk through the final extent, including preallocation past EOF. The same
+ * walk preflights format support and reserves each affected item's worst-case
+ * mutation cost. The vnode lock keeps this plan stable across transaction join.
+ * Partial EOF data is COWed by setattr before the mutation walk.
+ */
+static int
+btrfs_file_shrink(struct btrfs_trans_handle *handle, struct btrfs_node *node,
+    uint64_t size, uint64_t *count, uint64_t *tail_offset)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_file_extent extent;
+	struct btrfs_file_extent_item item;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_key key;
+	uint64_t cursor, cut, end, left, removed = 0, items = 0;
+	uint32_t sectorsize;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	KASSERT(size < node->bn_inode.bi_size);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	cut = roundup(size, sectorsize);
+	cursor = size & ~((uint64_t)sectorsize - 1);
+	if (tail_offset != NULL)
+		*tail_offset = UINT64_MAX;
+	error = btrfs_get_root(bmp, node->bn_treeid, &root);
+	if (error != 0)
+		return (error);
+	while (cursor < UINT64_MAX) {
+		error = btrfs_find_file_extent(bmp, root, &path,
+		    node->bn_ino, cursor, UINT64_MAX, &extent);
+		if (error != 0)
+			goto out;
+		end = extent.bfe_logical + extent.bfe_length;
+		btrfs_release_path(&path);
+		if (end <= cursor) {
+			error = EINVAL;
+			goto out;
+		}
+		cursor = end;
+		if (!extent.bfe_item_present)
+			continue;
+		if (extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+			error = btrfs_check_inline_conversion(node, &extent);
+			if (error != 0)
+				goto out;
+			items++;
+			if (size != 0) {
+				KASSERT(handle == NULL);
+				*tail_offset = 0;
+				continue;
+			}
+			left = 0;
+		} else {
+			if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+			    extent.bfe_encryption != 0 ||
+			    extent.bfe_other_encoding != 0 ||
+			    (extent.bfe_logical & (sectorsize - 1)) != 0 ||
+			    (extent.bfe_length & (sectorsize - 1)) != 0) {
+				error = EOPNOTSUPP;
+				goto out;
+			}
+			if (tail_offset != NULL && size % sectorsize != 0 &&
+			    extent.bfe_logical < size && end >= cut &&
+			    extent.bfe_type == BTRFS_FILE_EXTENT_REG)
+				*tail_offset = size & ~((uint64_t)sectorsize - 1);
+			if (end <= cut)
+				continue;
+			items++;
+			left = cut > extent.bfe_logical ?
+			    cut - extent.bfe_logical : 0;
+		}
+		if (extent.bfe_type != BTRFS_FILE_EXTENT_HOLE) {
+			if (extent.bfe_length - left >
+			    node->bn_inode.bi_nbytes - removed) {
+				error = EINVAL;
+				goto out;
+			}
+			removed += extent.bfe_length - left;
+		}
+		if (handle == NULL)
+			continue;
+		memset(&key, 0, sizeof(key));
+		key.objectid = htole64(node->bn_ino);
+		key.type = BTRFS_EXTENT_DATA_KEY;
+		key.offset = htole64(extent.bfe_logical);
+		if (left != 0) {
+			extent.bfe_length = left;
+			btrfs_encode_file_extent(&item, &extent,
+			    handle->bth_transaction->bt_generation);
+			error = btrfs_replace_item(handle, root, &key, &item,
+			    sizeof(item));
+		} else {
+			error = btrfs_delete_item(handle, root, &key);
+			if (error == 0 && extent.bfe_disk_bytenr != 0)
+				error = btrfs_delayed_data_ref_add(handle,
+				    extent.bfe_disk_bytenr,
+				    extent.bfe_disk_num_bytes, node->bn_treeid,
+				    node->bn_ino, extent.bfe_logical -
+				    extent.bfe_disk_offset, -1);
+			if (error == 0 && extent.bfe_disk_bytenr != 0)
+				error = btrfs_cancel_ordered_sector(handle,
+				    node, &extent);
+		}
+		if (error != 0)
+			goto out;
+	}
+	if (count != NULL)
+		*count = items;
+	if (handle != NULL) {
+		node->bn_inode.bi_nbytes -= removed;
+		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NBYTES;
+	}
+	error = 0;
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+int
+btrfs_check_file_shrink(struct btrfs_node *node, uint64_t size,
+    uint64_t *count, uint64_t *tail_offset)
+{
+	return (btrfs_file_shrink(NULL, node, size, count, tail_offset));
+}
+
+int
+btrfs_shrink_file(struct btrfs_trans_handle *handle, struct btrfs_node *node,
+    uint64_t size)
+{
+	return (btrfs_file_shrink(handle, node, size, NULL, NULL));
+}
+
 int
 btrfs_write_file_sector(struct btrfs_trans_handle *handle,
     struct btrfs_node *node, uint64_t file_offset, const void *data,

@@ -826,8 +826,12 @@ btrfs_setattr(void *v)
 		dirty |= BTRFS_INODE_DIRTY_CTIME;
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	if (vap->va_size != VNOVAL) {
-		if (vap->va_size < node->bn_inode.bi_size)
-			return (EOPNOTSUPP);
+		if (vap->va_size < node->bn_inode.bi_size) {
+			error = btrfs_check_file_shrink(node, vap->va_size,
+			    &holes, &tail_offset);
+			if (error != 0)
+				return (error);
+		}
 		if (vap->va_size > node->bn_inode.bi_size) {
 			error = btrfs_check_file_extend(node, vap->va_size,
 			    &tail_offset);
@@ -849,7 +853,8 @@ btrfs_setattr(void *v)
 		if (error != 0)
 			goto out;
 		data = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
-		memcpy(data, bp->b_data, node->bn_inode.bi_size - tail_offset);
+		memcpy(data, bp->b_data,
+		    MIN(node->bn_inode.bi_size, vap->va_size) - tail_offset);
 		reservation.btr_data = sectorsize;
 	}
 	reservation.btr_metadata =
@@ -893,9 +898,13 @@ btrfs_setattr(void *v)
 		    data, saved.bi_size);
 	else
 		error = 0;
-	if (error == 0 && vap->va_size != VNOVAL)
-		error = btrfs_fill_file_holes(handle, node, saved.bi_size,
-		    vap->va_size);
+	if (error == 0 && vap->va_size != VNOVAL) {
+		if (vap->va_size < saved.bi_size)
+			error = btrfs_shrink_file(handle, node, vap->va_size);
+		else
+			error = btrfs_fill_file_holes(handle, node,
+			    saved.bi_size, vap->va_size);
+	}
 	if (error == 0) {
 		if (vap->va_size != VNOVAL) {
 			node->bn_inode.bi_size = vap->va_size;
@@ -912,10 +921,18 @@ btrfs_setattr(void *v)
 		memcpy(&node->bn_inode, &saved, sizeof(saved));
 		goto out;
 	}
-	if (hint & NOTE_EXTEND) {
+	if (vap->va_size != VNOVAL && vap->va_size != saved.bi_size) {
 		(void)uvm_vnp_uncache(vp);
 		if (data != NULL)
 			memcpy(bp->b_data, data, sectorsize);
+		if (vap->va_size < saved.bi_size) {
+			if (bp != NULL) {
+				brelse(bp);
+				bp = NULL;
+			}
+			/* Buffers are clean; ordered data owns pending writes. */
+			(void)vinvalbuf(vp, 0, cred, ap->a_p, 0, INFSLP);
+		}
 		uvm_vnp_setsize(vp, node->bn_inode.bi_size);
 	}
 	VN_KNOTE(vp, hint);
