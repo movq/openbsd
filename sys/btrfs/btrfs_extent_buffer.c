@@ -347,7 +347,7 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 
 /*
  * Consume the caller and dirty-list references to an unlinked COW block.
- * Its delayed add must have been canceled before the allocation is returned.
+ * Its allocation remains held until delayed references have been drained.
  */
 int
 btrfs_extent_buffer_discard(struct btrfs_trans_handle *handle,
@@ -371,7 +371,7 @@ btrfs_extent_buffer_discard(struct btrfs_trans_handle *handle,
 	    eb->eb_error != 0)
 		return (EINVAL);
 
-	error = btrfs_space_cancel_alloc(handle, eb->eb_bytenr, nodesize);
+	error = btrfs_space_discard_alloc(handle, eb->eb_bytenr, nodesize);
 	if (error != 0)
 		return (error);
 

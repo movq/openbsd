@@ -735,9 +735,9 @@ fail:
 }
 
 /*
- * Removing the final item in a leaf can detach a whole COW path.  Cancel
- * allocations for blocks which never became reachable, and keep the leaf as
- * an empty root when no sibling survives.
+ * Removing the final item in a leaf can detach a whole COW path.  Retire its
+ * allocations after delayed-reference processing, and keep the leaf as an
+ * empty root when no sibling survives.
  */
 static int
 btrfs_leaf_delete_empty(struct btrfs_path *path,
