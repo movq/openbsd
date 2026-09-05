@@ -8,6 +8,12 @@ Use a new test directory for each run.  For example, inside the test VM:
 On the host, while the image is unmounted:
 
     btrfs check --readonly --check-data-csum /path/to/image
+    python3 regress/sys/btrfs/mirrors.py /path/to/image
+
+mirrors.py supplements the checker by comparing every allocated metadata copy
+and checking that no allocation overlaps a physical superblock stripe.
+It supports the writer's SINGLE/DUP format.  The normal checker can recover
+from a corrupt DUP copy and still return success, so use both checks.
 
 Then in the VM:
 
@@ -71,3 +77,7 @@ create instead of create-extended to check failure atomicity when a packed
 inode-reference item fills.
 The limit/verify-limit phases grow one inode to the advertised `LINK_MAX`,
 check every alias after remount, and ensure the next link fails atomically.
+Run limit in two separate directories on the same image to exercise metadata
+allocation past the 64 MiB superblock mirror, then unmount and run both host
+checks.  Writable remount and idle sync/unmount also exercise commits without
+pending namespace mutations.
