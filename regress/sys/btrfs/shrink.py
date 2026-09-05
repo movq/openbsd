@@ -150,8 +150,29 @@ def exercise():
     os.truncate("huge", (1 << 40) + 7)
     os.truncate("huge", 3)
     assert os.stat("huge").st_blocks == 0
+    sparse()
     os.sync()
     verify()
+
+
+def sparse():
+    # Middle-hole replacement must use rounded EOF, even when the inode's
+    # size ends part way through a later sector.
+    put("sparse-middle", b"")
+    os.truncate("sparse-middle", 65539)
+    fd = os.open("sparse-middle", os.O_RDWR)
+    for offset in (0, 8195, 4097, 32768):
+        assert os.pwrite(fd, b"middle", offset) == 6
+    os.fsync(fd)
+    os.close(fd)
+    verify_sparse()
+
+
+def verify_sparse():
+    data = bytearray(65539)
+    for offset in (0, 8195, 4097, 32768):
+        data[offset:offset + 6] = b"middle"
+    assert Path("sparse-middle").read_bytes() == data
 
 
 def verify():
@@ -168,6 +189,7 @@ def verify():
     assert os.stat("alias").st_ino == os.stat("ordered").st_ino
     assert Path("policy").read_bytes() == b"pol"
     assert Path("huge").read_bytes() == bytes(3)
+    verify_sparse()
 
 
 def readonly():
