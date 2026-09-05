@@ -50,8 +50,7 @@ static int	btrfs_write_extent_valid(
 static int	btrfs_write_backref_valid(
 		    const struct btrfs_backref_record *, void *);
 static int	btrfs_validate_writable(struct btrfs_fs *);
-static int	btrfs_check_write_orphans(struct btrfs_fs *);
-static int	btrfs_commit_current(struct btrfs_fs *, struct proc *);
+static int	btrfs_check_write_orphans(struct btrfs_fs *, int);
 static int	btrfs_start(struct mount *, int, struct proc *);
 static int	btrfs_unmount(struct mount *, int, struct proc *);
 static int	btrfs_root(struct mount *, struct vnode **);
@@ -319,6 +318,12 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	error = btrfs_trans_init(bmp);
 	if (error != 0)
 		goto out;
+	if (!readonly) {
+		stage = "recovering orphaned inodes";
+		error = btrfs_check_write_orphans(bmp, 1);
+		if (error != 0)
+			goto out;
+	}
 
 	stage = "selecting subvolume";
 	error = btrfs_attach_view(bmp, mp, treeid);
@@ -501,31 +506,45 @@ btrfs_write_backref_valid(const struct btrfs_backref_record *backref,
 }
 
 static int
-btrfs_check_root_orphans(struct btrfs_root *root)
+btrfs_check_root_orphans(struct btrfs_root *root, int recover)
 {
 	struct btrfs_path path = { 0 };
 	struct btrfs_key target = { 0 };
 	const struct btrfs_key *key;
+	uint64_t ino;
+	uint32_t size;
 	int error;
 
 	target.objectid = htole64(BTRFS_ORPHAN_OBJECTID);
 	target.type = BTRFS_ORPHAN_ITEM_KEY;
-	error = btrfs_search_lower_bound(root, &target, &path);
-	if (error == 0) {
-		error = btrfs_path_item(&path, &key, NULL, NULL);
-		if (error == 0 && key->objectid == target.objectid &&
-		    key->type == target.type) {
-			printf("btrfs: tree %llu requires orphan recovery\n",
-			    (unsigned long long)root->br_owner);
-			error = EOPNOTSUPP;
-		}
+	for (;;) {
+		error = btrfs_search_lower_bound(root, &target, &path);
+		if (error != 0)
+			break;
+		error = btrfs_path_item(&path, &key, NULL, &size);
+		if (error != 0)
+			break;
+		if (key->objectid != target.objectid || key->type != target.type)
+			break;
+		ino = letoh64(key->offset);
+		btrfs_release_path(&path);
+		if (root->br_owner == BTRFS_ROOT_TREE_OBJECTID)
+			return (EOPNOTSUPP);
+		if (size != 0 || ino <= BTRFS_FIRST_FREE_OBJECTID ||
+		    ino > BTRFS_LAST_FREE_OBJECTID)
+			return (EINVAL);
+		error = recover ? btrfs_reap_inode(root, ino) :
+		    btrfs_check_orphan(root, ino);
+		if (error != 0)
+			return (error);
+		target.offset = htole64(ino + 1);
 	}
 	btrfs_release_path(&path);
 	return (error == ENOENT ? 0 : error);
 }
 
 static int
-btrfs_check_write_orphans(struct btrfs_fs *bmp)
+btrfs_check_write_orphans(struct btrfs_fs *bmp, int recover)
 {
 	struct btrfs_root *root_tree, *root;
 	struct btrfs_path path = { 0 };
@@ -538,7 +557,7 @@ btrfs_check_write_orphans(struct btrfs_fs *bmp)
 	if (error != 0)
 		return (error);
 	/* Root-tree orphans describe unfinished subvolume deletion. */
-	error = btrfs_check_root_orphans(root_tree);
+	error = btrfs_check_root_orphans(root_tree, recover);
 	if (error != 0)
 		return (error);
 	target.objectid = htole64(BTRFS_FS_TREE_OBJECTID);
@@ -569,7 +588,7 @@ btrfs_check_write_orphans(struct btrfs_fs *bmp)
 		 */
 		error = btrfs_get_root(bmp, owner, &root);
 		if (error == 0)
-			error = btrfs_check_root_orphans(root);
+			error = btrfs_check_root_orphans(root, recover);
 		if (error != 0)
 			return (error);
 		target.objectid = htole64(owner + 1);
@@ -596,7 +615,7 @@ btrfs_validate_writable(struct btrfs_fs *bmp)
 	    btrfs_write_extent_valid, btrfs_write_backref_valid, bmp);
 	if (error != 0)
 		return (error);
-	return (btrfs_check_write_orphans(bmp));
+	return (btrfs_check_write_orphans(bmp, 0));
 }
 
 static int
@@ -605,7 +624,7 @@ btrfs_start(struct mount *mp, int flags, struct proc *p)
 	return (0);
 }
 
-static int
+int
 btrfs_commit_current(struct btrfs_fs *bmp, struct proc *p)
 {
 	struct btrfs_transaction *trans;
