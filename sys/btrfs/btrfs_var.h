@@ -521,6 +521,7 @@ int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
 int	btrfs_build_super(struct btrfs_transaction *,
 	    struct btrfs_super_block *);
+int	btrfs_super_mirror_writable(const struct btrfs_mount *, unsigned int);
 int	btrfs_write_super_mirrors(struct btrfs_mount *,
 	    const struct btrfs_super_block *);
 void	btrfs_init_roots(struct btrfs_mount *, const struct btrfs_bootstrap *);
