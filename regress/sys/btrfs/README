@@ -57,7 +57,12 @@ For example:
 
 Unmount and run the independent filesystem checker after this test as well.
 
-hardlink.py uses create/verify phases and a readonly phase after a read-only
-remount.  It checks shared inode identity, data, attributes and advisory locks,
-link counts, symlink aliases, concurrent links, hash collisions, notifications,
-permissions, and failure atomicity when a packed inode-reference item fills.
+hardlink.py uses create-extended/verify phases and a readonly phase after a
+read-only remount.  It checks shared inode identity, data, attributes and
+advisory locks, link counts, symlink aliases, concurrent links, hash collisions,
+notifications, permissions, and extended inode-reference overflow, including
+collisions across commits.  On images made with `mkfs.btrfs -O ^extref`, use
+create instead of create-extended to check failure atomicity when a packed
+inode-reference item fills.
+The limit/verify-limit phases grow one inode to the advertised `LINK_MAX`,
+check every alias after remount, and ensure the next link fails atomically.
