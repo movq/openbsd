@@ -544,7 +544,8 @@ getdevvp(dev_t dev, struct vnode **vpp, enum vtype type)
 		vput(vp);
 		vp = nvp;
 	}
-	if (vp->v_type == VCHR && cdevsw[major(vp->v_rdev)].d_type == D_TTY)
+	if (vp->v_type == VCHR && major(vp->v_rdev) < nchrdev &&
+	    cdevsw[major(vp->v_rdev)].d_type == D_TTY)
 		vp->v_flag |= VISTTY;
 	*vpp = vp;
 	return (0);
@@ -604,7 +605,7 @@ loop:
 		nvp->v_specmountpoint = NULL;
 		nvp->v_speclockf = NULL;
 		nvp->v_specbitmap = NULL;
-		if (nvp->v_type == VCHR &&
+		if (nvp->v_type == VCHR && major(nvp_rdev) < nchrdev &&
 		    (cdevsw[major(nvp_rdev)].d_flags & D_CLONE) &&
 		    (minor(nvp_rdev) >> CLONE_SHIFT == 0)) {
 			if (vp != NULL)
@@ -1207,6 +1208,7 @@ vgonel(struct vnode *vp, struct proc *p)
 	if ((vp->v_type == VBLK || vp->v_type == VCHR) &&
 	    vp->v_specinfo != NULL) {
 		if ((vp->v_flag & VALIASED) == 0 && vp->v_type == VCHR &&
+		    major(vp->v_rdev) < nchrdev &&
 		    (cdevsw[major(vp->v_rdev)].d_flags & D_CLONE) &&
 		    (minor(vp->v_rdev) >> CLONE_SHIFT == 0)) {
 			free(vp->v_specbitmap, M_VNODE, CLONE_MAPSZ);
