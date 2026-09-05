@@ -31,6 +31,15 @@ short readlink buffers, maximum target/name lengths, hash collisions across
 commits, permissions, concurrent creation, and directory accounting.  Run
 both phases with an intervening unmount, independent check, and remount.
 
+locks.py takes a new test directory and checks flock and POSIX record locks:
+conflicts, shared locks, independent ranges, F_GETLK, partial unlock, SEEK_END,
+blocking wakeup, duplicate descriptors, symlink aliases, and release on close
+and process exit.  Run it under timeout, then unmount and check the image.
+Its `readonly existing-test-directory` mode tests locks after a read-only
+remount.  `reclaim mountpoint` creates two files and forcibly unmounts the
+disposable filesystem with held locks and blocked waiters; run it from outside
+the mount.  This mode checks that vnode reclaim interrupts the waiters.
+
 On a small disposable image, enospc.py fills the existing metadata block group
 with empty files.  It checks that failed creation leaves no entry or parent
 metadata changes, and that the filesystem remains writable and can sync.
