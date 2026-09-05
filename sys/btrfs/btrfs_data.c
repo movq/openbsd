@@ -339,6 +339,7 @@ btrfs_delayed_data_ref_add(struct btrfs_trans_handle *handle,
 	mtx_leave(&trans->bt_lock);
 	if (new != NULL)
 		free(new, M_BTRFS, sizeof(*new));
+	handle->bth_delayed = 1;
 	return (0);
 }
 

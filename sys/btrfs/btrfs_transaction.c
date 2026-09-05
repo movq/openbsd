@@ -127,9 +127,11 @@ btrfs_trans_join(struct btrfs_mount *bmp,
 {
 	struct btrfs_trans_handle *handle;
 	struct btrfs_transaction *trans;
-	int error;
+	uint64_t generation;
+	int dirty, end_error, error, retried = 0;
 
 	*handlep = NULL;
+retry:
 	if (bmp->bm_mount->mnt_flag & MNT_RDONLY)
 		return (EROFS);
 	handle = malloc(sizeof(*handle), M_BTRFS, M_WAITOK | M_ZERO);
@@ -167,7 +169,26 @@ btrfs_trans_join(struct btrfs_mount *bmp,
 
 	error = btrfs_space_reserve(handle, reservation);
 	if (error != 0) {
-		(void)btrfs_trans_end(handle);
+		generation = trans->bt_generation;
+		mtx_enter(&trans->bt_lock);
+		dirty = !TAILQ_EMPTY(&trans->bt_dirty_extent_buffers);
+		mtx_leave(&trans->bt_lock);
+		end_error = btrfs_trans_end(handle);
+		if (end_error != 0)
+			return (end_error);
+		/*
+		 * Pending work may own most of the free metadata.  Publish it
+		 * and release unused promises before declaring ENOSPC.  No
+		 * mutation from this operation has occurred, and commit never
+		 * takes the vnode or namespace locks the caller may hold.
+		 */
+		if (error == ENOSPC && dirty && !retried) {
+			error = btrfs_trans_commit(bmp, generation, curproc);
+			if (error != 0)
+				return (error);
+			retried = 1;
+			goto retry;
+		}
 		return (error);
 	}
 	*handlep = handle;
@@ -213,6 +234,7 @@ btrfs_trans_end(struct btrfs_trans_handle *handle)
 	struct btrfs_mount *bmp = trans->bt_mount;
 	int error;
 
+	btrfs_space_keep_delayed(handle);
 	btrfs_space_release(handle);
 	mtx_enter(&bmp->bm_trans_mtx);
 	KASSERT(trans == bmp->bm_transaction);
@@ -305,6 +327,7 @@ btrfs_delayed_ref_add(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	mtx_leave(&trans->bt_lock);
 	if (new != NULL)
 		free(new, M_BTRFS, sizeof(*new));
+	handle->bth_delayed = 1;
 	return (0);
 }
 

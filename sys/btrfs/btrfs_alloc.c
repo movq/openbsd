@@ -589,6 +589,50 @@ btrfs_space_release(struct btrfs_trans_handle *handle)
 	btrfs_space_release_list(&handle->bth_reservations);
 }
 
+/*
+ * The operation's metadata estimate includes its delayed work.  Preserve
+ * the unused part until commit has materialized those references, rather
+ * than returning it to new writers and relying on the emergency reserve.
+ * Coalesce promises by block group so a batched transaction does not retain
+ * one reservation object per operation.  No group accounting changes: the
+ * bytes stay reserved throughout the ownership transfer.
+ */
+void
+btrfs_space_keep_delayed(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_reserved_space *reservation, *next, *existing;
+
+	if (handle->bth_commit || !handle->bth_delayed)
+		return;
+	TAILQ_FOREACH_SAFE(reservation, &handle->bth_reservations, brs_entry,
+	    next) {
+		if (reservation->brs_type != BTRFS_BLOCK_GROUP_METADATA ||
+		    reservation->brs_bytes == 0)
+			continue;
+		TAILQ_REMOVE(&handle->bth_reservations, reservation, brs_entry);
+		mtx_enter(&trans->bt_lock);
+		TAILQ_FOREACH(existing, &trans->bt_commit_reservations,
+		    brs_entry) {
+			if (existing->brs_group == reservation->brs_group)
+				break;
+		}
+		KASSERT(trans->bt_commit_reserve_target <=
+		    UINT64_MAX - reservation->brs_bytes);
+		trans->bt_commit_reserve_target += reservation->brs_bytes;
+		trans->bt_commit_reserved_bytes += reservation->brs_bytes;
+		if (existing != NULL)
+			existing->brs_bytes += reservation->brs_bytes;
+		else
+			TAILQ_INSERT_TAIL(&trans->bt_commit_reservations,
+			    reservation, brs_entry);
+		btrfs_space_check_commit_reserve(trans);
+		mtx_leave(&trans->bt_lock);
+		if (existing != NULL)
+			free(reservation, M_BTRFS, sizeof(*reservation));
+	}
+}
+
 int
 btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
     uint64_t length, uint64_t alignment, uint64_t *bytenrp)
