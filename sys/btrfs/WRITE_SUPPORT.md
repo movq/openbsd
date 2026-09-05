@@ -172,6 +172,9 @@ temporary sector copies and attach immutable ordered payloads, then update clean
 buffers. Cache misses consult ordered data before disk; repeated sector writes
 replace the payload and checksum. Strategy writeback is disabled because it
 lacks the vnode lock needed for tree/inode mutation.
+Adjacent data checksums append to packed items, capped at one quarter of a
+metadata node. A transaction checksum lock serializes item read/modify/write
+across vnodes and range deletion; it is taken after the handle and before roots.
 
 Without `NO_HOLES`, writes and growth count missing hole items under the vnode
 lock and reserve their insertion cost before joining. Fill gaps in the same

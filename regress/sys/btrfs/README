@@ -35,6 +35,12 @@ directories, hash collisions, long names, negative cache invalidation, inode
 uniqueness, file data, sparse writes, fsync, permissions, owner/group/mode,
 directory size/link accounting, nested parent lookup, and readdir.
 
+checksums.py uses create/verify for sequential and concurrent writes, repeated
+pending replacements, checksum-range splitting, and pending tail cancellation.
+Run disk on the unmounted image to check checksum packing, alongside both
+independent checkers, then verify after writable and read-only remounts.
+Cover both metadata node sizes and SINGLE/DUP data.
+
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
 
