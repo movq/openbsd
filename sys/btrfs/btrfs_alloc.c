@@ -734,7 +734,9 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
     const struct btrfs_trans_reservation *request)
 {
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
-	uint64_t metadata;
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_reserved_space *reservation;
+	uint64_t metadata, reclaim = 0;
 	uint32_t sectorsize;
 	int error;
 
@@ -775,6 +777,25 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 		    request->btr_data);
 	if (error != 0)
 		btrfs_space_release(handle);
+	if (error == ENOSPC && request->btr_reclaim &&
+	    request->btr_system == 0 && request->btr_data == 0) {
+		/*
+		 * Ordinary writers cannot spend the minimum orphan batch.
+		 * Transfer the entire promise; unused bytes follow delayed
+		 * references to commit, and publication replenishes the pool.
+		 */
+		mtx_enter(&trans->bt_lock);
+		TAILQ_FOREACH(reservation, &trans->bt_reclaim_reservations,
+		    brs_entry)
+			reclaim += reservation->brs_bytes;
+		if (metadata <= reclaim) {
+			TAILQ_CONCAT(&handle->bth_reservations,
+			    &trans->bt_reclaim_reservations, brs_entry);
+			handle->bth_delayed = 1;
+			error = 0;
+		}
+		mtx_leave(&trans->bt_lock);
+	}
 	return (error);
 }
 
@@ -782,7 +803,7 @@ int
 btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 {
 	struct btrfs_fs *bmp = trans->bt_mount;
-	uint64_t bytes;
+	uint64_t bytes, reclaim;
 	uint32_t nodesize;
 	int error;
 
@@ -792,14 +813,22 @@ btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 
 	nodesize = letoh32(bmp->bm_super.nodesize);
 	bytes = nodesize * BTRFS_COMMIT_METADATA_BLOCKS;
+	reclaim = nodesize * BTRFS_RECLAIM_METADATA_BLOCKS;
 	if (letoh64(bmp->bm_super.compat_ro_flags) &
-	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE) {
 		bytes *= 2;
+		reclaim *= 2;
+	}
 	error = btrfs_space_reserve_type(bmp,
 	    &trans->bt_commit_reservations, BTRFS_BLOCK_GROUP_METADATA,
 	    bytes);
+	if (error == 0)
+		error = btrfs_space_reserve_type(bmp,
+		    &trans->bt_reclaim_reservations, BTRFS_BLOCK_GROUP_METADATA,
+		    reclaim);
 	if (error != 0) {
 		btrfs_space_release_list(&trans->bt_commit_reservations);
+		btrfs_space_release_list(&trans->bt_reclaim_reservations);
 		return (error);
 	}
 	trans->bt_commit_reserve_target = bytes;
@@ -1643,6 +1672,7 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 	KASSERT(trans->bt_allocated_bytes == 0);
 	KASSERT(trans->bt_pinned_bytes == 0);
 	btrfs_space_release_list(&trans->bt_commit_reservations);
+	btrfs_space_release_list(&trans->bt_reclaim_reservations);
 	trans->bt_commit_reserve_target = 0;
 	trans->bt_commit_reserved_bytes = 0;
 	btrfs_space_check_commit_reserve(trans);
@@ -1699,6 +1729,7 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 	KASSERT(trans->bt_allocated_bytes == 0);
 	KASSERT(trans->bt_pinned_bytes == 0);
 	btrfs_space_release_list(&trans->bt_commit_reservations);
+	btrfs_space_release_list(&trans->bt_reclaim_reservations);
 	trans->bt_commit_reserve_target = 0;
 	trans->bt_commit_reserved_bytes = 0;
 	btrfs_space_check_commit_reserve(trans);
