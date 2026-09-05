@@ -28,6 +28,7 @@
 struct btrfs_space_build {
 	struct btrfs_fs		*bsb_mount;
 	uint64_t		 bsb_bytes_used;
+	struct btrfs_free_extent	*bsb_free;
 };
 
 /*
@@ -41,6 +42,8 @@ static int	btrfs_space_add_block_group(
 		    const struct btrfs_block_group_record *, void *);
 static int	btrfs_space_add_extent(const struct btrfs_extent_record *,
 		    void *);
+static int	btrfs_space_validate_free(
+		    const struct btrfs_free_space_record *, void *);
 static int	btrfs_space_add_free(struct btrfs_block_group *, uint64_t,
 		    uint64_t);
 static int	btrfs_space_exclude_supers(struct btrfs_fs *,
@@ -407,6 +410,35 @@ btrfs_space_add_block_group(const struct btrfs_block_group_record *record,
 }
 
 static int
+btrfs_space_validate_free(const struct btrfs_free_space_record *record,
+    void *arg)
+{
+	struct btrfs_space_build *build = arg;
+	struct btrfs_block_group *group;
+	struct btrfs_free_extent *space;
+
+	if (record->bfs_type == BTRFS_FREE_SPACE_RECORD_INFO) {
+		if (build->bsb_free != NULL)
+			return (EINVAL);
+		if (record->bfs_flags & BTRFS_FREE_SPACE_USING_BITMAPS)
+			return (EOPNOTSUPP);
+		group = btrfs_space_find_group(build->bsb_mount,
+		    record->bfs_bytenr, record->bfs_length);
+		if (group == NULL)
+			return (EINVAL);
+		build->bsb_free = TAILQ_FIRST(&group->bbg_free_extents);
+		return (0);
+	}
+	space = build->bsb_free;
+	if (record->bfs_type != BTRFS_FREE_SPACE_RECORD_EXTENT ||
+	    space == NULL || space->bfe_bytenr != record->bfs_bytenr ||
+	    space->bfe_length != record->bfs_length)
+		return (EINVAL);
+	build->bsb_free = TAILQ_NEXT(space, bfe_entry);
+	return (0);
+}
+
+static int
 btrfs_space_add_extent(const struct btrfs_extent_record *record, void *arg)
 {
 	struct btrfs_space_build *build = arg;
@@ -486,6 +518,23 @@ btrfs_space_init(struct btrfs_fs *bmp)
 		    end - group->bbg_build_cursor);
 		if (error != 0)
 			goto fail;
+	}
+	/*
+	 * The on-disk free-space tree describes the complement of extent
+	 * items, including superblock stripes. Validate before excluding
+	 * those stripes from our allocator's index.
+	 */
+	if (!bmp->bm_readonly && (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)) {
+		error = btrfs_iterate_free_space(bmp, btrfs_space_validate_free,
+		    &build);
+		if (error == 0 && build.bsb_free != NULL)
+			error = EINVAL;
+		if (error != 0)
+			goto fail;
+	}
+	for (i = 0; i < bmp->bm_nblock_groups; i++) {
+		group = &bmp->bm_block_groups[i];
 		error = btrfs_space_exclude_supers(bmp, group,
 		    &bmp->bm_chunks[i]);
 		if (error != 0)
@@ -664,6 +713,7 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
     const struct btrfs_trans_reservation *request)
 {
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
+	uint64_t metadata;
 	uint32_t sectorsize;
 	int error;
 
@@ -684,12 +734,20 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 	 * Protect system and metadata promises before data can consume mixed
 	 * block groups.
 	 */
+	metadata = request->btr_metadata;
+	/* Free-space COW paths accompany the delayed extent-tree work. */
+	if (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE) {
+		if (metadata > UINT64_MAX / 2)
+			return (EOVERFLOW);
+		metadata *= 2;
+	}
 	error = btrfs_space_reserve_type(bmp, &handle->bth_reservations,
 	    BTRFS_BLOCK_GROUP_SYSTEM, request->btr_system);
 	if (error == 0)
 		error = btrfs_space_reserve_type(bmp,
 		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_METADATA,
-		    request->btr_metadata);
+		    metadata);
 	if (error == 0)
 		error = btrfs_space_reserve_type(bmp,
 		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_DATA,
@@ -713,6 +771,9 @@ btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 
 	nodesize = letoh32(bmp->bm_super.nodesize);
 	bytes = nodesize * BTRFS_COMMIT_METADATA_BLOCKS;
+	if (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)
+		bytes *= 2;
 	error = btrfs_space_reserve_type(bmp,
 	    &trans->bt_commit_reservations, BTRFS_BLOCK_GROUP_METADATA,
 	    bytes);
@@ -1074,6 +1135,165 @@ btrfs_space_release_discarded(struct btrfs_trans_handle *handle)
 	}
 }
 
+/*
+ * Find a neighboring free extent without retaining a path across mutation.
+ * An INFO item is a block-group boundary, not a free extent.
+ */
+static int
+btrfs_free_space_neighbor(struct btrfs_root *root,
+    struct btrfs_block_group *group, uint64_t bytenr, int previous,
+    struct btrfs_key *result, int *found)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	uint32_t size;
+	uint64_t start, length;
+	int error;
+
+	*found = 0;
+	target.objectid = htole64(bytenr);
+	target.type = BTRFS_FREE_SPACE_EXTENT_KEY;
+	target.offset = previous ? htole64(UINT64_MAX) : 0;
+	if (previous)
+		error = btrfs_search_predecessor(root, &target, &path);
+	else
+		error = btrfs_search_lower_bound(root, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, &size);
+		if (error == 0 && key->type == BTRFS_FREE_SPACE_EXTENT_KEY) {
+			start = letoh64(key->objectid);
+			length = letoh64(key->offset);
+			if (start >= group->bbg_bytenr &&
+			    start < group->bbg_bytenr + group->bbg_length) {
+				if (size != 0 || length == 0 ||
+				    length > group->bbg_bytenr +
+				    group->bbg_length - start)
+					error = EINVAL;
+				else {
+					*result = *key;
+					*found = 1;
+				}
+			}
+		}
+	} else if (error == ENOENT)
+		error = 0;
+	btrfs_release_path(&path);
+	return (error);
+}
+
+/*
+ * Extent ownership and free-space records change together at delayed-ref
+ * materialization. This can COW the free-space tree and queue more refs,
+ * but never recurses into the extent tree. Pinned space is free on disk in
+ * the new generation and remains unavailable in memory until publication.
+ */
+int
+btrfs_update_free_space(struct btrfs_trans_handle *handle, uint64_t bytenr,
+    uint64_t length, int add)
+{
+	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_block_group *group;
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key info_key = { 0 }, left, right, key = { 0 };
+	struct btrfs_free_space_info info;
+	const uint8_t *data;
+	uint64_t start, end, count, left_start, left_end;
+	uint32_t size;
+	int error, have_left, have_right, delta;
+
+	KASSERT(handle->bth_commit);
+	if (!(letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE))
+		return (0);
+	group = btrfs_space_find_group(bmp, bytenr, length);
+	if (group == NULL)
+		return (EINVAL);
+	error = btrfs_get_root(bmp, BTRFS_FREE_SPACE_TREE_OBJECTID, &root);
+	if (error != 0)
+		return (error);
+	info_key.objectid = htole64(group->bbg_bytenr);
+	info_key.type = BTRFS_FREE_SPACE_INFO_KEY;
+	info_key.offset = htole64(group->bbg_length);
+	error = btrfs_search_slot(root, &info_key, &path);
+	if (error == 0)
+		error = btrfs_path_item(&path, NULL, &data, &size);
+	if (error == 0) {
+		if (size != sizeof(info))
+			error = EINVAL;
+		else
+			memcpy(&info, data, sizeof(info));
+	}
+	btrfs_release_path(&path);
+	if (error != 0)
+		return (error);
+	if (info.flags != 0)
+		return (EOPNOTSUPP);
+	count = letoh32(info.extent_count);
+	start = bytenr;
+	end = bytenr + length;
+	error = btrfs_free_space_neighbor(root, group, start, 1,
+	    &left, &have_left);
+	if (error != 0)
+		return (error);
+	left_start = have_left ? letoh64(left.objectid) : 0;
+	left_end = have_left ? left_start + letoh64(left.offset) : 0;
+	key.type = BTRFS_FREE_SPACE_EXTENT_KEY;
+	if (!add) {
+		if (!have_left || left_start > start || left_end < end)
+			return (EINVAL);
+		delta = -1 + (left_start < start) + (end < left_end);
+		error = btrfs_delete_item(handle, root, &left);
+		if (error == 0 && left_start < start) {
+			key.objectid = htole64(left_start);
+			key.offset = htole64(start - left_start);
+			error = btrfs_insert_item(handle, root, &key, NULL, 0);
+		}
+		if (error == 0 && end < left_end) {
+			key.objectid = htole64(end);
+			key.offset = htole64(left_end - end);
+			error = btrfs_insert_item(handle, root, &key, NULL, 0);
+		}
+	} else {
+		if (have_left && left_end > start)
+			return (EINVAL);
+		error = btrfs_free_space_neighbor(root, group, start, 0,
+		    &right, &have_right);
+		if (error != 0)
+			return (error);
+		if (have_right && letoh64(right.objectid) < end)
+			return (EINVAL);
+		delta = 1;
+		if (have_left && left_end == start) {
+			start = left_start;
+			delta--;
+			error = btrfs_delete_item(handle, root, &left);
+		}
+		if (error == 0 && have_right &&
+		    letoh64(right.objectid) == end) {
+			end += letoh64(right.offset);
+			delta--;
+			error = btrfs_delete_item(handle, root, &right);
+		}
+		if (error == 0) {
+			key.objectid = htole64(start);
+			key.offset = htole64(end - start);
+			error = btrfs_insert_item(handle, root, &key, NULL, 0);
+		}
+	}
+	if (error != 0)
+		return (error);
+	if ((delta < 0 && count == 0) ||
+	    (delta > 0 && count == UINT32_MAX))
+		return (EINVAL);
+	if (delta == 0)
+		return (0);
+	info.extent_count = htole32(count + delta);
+	return (btrfs_replace_item(handle, root, &info_key, &info,
+	    sizeof(info)));
+}
+
 int
 btrfs_update_space_items(struct btrfs_trans_handle *handle)
 {
@@ -1085,7 +1305,7 @@ btrfs_update_space_items(struct btrfs_trans_handle *handle)
 	struct btrfs_root *root;
 	struct btrfs_key key;
 	const uint8_t *data;
-	uint64_t allocated, pinned, total = 0, used;
+	uint64_t allocated, owner, pinned, total = 0, used;
 	uint32_t size;
 	unsigned int i;
 	int error;
@@ -1093,7 +1313,11 @@ btrfs_update_space_items(struct btrfs_trans_handle *handle)
 	if (handle == NULL || handle->bth_transaction == NULL ||
 	    !handle->bth_commit)
 		return (EINVAL);
-	error = btrfs_get_root(bmp, BTRFS_EXTENT_TREE_OBJECTID, &root);
+	owner = BTRFS_EXTENT_TREE_OBJECTID;
+	if (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
+		owner = BTRFS_BLOCK_GROUP_TREE_OBJECTID;
+	error = btrfs_get_root(bmp, owner, &root);
 	if (error != 0)
 		return (error);
 

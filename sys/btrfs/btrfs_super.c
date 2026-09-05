@@ -193,12 +193,20 @@ btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 			return (EOPNOTSUPP);
 		}
 		/*
-		 * No compat-ro feature is supported for writes yet.  Unknown
-		 * compat-ro bits are intentionally harmless on read-only
+		 * Unknown compat-ro bits are intentionally harmless on read-only
 		 * mounts by the format's definition.
 		 */
 		if (letoh64(sb->compat_ro_flags) &
 		    ~BTRFS_FEATURE_COMPAT_RO_WRITE_SUPPORTED)
+			return (EROFS);
+		if ((letoh64(sb->compat_ro_flags) &
+		    (BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE |
+		    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID)) != 0 &&
+		    (letoh64(sb->compat_ro_flags) &
+		    (BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE |
+		    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID)) !=
+		    (BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE |
+		    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID))
 			return (EROFS);
 		if (letoh64(sb->log_root) != 0)
 			return (EROFS);
