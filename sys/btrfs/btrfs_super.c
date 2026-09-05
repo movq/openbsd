@@ -211,15 +211,16 @@ btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 
 int
 btrfs_bootstrap_super(struct vnode *devvp,
-    const struct btrfs_super_block *sb, int readonly,
+    const struct btrfs_super_block *sb,
     struct btrfs_bootstrap *bootstrap)
 {
 	struct btrfs_inode inode;
-	struct btrfs_root_item csum_root_item, fs_root_item;
+	struct btrfs_root_item fs_root_item;
 	struct btrfs_chunk_map *chunks = NULL;
 	struct btrfs_chunk_map *system_chunks = NULL;
 	struct btrfs_root chunk_tree, csum_tree, fs_tree, root_tree;
 	struct btrfs_root_location block_group_root = { 0 };
+	struct btrfs_root_location csum_root = { 0 };
 	struct btrfs_root_location dev_root = { 0 };
 	struct btrfs_root_location extent_root = { 0 };
 	struct btrfs_root_location free_space_root = { 0 };
@@ -286,13 +287,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	    BTRFS_FIRST_FREE_OBJECTID, &fs_root_item);
 	if (error != 0)
 		goto out;
-	if (!readonly &&
-	    (letoh64(fs_root_item.flags) & BTRFS_ROOT_SUBVOL_RDONLY)) {
-		error = EROFS;
-		goto out;
-	}
-	error = btrfs_find_root_item(&root_tree, BTRFS_CSUM_TREE_OBJECTID, 0,
-	    &csum_root_item);
+	error = btrfs_load_root_location(&root_tree,
+	    BTRFS_CSUM_TREE_OBJECTID, &csum_root);
 	if (error != 0)
 		goto out;
 	error = btrfs_load_root_location(&root_tree,
@@ -323,11 +319,11 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	csum_tree.br_super = sb;
 	csum_tree.br_chunks = chunks;
 	csum_tree.br_nchunks = nchunks;
-	csum_tree.br_bytenr = letoh64(csum_root_item.bytenr);
-	csum_tree.br_generation = letoh64(csum_root_item.generation);
+	csum_tree.br_bytenr = csum_root.brl_bytenr;
+	csum_tree.br_generation = csum_root.brl_generation;
 	csum_tree.br_view_generation = generation;
 	csum_tree.br_owner = BTRFS_CSUM_TREE_OBJECTID;
-	csum_tree.br_level = csum_root_item.level;
+	csum_tree.br_level = csum_root.brl_level;
 	error = btrfs_extent_buffer_read(&csum_tree, csum_tree.br_bytenr,
 	    csum_tree.br_generation, csum_tree.br_view_generation,
 	    csum_tree.br_level, &eb);
@@ -365,10 +361,10 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	    letoh64(fs_root_item.generation);
 	bootstrap->bb_fs_root_flags = letoh64(fs_root_item.flags);
 	bootstrap->bb_fs_root_level = fs_root_item.level;
-	bootstrap->bb_csum_root = letoh64(csum_root_item.bytenr);
+	bootstrap->bb_csum_root = csum_root.brl_bytenr;
 	bootstrap->bb_csum_root_generation =
-	    letoh64(csum_root_item.generation);
-	bootstrap->bb_csum_root_level = csum_root_item.level;
+	    csum_root.brl_generation;
+	bootstrap->bb_csum_root_level = csum_root.brl_level;
 	memcpy(bootstrap->bb_chunk_tree_uuid, chunk_tree_uuid,
 	    sizeof(bootstrap->bb_chunk_tree_uuid));
 	chunks = NULL;

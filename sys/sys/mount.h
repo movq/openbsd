@@ -219,6 +219,7 @@ struct ntfs_args {
 /* Arguments to mount Btrfs file systems. */
 struct btrfs_args {
 	char	*fspec;			/* block special device to mount */
+	uint64_t subvolid;		/* zero selects the top-level tree */
 };
 
 /* Arguments to mount UDF file systems */

@@ -74,6 +74,7 @@ btrfs_root_init(struct btrfs_fs *bmp, struct btrfs_root *root,
 	memset(root, 0, sizeof(*root));
 	root->br_mount = bmp;
 	root->br_devvp = bmp->bm_devvp;
+	root->br_dev = NODEV;
 	root->br_super = &bmp->bm_super;
 	root->br_chunks = bmp->bm_chunks;
 	root->br_lock = lock;
@@ -122,6 +123,7 @@ btrfs_init_roots(struct btrfs_fs *bmp,
     const struct btrfs_bootstrap *bootstrap)
 {
 	struct btrfs_root_location location;
+	struct btrfs_root *root;
 
 	LIST_INIT(&bmp->bm_roots);
 	mtx_init(&bmp->bm_rootmtx, IPL_NONE);
@@ -141,6 +143,8 @@ btrfs_init_roots(struct btrfs_fs *bmp,
 	location.brl_generation = bootstrap->bb_fs_root_generation;
 	location.brl_level = bootstrap->bb_fs_root_level;
 	btrfs_root_insert(bmp, BTRFS_FS_TREE_OBJECTID, &location);
+	root = btrfs_root_lookup(bmp, BTRFS_FS_TREE_OBJECTID);
+	root->br_flags = bootstrap->bb_fs_root_flags;
 
 	location.brl_bytenr = bootstrap->bb_csum_root;
 	location.brl_generation = bootstrap->bb_csum_root_generation;
@@ -322,6 +326,7 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	rw_init_flags(&new->bre_lock, "btrfsroot", RWL_DUPOK);
 	btrfs_root_init(bmp, &new->bre_root, &new->bre_lock, owner,
 	    &location);
+	new->bre_root.br_flags = letoh64(item.flags);
 	mtx_enter(&bmp->bm_rootmtx);
 	LIST_FOREACH(entry, &bmp->bm_roots, bre_entry) {
 		if (entry->bre_root.br_owner == owner)
