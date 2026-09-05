@@ -1,0 +1,57 @@
+.\" $OpenBSD$
+.\" Public domain.
+.Dd $Mdocdate: September 5 2026 $
+.Dt MOUNT_BTRFS 8
+.Os
+.Sh NAME
+.Nm mount_btrfs
+.Nd mount a Btrfs file system
+.Sh SYNOPSIS
+.Nm
+.Op Fl o Ar options
+.Op Fl s Ar subvolid
+.Ar special node
+.Sh DESCRIPTION
+The
+.Nm
+command attaches the Btrfs file system on the device
+.Ar special
+to the file system namespace at
+.Ar node .
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl o Ar options
+Specify a comma-separated list of mount options.
+See
+.Xr mount 8
+for the available options.
+.It Fl s Ar subvolid
+Select an existing subvolume by its numeric tree ID.
+The default, also selected by zero or 5, is the top-level tree.
+The on-disk default subvolume setting is not used.
+.El
+.Pp
+Multiple mounts of the same device may be writable simultaneously if
+their selected subvolume hierarchies are disjoint.
+A selected tree cannot equal, contain, or be contained by another
+mounted tree.
+In particular, a top-level mount excludes all other mounts of that device.
+Nested subvolumes remain accessible through their containing mount,
+and each subvolume's read-only flag is honored.
+.Pp
+Mounts of one device share allocation and a transaction.
+Syncing or unmounting any view may commit changes made through other views.
+The device remains open until the last view is unmounted.
+A read-only view may join a filesystem opened writable.
+If the first view was read-only, all views must be unmounted before
+mounting a writable view.
+.Sh SEE ALSO
+.Xr mount 2 ,
+.Xr fstab 5 ,
+.Xr mount 8 ,
+.Xr umount 8
+.Sh CAVEATS
+The driver supports a limited subset of Btrfs formats and write operations.
+Mount updates, subvolume creation, and subvolume property changes are
+not supported.

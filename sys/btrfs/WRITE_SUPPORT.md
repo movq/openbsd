@@ -22,11 +22,13 @@ Keep read and write feature masks separate: parsing does not imply maintenance.
 
 Current limits:
 
-* Only the top-level filesystem tree is writable; other subvolumes are readable.
-  Simultaneous writable subvolume mounts, including overlapping views, are a
-  design goal. Multiple mounts remain disabled pending coherent vnode identity:
-  VM objects, executable-write protection, IPC, and revoke/unmount must share
-  file identity while pathname traversal and mount policy retain their view.
+* `mount_btrfs -s subvolid` selects an existing tree; zero or omission selects
+  the top-level tree (5). Simultaneous writable mounts must select disjoint
+  hierarchies: equal roots and ancestor/descendant pairs return `EBUSY`.
+  Nested subvolumes remain traversable, subject to each tree's read-only flag.
+  A read-only view may join a writable filesystem; a filesystem first opened
+  read-only cannot gain writable views until all views have been unmounted.
+  Remount updates and subvolume creation/property changes are unsupported.
 * No truncate, unlink, rmdir, rename, or device-node creation.
 * Writes convert uncompressed inline files of at most one sector to regular
   extents. Larger/compressed inline files, NODATASUM, encoded mappings, and
@@ -48,8 +50,17 @@ Current limits:
 The filesystem instance owns the device, roots, allocation, caches, and one
 open transaction. A separate mount view owns the selected root and VFS mount
 policy. Transaction failure makes the filesystem and all its views read-only.
-Operations join with typed reservations,
-encode affected inodes and attach immutable data payloads before ending their
+Each inode belongs to one view and one vnode, preserving native VM, IPC, locking,
+and unmount behavior. Trees have distinct anonymous device IDs for `stat`, with
+on-disk inode numbers; these IDs persist until the last view detaches, not across
+filesystem lifetimes. A filesystem-local lock serializes view attachment and
+detachment; vnode/transaction paths never take it. Root backreferences define
+immutable ancestry, and traversal checks directory entries against it.
+Unmount flushes only that view's vnodes; the last view closes the device and
+destroys filesystem services. Sync or unmount of any view can commit all views.
+
+Operations join with typed reservations, encode affected inodes and attach
+immutable data payloads before ending their
 handles. Ending a handle does not commit. A committer closes joins and drains
 handles; new writers wait for publication. Commit must not acquire arbitrary
 vnode locks.

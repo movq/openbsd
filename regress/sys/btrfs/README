@@ -96,7 +96,31 @@ In the VM, mount the image and run:
 
 Repeat after read-only remount.  This covers packed hash collisions, long and
 UTF-8 names, hard links, symlinks, missing names, subvolume entries and parent
-traversal, and rejection of mutation in an additional subvolume.
+traversal.
+
+subvol.py tests simultaneous writable mounts of disjoint subvolume hierarchies.
+Seed an unmounted image on the host:
+
+    python3 regress/sys/btrfs/subvol.py seed /tmp/btrfs-subvol
+    mkfs.btrfs -f -b 1G -n 4096 -s 4096 -m dup -d single \
+        -O ^free-space-tree,^block-group-tree --rootdir /tmp/btrfs-subvol \
+        --subvol rw:left --subvol rw:left/nested \
+        --subvol ro:left/frozen --subvol rw:right /path/to/image
+
+Read IDs from `btrfs inspect-internal dump-tree -t root /path/to/image`.
+In the VM, with the image initially unmounted, supply the IDs in that order:
+
+    python3 /mnt/src/regress/sys/btrfs/subvol.py exercise \
+        /dev/sd1c /mnt/subvol-test 256 257 258 259
+
+This mounts and unmounts its own views. It covers concurrent writes in three
+trees, stat identity, parent/getcwd traversal, cross-tree hard-link rejection,
+read-only tree and mount policy, overlap rejection in both directions, invalid
+IDs, busy and forced unmount, surviving views, last-view teardown, and racing
+overlapping attaches. Run both independent checks with all views unmounted,
+then mount the top-level tree read-only and run `subvol.py verify mountpoint`.
+Repeat with 16 KiB metadata. Rebuild mount_btrfs with the matching sys/mount.h
+when changing kernels: its mount arguments now include the selected tree ID.
 
 ipc.py uses create/verify phases and a readonly phase after a read-only
 remount. It covers FIFO and Unix-domain socket creation, hard-link aliases,
