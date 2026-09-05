@@ -1,0 +1,35 @@
+These tests require a disposable btrfs image mounted writable, root, and
+Python 3.  They leave their files in place because unlink is not implemented.
+Use a new test directory for each run.  For example, inside the test VM:
+
+    python3 /mnt/src/regress/sys/btrfs/namespace.py create /mnt/btrfs/ns
+    umount /mnt/btrfs
+
+On the host, while the image is unmounted:
+
+    btrfs check --readonly --check-data-csum /path/to/image
+
+Then in the VM:
+
+    mount_btrfs /dev/sd1c /mnt/btrfs
+    python3 /mnt/src/regress/sys/btrfs/namespace.py verify /mnt/btrfs/ns
+    umount /mnt/btrfs
+
+Run all driver-involving SSH commands under timeout.  Repeat with both 4 KiB
+and 16 KiB metadata nodes to cover tree growth, and check the resulting image
+with btrfs-progs.  The test covers concurrent creation in separate and shared
+directories, hash collisions, long names, negative cache invalidation, inode
+uniqueness, file data, sparse writes, fsync, permissions, owner/group/mode,
+directory size/link accounting, nested parent lookup, and readdir.
+
+Writable images must meet the feature restrictions in
+sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
+
+On a small disposable image, enospc.py fills the existing metadata block group
+with empty files.  It checks that failed creation leaves no entry or parent
+metadata changes, and that the filesystem remains writable and can sync.
+For example:
+
+    python3 /mnt/src/regress/sys/btrfs/enospc.py /mnt/btrfs/full
+
+Unmount and run the independent filesystem checker after this test as well.

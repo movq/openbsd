@@ -2,8 +2,8 @@
 
 This document tracks the implemented write path and the remaining work needed
 to broaden it.  Writable mounts are exposed only for a deliberately narrow
-on-disk format and currently support existing regular-file data writes plus
-selected inode attribute changes.
+on-disk format and currently support regular-file creation and data writes,
+directory creation, and selected inode attribute changes.
 
 The first writer should batch changes from multiple operations in one
 transaction.  It should not commit after each operation.  It is acceptable for
@@ -149,7 +149,25 @@ while successful commit publication accounts new allocations as committed and
 only then releases pinned extents.  Block-group diagnostics check the
 free-list and accounting invariants after each transition.  Writable VFS
 operations join this shared open transaction one sector or inode update at a
-time.
+time, or one complete namespace operation at a time.
+
+`VOP_CREATE` and `VOP_MKDIR` insert the inode item, inode backreference,
+directory hash item, and directory index item together with the parent's
+size, sequence, mtime, and ctime update.  Hash collisions append records to
+one packed hash item.  The parent vnode lock protects its directory entries;
+a mount namespace lock serializes highest-object-ID allocation across
+different directories.  Object IDs and directory indexes are allocated above
+the current greatest key.  Directories have Btrfs's on-disk link count of one
+and size of twice the total name lengths; dot entries are synthesized.
+Readers validate directory entry transids against their path's transaction
+view, allowing lookup and readdir before commit.
+
+Creation inherits the parent group and uses the caller's uid and VFS mode.
+Parents with xattrs or NODATACOW reject creation with `EOPNOTSUPP` pending
+inheritance support.  New compression flags can be inherited, but new data is
+still written uncompressed.  Synchronous mounts and synchronous directories
+commit namespace changes before returning.  Unlink, rmdir, rename, hard
+links, symlinks, and special-node creation remain unsupported.
 
 A writable transaction also retains an emergency metadata commit reserve
 before any ordinary handle can join.  It is sized for four full-height COW
@@ -768,7 +786,9 @@ unmount are implemented.  Truncate and range deletion remain unsupported.
 
 ### 5. Namespace writes
 
-Add create/unlink and orphan recovery, then directories, rename, and links.
+Regular-file creation and mkdir are implemented, including inode allocation,
+directory hash collisions, index/backreference insertion, and parent metadata.
+Next add unlink and orphan recovery, rmdir, rename, and links.
 
 ### 6. Compatibility and performance
 
@@ -803,6 +823,24 @@ independent implementation:
 Useful diagnostic counters include transaction joins and commits, operations
 per commit, reserved/allocated/pinned bytes, metadata COWs, delayed-reference
 merges, ordered extents, commit latency, and abort reason.
+
+`regress/sys/btrfs/namespace.py` exercises create and mkdir on a disposable
+mounted image, with a separate verification phase after unmount/check/remount.
+It includes concurrent writers, hash collisions across commits, 255-byte names,
+permission failures, group inheritance, negative namecache entries, sparse
+writes, and directory accounting.  Both 4 KiB and 16 KiB nodesize runs have
+passed with independent `btrfs check --readonly --check-data-csum` validation;
+the 4 KiB workload grows the filesystem tree to level 2.  Host-side
+`btrfs restore` can independently verify file contents without mounting the
+image.
+
+`regress/sys/btrfs/enospc.py` fills metadata with empty files and checks that
+reservation failure leaves the failed name absent and parent metadata
+unchanged, while permitting sync and clean unmount.  A 128 MiB filesystem on
+the 1 TiB test device reached ENOSPC after 13,378 new files and passed the
+independent checker and writable remount.  Superblock writes are limited to
+mirror locations inside the filesystem's recorded device size, even when the
+underlying device is larger.
 
 ## Decisions to revisit
 
