@@ -504,6 +504,11 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 		error = btrfs_run_delayed_refs(handle);
 		if (error != 0)
 			return (error);
+		error = btrfs_space_release_discarded(handle);
+		if (error != 0) {
+			btrfs_trans_abort(handle, error);
+			return (error);
+		}
 		mtx_enter(&trans->bt_lock);
 		space_seq = trans->bt_space_seq;
 		mtx_leave(&trans->bt_lock);

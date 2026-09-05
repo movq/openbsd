@@ -269,6 +269,8 @@ struct btrfs_trans_extent {
 	uint64_t			 bte_bytenr;
 	uint64_t			 bte_length;
 	uint64_t			 bte_type;
+	uint8_t				 bte_commit;
+	uint8_t				 bte_discarded;
 };
 TAILQ_HEAD(btrfs_trans_extent_list, btrfs_trans_extent);
 
@@ -642,6 +644,9 @@ int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
 	    uint64_t, uint64_t *);
 int	btrfs_space_cancel_alloc(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t);
+int	btrfs_space_discard_alloc(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t);
+int	btrfs_space_release_discarded(struct btrfs_trans_handle *);
 int	btrfs_update_space_items(struct btrfs_trans_handle *);
 int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
 void	btrfs_space_commit(struct btrfs_transaction *);
