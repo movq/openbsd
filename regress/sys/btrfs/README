@@ -89,6 +89,13 @@ free-space trees must check independently, and the next mount must finish.
 Cover both metadata sizes and extent/bitmap free-space records. Root-tree and
 linked-inode orphan rejection remain covered by orphan.py below.
 
+rmdir.py uses create/verify/readonly for directory removal, open descriptors
+and current directories, stale handles, rejection of new children in removed
+directories, emptiness/type checks, flags, sticky and ordinary permissions,
+hash collisions, concurrent removers, notifications, and recursive cleanup.
+Its capacity phase checks failed removal atomicity at metadata exhaustion.
+Run with both metadata sizes and independently check before remount verification.
+
 readdir.py uses seed/gaps on the host and exercise/verify in the VM.
 Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
 unmounted to renumber indexes and references above 32 bits with gaps.
