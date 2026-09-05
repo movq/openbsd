@@ -785,7 +785,9 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
 	struct btrfs_key key;
-	uint64_t bytenr, end, left, lookup_size, old_end, ref_offset, right;
+	uint8_t *inline_data;
+	uint64_t bytenr, end, inline_bytes = 0, left, lookup_size, old_end;
+	uint64_t ref_offset, right;
 	uint32_t csum, sectorsize;
 	int error, old_ref_mod, old_refs;
 
@@ -850,9 +852,42 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 		    node->bn_ino, 0, lookup_size, &first);
 		if (error != 0)
 			goto out;
+		if (first.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+			/*
+			 * Inline files cannot coexist with regular extents.
+			 * Preserve sector zero in the same reserved handle
+			 * before installing a write beyond it.
+			 */
+			if (first.bfe_compression != BTRFS_COMPRESS_NONE ||
+			    first.bfe_encryption != 0 ||
+			    first.bfe_other_encoding != 0 ||
+			    first.bfe_length > sectorsize) {
+				error = EOPNOTSUPP;
+				goto out;
+			}
+			if (first.bfe_inline_size != first.bfe_length ||
+			    first.bfe_length != node->bn_inode.bi_size ||
+			    first.bfe_length != node->bn_inode.bi_nbytes) {
+				error = EINVAL;
+				goto out;
+			}
+			inline_data = malloc(sectorsize, M_BTRFS,
+			    M_WAITOK | M_ZERO);
+			memcpy(inline_data, first.bfe_inline_data,
+			    first.bfe_inline_size);
+			btrfs_release_path(&path);
+			error = btrfs_write_file_sector(handle, node, 0,
+			    inline_data, node->bn_inode.bi_size);
+			free(inline_data, M_BTRFS, sectorsize);
+			if (error != 0)
+				goto out;
+			error = btrfs_write_file_sector(handle, node,
+			    file_offset, data, file_size);
+			if (error != 0)
+				goto abort;
+			return (0);
+		}
 		btrfs_release_path(&path);
-		if (first.bfe_type == BTRFS_FILE_EXTENT_INLINE)
-			return (EOPNOTSUPP);
 	}
 	error = btrfs_find_file_extent(node->bn_mount, root, &path,
 	    node->bn_ino, file_offset, lookup_size, &old);
@@ -860,19 +895,31 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 		goto out;
 	btrfs_release_path(&path);
 
+	if (old.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		if (old.bfe_compression != BTRFS_COMPRESS_NONE ||
+		    old.bfe_encryption != 0 || old.bfe_other_encoding != 0 ||
+		    old.bfe_length > sectorsize)
+			return (EOPNOTSUPP);
+		if (old.bfe_inline_size != old.bfe_length ||
+		    old.bfe_length != node->bn_inode.bi_size ||
+		    old.bfe_length != node->bn_inode.bi_nbytes)
+			return (EINVAL);
+		inline_bytes = old.bfe_length;
+		/* The caller's zero-filled sector includes all inline data. */
+		old.bfe_length = sectorsize;
+	}
 	old_end = old.bfe_logical + old.bfe_length;
 	if (old.bfe_logical > file_offset || old_end < end ||
 	    (old.bfe_logical & (sectorsize - 1)) != 0 ||
 	    (old.bfe_length & (sectorsize - 1)) != 0 ||
 	    old.bfe_encryption != 0 || old.bfe_other_encoding != 0 ||
-	    old.bfe_type == BTRFS_FILE_EXTENT_INLINE ||
 	    old.bfe_compression != BTRFS_COMPRESS_NONE)
 		return (EOPNOTSUPP);
 	if (old.bfe_type != BTRFS_FILE_EXTENT_REG &&
 	    old.bfe_type != BTRFS_FILE_EXTENT_PREALLOC &&
-	    old.bfe_type != BTRFS_FILE_EXTENT_HOLE)
+	    old.bfe_type != BTRFS_FILE_EXTENT_HOLE && inline_bytes == 0)
 		return (EINVAL);
-	if (old.bfe_type != BTRFS_FILE_EXTENT_HOLE &&
+	if (old.bfe_type != BTRFS_FILE_EXTENT_HOLE && inline_bytes == 0 &&
 	    (old.bfe_disk_bytenr == 0 ||
 	    old.bfe_disk_num_bytes == 0))
 		return (EINVAL);
@@ -952,7 +999,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	    node->bn_treeid, node->bn_ino, file_offset, 1);
 	if (error != 0)
 		goto abort;
-	if (old.bfe_type != BTRFS_FILE_EXTENT_HOLE) {
+	if (old.bfe_type != BTRFS_FILE_EXTENT_HOLE && inline_bytes == 0) {
 		old_refs = (left != 0) + (right != 0);
 		old_ref_mod = old_refs - 1;
 		ref_offset = old.bfe_logical - old.bfe_disk_offset;
@@ -971,8 +1018,8 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	    boe_entry);
 	mtx_leave(&trans->bt_lock);
 	new_ordered = NULL;
-	if (old.bfe_type == BTRFS_FILE_EXTENT_HOLE) {
-		node->bn_inode.bi_nbytes += sectorsize;
+	if (old.bfe_type == BTRFS_FILE_EXTENT_HOLE || inline_bytes != 0) {
+		node->bn_inode.bi_nbytes += sectorsize - inline_bytes;
 		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NBYTES;
 	}
 	if (file_size > node->bn_inode.bi_size) {
