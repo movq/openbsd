@@ -16,6 +16,12 @@ Directory reads use persistent directory indexes as seek cookies and resume
 with a tree search. Index gaps are allowed; indexes whose next cookie cannot
 fit in a signed VFS offset return `EOVERFLOW`.
 
+Local file-handle operations (`getfh`, `fhopen`, `fhstat`) identify an inode by
+tree, inode number, and creation generation, and enforce the selected mount's
+hierarchy. The VFS handle size limits tree IDs and generations to 32 bits;
+larger values return `EOVERFLOW`. Handles require a mounted filesystem ID;
+IDs do not survive the last view's teardown. NFS export remains unsupported.
+
 Device nodes use native special-device operations and alias handling, including
 `nodev` and securelevel policy. Device I/O also works on read-only mounts.
 Size changes to devices, FIFOs, and sockets are no-ops, as on FFS.

@@ -56,6 +56,16 @@ Unmount, run both independent checks, regenerate the expected JSON, then run
 check and `verify same-directory` after writable and read-only remounts.
 Repeat with both metadata node sizes and explicit holes.
 
+filehandle.py uses `exercise new-directory saved.json`, with saved.json outside
+the filesystem. It covers getfh/fhopen/fhstat, inode identity across mutations,
+hard links and symlinks, directories, FIFOs, devices, advisory locks, flags,
+privilege checks, and malformed/stale handles. Unmount and independently check,
+then use verify/readonly on that directory after the respective remounts.
+Run `stale saved.json` after the last view has closed, including after remount.
+With subvol.py's seed mounted as disjoint left and right views, use
+`subvol left-mount right-mount` to test nested trees, read-only subvolumes,
+and forged handles that attempt to cross view boundaries.
+
 idle.py takes a new test directory and checks repeated fsync and mount sync
 without pending changes, followed by further namespace and data mutation.
 Run after writable remount of both a fresh image and one with a large extent
