@@ -682,8 +682,7 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 		    (ordered->boe_file_offset & (sectorsize - 1)) != 0 ||
 		    ordered->boe_treeid == 0 || ordered->boe_objectid == 0)
 			return (EINVAL);
-		error = btrfs_write_logical(bmp->bm_devvp, bmp->bm_chunks,
-		    bmp->bm_nchunks, ordered->boe_bytenr,
+		error = btrfs_write_logical(bmp, ordered->boe_bytenr,
 		    ordered->boe_length, BTRFS_BLOCK_GROUP_DATA,
 		    ordered->boe_data, NULL);
 		if (error != 0)

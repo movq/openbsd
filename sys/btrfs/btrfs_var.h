@@ -387,9 +387,10 @@ struct btrfs_root {
 	struct btrfs_fs			*br_mount;
 	struct vnode			*br_devvp;
 	const struct btrfs_super_block	*br_super;
-	const struct btrfs_chunk_map	*br_chunks;
+	/* Only mount bootstrap roots own a fixed mapping table. */
+	const struct btrfs_chunk_map	*br_bootstrap_chunks;
 	struct rwlock			*br_lock;
-	unsigned int			 br_nchunks;
+	unsigned int			 br_bootstrap_nchunks;
 	uint64_t			 br_bytenr;
 	uint64_t			 br_generation;
 	/* Maximum metadata generation visible through this root. */
@@ -507,9 +508,12 @@ struct btrfs_fs {
 	unsigned int			 bm_selected_super;
 	uint8_t				 bm_backup_roots_valid;
 	uint8_t				 bm_seeding;
+	/* Protects replaceable indexes; never held over tree operations or I/O. */
+	struct rwlock			 bm_mapping_lock;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
-	struct btrfs_block_group	*bm_block_groups;
+	/* Group objects and their indexes remain stable until teardown. */
+	struct btrfs_block_group		**bm_block_groups;
 	unsigned int			 bm_nblock_groups;
 	struct btrfs_transaction	*bm_transaction;
 	struct mutex			 bm_trans_mtx;
@@ -572,13 +576,13 @@ int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
 	    struct btrfs_root_item *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 	    uint64_t, uint32_t, struct btrfs_io_map *);
-int	btrfs_read_logical(struct vnode *, const struct btrfs_chunk_map *,
-	    unsigned int, uint64_t, uint32_t, uint64_t,
-	    btrfs_io_validate_fn, void *, struct btrfs_io_result *,
+int	btrfs_lookup_fs_logical(struct btrfs_fs *, uint64_t, uint32_t,
+	    struct btrfs_io_map *);
+int	btrfs_read_logical(const struct btrfs_root *, uint64_t, uint32_t,
+	    uint64_t, btrfs_io_validate_fn, void *, struct btrfs_io_result *,
 	    struct buf **);
-int	btrfs_write_logical(struct vnode *, const struct btrfs_chunk_map *,
-	    unsigned int, uint64_t, uint32_t, uint64_t, const void *,
-	    struct btrfs_io_result *);
+int	btrfs_write_logical(struct btrfs_fs *, uint64_t, uint32_t, uint64_t,
+	    const void *, struct btrfs_io_result *);
 int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);

@@ -73,18 +73,47 @@ static struct btrfs_block_group *
 		btrfs_space_find_group(struct btrfs_fs *, uint64_t,
 		    uint64_t);
 
+static unsigned int
+btrfs_space_group_count(struct btrfs_fs *bmp)
+{
+	unsigned int count;
+
+	rw_enter_read(&bmp->bm_mapping_lock);
+	count = bmp->bm_nblock_groups;
+	rw_exit_read(&bmp->bm_mapping_lock);
+	return (count);
+}
+
+static struct btrfs_block_group *
+btrfs_space_group_at(struct btrfs_fs *bmp, unsigned int index)
+{
+	struct btrfs_block_group *group;
+
+	/*
+	 * Index arrays can be replaced, but group objects and index numbers
+	 * survive until teardown. Never retain this lock while operating on
+	 * the group, reserving storage, or reading a tree.
+	 */
+	rw_enter_read(&bmp->bm_mapping_lock);
+	KASSERT(index < bmp->bm_nblock_groups);
+	group = bmp->bm_block_groups[index];
+	rw_exit_read(&bmp->bm_mapping_lock);
+	return (group);
+}
+
 static struct btrfs_block_group *
 btrfs_space_find_group(struct btrfs_fs *bmp, uint64_t bytenr,
     uint64_t length)
 {
 	struct btrfs_block_group *group;
 	uint64_t delta;
-	unsigned int i;
+	unsigned int i, count;
 
 	if (length == 0 || bytenr > UINT64_MAX - length)
 		return (NULL);
-	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+	count = btrfs_space_group_count(bmp);
+	for (i = 0; i < count; i++) {
+		group = btrfs_space_group_at(bmp, i);
 		if (group->bbg_length == 0)
 			continue;
 		if (bytenr < group->bbg_bytenr)
@@ -398,7 +427,7 @@ btrfs_space_add_block_group(const struct btrfs_block_group_record *record,
 	}
 	if (i == bmp->bm_nchunks)
 		return (EINVAL);
-	group = &bmp->bm_block_groups[i];
+	group = bmp->bm_block_groups[i];
 	if (group->bbg_length != 0)
 		return (EINVAL);
 
@@ -501,7 +530,8 @@ btrfs_space_init(struct btrfs_fs *bmp)
 	    sizeof(*bmp->bm_block_groups), M_BTRFS, M_WAITOK | M_ZERO);
 	bmp->bm_nblock_groups = bmp->bm_nchunks;
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+		group = malloc(sizeof(*group), M_BTRFS, M_WAITOK | M_ZERO);
+		bmp->bm_block_groups[i] = group;
 		TAILQ_INIT(&group->bbg_free_extents);
 		mtx_init(&group->bbg_lock, IPL_NONE);
 	}
@@ -523,7 +553,7 @@ btrfs_space_init(struct btrfs_fs *bmp)
 	}
 
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+		group = bmp->bm_block_groups[i];
 		if (group->bbg_length == 0 ||
 		    group->bbg_build_used != group->bbg_disk_used) {
 			printf("btrfs: block group %llu usage mismatch: "
@@ -555,7 +585,7 @@ btrfs_space_init(struct btrfs_fs *bmp)
 			goto fail;
 	}
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+		group = bmp->bm_block_groups[i];
 		error = btrfs_space_exclude_supers(bmp, group,
 		    &bmp->bm_chunks[i]);
 		if (error != 0)
@@ -599,7 +629,7 @@ btrfs_space_destroy_groups(struct btrfs_fs *bmp, int initialized)
 	if (bmp->bm_block_groups == NULL)
 		return;
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+		group = bmp->bm_block_groups[i];
 		mtx_enter(&group->bbg_lock);
 		if (initialized) {
 			btrfs_space_check_group(group);
@@ -612,6 +642,7 @@ btrfs_space_destroy_groups(struct btrfs_fs *bmp, int initialized)
 			TAILQ_REMOVE(&group->bbg_free_extents, space, bfe_entry);
 			free(space, M_BTRFS, sizeof(*space));
 		}
+		free(group, M_BTRFS, sizeof(*group));
 	}
 	free(bmp->bm_block_groups, M_BTRFS,
 	    bmp->bm_nblock_groups * sizeof(*bmp->bm_block_groups));
@@ -631,7 +662,7 @@ btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 	struct btrfs_block_group *group;
 	uint64_t total = 0, free = 0, available = 0;
 	uint64_t length, group_free, group_available, sectorsize;
-	unsigned int i;
+	unsigned int i, count;
 
 	/*
 	 * Only existing chunks can be allocated. Report logical capacity,
@@ -639,11 +670,11 @@ btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 	 * Reservations are free storage but unavailable to new operations;
 	 * pinned extents remain used until durable publication.
 	 *
-	 * Groups are immutable for the lifetime of the filesystem. Sample
-	 * their live counters under the same locks used by the allocator.
+	 * Sample the collection size, then each stable group's live counters.
 	 */
-	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+	count = btrfs_space_group_count(bmp);
+	for (i = 0; i < count; i++) {
+		group = btrfs_space_group_at(bmp, i);
 		mtx_enter(&group->bbg_lock);
 		length = group->bbg_length;
 		group_free = group->bbg_free_bytes + group->bbg_reserved_bytes;
@@ -673,12 +704,13 @@ btrfs_space_reserve_type(struct btrfs_fs *bmp,
 	struct btrfs_reserved_space *reservation;
 	struct btrfs_block_group *group;
 	uint64_t take;
-	unsigned int i;
+	unsigned int i, count;
 	int mixed;
 
+	count = btrfs_space_group_count(bmp);
 	for (mixed = 0; mixed <= 1 && bytes != 0; mixed++) {
-		for (i = 0; i < bmp->bm_nblock_groups && bytes != 0; i++) {
-			group = &bmp->bm_block_groups[i];
+		for (i = 0; i < count && bytes != 0; i++) {
+			group = btrfs_space_group_at(bmp, i);
 			if (!btrfs_space_group_matches(group, type, mixed))
 				continue;
 			reservation = malloc(sizeof(*reservation), M_BTRFS,
@@ -1467,7 +1499,7 @@ btrfs_update_space_items(struct btrfs_trans_handle *handle)
 	const uint8_t *data;
 	uint64_t allocated, owner, pinned, total = 0, used;
 	uint32_t size;
-	unsigned int i;
+	unsigned int i, count;
 	int error;
 
 	if (handle == NULL || handle->bth_transaction == NULL ||
@@ -1481,8 +1513,9 @@ btrfs_update_space_items(struct btrfs_trans_handle *handle)
 	if (error != 0)
 		return (error);
 
-	for (i = 0; i < bmp->bm_nblock_groups; i++) {
-		group = &bmp->bm_block_groups[i];
+	count = btrfs_space_group_count(bmp);
+	for (i = 0; i < count; i++) {
+		group = btrfs_space_group_at(bmp, i);
 		mtx_enter(&group->bbg_lock);
 		allocated = group->bbg_allocated_bytes;
 		pinned = group->bbg_pinned_bytes;
