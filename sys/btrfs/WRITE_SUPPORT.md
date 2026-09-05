@@ -43,6 +43,7 @@ skinny metadata. Only `MIXED_BACKREF`, `COMPRESS_ZSTD`, `BIG_METADATA`,
 no compat-ro bits are supported. Mount requires the newest valid superblock,
 no pending log, no seeding device or read-only selected tree, and an extent tree
 without legacy extent items, shared references, snapshots, or simple-quota owner refs.
+Pending orphan cleanup in the root tree or any file tree rejects writable mount.
 Keep read and write feature masks separate: parsing does not imply maintenance.
 
 Current limits:

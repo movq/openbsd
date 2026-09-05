@@ -66,6 +66,14 @@ With subvol.py's seed mounted as disjoint left and right views, use
 `subvol left-mount right-mount` to test nested trees, read-only subvolumes,
 and forged handles that attempt to cross view boundaries.
 
+orphan.py uses subvol.py's imported seed. While unmounted, use
+`inject image 257 257` to add a pending file-cleanup marker in the nested tree,
+or `inject image 1 259` for a root-tree cleanup marker. Run the independent
+checks, then `reject device mountpoint` in the VM. Writable mounts, including
+selection of a clean sibling, must return EOPNOTSUPP; read-only data inspection
+must work. Repeat with both metadata sizes and verify writable mounting on a
+clean fixture after the rejected attempts.
+
 idle.py takes a new test directory and checks repeated fsync and mount sync
 without pending changes, followed by further namespace and data mutation.
 Run after writable remount of both a fresh image and one with a large extent

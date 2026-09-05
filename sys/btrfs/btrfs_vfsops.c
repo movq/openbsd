@@ -50,6 +50,7 @@ static int	btrfs_write_extent_valid(
 static int	btrfs_write_backref_valid(
 		    const struct btrfs_backref_record *, void *);
 static int	btrfs_validate_writable(struct btrfs_fs *);
+static int	btrfs_check_write_orphans(struct btrfs_fs *);
 static int	btrfs_commit_current(struct btrfs_fs *, struct proc *);
 static int	btrfs_start(struct mount *, int, struct proc *);
 static int	btrfs_unmount(struct mount *, int, struct proc *);
@@ -500,10 +501,87 @@ btrfs_write_backref_valid(const struct btrfs_backref_record *backref,
 }
 
 static int
+btrfs_check_root_orphans(struct btrfs_root *root)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	int error;
+
+	target.objectid = htole64(BTRFS_ORPHAN_OBJECTID);
+	target.type = BTRFS_ORPHAN_ITEM_KEY;
+	error = btrfs_search_lower_bound(root, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error == 0 && key->objectid == target.objectid &&
+		    key->type == target.type) {
+			printf("btrfs: tree %llu requires orphan recovery\n",
+			    (unsigned long long)root->br_owner);
+			error = EOPNOTSUPP;
+		}
+	}
+	btrfs_release_path(&path);
+	return (error == ENOENT ? 0 : error);
+}
+
+static int
+btrfs_check_write_orphans(struct btrfs_fs *bmp)
+{
+	struct btrfs_root *root_tree, *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	uint64_t owner;
+	int error;
+
+	error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &root_tree);
+	if (error != 0)
+		return (error);
+	/* Root-tree orphans describe unfinished subvolume deletion. */
+	error = btrfs_check_root_orphans(root_tree);
+	if (error != 0)
+		return (error);
+	target.objectid = htole64(BTRFS_FS_TREE_OBJECTID);
+	for (;;) {
+		error = btrfs_search_lower_bound(root_tree, &target, &path);
+		while (error == 0) {
+			error = btrfs_path_item(&path, &key, NULL, NULL);
+			if (error != 0)
+				break;
+			owner = letoh64(key->objectid);
+			if (owner > BTRFS_LAST_FREE_OBJECTID) {
+				error = ENOENT;
+				break;
+			}
+			if (key->type == BTRFS_ROOT_ITEM_KEY &&
+			    (owner == BTRFS_FS_TREE_OBJECTID ||
+			    owner >= BTRFS_FIRST_FREE_OBJECTID))
+				break;
+			error = btrfs_next_item(&path);
+		}
+		btrfs_release_path(&path);
+		if (error != 0)
+			return (error == ENOENT ? 0 : error);
+		/*
+		 * Inspect every file tree, including trees outside the initial
+		 * view: a later view may attach to this writable filesystem.
+		 * Drop the root-tree path before loading another root.
+		 */
+		error = btrfs_get_root(bmp, owner, &root);
+		if (error == 0)
+			error = btrfs_check_root_orphans(root);
+		if (error != 0)
+			return (error);
+		target.objectid = htole64(owner + 1);
+	}
+}
+
+static int
 btrfs_validate_writable(struct btrfs_fs *bmp)
 {
 	unsigned int i;
 	uint64_t profile;
+	int error;
 
 	for (i = 0; i < bmp->bm_nchunks; i++) {
 		profile = bmp->bm_chunks[i].type &
@@ -514,8 +592,11 @@ btrfs_validate_writable(struct btrfs_fs *bmp)
 		if (profile != 0 && profile != BTRFS_BLOCK_GROUP_DUP)
 			return (EOPNOTSUPP);
 	}
-	return (btrfs_iterate_extent_items(bmp, btrfs_write_extent_valid,
-	    btrfs_write_backref_valid, bmp));
+	error = btrfs_iterate_extent_items(bmp,
+	    btrfs_write_extent_valid, btrfs_write_backref_valid, bmp);
+	if (error != 0)
+		return (error);
+	return (btrfs_check_write_orphans(bmp));
 }
 
 static int
