@@ -200,6 +200,13 @@ NODATASUM/NODATACOW files. Its capacity phase on a fresh seed with a small data
 block group checks data and metadata reservation failures without file changes,
 followed by successful sparse shrinking and whole-extent deletion.
 
+shrink_compressed.py uses seed/exercise/verify_metadata with fixtures imported
+using `--compress zstd` or `zlib`. It tests O_TRUNC without decoding,
+deletion at compressed extent boundaries, preserved prefix references,
+sparse regrowth, and failure atomicity when retaining compressed overlap.
+Run verify in the VM for Zstd, and on host `btrfs restore` output for all codecs.
+Use the independent filesystem/checksum and mirror checks between mounts.
+
 holes.py uses seed/write/verify to test splitting stored holes at their start,
 middle, and end, repeated splits, writes across mapping boundaries, and sparse
 extension. Import with `-O ^no-holes` and run both independent checks between
