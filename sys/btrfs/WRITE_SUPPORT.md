@@ -71,7 +71,7 @@ Current limits:
   fragmented files. Unlink preserves open descriptors and mappings and reclaims
   the inode after its last vnode reference. Rmdir validates empty directories
   and uses the same orphan lifecycle. Removed directory descriptors report
-  zero links and EOF; new child lookup and creation fail. Rename is unsupported.
+  zero links and EOF; new child lookup and creation fail.
 * Writes and growth convert uncompressed or Zstd inline files of at most one
   decoded sector to regular extents. Larger inline files, other compression
   codecs, and encoded mappings remain unsupported. Uncompressed and Zstd
@@ -91,6 +91,10 @@ Current limits:
   validates and removes the matching hash record, persistent directory index,
   and ordinary or extended reference in one reserved handle. Parent and target
   vnode locks protect the plan; removing a nonfinal name preserves data ownership.
+* Rename supports same-tree moves and atomic replacement, including nonempty
+  source directories and empty destination directories. It preserves source
+  inode identity and open destination descriptors. Subvolume roots cannot be
+  renamed or replaced; moving a directory below itself is rejected.
 * Allocation uses existing block groups. There is no chunk allocation,
   device management, relocation,
   log replay, qgroups, or zoned support.
@@ -165,7 +169,7 @@ lock and reserve their insertion cost before joining. Fill gaps in the same
 handle after data mutation succeeds. Hole splits retain zero disk fields;
 preallocated and regular mappings retain their ownership and offsets.
 
-Lock order is vnode, namespace allocation, transaction handle, root, extent
+Lock order is rename, vnode, namespace allocation, transaction handle, root, extent
 buffers from top down, allocator/block group, delayed references. The transaction
 mutex protects transitions and handles only; never hold it across I/O or tree
 searches. Release paths bottom-up and queue reference changes instead of editing
@@ -173,6 +177,14 @@ the extent tree recursively. Parent locks protect directory buckets/indexes;
 source locks protect link counts/references. Namespace allocation serializes
 inode-number selection. Publish name-cache changes and notifications only
 after successful mutation.
+
+Rename releases incoming vnode locks before taking the filesystem rename lock.
+It acquires the involved vnodes with nonblocking attempts, dropping all locks
+before waiting for a contended vnode alone. Direct name revalidation refreshes
+children after races. The rename lock stabilizes directory ancestry while
+checking for cycles. A private image per affected key handles overlapping hash
+buckets and inode references before joining one reserved handle; replacement
+uses the same orphan lifecycle as unlink.
 
 Creation preallocates a private vnode before joining a transaction and registers
 device aliases after ending its handle. Alias registration may lock unrelated
@@ -201,6 +213,8 @@ Failure to establish the reserves rejects writable mount; failure to replenish
 after publication leaves that generation durable and the mount read-only.
 Operations with delayed work transfer unused reservations to commit. Reservation
 failure may commit pending work and retry once before returning `ENOSPC`.
+Concurrent operations can claim the next generation's space before that retry.
+Large namespace reservations may therefore fail under transient pressure.
 
 Delayed references merge by extent and ownership. Only the final drop pins an
 extent; for data it also removes its checksum range, preserving neighbors.
@@ -223,7 +237,8 @@ while deleted vnodes or file handles can still exist.
 ## Dependencies for further work
 
 Linked-inode truncate recovery needs a bounded range-deletion cursor and partial
-EOF handling. Rename requires multi-vnode locking and atomic destination replacement.
+EOF handling. Namespace removal still needs an ordinary reservation; protected
+cleanup space guarantees progress only for already detached inodes.
 
 Chunk allocation must transactionally update chunk/device trees, block groups,
 device usage, and possibly the superblock system array. Replace immutable chunk

@@ -96,6 +96,28 @@ hash collisions, concurrent removers, notifications, and recursive cleanup.
 Its capacity phase checks failed removal atomicity at metadata exhaustion.
 Run with both metadata sizes and independently check before remount verification.
 
+rename.py uses create/verify/readonly for same-directory and cross-directory
+moves, file/directory replacement, open destination descriptors, source handles,
+hash collisions, ordinary/extended references, directory ancestry, cache
+invalidation, flags, sticky and directory write permissions, and notifications.
+Its races phase covers opposing parent locks, competing replacements with a
+continuous lookup observer, and opposing directory moves. Reservation-pressure
+retries check that each worker's source survives failure unchanged.
+The capacity phase fills metadata with symlinks, verifies failed rename
+atomicity, then closes a previously detached fragmented inode to release enough
+space for ordinary unlink and eventual rename reuse. Use at least 256 MiB
+with 16 KiB nodes and free-space trees; the conservative rename reservation
+needs a sufficiently large metadata group even on an otherwise empty filesystem.
+The packed phase on a fixture without EXTENDED_IREF checks same-item reference
+reuse at capacity and atomic EMLINK across parents.
+The subvol phase uses subvol.py's seed to check cross-tree moves and rejection
+of subvolume-root rename/replacement; also run create inside a nested tree.
+Run both node sizes with legacy and separate block groups and extent/bitmap
+free space, checking independently between writable and read-only verification.
+For replacement recovery, run hold, wait for /tmp/btrfs-rename-ready, and reset
+the VM with the replaced inode still open. Check independently, mount writable
+to recover its orphan, then run recovered and repeat the independent checks.
+
 readdir.py uses seed/gaps on the host and exercise/verify in the VM.
 Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
 unmounted to renumber indexes and references above 32 bits with gaps.
