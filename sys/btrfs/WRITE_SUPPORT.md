@@ -95,16 +95,15 @@ Current limits:
   source directories and empty destination directories. It preserves source
   inode identity and open destination descriptors. Subvolume roots cannot be
   renamed or replaced; moving a directory below itself is rejected.
-* Data allocation grows block groups within the recorded device size, preserving
-  the existing data profile. Metadata and system allocation still use existing
-  groups; their reservation failures can prevent data growth. There is no
+* Allocation grows data, metadata, and system block groups within the recorded
+  device size, preserving each existing profile. There is no
   device resizing or management, relocation,
   log replay, qgroups, or zoned support.
 
 `statfs` reports the logical capacity of allocated block groups, counting DUP
 once. Free blocks include reservations but exclude pending allocations, pinned
 extents, and superblock stripes. Available blocks count only unreserved space
-in data-capable groups; capacity increases when data chunks are allocated.
+in data-capable groups; capacity increases when chunks are allocated.
 Metadata space and fragmentation can still limit writes.
 
 ## Transactions and durability
@@ -217,19 +216,25 @@ Freed ranges become free in the new on-disk tree while remaining pinned in memor
 until publication. Block-group usage belongs to the separate block group tree
 when enabled, otherwise to the extent tree.
 
-Data reservation failure first publishes pending work, then serializes chunk
+Reservation failure first publishes pending work, then serializes chunk
 growth without retaining a handle. The physical planner avoids existing device
 extents and superblock stripes, selecting equal-length disjoint stripes for DUP.
-It starts with 32 MiB chunks and halves the size down to 1 MiB when device gaps
-are smaller. Logical ranges append beyond the highest existing chunk.
+It starts with 32 MiB data/metadata or 8 MiB system chunks and halves the size
+down to 1 MiB when device gaps are smaller. Logical ranges append beyond the
+highest existing chunk. Low system space triggers system growth first.
 One reserved handle updates chunk and device trees, device usage, block-group
 records, and optional extent-format free-space records. Chunk-tree COW uses
-system space. The new data group remains private until those records are durable;
-the mapping and group indexes are then published together before retrying the
-original reservation. Aborted growth exposes no new allocation space.
+system space. System growth also appends a bootstrap mapping to the superblock
+system array, whose capacity is checked before mutation. The new group remains
+private until those records are durable; transaction completion publishes the
+mapping and group indexes before establishing the next generation's reserves.
+Aborted growth frees the private group and exposes no new allocation space.
 
 An emergency metadata reserve covers commit and is excluded from ordinary
-handles. A separate reserve protects a minimum orphan-cleanup batch.
+handles. A second reserve protects a minimum orphan-cleanup batch or chunk
+allocation, with system space for chunk-tree COW. Either operation can borrow
+this promise when ordinary space is unavailable; its unused portion follows
+delayed references to commit and is replenished at publication.
 Failure to establish the reserves rejects writable mount; failure to replenish
 after publication leaves that generation durable and the mount read-only.
 Operations with delayed work transfer unused reservations to commit. Reservation
@@ -261,9 +266,9 @@ Linked-inode truncate recovery needs a bounded range-deletion cursor and partial
 EOF handling. Namespace removal still needs an ordinary reservation; protected
 cleanup space guarantees progress only for already detached inodes.
 
-Metadata/system growth needs protected allocation reserves and transaction-owned
-group publication: unlike data growth, commit may need to allocate in the new
-group itself. System growth also updates the superblock bootstrap array.
+Allocation still needs existing free space to establish mount-time reserves.
+Deleting empty block groups and rebalancing space between allocation types
+would allow more complete reuse of fully allocated devices.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader

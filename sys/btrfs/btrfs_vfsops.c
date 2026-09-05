@@ -298,6 +298,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	rw_init(&bmp->bm_chunk_alloc_lock, "btrchunk");
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
+	bootstrap.bb_chunks = NULL;
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
 	    sizeof(bmp->bm_chunk_tree_uuid));
 	btrfs_init_roots(bmp, &bootstrap);
@@ -334,7 +335,6 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 		goto out;
 	LIST_INSERT_HEAD(&btrfs_filesystems, bmp, bm_entry);
 	devvp->v_specmountpoint = mp;
-	bootstrap.bb_chunks = NULL;
 	mounted = 1;
 	error = 0;
 out:
@@ -352,6 +352,8 @@ out:
 			btrfs_space_destroy(bmp);
 			KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 			btrfs_free_roots(bmp);
+			free(bmp->bm_chunks, M_BTRFS,
+			    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
 			free(bmp, M_BTRFS, sizeof(*bmp));
 		}
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
