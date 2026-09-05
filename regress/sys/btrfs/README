@@ -40,6 +40,14 @@ remount.  `reclaim mountpoint` creates two files and forcibly unmounts the
 disposable filesystem with held locks and blocked waiters; run it from outside
 the mount.  This mode checks that vnode reclaim interrupts the waiters.
 
+kqueue.py uses `create new-test-directory` to test read/write readiness, EOF,
+poll/select, vnode write/extend/attribute events, directory notifications,
+subscription masks, descriptor close, and a reader woken by a child writer.
+Use `readonly existing-test-directory` after a read-only remount.
+`revoke mountpoint` forcibly unmounts with all three filters registered and
+checks delivery and cleanup of revoke events.  Run this from outside the
+mount under timeout, then check the unmounted image independently.
+
 On a small disposable image, enospc.py fills the existing metadata block group
 with empty files.  It checks that failed creation leaves no entry or parent
 metadata changes, and that the filesystem remains writable and can sync.
