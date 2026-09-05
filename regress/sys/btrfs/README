@@ -81,3 +81,19 @@ Run limit in two separate directories on the same image to exercise metadata
 allocation past the 64 MiB superblock mirror, then unmount and run both host
 checks.  Writable remount and idle sync/unmount also exercise commits without
 pending namespace mutations.
+
+lookup.py checks hash lookup of independently imported directory items.  On
+the host, create a fixture and import it into an unmounted disposable image:
+
+    python3 regress/sys/btrfs/lookup.py seed /tmp/btrfs-lookup
+    mkfs.btrfs -f -n 4096 -s 4096 -m dup -d single \
+        -O ^free-space-tree,^block-group-tree \
+        --rootdir /tmp/btrfs-lookup --subvol rw:subvol /path/to/image
+
+In the VM, mount the image and run:
+
+    python3 /mnt/src/regress/sys/btrfs/lookup.py verify /mnt/btrfs
+
+Repeat after read-only remount.  This covers packed hash collisions, long and
+UTF-8 names, hard links, symlinks, missing names, subvolume entries and parent
+traversal, and rejection of mutation in an additional subvolume.
