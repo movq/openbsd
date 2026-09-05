@@ -537,6 +537,7 @@ struct btrfs_node {
 #define VTOBTRFS(vp)	((struct btrfs_node *)(vp)->v_data)
 
 extern const struct vops btrfs_vops;
+extern const struct vops btrfs_spec_vops;
 #ifdef FIFO
 extern const struct vops btrfs_fifo_vops;
 #endif
@@ -635,8 +636,9 @@ int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
 void	btrfs_release_path(struct btrfs_path *);
 int	btrfs_find_inode(struct btrfs_root *, uint64_t, struct btrfs_inode *);
 int	btrfs_write_inode(struct btrfs_trans_handle *, struct btrfs_node *);
+int	btrfs_decode_rdev(uint64_t, dev_t *);
 int	btrfs_create_inode(struct btrfs_node *, const char *, size_t,
-	    mode_t, uid_t, gid_t, const char *, struct vnode **);
+	    mode_t, uid_t, gid_t, dev_t, const char *, struct vnode **);
 int	btrfs_link_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);

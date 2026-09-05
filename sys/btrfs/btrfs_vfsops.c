@@ -706,8 +706,9 @@ btrfs_vget_tree(struct mount *mp, uint64_t treeid, uint64_t ino,
 	struct btrfs_root *root;
 	struct btrfs_inode inode;
 	struct btrfs_node *node;
-	struct vnode *vp;
+	struct vnode *vp, *alias;
 	enum vtype type;
+	dev_t rdev = 0;
 	int error;
 
 	if (ino < BTRFS_FIRST_FREE_OBJECTID ||
@@ -731,6 +732,11 @@ again:
 	if (error != 0)
 		return (error);
 	type = IFTOVT(inode.bi_mode);
+	if (type == VCHR || type == VBLK) {
+		error = btrfs_decode_rdev(inode.bi_rdev, &rdev);
+		if (error != 0)
+			return (error);
+	}
 #ifndef FIFO
 	if (type == VFIFO)
 		return (EOPNOTSUPP);
@@ -768,6 +774,23 @@ again:
 	if (error != 0) {
 		vrele(vp);
 		return (error);
+	}
+
+	if (type == VCHR || type == VBLK) {
+		vp->v_op = &btrfs_spec_vops;
+		alias = checkalias(vp, rdev, mp);
+		if (alias != NULL) {
+			/* Carry the locked inode over to an anonymous device. */
+			alias->v_data = node;
+			vp->v_data = NULL;
+			vp->v_op = &spec_vops;
+			vrele(vp);
+			vgone(vp);
+			vp = alias;
+			mtx_enter(&bmp->bm_nodemtx);
+			node->bn_vnode = vp;
+			mtx_leave(&bmp->bm_nodemtx);
+		}
 	}
 
 	*vpp = vp;
