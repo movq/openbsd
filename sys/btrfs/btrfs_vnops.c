@@ -567,6 +567,10 @@ btrfs_link(void *v)
 		error = EMLINK;
 		goto unlock;
 	}
+	if (node->bn_inode.bi_nlink == 0) {
+		error = ENOENT;
+		goto unlock;
+	}
 	error = btrfs_link_inode(dir, node, cnp->cn_nameptr, cnp->cn_namelen);
 	if (error != 0)
 		goto unlock;
@@ -1721,9 +1725,23 @@ static int
 btrfs_inactive(void *v)
 {
 	struct vop_inactive_args *ap = v;
+	struct vnode *vp = ap->a_vp;
+	struct btrfs_node *node = VTOBTRFS(vp);
+	int error = 0, deleted = node->bn_inode.bi_nlink == 0;
 
-	VOP_UNLOCK(ap->a_vp);
-	return (0);
+	if (deleted && !btrfs_node_readonly(node)) {
+		/*
+		 * Retire ordered writes before raw, restartable range deletion.
+		 * The orphan remains durable if cleanup cannot reserve space.
+		 */
+		error = btrfs_commit_current(node->bn_mount, ap->a_p);
+		if (error == 0)
+			error = btrfs_reap_inode(node->bn_root, node->bn_ino);
+	}
+	VOP_UNLOCK(vp);
+	if (deleted)
+		vrecycle(vp, ap->a_p);
+	return (error);
 }
 
 static int

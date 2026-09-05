@@ -254,7 +254,10 @@ struct btrfs_trans_reservation {
 	uint64_t	btr_data;
 	uint64_t	btr_metadata;
 	uint64_t	btr_system;
+	int		btr_reclaim;
 };
+
+#define BTRFS_RECLAIM_METADATA_BLOCKS	128
 
 struct btrfs_reserved_space {
 	TAILQ_ENTRY(btrfs_reserved_space) brs_entry;
@@ -287,6 +290,7 @@ struct btrfs_transaction {
 	struct btrfs_fs			*bt_mount;
 	struct mutex			 bt_lock;
 	struct btrfs_reserved_space_list bt_commit_reservations;
+	struct btrfs_reserved_space_list bt_reclaim_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;
 	struct btrfs_trans_extent_list	 bt_pinned_extents;
 	struct btrfs_dirty_extent_buffer_list
@@ -391,6 +395,8 @@ struct btrfs_root {
 	/* Maximum metadata generation visible through this root. */
 	uint64_t			 br_view_generation;
 	uint64_t			 br_owner;
+	/* Inode allocation high-water mark; protected by bm_namespace_lock. */
+	uint64_t			 br_last_ino;
 	/* Root-item flags are immutable until subvolume property changes exist. */
 	uint64_t			 br_flags;
 	dev_t				 br_dev;
@@ -644,6 +650,9 @@ int	btrfs_link_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
 int	btrfs_unlink_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
+int	btrfs_check_orphan(struct btrfs_root *, uint64_t);
+int	btrfs_reap_inode(struct btrfs_root *, uint64_t);
+int	btrfs_commit_current(struct btrfs_fs *, struct proc *);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_fs *, uint64_t, uint64_t *,
 	    uint64_t *);

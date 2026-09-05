@@ -59,7 +59,9 @@ def create(base):
     os.pwrite(fd, b"R", 0)
     os.fsync(fd)
     os.close(fd)
-    denied(errno.EOPNOTSUPP, base / "keep")
+    (base / "final").write_bytes(b"final link\n")
+    os.unlink(base / "final")
+    expect_error(errno.ENOENT, os.lstat, base / "final")
 
     # Enough names to put references into EXTENDED_IREF at both node sizes.
     names = [f"{i:04d}-" + "n" * 240 for i in range(256)]

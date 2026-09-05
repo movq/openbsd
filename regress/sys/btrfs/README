@@ -1,5 +1,5 @@
 These tests require a disposable btrfs image mounted writable, root, and
-Python 3. They leave their final file names in place pending final-link unlink.
+Python 3. They leave their files in place for verification after remount.
 Use a new test directory for each run.  For example, inside the test VM:
 
     python3 /mnt/src/regress/sys/btrfs/namespace.py create /mnt/btrfs/ns
@@ -64,11 +64,30 @@ unlink.py uses create/verify/readonly phases for nonfinal-link removal.
 It covers ordinary and extended packed references, hash collisions across
 commits, inode identity, open-descriptor writes, cache invalidation, concurrent
 removal, symlink/FIFO/device aliases, directory accounting, flags, sticky and
-ordinary permissions, and notifications. Final-link attempts must fail without
-mutation. On a small fixture, `capacity new-directory` fills metadata and
+ordinary permissions, and notifications. On a small fixture, `capacity new-directory` fills metadata and
 checks failed unlink atomicity and continued sync. Test both metadata sizes,
 with and without free-space/block-group trees, and check the unmounted images
 before writable and read-only verification.
+
+orphan_cleanup.py uses create/verify for final-link removal, fragmented range
+cleanup, writes and attribute changes through unlinked descriptors, mapped
+reads, inode-number reuse prevention, and symlink/FIFO/device cleanup.
+Its capacity phase holds an unlinked inode open, exhausts metadata with both
+creation and writes, then checks close-time reclamation using the protected
+cleanup reserve. Use a rootdir fixture with at least 64 MiB of imported data,
+delete the imported files first, and run capacity with the released data space.
+Check unmounted images with both independent checkers.
+
+For recovery, run `hold new-directory` in the VM, wait for
+`/tmp/btrfs-orphan-ready`, and reset the VM without closing the process's
+descriptor. Check the unmounted image and confirm the orphan marker remains.
+Writable mounting must clean it; use `recovered same-directory` afterwards.
+Repeat with a nested subvolume, mounting a clean sibling first to test recovery
+outside the selected hierarchy. Also reset during mount after observing a few
+committed cleanup generations: intermediate inode byte accounting, extent and
+free-space trees must check independently, and the next mount must finish.
+Cover both metadata sizes and extent/bitmap free-space records. Root-tree and
+linked-inode orphan rejection remain covered by orphan.py below.
 
 readdir.py uses seed/gaps on the host and exercise/verify in the VM.
 Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
