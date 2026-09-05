@@ -37,7 +37,7 @@ through existing descriptors must start at EOF, as on FFS.
 System flags and opaque directories are unsupported: btrfs has no separate
 system immutable/append state to enforce OpenBSD securelevel semantics.
 
-The writable format is one device, CRC32C, existing SINGLE/DUP chunks, and
+The writable format is one device, CRC32C, SINGLE/DUP chunks, and
 skinny metadata. Only `MIXED_BACKREF`, `COMPRESS_ZSTD`, `BIG_METADATA`,
 `EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted.
 The free-space-tree (with VALID set) and block-group-tree compat-ro features
@@ -95,14 +95,17 @@ Current limits:
   source directories and empty destination directories. It preserves source
   inode identity and open destination descriptors. Subvolume roots cannot be
   renamed or replaced; moving a directory below itself is rejected.
-* Allocation uses existing block groups. There is no chunk allocation,
-  device management, relocation,
+* Data allocation grows block groups within the recorded device size, preserving
+  the existing data profile. Metadata and system allocation still use existing
+  groups; their reservation failures can prevent data growth. There is no
+  device resizing or management, relocation,
   log replay, qgroups, or zoned support.
 
-`statfs` reports the logical capacity of existing block groups, counting DUP
+`statfs` reports the logical capacity of allocated block groups, counting DUP
 once. Free blocks include reservations but exclude pending allocations, pinned
 extents, and superblock stripes. Available blocks count only unreserved space
-in data-capable groups; metadata space and fragmentation can still limit writes.
+in data-capable groups; capacity increases when data chunks are allocated.
+Metadata space and fragmentation can still limit writes.
 
 ## Transactions and durability
 
@@ -214,6 +217,17 @@ Freed ranges become free in the new on-disk tree while remaining pinned in memor
 until publication. Block-group usage belongs to the separate block group tree
 when enabled, otherwise to the extent tree.
 
+Data reservation failure first publishes pending work, then serializes chunk
+growth without retaining a handle. The physical planner avoids existing device
+extents and superblock stripes, selecting equal-length disjoint stripes for DUP.
+It starts with 32 MiB chunks and halves the size down to 1 MiB when device gaps
+are smaller. Logical ranges append beyond the highest existing chunk.
+One reserved handle updates chunk and device trees, device usage, block-group
+records, and optional extent-format free-space records. Chunk-tree COW uses
+system space. The new data group remains private until those records are durable;
+the mapping and group indexes are then published together before retrying the
+original reservation. Aborted growth exposes no new allocation space.
+
 An emergency metadata reserve covers commit and is excluded from ordinary
 handles. A separate reserve protects a minimum orphan-cleanup batch.
 Failure to establish the reserves rejects writable mount; failure to replenish
@@ -247,9 +261,9 @@ Linked-inode truncate recovery needs a bounded range-deletion cursor and partial
 EOF handling. Namespace removal still needs an ordinary reservation; protected
 cleanup space guarantees progress only for already detached inodes.
 
-Chunk allocation must transactionally update chunk/device trees, block groups,
-device usage, and possibly the superblock system array. Publish expanded mapping
-and group indexes together, preserving existing mappings and group identities.
+Metadata/system growth needs protected allocation reserves and transaction-owned
+group publication: unlike data growth, commit may need to allocate in the new
+group itself. System growth also updates the superblock bootstrap array.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader

@@ -47,6 +47,17 @@ both independent checkers (including btrfs check's free-space-tree pass).
 Verify namespace/data after writable and read-only remounts. statfs disk
 selects the block-group item tree using the superblock feature flag.
 
+chunks.py uses create/verify to write past the initial data capacity from four
+processes, check increasing statfs capacity, and verify every sector after
+writable/read-only remounts. Test SINGLE/DUP data, both metadata node sizes,
+legacy/separate block groups, and imported bitmap free space. Its capacity
+phase on a fresh small image fills all allocatable device gaps, checks ENOSPC
+without changing the file or making the mount read-only, and reclaims/reuses
+the data. Existing statfs capacity tests require a device with no room for
+additional data chunks now. Run hold, wait for /tmp/btrfs-chunks-ready, and
+reset the VM to test durability of newly allocated mappings; verify after
+mounting again. Run both independent checkers while unmounted.
+
 free_space.py's host `seed directory` phase prepares imported data. Format
 with `mkfs.btrfs --rootdir directory`, then run `bitmap image` while unmounted
 to encode the fresh free-space leaf as bitmaps. Short first bitmaps ensure

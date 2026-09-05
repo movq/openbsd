@@ -583,7 +583,7 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
 	uint8_t *seen = NULL;
-	uint64_t end, last_end = 0;
+	uint64_t end, last_end = 0, used = 0;
 	uint32_t size;
 	unsigned int i, index, stripe;
 	int error;
@@ -651,6 +651,11 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		}
 		seen[index] |= 1U << stripe;
 		last_end = end;
+		if (used > UINT64_MAX - record.bde_length) {
+			error = EINVAL;
+			break;
+		}
+		used += record.bde_length;
 		if (callback != NULL) {
 			error = callback(&record, arg);
 			if (error != 0)
@@ -659,7 +664,8 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		error = btrfs_next_item(&path);
 	}
 	if (error == ENOENT) {
-		error = 0;
+		error = used == letoh64(bmp->bm_super.dev_item.bytes_used) ?
+		    0 : EINVAL;
 		for (i = 0; i < bmp->bm_nchunks; i++) {
 			if (seen[i] != (1U << bmp->bm_chunks[i].nmirrors) - 1) {
 				error = EINVAL;

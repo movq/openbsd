@@ -196,7 +196,9 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
 	rw_enter_write(&eb->eb_lock);
 
-	error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_METADATA,
+	error = btrfs_space_alloc(handle,
+	    source->eb_owner == BTRFS_CHUNK_TREE_OBJECTID ?
+	    BTRFS_BLOCK_GROUP_SYSTEM : BTRFS_BLOCK_GROUP_METADATA,
 	    nodesize, nodesize, &bytenr);
 	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
@@ -291,7 +293,9 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
 	rw_enter_write(&eb->eb_lock);
 
-	error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_METADATA,
+	error = btrfs_space_alloc(handle,
+	    source->eb_owner == BTRFS_CHUNK_TREE_OBJECTID ?
+	    BTRFS_BLOCK_GROUP_SYSTEM : BTRFS_BLOCK_GROUP_METADATA,
 	    nodesize, nodesize, &bytenr);
 	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);

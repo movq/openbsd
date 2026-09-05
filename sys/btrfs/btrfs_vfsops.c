@@ -295,6 +295,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	bmp->bm_seeding =
 	    (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING) != 0;
 	rw_init(&bmp->bm_mapping_lock, "btrmap");
+	rw_init(&bmp->bm_chunk_alloc_lock, "btrchunk");
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
@@ -615,6 +616,9 @@ btrfs_validate_writable(struct btrfs_fs *bmp)
 	}
 	error = btrfs_iterate_extent_items(bmp,
 	    btrfs_write_extent_valid, btrfs_write_backref_valid, bmp);
+	if (error != 0)
+		return (error);
+	error = btrfs_iterate_device_extents(bmp, NULL, NULL);
 	if (error != 0)
 		return (error);
 	return (btrfs_check_write_orphans(bmp, 0));
