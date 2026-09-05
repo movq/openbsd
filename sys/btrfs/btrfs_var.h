@@ -620,6 +620,8 @@ int	btrfs_find_subvol_parent(struct btrfs_mount *, uint64_t, uint64_t *,
 	    uint64_t *);
 int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
 	    btrfs_dir_iter_fn, void *);
+int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,
+	    size_t, btrfs_dir_iter_fn, void *);
 int	btrfs_find_file_extent(const struct btrfs_mount *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
