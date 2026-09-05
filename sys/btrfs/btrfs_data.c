@@ -1055,18 +1055,35 @@ btrfs_file_shrink(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		if (!extent.bfe_item_present)
 			continue;
 		if (extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
-			error = btrfs_check_inline_conversion(node, &extent);
-			if (error != 0)
+			if (extent.bfe_encryption != 0 ||
+			    extent.bfe_other_encoding != 0) {
+				error = EOPNOTSUPP;
 				goto out;
+			}
+			if (extent.bfe_length != node->bn_inode.bi_size ||
+			    extent.bfe_length != node->bn_inode.bi_nbytes) {
+				error = EINVAL;
+				goto out;
+			}
 			items++;
 			if (size != 0) {
 				KASSERT(handle == NULL);
+				error = btrfs_check_inline_conversion(node,
+				    &extent);
+				if (error != 0)
+					goto out;
 				*tail_offset = 0;
 				continue;
 			}
 			left = 0;
 		} else {
-			if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+			/*
+			 * Whole compressed mappings need only a reference drop.
+			 * Retaining any of the affected mapping still requires
+			 * compressed range replacement and EOF zeroing.
+			 */
+			if ((extent.bfe_compression != BTRFS_COMPRESS_NONE &&
+			    extent.bfe_logical < size) ||
 			    extent.bfe_encryption != 0 ||
 			    extent.bfe_other_encoding != 0 ||
 			    (extent.bfe_logical & (sectorsize - 1)) != 0 ||
