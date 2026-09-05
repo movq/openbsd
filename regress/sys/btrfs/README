@@ -41,6 +41,13 @@ Run disk on the unmounted image to check checksum packing, alongside both
 independent checkers, then verify after writable and read-only remounts.
 Cover both metadata node sizes and SINGLE/DUP data.
 
+cluster.py uses create/verify to measure commit output operations and exercise
+physical-sector cache eviction while repeatedly freeing and reusing data.
+It invalidates vnode buffers before checking data in the same mount. Run with
+both metadata sizes and SINGLE/DUP data, then check independently and verify
+after both remount modes. checksums.py also covers clustered submission from
+concurrent vnodes and canceled sectors; chunks.py covers chunk boundaries.
+
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
 

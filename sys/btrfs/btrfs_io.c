@@ -174,6 +174,8 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 	struct btrfs_io_map map;
 	struct buf *bp;
 	void *copy;
+	daddr_t block;
+	uint32_t offset, sectorsize;
 	unsigned int i;
 	int error, first_error = 0;
 
@@ -204,7 +206,26 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 	 */
 	copy = malloc(length, M_BTRFS, M_WAITOK);
 	memcpy(copy, data, length);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	for (i = 0; i < map.nmirrors; i++) {
+		/*
+		 * Device buffers are keyed only by their starting block.
+		 * A clustered data write must evict every cached sector,
+		 * including a smaller buffer at the request's first block.
+		 * Data reads use sector buffers; writes are always NOCACHE.
+		 */
+		if ((type_mask & BTRFS_BLOCK_GROUP_DATA) &&
+		    length > sectorsize) {
+			for (offset = 0; offset < length; offset += sectorsize) {
+				block = (map.physical[i] + offset) / DEV_BSIZE;
+				if (incore(devvp, block) == NULL)
+					continue;
+				bp = getblk(devvp, block, sectorsize, 0, INFSLP);
+				KASSERT(!ISSET(bp->b_flags, B_DELWRI));
+				SET(bp->b_flags, B_INVAL);
+				brelse(bp);
+			}
+		}
 		bp = getblk(devvp, map.physical[i] / DEV_BSIZE, length, 0,
 		    INFSLP);
 		memcpy(bp->b_data, copy, length);

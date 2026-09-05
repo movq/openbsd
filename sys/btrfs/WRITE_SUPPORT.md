@@ -175,6 +175,11 @@ lacks the vnode lock needed for tree/inode mutation.
 Adjacent data checksums append to packed items, capped at one quarter of a
 metadata node. A transaction checksum lock serializes item read/modify/write
 across vnodes and range deletion; it is taken after the handle and before roots.
+Commit sorts ordered sectors by allocation address and combines adjacent
+payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries.
+Before each mirrored write it evicts overlapping device-sector buffers;
+device buffers are keyed by their starting block, not their covered range.
+File mappings and pending ownership still use separate sector extents.
 
 Without `NO_HOLES`, writes and growth count missing hole items under the vnode
 lock and reserve their insertion cost before joining. Fill gaps in the same
@@ -275,7 +280,8 @@ would allow more complete reuse of fully allocated devices.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader
-writable formats, clustered I/O, decompression caching, and the log tree.
+writable formats, larger file extents, clustered reads, decompression caching,
+and the log tree.
 
 Validate each operation class with unmounted independent filesystem/data checks
 and remount verification. Recovery work also needs reservation exhaustion and

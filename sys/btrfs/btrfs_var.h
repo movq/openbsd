@@ -29,6 +29,7 @@
 #include <sys/queue.h>
 #include <sys/rwlock.h>
 #include <sys/time.h>
+#include <sys/tree.h>
 
 #include <btrfs/btrfs.h>
 
@@ -215,6 +216,7 @@ TAILQ_HEAD(btrfs_delayed_data_ref_list, btrfs_delayed_data_ref);
 
 struct btrfs_ordered_extent {
 	TAILQ_ENTRY(btrfs_ordered_extent) boe_entry;
+	RBT_ENTRY(btrfs_ordered_extent) boe_io_entry;
 	void				*boe_data;
 	uint64_t			 boe_treeid;
 	uint64_t			 boe_objectid;
