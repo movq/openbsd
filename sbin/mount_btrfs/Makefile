@@ -1,6 +1,6 @@
 PROG=	mount_btrfs
 SRCS=	mount_btrfs.c getmntopts.c
-MAN=
+MAN=	mount_btrfs.8
 
 MOUNT=	${.CURDIR}/../mount
 CFLAGS+= -I${MOUNT}

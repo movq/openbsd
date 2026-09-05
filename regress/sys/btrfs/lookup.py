@@ -60,12 +60,6 @@ def verify(root):
                 raise AssertionError(("unexpected lookup success", name))
     assert os.stat(root / "subvol" / "..").st_ino == root.stat().st_ino
     assert (root / "subvol" / ".." / NAMES[2]).read_bytes() == contents(NAMES[2])
-    try:
-        os.mkdir(root / "subvol" / "forbidden")
-    except OSError as error:
-        assert error.errno == errno.EROFS, error
-    else:
-        raise AssertionError("mutation in an additional subvolume succeeded")
     print("imported hash and subvolume lookup verification passed", flush=True)
 
 

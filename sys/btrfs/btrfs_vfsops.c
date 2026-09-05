@@ -41,7 +41,10 @@
 
 static int	btrfs_mount(struct mount *, const char *, void *,
 		    struct nameidata *, struct proc *);
-static int	btrfs_mountfs(struct vnode *, struct mount *, struct proc *);
+static int	btrfs_mountfs(struct vnode *, struct mount *, uint64_t,
+		    struct proc *);
+static int	btrfs_attach_view(struct btrfs_fs *, struct mount *, uint64_t);
+static int	btrfs_root_device(struct mount *, struct btrfs_root *);
 static int	btrfs_write_extent_valid(
 		    const struct btrfs_extent_record *, void *);
 static int	btrfs_write_backref_valid(
@@ -54,6 +57,13 @@ static int	btrfs_root(struct mount *, struct vnode **);
 static int	btrfs_statfs(struct mount *, struct statfs *, struct proc *);
 static int	btrfs_sync(struct mount *, int, int, struct ucred *,
 		    struct proc *);
+
+/* Attach/detach serialization; ordinary vnode and transaction paths omit it. */
+static struct rwlock btrfs_mount_lock = RWLOCK_INITIALIZER("btrfsmnt");
+static LIST_HEAD(, btrfs_fs) btrfs_filesystems =
+    LIST_HEAD_INITIALIZER(btrfs_filesystems);
+static struct mutex btrfs_device_mtx = MUTEX_INITIALIZER(IPL_NONE);
+static unsigned int btrfs_device_minor;
 
 const struct vfsops btrfs_vfsops = {
 	.vfs_mount	= btrfs_mount,
@@ -76,6 +86,7 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
     struct nameidata *ndp, struct proc *p)
 {
 	struct btrfs_args *args = data;
+	struct btrfs_fs *bmp;
 	struct vnode *devvp;
 	char fspec[MNAMELEN];
 	int error;
@@ -95,23 +106,40 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 		return (error);
 	devvp = ndp->ni_vp;
 
+	rw_enter_write(&btrfs_mount_lock);
 	if (devvp->v_type != VBLK)
 		error = ENOTBLK;
 	else if (major(devvp->v_rdev) >= nblkdev)
 		error = ENXIO;
-	else
-		error = vfs_mountedon(devvp);
-	if (error == 0 && vcount(devvp) > 1 && devvp != rootvp)
-		error = EBUSY;
-	if (error == 0) {
-		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
-		error = vinvalbuf(devvp, V_SAVE, p->p_ucred, p, 0, INFSLP);
-		VOP_UNLOCK(devvp);
+	if (error != 0)
+		goto out;
+	LIST_FOREACH(bmp, &btrfs_filesystems, bm_entry) {
+		if (bmp->bm_dev == devvp->v_rdev)
+			break;
 	}
-	if (error == 0)
-		error = btrfs_mountfs(devvp, mp, p);
-	if (error != 0) {
+	if (bmp != NULL) {
+		error = btrfs_attach_view(bmp, mp, args->subvolid);
+		/* The filesystem retains its original device reference. */
 		vrele(devvp);
+		devvp = NULL;
+	} else {
+		error = vfs_mountedon(devvp);
+		if (error == 0 && vcount(devvp) > 1 && devvp != rootvp)
+			error = EBUSY;
+		if (error == 0) {
+			vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+			error = vinvalbuf(devvp, V_SAVE, p->p_ucred, p,
+			    0, INFSLP);
+			VOP_UNLOCK(devvp);
+		}
+		if (error == 0)
+			error = btrfs_mountfs(devvp, mp, args->subvolid, p);
+	}
+out:
+	rw_exit_write(&btrfs_mount_lock);
+	if (error != 0) {
+		if (devvp != NULL)
+			vrele(devvp);
 		return (error);
 	}
 
@@ -125,12 +153,12 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 }
 
 static int
-btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
+btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
+    struct proc *p)
 {
 	const struct btrfs_super_block *anchor, *sb;
 	struct btrfs_bootstrap bootstrap = { 0 };
 	struct btrfs_fs *bmp = NULL;
-	struct btrfs_mount *view = NULL;
 	struct btrfs_super_candidate *candidates = NULL;
 	struct btrfs_super_mirror mirrors[BTRFS_SUPER_MIRROR_MAX];
 	uint64_t best_generation, selected_generation;
@@ -198,7 +226,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 			goto out;
 		}
 		stage = "loading filesystem trees";
-		error = btrfs_bootstrap_super(devvp, sb, readonly, &bootstrap);
+		error = btrfs_bootstrap_super(devvp, sb, &bootstrap);
 		if (error == 0) {
 			selected = best;
 			break;
@@ -236,11 +264,6 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	bmp = malloc(sizeof(*bmp), M_BTRFS, M_WAITOK | M_ZERO);
 	LIST_INIT(&bmp->bm_mounts);
 	bmp->bm_readonly = readonly;
-	view = malloc(sizeof(*view), M_BTRFS, M_WAITOK | M_ZERO);
-	view->bmv_mount = mp;
-	view->bmv_fs = bmp;
-	view->bmv_treeid = BTRFS_FS_TREE_OBJECTID;
-	view->bmv_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
 	bmp->bm_devvp = devvp;
 	bmp->bm_dev = devvp->v_rdev;
 	bmp->bm_open_flags = open_flags;
@@ -254,8 +277,6 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	bmp->bm_backup_roots_valid = btrfs_validate_backup_roots(sb);
 	bmp->bm_seeding =
 	    (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING) != 0;
-	view->bmv_subvol_readonly =
-	    (bootstrap.bb_fs_root_flags & BTRFS_ROOT_SUBVOL_RDONLY) != 0;
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
@@ -272,10 +293,6 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 		goto out;
 	if (!readonly) {
 		stage = "validating writable image";
-		if (view->bmv_subvol_readonly) {
-			error = EROFS;
-			goto out;
-		}
 		error = btrfs_validate_writable(bmp);
 		if (error != 0)
 			goto out;
@@ -285,14 +302,11 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	if (error != 0)
 		goto out;
 
-	mtx_enter(&bmp->bm_trans_mtx);
-	LIST_INSERT_HEAD(&bmp->bm_mounts, view, bmv_entry);
-	mtx_leave(&bmp->bm_trans_mtx);
-	mp->mnt_data = view;
-	mp->mnt_stat.f_fsid.val[0] = devvp->v_rdev;
-	mp->mnt_stat.f_fsid.val[1] = mp->mnt_vfc->vfc_typenum;
-	mp->mnt_stat.f_namemax = BTRFS_NAME_MAX;
-	mp->mnt_flag |= MNT_LOCAL;
+	stage = "selecting subvolume";
+	error = btrfs_attach_view(bmp, mp, treeid);
+	if (error != 0)
+		goto out;
+	LIST_INSERT_HEAD(&btrfs_filesystems, bmp, bm_entry);
 	devvp->v_specmountpoint = mp;
 	bootstrap.bb_chunks = NULL;
 	mounted = 1;
@@ -314,13 +328,130 @@ out:
 			btrfs_free_roots(bmp);
 			free(bmp, M_BTRFS, sizeof(*bmp));
 		}
-		if (view != NULL)
-			free(view, M_BTRFS, sizeof(*view));
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 		(void)VOP_CLOSE(devvp, open_flags, FSCRED, p);
 		VOP_UNLOCK(devvp);
 	}
 	return (error);
+}
+
+/*
+ * Inodes retain their on-disk numbers, which are unique only within a tree.
+ * Use the anonymous device major reserved for this VFS type, as
+ * vfs_getnewfsid() does, but allocate for every visited filesystem tree.
+ * Never reuse minors during this boot, including after the last view closes.
+ */
+static int
+btrfs_root_device(struct mount *mp, struct btrfs_root *root)
+{
+	int error = 0;
+
+	mtx_enter(&btrfs_device_mtx);
+	if (root->br_dev == NODEV) {
+		if (btrfs_device_minor == 0xffffff)
+			error = ENOSPC;
+		else {
+			btrfs_device_minor++;
+			root->br_dev = makedev(nblkdev +
+			    mp->mnt_vfc->vfc_typenum, btrfs_device_minor);
+		}
+	}
+	mtx_leave(&btrfs_device_mtx);
+	return (error);
+}
+
+/*
+ * Follow immutable ROOT_BACKREF ancestry to the top-level tree. Check the
+ * whole chain even after finding ancestor, and use Floyd's cycle detection
+ * so corrupt images cannot loop indefinitely or evade overlap checks.
+ */
+static int
+btrfs_ancestor(struct btrfs_fs *bmp, uint64_t treeid, uint64_t ancestor,
+    int *found)
+{
+	uint64_t slow = treeid, fast = treeid, dirid;
+	int error, i;
+
+	*found = treeid == ancestor;
+	while (slow != BTRFS_FS_TREE_OBJECTID) {
+		error = btrfs_find_subvol_parent(bmp, slow, &slow, &dirid);
+		if (error != 0)
+			return (error);
+		if (slow == ancestor)
+			*found = 1;
+		for (i = 0; i < 2 && fast != BTRFS_FS_TREE_OBJECTID; i++) {
+			error = btrfs_find_subvol_parent(bmp, fast, &fast,
+			    &dirid);
+			if (error != 0)
+				return (error);
+		}
+		if (slow == fast && slow != BTRFS_FS_TREE_OBJECTID)
+			return (EINVAL);
+	}
+	return (0);
+}
+
+static int
+btrfs_attach_view(struct btrfs_fs *bmp, struct mount *mp, uint64_t treeid)
+{
+	struct btrfs_mount *view, *other;
+	struct btrfs_root *root;
+	struct btrfs_inode inode;
+	int error, found, readonly = (mp->mnt_flag & MNT_RDONLY) != 0;
+
+	rw_assert_wrlock(&btrfs_mount_lock);
+	if (treeid == 0)
+		treeid = BTRFS_FS_TREE_OBJECTID;
+	if (treeid != BTRFS_FS_TREE_OBJECTID &&
+	    (treeid < BTRFS_FIRST_FREE_OBJECTID ||
+	    treeid > BTRFS_LAST_FREE_OBJECTID))
+		return (EINVAL);
+	error = btrfs_get_root(bmp, treeid, &root);
+	if (error != 0)
+		return (error);
+	if (!readonly && (root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY))
+		return (EROFS);
+	error = btrfs_find_inode(root, BTRFS_FIRST_FREE_OBJECTID, &inode);
+	if (error != 0)
+		return (error);
+	if (IFTOVT(inode.bi_mode) != VDIR)
+		return (EINVAL);
+	error = btrfs_ancestor(bmp, treeid, BTRFS_FS_TREE_OBJECTID, &found);
+	if (error != 0)
+		return (error);
+	LIST_FOREACH(other, &bmp->bm_mounts, bmv_entry) {
+		error = btrfs_ancestor(bmp, treeid, other->bmv_treeid,
+		    &found);
+		if (error != 0 || found)
+			return (error != 0 ? error : EBUSY);
+		error = btrfs_ancestor(bmp, other->bmv_treeid, treeid,
+		    &found);
+		if (error != 0 || found)
+			return (error != 0 ? error : EBUSY);
+	}
+	error = btrfs_root_device(mp, root);
+	if (error != 0)
+		return (error);
+	view = malloc(sizeof(*view), M_BTRFS, M_WAITOK | M_ZERO);
+	view->bmv_mount = mp;
+	view->bmv_fs = bmp;
+	view->bmv_treeid = treeid;
+	view->bmv_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
+	mtx_enter(&bmp->bm_trans_mtx);
+	/* Also serialize attachment with transaction failure. */
+	if (!readonly && bmp->bm_readonly) {
+		mtx_leave(&bmp->bm_trans_mtx);
+		free(view, M_BTRFS, sizeof(*view));
+		return (EROFS);
+	}
+	LIST_INSERT_HEAD(&bmp->bm_mounts, view, bmv_entry);
+	mp->mnt_data = view;
+	mtx_leave(&bmp->bm_trans_mtx);
+	mp->mnt_stat.f_fsid.val[0] = root->br_dev;
+	mp->mnt_stat.f_fsid.val[1] = mp->mnt_vfc->vfc_typenum;
+	mp->mnt_stat.f_namemax = BTRFS_NAME_MAX;
+	mp->mnt_flag |= MNT_LOCAL;
+	return (0);
 }
 
 static int
@@ -405,6 +536,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	struct vnode *devvp = bmp->bm_devvp;
 	int aborted = 0, error, flags = 0;
 
+	rw_enter_write(&btrfs_mount_lock);
 	if (mntflags & MNT_FORCE)
 		flags |= FORCECLOSE;
 	if (bmp->bm_open_flags & FWRITE) {
@@ -415,17 +547,23 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 		if (!aborted) {
 			error = btrfs_commit_current(bmp, p);
 			if (error != 0 && (mntflags & MNT_FORCE) == 0)
-				return (error);
+				goto out;
 		}
 	}
 	error = vflush(mp, NULL, flags);
 	if (error != 0)
-		return (error);
-	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
+		goto out;
 	mtx_enter(&bmp->bm_trans_mtx);
 	LIST_REMOVE(view, bmv_entry);
-	KASSERT(LIST_EMPTY(&bmp->bm_mounts));
+	if (!LIST_EMPTY(&bmp->bm_mounts)) {
+		devvp->v_specmountpoint =
+		    LIST_FIRST(&bmp->bm_mounts)->bmv_mount;
+		mtx_leave(&bmp->bm_trans_mtx);
+		goto detached;
+	}
 	mtx_leave(&bmp->bm_trans_mtx);
+	LIST_REMOVE(bmp, bm_entry);
+	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
 	btrfs_trans_destroy(bmp);
 	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 	btrfs_space_destroy(bmp);
@@ -441,10 +579,14 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	free(bmp->bm_chunks, M_BTRFS,
 	    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
 	free(bmp, M_BTRFS, sizeof(*bmp));
+detached:
 	free(view, M_BTRFS, sizeof(*view));
 	mp->mnt_data = NULL;
 	mp->mnt_flag &= ~MNT_LOCAL;
-	return (0);
+	error = 0;
+out:
+	rw_exit_write(&btrfs_mount_lock);
+	return (error);
 }
 
 static int
@@ -574,10 +716,15 @@ btrfs_vget_tree(struct mount *mp, uint64_t treeid, uint64_t ino,
 
 again:
 	error = btrfs_node_lookup(bmp, treeid, ino, vpp);
-	if (error != 0 || *vpp != NULL)
+	if (error != 0 || *vpp != NULL) {
+		KASSERT(*vpp == NULL || (*vpp)->v_mount == mp);
 		return (error);
+	}
 
 	error = btrfs_get_root(bmp, treeid, &root);
+	if (error != 0)
+		return (error);
+	error = btrfs_root_device(mp, root);
 	if (error != 0)
 		return (error);
 	error = btrfs_find_inode(root, ino, &inode);
@@ -598,6 +745,7 @@ again:
 
 	node->bn_vnode = vp;
 	node->bn_mount = bmp;
+	node->bn_root = root;
 	node->bn_treeid = treeid;
 	node->bn_ino = ino;
 	node->bn_inode = inode;

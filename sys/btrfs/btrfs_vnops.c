@@ -329,10 +329,23 @@ btrfs_lookup(void *v)
 		goto out;
 	}
 
-	if (ctx.blc_subvolume)
+	if (ctx.blc_subvolume) {
+		/* Directory entries must agree with the ancestry used at mount. */
+		if (ctx.blc_objectid == BTRFS_FS_TREE_OBJECTID) {
+			error = EINVAL;
+			goto out;
+		}
+		error = btrfs_find_subvol_parent(bmp, ctx.blc_objectid,
+		    &parent_treeid, &parent);
+		if (error != 0)
+			goto out;
+		if (parent_treeid != node->bn_treeid || parent != node->bn_ino) {
+			error = EINVAL;
+			goto out;
+		}
 		error = btrfs_vget_tree(dvp->v_mount, ctx.blc_objectid,
 		    BTRFS_FIRST_FREE_OBJECTID, vpp);
-	else
+	} else
 		error = btrfs_vget_tree(dvp->v_mount, node->bn_treeid,
 		    ctx.blc_objectid, vpp);
 	if (error != 0)
@@ -534,8 +547,7 @@ btrfs_node_readonly(struct btrfs_node *node)
 
 	return (node->bn_mount->bm_readonly ||
 	    (view->bmv_mount->mnt_flag & MNT_RDONLY) ||
-	    view->bmv_subvol_readonly ||
-	    node->bn_treeid != view->bmv_treeid ||
+	    (node->bn_root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY) ||
 	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY));
 }
 
@@ -591,7 +603,7 @@ btrfs_getattr(void *v)
 	struct vattr *vap = ap->a_vap;
 
 	vattr_null(vap);
-	vap->va_fsid = node->bn_mount->bm_dev;
+	vap->va_fsid = node->bn_root->br_dev;
 	vap->va_fileid = node->bn_ino;
 	vap->va_mode = inode->bi_mode & ALLPERMS;
 	vap->va_nlink = inode->bi_nlink;
@@ -1377,7 +1389,10 @@ btrfs_readdir(void *v)
 	}
 	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOTDOT) {
 		parent_treeid = node->bn_treeid;
-		if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID &&
+		if (node->bn_ino == view->bmv_root_dirid &&
+		    node->bn_treeid == view->bmv_treeid)
+			parent = node->bn_ino;
+		else if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID &&
 		    node->bn_treeid != view->bmv_treeid)
 			error = btrfs_find_subvol_parent(bmp, node->bn_treeid,
 			    &parent_treeid, &parent);

@@ -390,6 +390,9 @@ struct btrfs_root {
 	/* Maximum metadata generation visible through this root. */
 	uint64_t			 br_view_generation;
 	uint64_t			 br_owner;
+	/* Root-item flags are immutable until subvolume property changes exist. */
+	uint64_t			 br_flags;
+	dev_t				 br_dev;
 	struct btrfs_transaction	*br_transaction;
 	uint8_t				 br_level;
 };
@@ -471,7 +474,8 @@ struct btrfs_bootstrap {
 /*
  * A mount describes a namespace view. Device state, allocation, and
  * transactions belong to the filesystem, independently of its selected root.
- * Multiple live views remain disabled until vnode identity is shared safely.
+ * Live views must select disjoint subvolume hierarchies, so every reachable
+ * inode has exactly one VFS mount and vnode.
  */
 struct btrfs_mount {
 	LIST_ENTRY(btrfs_mount)		 bmv_entry;
@@ -479,11 +483,11 @@ struct btrfs_mount {
 	struct btrfs_fs			*bmv_fs;
 	uint64_t			 bmv_treeid;
 	uint64_t			 bmv_root_dirid;
-	uint8_t				 bmv_subvol_readonly;
 };
 LIST_HEAD(btrfs_mount_list, btrfs_mount);
 
 struct btrfs_fs {
+	LIST_ENTRY(btrfs_fs)		 bm_entry;
 	/* Membership and read-only transitions use bm_trans_mtx. */
 	struct btrfs_mount_list		 bm_mounts;
 	int				 bm_readonly;
@@ -519,6 +523,7 @@ struct btrfs_node {
 	LIST_ENTRY(btrfs_node)		 bn_entry;
 	struct vnode			*bn_vnode;
 	struct btrfs_fs			*bn_mount;
+	struct btrfs_root		*bn_root;
 	struct rrwlock			 bn_lock;
 	struct lockf_state		*bn_lockf;
 	uint64_t			 bn_treeid;
@@ -542,7 +547,7 @@ int	btrfs_super_same_filesystem(const struct btrfs_super_block *,
 	    const struct btrfs_super_block *);
 int	btrfs_check_super_policy(const struct btrfs_super_block *, int);
 int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
-	    int, struct btrfs_bootstrap *);
+	    struct btrfs_bootstrap *);
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
 int	btrfs_build_super(struct btrfs_transaction *,
 	    struct btrfs_super_block *);
