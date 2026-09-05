@@ -172,6 +172,11 @@ to the target length.  Targets up to `MAXPATHLEN - 1` bytes are supported;
 empty targets return `ENOENT`.  Unlink, rmdir, rename, hard links, and
 special-node creation remain unsupported.
 
+`VOP_ADVLOCK` uses OpenBSD's shared advisory lock engine with per-vnode state
+for flock and POSIX byte-range locks.  Locks refer to the inode across path
+aliases, use its current size for SEEK_END, and are purged at vnode reclaim.
+They require no on-disk changes.
+
 A writable transaction also retains an emergency metadata commit reserve
 before any ordinary handle can join.  It is sized for four full-height COW
 paths splitting at every level, plus accounting margin.  Ordinary handles
@@ -843,6 +848,11 @@ permissions, hash collisions, maximum lengths, concurrent creation, and
 directory accounting.  The 4 KiB and 16 KiB node workloads passed independent
 checksum checks and remount verification, as did a synchronous 16 KiB mount.
 Targets restored using `btrfs restore -S` matched the originals.
+
+`regress/sys/btrfs/locks.py` checks advisory-lock conflicts, ranges, queries,
+blocking wakeups, and close/exit lifetime.  Read-only mounts and forced unmount
+with blocked POSIX and flock waiters also passed, followed by an independent
+checksum check.
 
 `regress/sys/btrfs/enospc.py` fills metadata with empty files and checks that
 reservation failure leaves the failed name absent and parent metadata

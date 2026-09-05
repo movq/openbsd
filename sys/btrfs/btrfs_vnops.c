@@ -29,6 +29,7 @@
 #include <sys/errno.h>
 #include <sys/fcntl.h>
 #include <sys/lock.h>
+#include <sys/lockf.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/namei.h>
@@ -67,6 +68,7 @@ static int	btrfs_unlock(void *);
 static int	btrfs_islocked(void *);
 static int	btrfs_print(void *);
 static int	btrfs_pathconf(void *);
+static int	btrfs_advlock(void *);
 
 const struct vops btrfs_vops = {
 	.vop_lookup	= btrfs_lookup,
@@ -101,7 +103,7 @@ const struct vops btrfs_vops = {
 	.vop_print	= btrfs_print,
 	.vop_islocked	= btrfs_islocked,
 	.vop_pathconf	= btrfs_pathconf,
-	.vop_advlock	= eopnotsupp,
+	.vop_advlock	= btrfs_advlock,
 	.vop_bwrite	= vop_generic_bwrite,
 };
 
@@ -1283,6 +1285,7 @@ btrfs_reclaim(void *v)
 		mtx_leave(&bmp->bm_nodemtx);
 	}
 	cache_purge(vp);
+	lf_purgelocks(&node->bn_lockf);
 	free(node, M_BTRFS, sizeof(*node));
 	vp->v_data = NULL;
 	return (0);
@@ -1326,6 +1329,17 @@ btrfs_print(void *v)
 	    (unsigned long long)node->bn_ino);
 #endif
 	return (0);
+}
+
+static int
+btrfs_advlock(void *v)
+{
+	struct vop_advlock_args *ap = v;
+	struct btrfs_node *node = VTOBTRFS(ap->a_vp);
+
+	/* The shared lock engine serializes state and sleeps without bn_lock. */
+	return (lf_advlock(&node->bn_lockf, node->bn_inode.bi_size,
+	    ap->a_id, ap->a_op, ap->a_fl, ap->a_flags));
 }
 
 static int

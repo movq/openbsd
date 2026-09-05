@@ -502,6 +502,7 @@ struct btrfs_node {
 	struct vnode			*bn_vnode;
 	struct btrfs_mount		*bn_mount;
 	struct rrwlock			 bn_lock;
+	struct lockf_state		*bn_lockf;
 	uint64_t			 bn_treeid;
 	uint64_t			 bn_ino;
 	int				 bn_hashed;
