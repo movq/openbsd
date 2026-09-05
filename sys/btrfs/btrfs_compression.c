@@ -146,10 +146,20 @@ btrfs_read_compressed_extent(struct btrfs_node *node,
 	    extent->bfe_ram_bytes, compressed, source_size, &result_size);
 	if (error != 0)
 		goto out;
-	if (result_size != extent->bfe_ram_bytes) {
+	if (result_size > extent->bfe_ram_bytes ||
+	    (extent->bfe_type == BTRFS_FILE_EXTENT_INLINE &&
+	    result_size != extent->bfe_ram_bytes)) {
 		error = EINVAL;
 		goto out;
 	}
+	/*
+	 * Regular compressed extents may describe a rounded allocation while
+	 * the frame ends at the original EOF.  As on Linux, the remainder
+	 * reads as zero, including through a later split mapping.
+	 */
+	if (result_size < extent->bfe_ram_bytes)
+		memset(uncompressed + result_size, 0,
+		    extent->bfe_ram_bytes - result_size);
 	memcpy(destination, uncompressed + output_offset, size);
 out:
 	if (uncompressed != NULL)
