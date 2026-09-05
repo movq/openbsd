@@ -210,18 +210,18 @@ def verify_compressed():
 
 def zstd():
     verify_compressed_seed()
-    # Writes into unsupported compressed mappings must reject before
-    # changing the inode or the surrounding open transaction.
+    # Replace individual compressed sectors, then restore their contents.
     for size in (6003, 8192, 65539):
         name = f"import-{size}"
         fd = os.open(name, os.O_RDWR)
         for offset in (0, size // 2, size - 1):
             put(f"survivor-{size}-{offset}", b"pending")
-            fail(name, errno.EOPNOTSUPP, os.pwrite, fd, b"fail", offset)
+            assert os.pwrite(fd, b"X", offset) == 1
+            assert os.pwrite(fd, original(size)[offset:offset + 1], offset) == 1
             assert Path(name).read_bytes() == original(size)
             os.fsync(fd)
         os.close(fd)
-    compressed((6003, 65539))
+    compressed(())
     verify_compressed()
     os.link("import-6003", "compressed-alias")
     os.chmod("compressed-alias", 0o640)
