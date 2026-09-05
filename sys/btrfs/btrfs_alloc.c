@@ -29,6 +29,7 @@ struct btrfs_space_build {
 	struct btrfs_fs		*bsb_mount;
 	uint64_t		 bsb_bytes_used;
 	struct btrfs_free_extent	*bsb_free;
+	uint64_t		 bsb_cursor;
 };
 
 /*
@@ -416,17 +417,37 @@ btrfs_space_validate_free(const struct btrfs_free_space_record *record,
 	struct btrfs_space_build *build = arg;
 	struct btrfs_block_group *group;
 	struct btrfs_free_extent *space;
+	uint64_t bit, bytenr;
+	uint32_t sectorsize;
+	int expected;
 
 	if (record->bfs_type == BTRFS_FREE_SPACE_RECORD_INFO) {
 		if (build->bsb_free != NULL)
 			return (EINVAL);
-		if (record->bfs_flags & BTRFS_FREE_SPACE_USING_BITMAPS)
-			return (EOPNOTSUPP);
 		group = btrfs_space_find_group(build->bsb_mount,
 		    record->bfs_bytenr, record->bfs_length);
 		if (group == NULL)
 			return (EINVAL);
 		build->bsb_free = TAILQ_FIRST(&group->bbg_free_extents);
+		build->bsb_cursor = group->bbg_bytenr;
+		return (0);
+	}
+	if (record->bfs_type == BTRFS_FREE_SPACE_RECORD_BITMAP) {
+		if (record->bfs_bytenr != build->bsb_cursor)
+			return (EINVAL);
+		sectorsize = letoh32(build->bsb_mount->bm_super.sectorsize);
+		for (bit = 0; bit < record->bfs_length / sectorsize; bit++) {
+			bytenr = record->bfs_bytenr + bit * sectorsize;
+			space = build->bsb_free;
+			expected = space != NULL && bytenr >= space->bfe_bytenr;
+			if (((record->bfs_bitmap[bit / 8] >> (bit & 7)) & 1) !=
+			    expected)
+				return (EINVAL);
+			if (expected && bytenr + sectorsize ==
+			    space->bfe_bytenr + space->bfe_length)
+				build->bsb_free = TAILQ_NEXT(space, bfe_entry);
+		}
+		build->bsb_cursor += record->bfs_length;
 		return (0);
 	}
 	space = build->bsb_free;
@@ -1182,6 +1203,110 @@ btrfs_free_space_neighbor(struct btrfs_root *root,
 	return (error);
 }
 
+static int
+btrfs_free_space_bitmap(struct btrfs_root *root, uint64_t bytenr,
+    struct btrfs_key *key, uint8_t **payload, uint32_t *size)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *found;
+	const uint8_t *data;
+	uint64_t start, length, nbits;
+	uint32_t sectorsize = letoh32(root->br_mount->bm_super.sectorsize);
+	int error;
+
+	*payload = NULL;
+	target.objectid = htole64(bytenr);
+	target.type = BTRFS_FREE_SPACE_BITMAP_KEY;
+	target.offset = htole64(UINT64_MAX);
+	error = btrfs_search_predecessor(root, &target, &path);
+	if (error == 0)
+		error = btrfs_path_item(&path, &found, &data, size);
+	if (error == 0) {
+		start = letoh64(found->objectid);
+		length = letoh64(found->offset);
+		nbits = length / sectorsize;
+		if (found->type != BTRFS_FREE_SPACE_BITMAP_KEY ||
+		    start > bytenr || bytenr - start >= length ||
+		    length > UINT64_MAX - start ||
+		    (length & (sectorsize - 1)) != 0 ||
+		    (nbits + 7) / 8 != *size)
+			error = EINVAL;
+		else {
+			*key = *found;
+			*payload = malloc(*size, M_BTRFS, M_WAITOK);
+			memcpy(*payload, data, *size);
+		}
+	}
+	btrfs_release_path(&path);
+	return (error);
+}
+
+static int
+btrfs_free_space_bit(struct btrfs_root *root, uint64_t bytenr, int *set)
+{
+	struct btrfs_key key;
+	uint8_t *payload;
+	uint64_t bit;
+	uint32_t size;
+	int error;
+
+	error = btrfs_free_space_bitmap(root, bytenr, &key, &payload, &size);
+	if (error != 0)
+		return (error);
+	bit = (bytenr - letoh64(key.objectid)) /
+	    letoh32(root->br_mount->bm_super.sectorsize);
+	*set = (payload[bit / 8] >> (bit & 7)) & 1;
+	free(payload, M_BTRFS, size);
+	return (0);
+}
+
+static int
+btrfs_modify_free_space_bitmap(struct btrfs_trans_handle *handle,
+    struct btrfs_root *root, struct btrfs_block_group *group, uint64_t start,
+    uint64_t end, int add, int *delta)
+{
+	struct btrfs_key key;
+	uint8_t *payload;
+	uint64_t bit, first, last, limit;
+	uint32_t size, sectorsize;
+	int error = 0, previous = 0, next = 0;
+
+	sectorsize = letoh32(root->br_mount->bm_super.sectorsize);
+	if (start > group->bbg_bytenr)
+		error = btrfs_free_space_bit(root, start - sectorsize,
+		    &previous);
+	if (error == 0 && end < group->bbg_bytenr + group->bbg_length)
+		error = btrfs_free_space_bit(root, end, &next);
+	if (error != 0)
+		return (error);
+	*delta = add ? 1 - previous - next : -1 + previous + next;
+	while (start < end) {
+		error = btrfs_free_space_bitmap(root, start, &key, &payload,
+		    &size);
+		if (error != 0)
+			return (error);
+		limit = MIN(end, letoh64(key.objectid) + letoh64(key.offset));
+		first = (start - letoh64(key.objectid)) / sectorsize;
+		last = (limit - letoh64(key.objectid)) / sectorsize;
+		for (bit = first; bit < last; bit++) {
+			if (((payload[bit / 8] >> (bit & 7)) & 1) == add) {
+				error = EINVAL;
+				break;
+			}
+			payload[bit / 8] ^= 1U << (bit & 7);
+		}
+		if (error == 0)
+			error = btrfs_replace_item(handle, root, &key, payload,
+			    size);
+		free(payload, M_BTRFS, size);
+		if (error != 0)
+			return (error);
+		start = limit;
+	}
+	return (0);
+}
+
 /*
  * Extent ownership and free-space records change together at delayed-ref
  * materialization. This can COW the free-space tree and queue more refs,
@@ -1228,11 +1353,16 @@ btrfs_update_free_space(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	btrfs_release_path(&path);
 	if (error != 0)
 		return (error);
-	if (info.flags != 0)
+	if (letoh32(info.flags) & ~BTRFS_FREE_SPACE_USING_BITMAPS)
 		return (EOPNOTSUPP);
 	count = letoh32(info.extent_count);
 	start = bytenr;
 	end = bytenr + length;
+	if (letoh32(info.flags) & BTRFS_FREE_SPACE_USING_BITMAPS) {
+		error = btrfs_modify_free_space_bitmap(handle, root, group,
+		    start, end, add, &delta);
+		goto update_count;
+	}
 	error = btrfs_free_space_neighbor(root, group, start, 1,
 	    &left, &have_left);
 	if (error != 0)
@@ -1282,6 +1412,7 @@ btrfs_update_free_space(struct btrfs_trans_handle *handle, uint64_t bytenr,
 			error = btrfs_insert_item(handle, root, &key, NULL, 0);
 		}
 	}
+update_count:
 	if (error != 0)
 		return (error);
 	if ((delta < 0 && count == 0) ||

@@ -47,6 +47,19 @@ both independent checkers (including btrfs check's free-space-tree pass).
 Verify namespace/data after writable and read-only remounts. statfs disk
 selects the block-group item tree using the superblock feature flag.
 
+free_space.py's host `seed directory` phase prepares imported data. Format
+with `mkfs.btrfs --rootdir directory`, then run `bitmap image` while unmounted
+to encode the fresh free-space leaf as bitmaps. Short first bitmaps ensure
+data allocations cross bitmap boundaries. Run both independent checks before
+mounting, then `exercise mountpoint` in the VM, followed by idle, namespace,
+statfs exercise/capacity, and metadata enospc. Check independently after unmount
+and verify data after both remount modes, with both metadata node sizes.
+On separate fresh bitmap fixtures, `bad-count image` and `bad-bit image`
+introduce inconsistent metadata. Run `reject device mountpoint` in the VM;
+repeated writable mounts must fail while read-only imported data remains
+accessible. The bad-bit case preserves the run count, exercising validation
+against extent ownership in addition to structural count checks.
+
 readdir.py uses seed/gaps on the host and exercise/verify in the VM.
 Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
 unmounted to renumber indexes and references above 32 bits with gaps.

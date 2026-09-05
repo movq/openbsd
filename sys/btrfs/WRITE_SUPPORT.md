@@ -41,7 +41,7 @@ The writable format is one device, CRC32C, existing SINGLE/DUP chunks, and
 skinny metadata. Only `MIXED_BACKREF`, `COMPRESS_ZSTD`, `BIG_METADATA`,
 `EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted.
 The free-space-tree (with VALID set) and block-group-tree compat-ro features
-are writable. Free-space bitmap groups currently reject writable mount.
+are writable, including extent and bitmap free-space records.
 Mount requires the newest valid superblock,
 no pending log, no seeding device or read-only selected tree, and an extent tree
 without legacy extent items, shared references, snapshots, or simple-quota owner refs.
@@ -177,10 +177,12 @@ from block-group bounds. Stripe exclusions have no extent items and are separate
 from block-group usage. Keep free, reserved, allocated, and pinned space distinct,
 with typed reservations accounting for mixed groups.
 
-Writable mount validates free-space extent records against the complement of
+Writable mount validates free-space records against the complement of
 the extent tree before excluding superblock stripes from the in-memory index.
 Delayed reference materialization splits or coalesces these records and updates
-their per-group counts. Free-space tree COW queues ordinary delayed references;
+their per-group counts. Bitmap groups retain their representation; counts
+describe contiguous free runs, including runs crossing bitmap boundaries.
+Free-space tree COW queues ordinary delayed references;
 commit drains these to the same fixed point as block-group and root accounting.
 Freed ranges become free in the new on-disk tree while remaining pinned in memory
 until publication. Block-group usage belongs to the separate block group tree
