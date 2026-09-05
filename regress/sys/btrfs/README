@@ -25,6 +25,11 @@ directory size/link accounting, nested parent lookup, and readdir.
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
 
+idle.py takes a new test directory and checks repeated fsync and mount sync
+without pending changes, followed by further namespace and data mutation.
+Run after writable remount of both a fresh image and one with a large extent
+tree; sync must leave the mount writable.  Unmount and check independently.
+
 symlink.py uses the same create/verify phases as namespace.py.  It covers
 relative, absolute, dangling, chained and looping links, directory traversal,
 short readlink buffers, maximum target/name lengths, hash collisions across

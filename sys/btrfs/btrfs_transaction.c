@@ -690,6 +690,25 @@ btrfs_trans_close(struct btrfs_mount *bmp, uint64_t minimum_generation,
 	while (trans->bt_writers != 0)
 		msleep(&trans->bt_writers, &bmp->bm_trans_mtx, PWAIT,
 		    "btrwr", 0);
+	/*
+	 * An idle sync has no new root-tree generation to publish.  Joins are
+	 * closed and all handles have drained, so these lists are stable.
+	 * Retain the open generation and its reserve for the next mutation.
+	 */
+	if (trans->bt_error == 0 &&
+	    TAILQ_EMPTY(&trans->bt_dirty_extent_buffers)) {
+		KASSERT(TAILQ_EMPTY(&trans->bt_dirty_roots));
+		KASSERT(TAILQ_EMPTY(&trans->bt_delayed_tree_refs));
+		KASSERT(TAILQ_EMPTY(&trans->bt_delayed_data_refs));
+		KASSERT(TAILQ_EMPTY(&trans->bt_ordered_extents));
+		KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
+		KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
+		trans->bt_state = BTRFS_TRANS_OPEN;
+		bmp->bm_committer = 0;
+		wakeup(&bmp->bm_transaction);
+		mtx_leave(&bmp->bm_trans_mtx);
+		return (0);
+	}
 	if (trans->bt_error != 0)
 		trans->bt_state = BTRFS_TRANS_ABORTED;
 	else
