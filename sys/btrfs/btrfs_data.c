@@ -43,6 +43,23 @@ static int	btrfs_find_separate_data_ref(struct btrfs_root *, uint64_t,
 		    struct btrfs_extent_data_ref *);
 static int	btrfs_materialize_data_ref(struct btrfs_trans_handle *,
 		    const struct btrfs_delayed_data_ref *);
+static inline int btrfs_ordered_compare(const struct btrfs_ordered_extent *,
+		    const struct btrfs_ordered_extent *);
+
+RBT_HEAD(btrfs_ordered_io, btrfs_ordered_extent);
+RBT_PROTOTYPE(btrfs_ordered_io, btrfs_ordered_extent, boe_io_entry,
+    btrfs_ordered_compare);
+RBT_GENERATE(btrfs_ordered_io, btrfs_ordered_extent, boe_io_entry,
+    btrfs_ordered_compare);
+
+static inline int
+btrfs_ordered_compare(const struct btrfs_ordered_extent *a,
+    const struct btrfs_ordered_extent *b)
+{
+	if (a->boe_bytenr < b->boe_bytenr)
+		return (-1);
+	return (a->boe_bytenr > b->boe_bytenr);
+}
 
 static int
 btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
@@ -712,10 +729,14 @@ btrfs_run_delayed_data_refs(struct btrfs_trans_handle *handle)
 int
 btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 {
-	struct btrfs_ordered_extent *ordered;
+	struct btrfs_ordered_extent *ordered, *next, *first;
+	struct btrfs_ordered_io io = RBT_INITIALIZER(&io);
+	struct btrfs_io_map map;
 	struct btrfs_fs *bmp;
-	uint32_t sectorsize;
-	int error;
+	uint8_t *data;
+	uint64_t bytenr;
+	uint32_t length, sectorsize;
+	int error = 0;
 
 	if (trans == NULL)
 		return (EINVAL);
@@ -737,17 +758,56 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 		if (ordered->boe_data == NULL ||
 		    ordered->boe_length != sectorsize ||
 		    (ordered->boe_bytenr & (sectorsize - 1)) != 0 ||
+		    ordered->boe_bytenr > UINT64_MAX - sectorsize ||
 		    (ordered->boe_file_offset & (sectorsize - 1)) != 0 ||
 		    ordered->boe_treeid == 0 || ordered->boe_objectid == 0)
 			return (EINVAL);
-		error = btrfs_write_logical(bmp, ordered->boe_bytenr,
-		    ordered->boe_length, BTRFS_BLOCK_GROUP_DATA,
-		    ordered->boe_data, NULL);
-		if (error != 0)
-			return (error);
-		ordered->boe_written = 1;
+		if (RBT_INSERT(btrfs_ordered_io, &io, ordered) != NULL)
+			return (EINVAL);
 	}
-	return (0);
+	if (RBT_EMPTY(btrfs_ordered_io, &io))
+		return (0);
+
+	/*
+	 * Handles have drained: payloads and mappings remain stable through
+	 * publication. Sort by allocation address, including across vnodes,
+	 * and stage bounded runs without changing sector ownership.
+	 */
+	data = malloc(MAXBSIZE, M_BTRFS, M_WAITOK);
+	ordered = RBT_MIN(btrfs_ordered_io, &io);
+	while (ordered != NULL) {
+		first = ordered;
+		bytenr = ordered->boe_bytenr;
+		length = 0;
+		do {
+			memcpy(data + length, ordered->boe_data, sectorsize);
+			length += sectorsize;
+			next = RBT_NEXT(btrfs_ordered_io, ordered);
+			if (next == NULL || length > MAXBSIZE - sectorsize ||
+			    next->boe_bytenr != bytenr + length)
+				break;
+			/* Adjacent logical chunks need not share physical runs. */
+			error = btrfs_lookup_fs_logical(bmp, bytenr,
+			    length + sectorsize, &map);
+			if (error == ENOENT) {
+				error = 0;
+				break;
+			}
+			if (error != 0)
+				goto out;
+			ordered = next;
+		} while (1);
+		error = btrfs_write_logical(bmp, bytenr, length,
+		    BTRFS_BLOCK_GROUP_DATA, data, NULL);
+		if (error != 0)
+			break;
+		for (ordered = first; ordered != next;
+		    ordered = RBT_NEXT(btrfs_ordered_io, ordered))
+			ordered->boe_written = 1;
+	}
+out:
+	free(data, M_BTRFS, MAXBSIZE);
+	return (error);
 }
 
 int
