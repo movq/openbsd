@@ -52,6 +52,8 @@ static int	btrfs_mkdir(void *);
 static int	btrfs_mknod(void *);
 static int	btrfs_symlink(void *);
 static int	btrfs_link(void *);
+static int	btrfs_remove(void *);
+static int	btrfs_rmdir(void *);
 static int	btrfs_makeinode(struct vnode *, struct vnode **,
 		    struct componentname *, struct vattr *, const char *);
 static int	btrfs_open(void *);
@@ -99,11 +101,11 @@ const struct vops btrfs_vops = {
 	.vop_kqfilter	= btrfs_kqfilter,
 	.vop_revoke	= vop_generic_revoke,
 	.vop_fsync	= btrfs_fsync,
-	.vop_remove	= eopnotsupp,
+	.vop_remove	= btrfs_remove,
 	.vop_link	= btrfs_link,
 	.vop_rename	= eopnotsupp,
 	.vop_mkdir	= btrfs_mkdir,
-	.vop_rmdir	= eopnotsupp,
+	.vop_rmdir	= btrfs_rmdir,
 	.vop_symlink	= btrfs_symlink,
 	.vop_readdir	= btrfs_readdir,
 	.vop_readlink	= btrfs_readlink,
@@ -277,9 +279,14 @@ btrfs_lookup(void *v)
 	error = VOP_ACCESS(dvp, VEXEC, cnp->cn_cred, cnp->cn_proc);
 	if (error != 0)
 		return (error);
-	if (lastcn && (cnp->cn_nameiop == DELETE ||
-	    cnp->cn_nameiop == RENAME))
+	if (lastcn && cnp->cn_nameiop == RENAME)
 		return (EROFS);
+	if (lastcn && cnp->cn_nameiop == DELETE) {
+		error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred, cnp->cn_proc);
+		if (error != 0)
+			return (error);
+		cnp->cn_flags |= SAVENAME;
+	}
 
 	error = cache_lookup(dvp, vpp, cnp);
 	if (error >= 0)
@@ -592,6 +599,75 @@ btrfs_node_readonly(struct btrfs_node *node)
 	    (view->bmv_mount->mnt_flag & MNT_RDONLY) ||
 	    (node->bn_root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY) ||
 	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY));
+}
+
+static int
+btrfs_remove(void *v)
+{
+	struct vop_remove_args *ap = v;
+	struct vnode *dvp = ap->a_dvp, *vp = ap->a_vp;
+	struct componentname *cnp = ap->a_cnp;
+	struct btrfs_node *dir = VTOBTRFS(dvp), *node = VTOBTRFS(vp);
+	int error;
+
+	KASSERT(VOP_ISLOCKED(dvp));
+	KASSERT(VOP_ISLOCKED(vp));
+	if (vp->v_type == VDIR) {
+		error = EPERM;
+		goto out;
+	}
+	if (vp->v_mount != dvp->v_mount ||
+	    node->bn_treeid != dir->bn_treeid) {
+		error = EXDEV;
+		goto out;
+	}
+	if (btrfs_node_readonly(node)) {
+		error = EROFS;
+		goto out;
+	}
+	error = VOP_ACCESS(dvp, VWRITE | VEXEC, cnp->cn_cred, cnp->cn_proc);
+	if (error != 0)
+		goto out;
+	if ((node->bn_inode.bi_flags &
+	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) ||
+	    (dir->bn_inode.bi_flags & BTRFS_INODE_APPEND)) {
+		error = EPERM;
+		goto out;
+	}
+	if ((dir->bn_inode.bi_mode & S_ISTXT) &&
+	    cnp->cn_cred->cr_uid != 0 &&
+	    cnp->cn_cred->cr_uid != dir->bn_inode.bi_uid &&
+	    cnp->cn_cred->cr_uid != node->bn_inode.bi_uid && !vnoperm(dvp)) {
+		error = EPERM;
+		goto out;
+	}
+	error = btrfs_unlink_inode(dir, node, cnp->cn_nameptr, cnp->cn_namelen);
+	if (error != 0)
+		goto out;
+	cache_purge(dvp);
+	cache_purge(vp);
+	VN_KNOTE(vp, NOTE_DELETE);
+	VN_KNOTE(dvp, NOTE_WRITE);
+	if ((dvp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
+	    (dir->bn_inode.bi_flags &
+	    (BTRFS_INODE_SYNC | BTRFS_INODE_DIRSYNC)) ||
+	    (node->bn_inode.bi_flags & BTRFS_INODE_SYNC))
+		error = btrfs_trans_commit(dir->bn_mount,
+		    node->bn_inode.bi_last_dirty_transid, cnp->cn_proc);
+out:
+	VOP_ABORTOP(dvp, cnp);
+	return (error);
+}
+
+static int
+btrfs_rmdir(void *v)
+{
+	struct vop_rmdir_args *ap = v;
+
+	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	vput(ap->a_vp);
+	vput(ap->a_dvp);
+	return (EOPNOTSUPP);
 }
 
 static int
