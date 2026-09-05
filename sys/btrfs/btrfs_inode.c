@@ -548,6 +548,7 @@ btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
 	const struct btrfs_key *key;
 	struct btrfs_dir_item *entry;
 	struct btrfs_inode_ref *ref;
+	struct btrfs_inode_extref *extref;
 	struct btrfs_inode saved_dir, saved_node;
 	struct timespec now;
 	uint8_t *bucket = NULL, *reference = NULL;
@@ -610,14 +611,34 @@ btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
 	ref_extra = sizeof(*ref) + namelen;
 	error = btrfs_prepare_append(root, &refkey, reference, ref_extra,
 	    &ref_size);
+	if (error == ENOSPC &&
+	    (letoh64(bmp->bm_super.incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF)) {
+		refkey.type = BTRFS_INODE_EXTREF_KEY;
+		/* Raw CRC32C, seeded by the low 32 bits of the parent ID. */
+		refkey.offset = htole64(crc32c((uint32_t)dir->bn_ino ^
+		    0xffffffffU, (const uint8_t *)name, namelen) ^
+		    0xffffffffU);
+		ref_extra = sizeof(*extref) + namelen;
+		error = btrfs_prepare_append(root, &refkey, reference,
+		    ref_extra, &ref_size);
+	}
 	if (error == ENOSPC)
 		error = EMLINK;
 	if (error != 0)
 		goto out;
-	ref = (struct btrfs_inode_ref *)(reference + ref_size);
-	ref->index = htole64(index);
-	ref->name_len = htole16(namelen);
-	memcpy(reference + ref_size + sizeof(*ref), name, namelen);
+	if (refkey.type == BTRFS_INODE_EXTREF_KEY) {
+		extref = (struct btrfs_inode_extref *)(reference + ref_size);
+		extref->parent_objectid = htole64(dir->bn_ino);
+		extref->index = htole64(index);
+		extref->name_len = htole16(namelen);
+		memcpy(extref->name, name, namelen);
+	} else {
+		ref = (struct btrfs_inode_ref *)(reference + ref_size);
+		ref->index = htole64(index);
+		ref->name_len = htole16(namelen);
+		memcpy(reference + ref_size + sizeof(*ref), name, namelen);
+	}
 
 	/* Two inode updates and two potentially growing packed items. */
 	reservation.btr_metadata = (uint64_t)nodesize * 160;

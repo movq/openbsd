@@ -38,9 +38,9 @@ Current operation limits:
   new data is always uncompressed.
 * Symlink targets are inline and limited to `MAXPATHLEN - 1` bytes.
 * Hard links cannot cross filesystem trees or target directories. Packed
-  per-parent inode references return `EMLINK` when the item fills; extended
-  reference insertion remains to be added. Directory hash buckets also have
-  a one-item capacity limit.
+  per-parent inode references overflow into hashed extended references when
+  `EXTENDED_IREF` is enabled; otherwise a full item returns `EMLINK`.
+  Directory hash and extended-reference buckets have a one-item capacity limit.
 * Allocation uses existing block groups only. There is no chunk allocation,
   free-space-tree/block-group-tree maintenance, device management, relocation,
   log replay, qgroups, or zoned support.
@@ -90,6 +90,10 @@ an ambiguous publication requires an error and read-only mount.
 Abort restores saved root locations and marks transaction-owned extent buffers
 stale before releasing new allocations. Successful publication releases
 transaction ownership only after durability is established.
+
+Detached COW blocks keep their allocations until delayed references are drained
+and their extent items are gone. Commit can detach an extent-tree block whose
+add was already materialized; immediate reuse would race its pending drop.
 
 ## Caches, locking, and allocation
 
@@ -143,7 +147,11 @@ An emergency metadata reserve is retained for commit and excluded from ordinary
 handles. It covers four maximum-height COW/split paths plus accounting margin.
 Failure to establish it rejects writable mount; failure to replenish after a
 successful commit leaves that generation durable and the mount read-only.
-This reserve is not a substitute for budgeting each operation's delayed work.
+Operations that queue delayed references also transfer their unused metadata
+reservations to commit. These estimates conservatively include delayed work;
+only operations with no such work release all unused space immediately.
+A reservation failure can commit pending work and retry once before returning
+`ENOSPC`, without changing the failing operation's inode or namespace state.
 
 Delayed references are merged by extent and ownership identity. Only a final
 reference drop pins an extent; for data it also removes the physical checksum
