@@ -307,6 +307,7 @@ struct btrfs_transaction {
 	uint64_t			 bt_allocated_bytes;
 	uint64_t			 bt_pinned_bytes;
 	uint64_t			 bt_bytes_used;
+	uint64_t			 bt_dev_bytes_added;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
 	int				 bt_error;
@@ -510,6 +511,8 @@ struct btrfs_fs {
 	uint8_t				 bm_seeding;
 	/* Protects replaceable indexes; never held over tree operations or I/O. */
 	struct rwlock			 bm_mapping_lock;
+	/* Serializes chunk planning through durable index publication. */
+	struct rwlock			 bm_chunk_alloc_lock;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
 	/* Group objects and their indexes remain stable until teardown. */
@@ -696,6 +699,7 @@ int	btrfs_iterate_free_space(struct btrfs_fs *,
 int	btrfs_space_init(struct btrfs_fs *);
 void	btrfs_space_destroy(struct btrfs_fs *);
 int	btrfs_space_statfs(struct btrfs_fs *, struct statfs *);
+int	btrfs_space_grow_data(struct btrfs_fs *, uint64_t);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);
