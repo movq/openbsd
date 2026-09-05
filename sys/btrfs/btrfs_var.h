@@ -644,7 +644,7 @@ int	btrfs_link_inode(struct btrfs_node *, struct btrfs_node *,
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_fs *, uint64_t, uint64_t *,
 	    uint64_t *);
-int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
+int	btrfs_iterate_directory(struct btrfs_root *, uint64_t, uint64_t,
 	    btrfs_dir_iter_fn, void *);
 int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,
 	    size_t, btrfs_dir_iter_fn, void *);

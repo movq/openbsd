@@ -345,7 +345,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	error = btrfs_find_inode(&fs_tree, BTRFS_FIRST_FREE_OBJECTID, &inode);
 	if (error != 0)
 		goto out;
-	error = btrfs_iterate_directory(&fs_tree, BTRFS_FIRST_FREE_OBJECTID,
+	error = btrfs_iterate_directory(&fs_tree, BTRFS_FIRST_FREE_OBJECTID, 0,
 	    NULL, NULL);
 	if (error != 0)
 		goto out;

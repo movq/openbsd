@@ -1492,8 +1492,6 @@ out:
 
 struct btrfs_readdir_ctx {
 	struct uio	*brc_uio;
-	off_t		 brc_skip;
-	off_t		 brc_position;
 	off_t		 brc_offset;
 	int		 brc_full;
 };
@@ -1557,10 +1555,9 @@ btrfs_readdir_entry(const struct btrfs_dir_entry *entry, void *arg)
 	ino_t fileno;
 	int error;
 
-	if (ctx->brc_position < ctx->brc_skip) {
-		ctx->brc_position++;
-		return (0);
-	}
+	/* Leave room for the next cookie in the signed VFS offset. */
+	if (entry->bde_index >= INT64_MAX)
+		return (EOVERFLOW);
 
 	/*
 	 * A subvolume directory item names a root item; its visible inode is
@@ -1572,9 +1569,7 @@ btrfs_readdir_entry(const struct btrfs_dir_entry *entry, void *arg)
 		fileno = entry->bde_objectid;
 	error = btrfs_emit_dirent(ctx, fileno,
 	    btrfs_dirent_type(entry->bde_type), entry->bde_name,
-	    entry->bde_namelen, ctx->brc_position + 1);
-	if (error == 0)
-		ctx->brc_position++;
+	    entry->bde_namelen, entry->bde_index + 1);
 	return (error);
 }
 
@@ -1590,6 +1585,7 @@ btrfs_readdir(void *v)
 	struct btrfs_root *root;
 	struct uio *uio = ap->a_uio;
 	uint64_t parent, parent_treeid;
+	size_t resid;
 	int error = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
@@ -1600,6 +1596,7 @@ btrfs_readdir(void *v)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.brc_uio = uio;
 	ctx.brc_offset = uio->uio_offset;
+	resid = uio->uio_resid;
 
 	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOT) {
 		error = btrfs_emit_dirent(&ctx, node->bn_ino, DT_DIR,
@@ -1630,16 +1627,14 @@ btrfs_readdir(void *v)
 			goto out;
 	}
 
-	ctx.brc_skip = ctx.brc_offset;
-	ctx.brc_position = BTRFS_DIR_OFFSET_FIRST;
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
 	if (error != 0)
 		goto out;
 	error = btrfs_iterate_directory(root, node->bn_ino,
-	    btrfs_readdir_entry, &ctx);
+	    ctx.brc_offset, btrfs_readdir_entry, &ctx);
 out:
 	if (error == BTRFS_READDIR_FULL)
-		error = 0;
+		error = uio->uio_resid == resid ? EINVAL : 0;
 	uio->uio_offset = ctx.brc_offset;
 	if (ap->a_eofflag != NULL)
 		*ap->a_eofflag = error == 0 && !ctx.brc_full;

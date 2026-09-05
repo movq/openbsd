@@ -38,6 +38,14 @@ directory size/link accounting, nested parent lookup, and readdir.
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
 
+readdir.py uses seed/gaps on the host and exercise/verify in the VM.
+Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
+unmounted to renumber indexes and references above 32 bits with gaps.
+Run both independent checks before mounting and after exercise. Verify after
+writable and read-only remounts. Repeat with both metadata node sizes.
+It covers small buffers, EOF, every saved cookie, seeks into gaps, multiple
+leaves, file types and inode numbers, and creation after a reader reaches EOF.
+
 idle.py takes a new test directory and checks repeated fsync and mount sync
 without pending changes, followed by further namespace and data mutation.
 Run after writable remount of both a fresh image and one with a large extent

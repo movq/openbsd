@@ -957,6 +957,10 @@ btrfs_iterate_dir_item(struct btrfs_path *path,
 		    data_len != 0 || name_len > remaining - sizeof(*dir_item))
 			return (EINVAL);
 		record_size = sizeof(*dir_item) + name_len;
+		/* Hash buckets may be packed; directory indexes are unique. */
+		if (key->type == BTRFS_DIR_INDEX_KEY &&
+		    (record_size != size || letoh64(key->offset) < 2))
+			return (EINVAL);
 		name = data + sizeof(*dir_item);
 		if (!btrfs_ref_name_valid(name, name_len))
 			return (EINVAL);
@@ -1001,7 +1005,7 @@ btrfs_iterate_dir_item(struct btrfs_path *path,
 
 int
 btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
-    btrfs_dir_iter_fn callback, void *arg)
+    uint64_t start, btrfs_dir_iter_fn callback, void *arg)
 {
 	const struct btrfs_key *key;
 	struct btrfs_path path = { 0 };
@@ -1011,6 +1015,7 @@ btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(objectid);
 	target.type = BTRFS_DIR_INDEX_KEY;
+	target.offset = htole64(start);
 	error = btrfs_search_lower_bound(root, &target, &path);
 	while (error == 0) {
 		error = btrfs_path_item(&path, &key, NULL, NULL);
