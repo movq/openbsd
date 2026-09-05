@@ -779,7 +779,7 @@ out:
  * ordinary and extended references to the same parent.
  */
 static int
-btrfs_prepare_remove_ref(struct btrfs_root *root, struct btrfs_key *key,
+btrfs_remove_ref(struct btrfs_key *key,
     uint64_t parent, const char *name, size_t namelen, uint8_t *buffer,
     uint32_t *sizep, uint64_t *indexp)
 {
@@ -788,11 +788,6 @@ btrfs_prepare_remove_ref(struct btrfs_root *root, struct btrfs_key *key,
 	uint64_t record_parent, index;
 	uint32_t offset, header, length, match = 0, match_size = 0;
 	uint16_t name_len;
-	int error;
-
-	error = btrfs_prepare_append(root, key, buffer, 0, sizep);
-	if (error != 0)
-		return (error);
 	header = key->type == BTRFS_INODE_REF_KEY ?
 	    sizeof(*ref) : sizeof(*extref);
 	for (offset = 0; offset < *sizep; offset += length) {
@@ -831,6 +826,54 @@ btrfs_prepare_remove_ref(struct btrfs_root *root, struct btrfs_key *key,
 	return (0);
 }
 
+static int
+btrfs_prepare_remove_ref(struct btrfs_root *root, struct btrfs_key *key,
+    uint64_t parent, const char *name, size_t namelen, uint8_t *buffer,
+    uint32_t *sizep, uint64_t *indexp)
+{
+	int error;
+
+	error = btrfs_prepare_append(root, key, buffer, 0, sizep);
+	if (error != 0)
+		return (error);
+	return (btrfs_remove_ref(key, parent, name, namelen, buffer, sizep,
+	    indexp));
+}
+
+static int
+btrfs_empty_directory(struct btrfs_node *dir, struct btrfs_node *node)
+{
+	struct btrfs_key target = { 0 };
+	struct btrfs_path path = { 0 };
+	const struct btrfs_key *key;
+	uint64_t parent;
+	int error;
+
+	if (node->bn_inode.bi_size != 0)
+		return (ENOTEMPTY);
+	if (node->bn_inode.bi_nlink != 1 || node->bn_inode.bi_nbytes != 0)
+		return (EINVAL);
+	error = btrfs_find_dir_parent(dir->bn_root, node->bn_ino, &parent);
+	if (error != 0)
+		return (error);
+	if (parent != dir->bn_ino)
+		return (EINVAL);
+	/* Check both namespace key types, independently of inode size. */
+	target.objectid = htole64(node->bn_ino);
+	target.type = BTRFS_DIR_ITEM_KEY;
+	error = btrfs_search_lower_bound(dir->bn_root, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error == 0 && key->objectid == target.objectid &&
+		    (key->type == BTRFS_DIR_ITEM_KEY ||
+		    key->type == BTRFS_DIR_INDEX_KEY))
+			error = ENOTEMPTY;
+	} else if (error == ENOENT)
+		error = 0;
+	btrfs_release_path(&path);
+	return (error);
+}
+
 /*
  * Parent and target locks protect all three namespace records. Validate the
  * hash bucket, reference and index together before reserving or changing any
@@ -864,33 +907,7 @@ btrfs_unlink_inode(struct btrfs_node *dir, struct btrfs_node *node,
 	if (node->bn_inode.bi_nlink == 0)
 		return (ENOENT);
 	if (node->bn_vnode->v_type == VDIR) {
-		struct btrfs_key target = { 0 };
-		const struct btrfs_key *key;
-		uint64_t parent;
-
-		if (node->bn_inode.bi_size != 0)
-			return (ENOTEMPTY);
-		if (node->bn_inode.bi_nlink != 1 ||
-		    node->bn_inode.bi_nbytes != 0)
-			return (EINVAL);
-		error = btrfs_find_dir_parent(root, node->bn_ino, &parent);
-		if (error != 0)
-			return (error);
-		if (parent != dir->bn_ino)
-			return (EINVAL);
-		/* Check both namespace key types, independently of inode size. */
-		target.objectid = htole64(node->bn_ino);
-		target.type = BTRFS_DIR_ITEM_KEY;
-		error = btrfs_search_lower_bound(root, &target, &path);
-		if (error == 0) {
-			error = btrfs_path_item(&path, &key, NULL, NULL);
-			if (error == 0 && key->objectid == target.objectid &&
-			    (key->type == BTRFS_DIR_ITEM_KEY ||
-			    key->type == BTRFS_DIR_INDEX_KEY))
-				error = ENOTEMPTY;
-		} else if (error == ENOENT)
-			error = 0;
-		btrfs_release_path(&path);
+		error = btrfs_empty_directory(dir, node);
 		if (error != 0)
 			return (error);
 	}
@@ -1040,6 +1057,393 @@ out:
 		free(bucket, M_BTRFS, nodesize);
 	if (reference != NULL)
 		free(reference, M_BTRFS, nodesize);
+	return (error);
+}
+
+/*
+ * Rename can touch the same packed item through several names. Keep one
+ * private image per key, so removal and insertion see earlier planned edits.
+ * No tree changes or transaction handles exist until the plan is complete.
+ */
+#define BTRFS_RENAME_ITEMS	12
+struct btrfs_name_edit {
+	struct btrfs_key	key;
+	uint8_t		*data;
+	uint32_t	size;
+	int		existed;
+	int		dirty;
+};
+
+struct btrfs_name_plan {
+	struct btrfs_root	*root;
+	uint32_t		nodesize;
+	uint32_t		capacity;
+	unsigned int		count;
+	struct btrfs_name_edit	edits[BTRFS_RENAME_ITEMS];
+};
+
+static int
+btrfs_name_edit(struct btrfs_name_plan *plan, uint64_t ino, uint8_t type,
+    uint64_t offset, struct btrfs_name_edit **editp)
+{
+	struct btrfs_name_edit *edit;
+	struct btrfs_path path = { 0 };
+	const uint8_t *data;
+	unsigned int i;
+	int error;
+
+	for (i = 0; i < plan->count; i++) {
+		edit = &plan->edits[i];
+		if (letoh64(edit->key.objectid) == ino &&
+		    edit->key.type == type &&
+		    letoh64(edit->key.offset) == offset) {
+			*editp = edit;
+			return (0);
+		}
+	}
+	if (plan->count == BTRFS_RENAME_ITEMS)
+		return (EOVERFLOW);
+	edit = &plan->edits[plan->count++];
+	edit->key.objectid = htole64(ino);
+	edit->key.type = type;
+	edit->key.offset = htole64(offset);
+	edit->data = malloc(plan->nodesize, M_BTRFS, M_WAITOK);
+	error = btrfs_search_slot(plan->root, &edit->key, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, NULL, &data, &edit->size);
+		if (error == 0 && edit->size > plan->capacity)
+			error = EINVAL;
+		if (error == 0) {
+			memcpy(edit->data, data, edit->size);
+			edit->existed = 1;
+		}
+	} else if (error == ENOENT)
+		error = 0;
+	btrfs_release_path(&path);
+	*editp = edit;
+	return (error);
+}
+
+static uint64_t
+btrfs_name_hash(uint64_t parent, const char *name, size_t len, int extref)
+{
+	return (crc32c(extref ? (uint32_t)parent ^ 0xffffffffU : 1,
+	    (const uint8_t *)name, len) ^ 0xffffffffU);
+}
+
+static int
+btrfs_plan_remove(struct btrfs_name_plan *plan, struct btrfs_node *dir,
+    struct btrfs_node *node, const char *name, size_t len, uint64_t *indexp,
+    uint8_t *record)
+{
+	struct btrfs_name_edit *hash, *ref, *index;
+	const struct btrfs_dir_item *entry;
+	uint32_t off, length, match = 0, match_size = 0;
+	uint16_t namelen;
+	int error;
+
+	error = btrfs_name_edit(plan, dir->bn_ino, BTRFS_DIR_ITEM_KEY,
+	    btrfs_name_hash(0, name, len, 0), &hash);
+	if (error != 0)
+		return (error);
+	for (off = 0; off < hash->size; off += length) {
+		if (hash->size - off < sizeof(*entry))
+			return (EINVAL);
+		entry = (const struct btrfs_dir_item *)(hash->data + off);
+		namelen = letoh16(entry->name_len);
+		length = sizeof(*entry) + namelen;
+		if (entry->data_len != 0 || length > hash->size - off ||
+		    !btrfs_ref_name_valid((const uint8_t *)(entry + 1), namelen))
+			return (EINVAL);
+		if (namelen != len || memcmp(entry + 1, name, len) != 0)
+			continue;
+		if (match_size != 0 ||
+		    letoh64(entry->location.objectid) != node->bn_ino ||
+		    entry->location.type != BTRFS_INODE_ITEM_KEY ||
+		    entry->location.offset != 0)
+			return (EINVAL);
+		match = off;
+		match_size = length;
+	}
+	if (match_size == 0)
+		return (ENOENT);
+	error = btrfs_name_edit(plan, node->bn_ino, BTRFS_INODE_REF_KEY,
+	    dir->bn_ino, &ref);
+	if (error == 0)
+		error = btrfs_remove_ref(&ref->key, dir->bn_ino, name, len,
+		    ref->data, &ref->size, indexp);
+	if (error == ENOENT &&
+	    (letoh64(plan->root->br_super->incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF)) {
+		error = btrfs_name_edit(plan, node->bn_ino,
+		    BTRFS_INODE_EXTREF_KEY,
+		    btrfs_name_hash(dir->bn_ino, name, len, 1), &ref);
+		if (error == 0)
+			error = btrfs_remove_ref(&ref->key, dir->bn_ino, name,
+			    len, ref->data, &ref->size, indexp);
+	}
+	if (error != 0)
+		return (error);
+	ref->dirty = 1;
+	error = btrfs_name_edit(plan, dir->bn_ino, BTRFS_DIR_INDEX_KEY,
+	    *indexp, &index);
+	if (error != 0)
+		return (error);
+	if (index->size != match_size ||
+	    memcmp(index->data, hash->data + match, match_size) != 0)
+		return (EINVAL);
+	if (record != NULL)
+		memcpy(record, hash->data + match, sizeof(*entry));
+	index->size = 0;
+	index->dirty = 1;
+	memmove(hash->data + match, hash->data + match + match_size,
+	    hash->size - match - match_size);
+	hash->size -= match_size;
+	hash->dirty = 1;
+	return (0);
+}
+
+static int
+btrfs_plan_add(struct btrfs_name_plan *plan, struct btrfs_node *dir,
+    struct btrfs_node *node, const char *name, size_t len, uint64_t cookie,
+    uint8_t *record, struct btrfs_name_edit **hashp, uint32_t *offsetp,
+    struct btrfs_name_edit **indexp)
+{
+	struct btrfs_name_edit *hash, *ref, *index;
+	struct btrfs_inode_ref *iref;
+	struct btrfs_inode_extref *extref;
+	struct btrfs_dir_item *entry = (struct btrfs_dir_item *)record;
+	uint32_t extra = sizeof(*iref) + len, size = sizeof(*entry) + len;
+	int error;
+
+	error = btrfs_name_edit(plan, dir->bn_ino, BTRFS_DIR_ITEM_KEY,
+	    btrfs_name_hash(0, name, len, 0), &hash);
+	if (error != 0)
+		return (error);
+	if (hash->size > plan->capacity - size)
+		return (ENOSPC);
+	error = btrfs_name_edit(plan, dir->bn_ino, BTRFS_DIR_INDEX_KEY,
+	    cookie, &index);
+	if (error != 0)
+		return (error);
+	if (index->size != 0)
+		return (EINVAL);
+	error = btrfs_name_edit(plan, node->bn_ino, BTRFS_INODE_REF_KEY,
+	    dir->bn_ino, &ref);
+	if (error != 0)
+		return (error);
+	if (ref->size > plan->capacity - extra &&
+	    (letoh64(plan->root->br_super->incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF)) {
+		extra = sizeof(*extref) + len;
+		error = btrfs_name_edit(plan, node->bn_ino,
+		    BTRFS_INODE_EXTREF_KEY,
+		    btrfs_name_hash(dir->bn_ino, name, len, 1), &ref);
+		if (error != 0)
+			return (error);
+	}
+	if (ref->size > plan->capacity - extra)
+		return (EMLINK);
+	if (ref->key.type == BTRFS_INODE_REF_KEY) {
+		iref = (struct btrfs_inode_ref *)(ref->data + ref->size);
+		iref->index = htole64(cookie);
+		iref->name_len = htole16(len);
+		memcpy(iref + 1, name, len);
+	} else {
+		extref = (struct btrfs_inode_extref *)(ref->data + ref->size);
+		extref->parent_objectid = htole64(dir->bn_ino);
+		extref->index = htole64(cookie);
+		extref->name_len = htole16(len);
+		memcpy(extref->name, name, len);
+	}
+	ref->size += extra;
+	ref->dirty = 1;
+	entry->name_len = htole16(len);
+	memcpy(entry + 1, name, len);
+	*hashp = hash;
+	*offsetp = hash->size;
+	*indexp = index;
+	memcpy(hash->data + hash->size, record, size);
+	hash->size += size;
+	hash->dirty = 1;
+	memcpy(index->data, record, size);
+	index->size = size;
+	index->dirty = 1;
+	return (0);
+}
+
+int
+btrfs_rename_inode(struct btrfs_node *fdir, struct btrfs_node *node,
+    const char *fname, size_t flen, struct btrfs_node *tdir,
+    struct btrfs_node *target, const char *tname, size_t tlen)
+{
+	struct btrfs_fs *bmp = fdir->bn_mount;
+	struct btrfs_name_plan *plan;
+	struct btrfs_name_edit *edit, *hash, *index;
+	struct btrfs_trans_reservation reservation = { 0 };
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key search = { 0 }, orphan = { 0 };
+	const struct btrfs_key *key;
+	struct btrfs_node *nodes[4] = { fdir, tdir, node, target };
+	struct btrfs_inode saved[4];
+	struct timespec now;
+	uint8_t record[sizeof(struct btrfs_dir_item) + BTRFS_NAME_MAX];
+	uint64_t cookie, tcookie = 2, generation, fsize, tsize;
+	uint32_t offset;
+	unsigned int i, j;
+	int error, end_error;
+
+	for (i = 0; i < nitems(nodes); i++) {
+		if (nodes[i] == NULL)
+			continue;
+		KASSERT(VOP_ISLOCKED(nodes[i]->bn_vnode));
+		if (nodes[i]->bn_mount != bmp ||
+		    nodes[i]->bn_treeid != fdir->bn_treeid)
+			return (EXDEV);
+		if (nodes[i]->bn_inode.bi_nlink == 0)
+			return (ENOENT);
+	}
+	KASSERT(node != target && node != fdir && node != tdir);
+	if (flen > BTRFS_NAME_MAX || tlen > BTRFS_NAME_MAX ||
+	    !btrfs_ref_name_valid((const uint8_t *)fname, flen) ||
+	    !btrfs_ref_name_valid((const uint8_t *)tname, tlen))
+		return (EINVAL);
+	if (target != NULL && target->bn_vnode->v_type == VDIR) {
+		error = btrfs_empty_directory(tdir, target);
+		if (error != 0)
+			return (error);
+	}
+	fsize = fdir->bn_inode.bi_size;
+	tsize = tdir->bn_inode.bi_size;
+	if (fsize < flen * 2 || (target != NULL && tsize < tlen * 2))
+		return (EINVAL);
+	fsize -= flen * 2;
+	if (fdir == tdir)
+		tsize = fsize;
+	if (target != NULL) {
+		if (tsize < tlen * 2)
+			return (EINVAL);
+		tsize -= tlen * 2;
+	}
+	if (tsize > UINT64_MAX - tlen * 2)
+		return (EOVERFLOW);
+	tsize += tlen * 2;
+	plan = malloc(sizeof(*plan), M_BTRFS, M_WAITOK | M_ZERO);
+	plan->root = fdir->bn_root;
+	plan->nodesize = letoh32(bmp->bm_super.nodesize);
+	plan->capacity = plan->nodesize - sizeof(struct btrfs_header) -
+	    sizeof(struct btrfs_item);
+	error = btrfs_plan_remove(plan, fdir, node, fname, flen, &cookie,
+	    record);
+	if (error != 0)
+		goto out;
+	if (target != NULL) {
+		error = btrfs_plan_remove(plan, tdir, target, tname, tlen,
+		    &tcookie, NULL);
+		if (error != 0)
+			goto out;
+	} else if (fdir == tdir)
+		tcookie = cookie;
+	else {
+		search.objectid = htole64(tdir->bn_ino);
+		search.type = BTRFS_DIR_INDEX_KEY;
+		search.offset = htole64(UINT64_MAX);
+		error = btrfs_search_predecessor(plan->root, &search, &path);
+		if (error == 0) {
+			error = btrfs_path_item(&path, &key, NULL, NULL);
+			if (error == 0 && key->objectid == search.objectid &&
+			    key->type == search.type) {
+				tcookie = letoh64(key->offset);
+				if (tcookie < 2 || tcookie >= INT64_MAX - 1)
+					error = EOVERFLOW;
+				else
+					tcookie++;
+			}
+		} else if (error == ENOENT)
+			error = 0;
+		btrfs_release_path(&path);
+		if (error != 0)
+			goto out;
+	}
+	error = btrfs_plan_add(plan, tdir, node, tname, tlen, tcookie,
+	    record, &hash, &offset, &index);
+	if (error != 0)
+		goto out;
+
+	/* Up to nine namespace edits, four inodes, and a cleanup marker. */
+	reservation.btr_metadata = (uint64_t)plan->nodesize * 384;
+	error = btrfs_trans_join(bmp, &reservation, &handle);
+	if (error != 0)
+		goto out;
+	generation = handle->bth_transaction->bt_generation;
+	((struct btrfs_dir_item *)(hash->data + offset))->transid =
+	    htole64(generation);
+	((struct btrfs_dir_item *)index->data)->transid = htole64(generation);
+	if (target != NULL && target->bn_inode.bi_nlink == 1) {
+		orphan.objectid = htole64(BTRFS_ORPHAN_OBJECTID);
+		orphan.type = BTRFS_ORPHAN_ITEM_KEY;
+		orphan.offset = htole64(target->bn_ino);
+		error = btrfs_insert_item(handle, plan->root, &orphan, NULL, 0);
+		if (error != 0)
+			goto abort;
+	}
+	for (i = 0; i < plan->count; i++) {
+		edit = &plan->edits[i];
+		if (!edit->dirty)
+			continue;
+		if (edit->existed)
+			error = btrfs_delete_item(handle, plan->root, &edit->key);
+		if (error == 0 && edit->size != 0)
+			error = btrfs_insert_item(handle, plan->root, &edit->key,
+			    edit->data, edit->size);
+		if (error != 0)
+			goto abort;
+	}
+	for (i = 0; i < nitems(nodes); i++)
+		if (nodes[i] != NULL)
+			saved[i] = nodes[i]->bn_inode;
+	getnanotime(&now);
+	fdir->bn_inode.bi_size = fsize;
+	tdir->bn_inode.bi_size = tsize;
+	if (target != NULL)
+		target->bn_inode.bi_nlink--;
+	for (i = 0; i < nitems(nodes); i++) {
+		if (nodes[i] == NULL || (i == 1 && fdir == tdir))
+			continue;
+		nodes[i]->bn_inode.bi_ctime = now;
+		nodes[i]->bn_inode.bi_last_dirty_transid = generation;
+		nodes[i]->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_CTIME;
+		if (i < 2) {
+			nodes[i]->bn_inode.bi_mtime = now;
+			nodes[i]->bn_inode.bi_sequence++;
+			nodes[i]->bn_inode.bi_dirty_fields |=
+			    BTRFS_INODE_DIRTY_SIZE | BTRFS_INODE_DIRTY_MTIME |
+			    BTRFS_INODE_DIRTY_SEQUENCE;
+		}
+		if (i == 3)
+			nodes[i]->bn_inode.bi_dirty_fields |=
+			    BTRFS_INODE_DIRTY_NLINK;
+		error = btrfs_write_inode(handle, nodes[i]);
+		if (error != 0) {
+			for (j = 0; j < nitems(nodes); j++)
+				if (nodes[j] != NULL)
+					nodes[j]->bn_inode = saved[j];
+			goto abort;
+		}
+	}
+	goto out;
+abort:
+	btrfs_trans_abort(handle, error);
+out:
+	if (handle != NULL) {
+		end_error = btrfs_trans_end(handle);
+		if (error == 0)
+			error = end_error;
+	}
+	for (i = 0; i < plan->count; i++)
+		free(plan->edits[i].data, M_BTRFS, plan->nodesize);
+	free(plan, M_BTRFS, sizeof(*plan));
 	return (error);
 }
 
