@@ -38,6 +38,15 @@ directory size/link accounting, nested parent lookup, and readdir.
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
 
+Free-space-tree and block-group-tree writes use the existing namespace, idle,
+statfs, and enospc tests. Run on fresh 4 KiB and 16 KiB SINGLE/DUP images with
+both features enabled, and with `-O ^block-group-tree,^no-holes` to cover
+free-space-tree updates alongside extent-tree block groups and explicit holes.
+Run statfs exercise/capacity before metadata exhaustion, then unmount and run
+both independent checkers (including btrfs check's free-space-tree pass).
+Verify namespace/data after writable and read-only remounts. statfs disk
+selects the block-group item tree using the superblock feature flag.
+
 readdir.py uses seed/gaps on the host and exercise/verify in the VM.
 Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
 unmounted to renumber indexes and references above 32 bits with gaps.

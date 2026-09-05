@@ -13,10 +13,11 @@ from namespace import expect_error
 
 def disk(image):
     """Compute expected logical space from independently decoded disk trees."""
-    sector = int(re.search(r"^sectorsize\s+(\d+)",
-                          inspect(image, "dump-super"), re.M)[1])
+    superblock = inspect(image, "dump-super")
+    sector = int(re.search(r"^sectorsize\s+(\d+)", superblock, re.M)[1])
+    group_tree = "block-group" if "BLOCK_GROUP_TREE" in superblock else "extent"
     used = {}
-    for item in inspect(image, "dump-tree", "-t", "extent").split("\titem "):
+    for item in inspect(image, "dump-tree", "-t", group_tree).split("\titem "):
         key = re.match(r"\d+ key \((\d+) BLOCK_GROUP_ITEM (\d+)\)", item)
         if key:
             used[int(key[1])] = int(re.search(

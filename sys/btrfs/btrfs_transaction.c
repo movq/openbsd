@@ -388,6 +388,9 @@ btrfs_materialize_tree_ref(struct btrfs_trans_handle *handle,
 		error = btrfs_insert_item(handle, root, &extent_key, payload,
 		    size);
 		free(payload, M_BTRFS, size);
+		if (error == 0)
+			error = btrfs_update_free_space(handle, ref->bdr_bytenr,
+			    letoh32(bmp->bm_super.nodesize), 0);
 		return (error);
 	}
 	if (error != 0)
@@ -469,6 +472,9 @@ btrfs_materialize_tree_ref(struct btrfs_trans_handle *handle,
 		if (error == 0)
 			error = btrfs_space_pin(handle, ref->bdr_bytenr,
 			    letoh32(bmp->bm_super.nodesize));
+		if (error == 0)
+			error = btrfs_update_free_space(handle, ref->bdr_bytenr,
+			    letoh32(bmp->bm_super.nodesize), 1);
 	} else {
 		extent->refs = htole64(refs - 1);
 		error = btrfs_replace_item(handle, root, &extent_key, payload,

@@ -39,8 +39,10 @@ system immutable/append state to enforce OpenBSD securelevel semantics.
 
 The writable format is one device, CRC32C, existing SINGLE/DUP chunks, and
 skinny metadata. Only `MIXED_BACKREF`, `COMPRESS_ZSTD`, `BIG_METADATA`,
-`EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted;
-no compat-ro bits are supported. Mount requires the newest valid superblock,
+`EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted.
+The free-space-tree (with VALID set) and block-group-tree compat-ro features
+are writable. Free-space bitmap groups currently reject writable mount.
+Mount requires the newest valid superblock,
 no pending log, no seeding device or read-only selected tree, and an extent tree
 without legacy extent items, shared references, snapshots, or simple-quota owner refs.
 Pending orphan cleanup in the root tree or any file tree rejects writable mount.
@@ -83,7 +85,7 @@ Current limits:
   overflow into extended references only with `EXTENDED_IREF`; otherwise they
   return `EMLINK`. Hash buckets are limited to one item's capacity.
 * Allocation uses existing block groups. There is no chunk allocation,
-  free-space-tree/block-group-tree maintenance, device management, relocation,
+  device management, relocation,
   log replay, qgroups, or zoned support.
 
 `statfs` reports the logical capacity of existing block groups, counting DUP
@@ -174,6 +176,15 @@ Free-space indexes subtract allocated extents and physical superblock stripes
 from block-group bounds. Stripe exclusions have no extent items and are separate
 from block-group usage. Keep free, reserved, allocated, and pinned space distinct,
 with typed reservations accounting for mixed groups.
+
+Writable mount validates free-space extent records against the complement of
+the extent tree before excluding superblock stripes from the in-memory index.
+Delayed reference materialization splits or coalesces these records and updates
+their per-group counts. Free-space tree COW queues ordinary delayed references;
+commit drains these to the same fixed point as block-group and root accounting.
+Freed ranges become free in the new on-disk tree while remaining pinned in memory
+until publication. Block-group usage belongs to the separate block group tree
+when enabled, otherwise to the extent tree.
 
 An emergency metadata reserve covers commit and is excluded from ordinary
 handles. Failure to establish it rejects writable mount; failure to replenish

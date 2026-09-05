@@ -455,6 +455,9 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 		error = btrfs_insert_item(handle, root, &extent_key, payload,
 		    size);
 		free(payload, M_BTRFS, size);
+		if (error == 0)
+			error = btrfs_update_free_space(handle, ref->bdr_bytenr,
+			    ref->bdr_length, 0);
 		return (error);
 	}
 	if (error != 0)
@@ -601,6 +604,9 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 		if (error == 0)
 			error = btrfs_space_pin(handle, ref->bdr_bytenr,
 			    ref->bdr_length);
+		if (error == 0)
+			error = btrfs_update_free_space(handle, ref->bdr_bytenr,
+			    ref->bdr_length, 1);
 	} else {
 		extent = (struct btrfs_extent_item *)payload;
 		extent->refs = htole64(refs);

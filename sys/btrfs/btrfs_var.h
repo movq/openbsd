@@ -689,6 +689,8 @@ int	btrfs_space_discard_alloc(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t);
 int	btrfs_space_release_discarded(struct btrfs_trans_handle *);
 int	btrfs_update_space_items(struct btrfs_trans_handle *);
+int	btrfs_update_free_space(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t, int);
 int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
 void	btrfs_space_commit(struct btrfs_transaction *);
 void	btrfs_space_abort(struct btrfs_transaction *);
