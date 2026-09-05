@@ -3,7 +3,7 @@
 This document tracks the implemented write path and the remaining work needed
 to broaden it.  Writable mounts are exposed only for a deliberately narrow
 on-disk format and currently support regular-file creation and data writes,
-directory creation, and selected inode attribute changes.
+directory and symlink creation, and selected inode attribute changes.
 
 The first writer should batch changes from multiple operations in one
 transaction.  It should not commit after each operation.  It is acceptable for
@@ -151,8 +151,8 @@ free-list and accounting invariants after each transition.  Writable VFS
 operations join this shared open transaction one sector or inode update at a
 time, or one complete namespace operation at a time.
 
-`VOP_CREATE` and `VOP_MKDIR` insert the inode item, inode backreference,
-directory hash item, and directory index item together with the parent's
+`VOP_CREATE`, `VOP_MKDIR`, and `VOP_SYMLINK` insert the inode item, inode
+backreference, directory hash item, and directory index item with the parent's
 size, sequence, mtime, and ctime update.  Hash collisions append records to
 one packed hash item.  The parent vnode lock protects its directory entries;
 a mount namespace lock serializes highest-object-ID allocation across
@@ -166,8 +166,11 @@ Creation inherits the parent group and uses the caller's uid and VFS mode.
 Parents with xattrs or NODATACOW reject creation with `EOPNOTSUPP` pending
 inheritance support.  New compression flags can be inherited, but new data is
 still written uncompressed.  Synchronous mounts and synchronous directories
-commit namespace changes before returning.  Unlink, rmdir, rename, hard
-links, symlinks, and special-node creation remain unsupported.
+commit namespace changes before returning.  Symlinks store an uncompressed
+inline extent in the same transaction, with size and allocated bytes equal
+to the target length.  Targets up to `MAXPATHLEN - 1` bytes are supported;
+empty targets return `ENOENT`.  Unlink, rmdir, rename, hard links, and
+special-node creation remain unsupported.
 
 A writable transaction also retains an emergency metadata commit reserve
 before any ordinary handle can join.  It is sized for four full-height COW
@@ -786,9 +789,10 @@ unmount are implemented.  Truncate and range deletion remain unsupported.
 
 ### 5. Namespace writes
 
-Regular-file creation and mkdir are implemented, including inode allocation,
-directory hash collisions, index/backreference insertion, and parent metadata.
-Next add unlink and orphan recovery, rmdir, rename, and links.
+Regular-file creation, mkdir, and symlink are implemented, including inode
+allocation, directory hash collisions, index/backreference insertion, inline
+symlink targets, and parent metadata.
+Next add unlink and orphan recovery, rmdir, rename, and hard links.
 
 ### 6. Compatibility and performance
 
@@ -833,6 +837,12 @@ passed with independent `btrfs check --readonly --check-data-csum` validation;
 the 4 KiB workload grows the filesystem tree to level 2.  Host-side
 `btrfs restore` can independently verify file contents without mounting the
 image.
+
+`regress/sys/btrfs/symlink.py` covers inline targets, resolution and readlink,
+permissions, hash collisions, maximum lengths, concurrent creation, and
+directory accounting.  The 4 KiB and 16 KiB node workloads passed independent
+checksum checks and remount verification, as did a synchronous 16 KiB mount.
+Targets restored using `btrfs restore -S` matched the originals.
 
 `regress/sys/btrfs/enospc.py` fills metadata with empty files and checks that
 reservation failure leaves the failed name absent and parent metadata

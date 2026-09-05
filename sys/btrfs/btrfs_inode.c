@@ -233,12 +233,13 @@ out:
 /*
  * The parent vnode lock protects its index and hash buckets.  The namespace
  * lock also protects the highest object ID across creates in different
- * directories.  All four namespace items and the parent inode belong to one
- * transaction; any error after the first mutation aborts that transaction.
+ * directories.  Namespace items, the optional symlink extent, and the parent
+ * inode belong to one transaction; any error after the first mutation aborts
+ * that transaction.
  */
 int
 btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
-    mode_t mode, uid_t uid, gid_t gid, struct vnode **vpp)
+    mode_t mode, uid_t uid, gid_t gid, const char *link, struct vnode **vpp)
 {
 	struct btrfs_mount *bmp = dir->bn_mount;
 	struct btrfs_trans_reservation reservation = { 0 };
@@ -249,19 +250,35 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	const struct btrfs_key *key;
 	const uint8_t *data;
 	struct btrfs_inode_item inode;
+	struct btrfs_file_extent_item *extent;
 	struct btrfs_inode saved;
 	struct btrfs_dir_item *entry;
 	struct btrfs_inode_ref *ref;
 	struct timespec now;
 	uint8_t *bucket = NULL;
+	uint8_t *link_item = NULL;
 	uint8_t record[sizeof(*entry) + BTRFS_NAME_MAX];
 	uint8_t reference[sizeof(*ref) + BTRFS_NAME_MAX];
 	uint64_t ino, index = 2, generation;
 	uint32_t nodesize, size, bucket_size = 0, record_size;
+	size_t linklen = 0, link_size = 0;
 	int error, end_error;
 
 	KASSERT(VOP_ISLOCKED(dir->bn_vnode));
 	*vpp = NULL;
+	if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode))
+		return (EOPNOTSUPP);
+	if (S_ISLNK(mode) != (link != NULL))
+		return (EINVAL);
+	if (link != NULL) {
+		linklen = strlen(link);
+		if (linklen == 0)
+			return (ENOENT);
+		if (linklen >= MAXPATHLEN)
+			return (ENAMETOOLONG);
+		link_size = offsetof(struct btrfs_file_extent_item,
+		    disk_bytenr) + linklen;
+	}
 	if (!btrfs_ref_name_valid((const uint8_t *)name, namelen))
 		return (EINVAL);
 	if (dir->bn_inode.bi_size > UINT64_MAX - namelen * 2)
@@ -325,6 +342,13 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	btrfs_release_path(&path);
 
 	nodesize = letoh32(bmp->bm_super.nodesize);
+	if (link_size > nodesize - sizeof(struct btrfs_header) -
+	    sizeof(struct btrfs_item)) {
+		error = ENAMETOOLONG;
+		goto out;
+	}
+	if (link_size != 0)
+		link_item = malloc(link_size, M_BTRFS, M_WAITOK | M_ZERO);
 	record_size = sizeof(*entry) + namelen;
 	bucket = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
 	memset(&hashkey, 0, sizeof(hashkey));
@@ -349,8 +373,9 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 		goto out;
 	btrfs_release_path(&path);
 
-	/* Five items, including a possible delete/reinsert of a hash bucket. */
-	reservation.btr_metadata = (uint64_t)nodesize * 128;
+	/* Include the inline target and possible hash bucket delete/reinsert. */
+	reservation.btr_metadata = (uint64_t)nodesize *
+	    (link != NULL ? 160 : 128);
 	error = btrfs_trans_join(bmp, &reservation, &handle);
 	if (error != 0)
 		goto out;
@@ -362,6 +387,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	inode.uid = htole32(uid);
 	inode.gid = htole32(gid);
 	inode.mode = htole32(mode);
+	inode.size = inode.nbytes = htole64(linklen);
 	inode.sequence = htole64(1);
 	inode.flags = htole64(dir->bn_inode.bi_flags &
 	    (BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_COMPRESS));
@@ -375,12 +401,28 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	if (error != 0)
 		goto abort;
 
+	if (link != NULL) {
+		extent = (struct btrfs_file_extent_item *)link_item;
+		extent->generation = htole64(generation);
+		extent->ram_bytes = htole64(linklen);
+		extent->type = BTRFS_FILE_EXTENT_INLINE;
+		memcpy(link_item + offsetof(struct btrfs_file_extent_item,
+		    disk_bytenr), link, linklen);
+		target.type = BTRFS_EXTENT_DATA_KEY;
+		error = btrfs_insert_item(handle, root, &target, link_item,
+		    link_size);
+		if (error != 0)
+			goto abort;
+		target.type = BTRFS_INODE_ITEM_KEY;
+	}
+
 	memset(record, 0, sizeof(record));
 	entry = (struct btrfs_dir_item *)record;
 	entry->location = target;
 	entry->transid = htole64(generation);
 	entry->name_len = htole16(namelen);
-	entry->type = S_ISDIR(mode) ? BTRFS_FT_DIR : BTRFS_FT_REG_FILE;
+	entry->type = S_ISDIR(mode) ? BTRFS_FT_DIR :
+	    S_ISLNK(mode) ? BTRFS_FT_SYMLINK : BTRFS_FT_REG_FILE;
 	memcpy(record + sizeof(*entry), name, namelen);
 	memcpy(bucket + bucket_size, record, record_size);
 	/*
@@ -445,6 +487,8 @@ out:
 	}
 	if (bucket != NULL)
 		free(bucket, M_BTRFS, nodesize);
+	if (link_item != NULL)
+		free(link_item, M_BTRFS, link_size);
 	rw_exit_write(&bmp->bm_namespace_lock);
 	return (error);
 }
