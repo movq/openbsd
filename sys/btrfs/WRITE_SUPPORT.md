@@ -19,11 +19,11 @@ System flags and opaque directories are unsupported: btrfs has no separate
 system immutable/append state to enforce OpenBSD securelevel semantics.
 
 The writable format is one device, CRC32C, existing SINGLE/DUP chunks, and
-skinny metadata. Only `MIXED_BACKREF`, `BIG_METADATA`, `EXTENDED_IREF`,
-`SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted; no compat-ro bits
-are supported. Mount requires the newest valid superblock, no pending log,
-no seeding device or read-only selected tree, and an extent tree without
-legacy extent items, shared references, snapshots, or simple-quota owner refs.
+skinny metadata. Only `MIXED_BACKREF`, `COMPRESS_ZSTD`, `BIG_METADATA`,
+`EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted;
+no compat-ro bits are supported. Mount requires the newest valid superblock,
+no pending log, no seeding device or read-only selected tree, and an extent tree
+without legacy extent items, shared references, snapshots, or simple-quota owner refs.
 Keep read and write feature masks separate: parsing does not imply maintenance.
 
 Current limits:
