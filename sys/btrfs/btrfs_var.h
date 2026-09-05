@@ -301,6 +301,7 @@ enum btrfs_trans_state {
 struct btrfs_transaction {
 	struct btrfs_fs			*bt_mount;
 	struct mutex			 bt_lock;
+	struct rwlock			 bt_csum_lock;
 	struct btrfs_reserved_space_list bt_commit_reservations;
 	struct btrfs_reserved_space_list bt_reclaim_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;

@@ -46,6 +46,7 @@ btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 	trans->bt_generation = generation;
 	trans->bt_state = BTRFS_TRANS_OPEN;
 	mtx_init(&trans->bt_lock, IPL_NONE);
+	rw_init(&trans->bt_csum_lock, "btrcsum");
 	TAILQ_INIT(&trans->bt_commit_reservations);
 	TAILQ_INIT(&trans->bt_reclaim_reservations);
 	TAILQ_INIT(&trans->bt_allocated_extents);
