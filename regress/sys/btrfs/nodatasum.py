@@ -143,7 +143,9 @@ def disk(image):
         if inode:
             flags = int(re.search(r"flags 0x([0-9a-f]+)", item)[1], 16)
             inodes[int(inode[1])] = flags
-            if flags & 2:  # NODATACOW implies NODATASUM.
+            mode = int(re.search(r"mode ([0-7]+)", item)[1], 8)
+            if flags & 2 and stat.S_ISREG(mode):
+                # NODATACOW implies NODATASUM for regular files.
                 assert flags & 1
         extent = re.match(r"\d+ key \((\d+) EXTENT_DATA \d+\)", item)
         mapping = re.search(r"extent data disk byte (\d+) nr (\d+)", item)

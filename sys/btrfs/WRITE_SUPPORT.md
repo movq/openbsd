@@ -57,9 +57,11 @@ Current limits:
   mappings can be split; NODATACOW data is replaced by COW, preserving
   NODATASUM by omitting data checksums. Compressed reads
   support Zstd only.
-* Creation rejects parents with xattrs or NODATACOW pending inheritance support.
-  New inodes inherit parent group and compression flags, but write uncompressed
-  data. Inline symlink targets are limited to `MAXPATHLEN - 1` bytes.
+* Creation rejects parents with xattrs pending inheritance support.
+  New inodes inherit parent group, compression flags, and NODATACOW; regular
+  children of NODATACOW directories also receive NODATASUM. Writes still use
+  uncompressed COW data. Inline symlink targets are limited to
+  `MAXPATHLEN - 1` bytes.
 * Hard links cannot cross trees or target directories. Packed inode references
   overflow into extended references only with `EXTENDED_IREF`; otherwise they
   return `EMLINK`. Hash buckets are limited to one item's capacity.

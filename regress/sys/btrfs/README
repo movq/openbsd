@@ -207,3 +207,12 @@ checks and `disk image` to check inode flags and checksum coverage. Run
 on a host-restored copy. Its `capacity mountpoint` phase checks write/growth
 ENOSPC atomicity for every policy. Coverage includes inline conversion, split
 extents, ordered and committed COW, sparse growth, hard links, and chflags.
+
+inherit.py seeds normal, NODATACOW, and xattr parent directories. Import its
+`seed directory` fixture with `--inode-flags nodatacow:nocow` and
+`--inode-flags nodatacow:xattr`. Run `exercise mountpoint` in the VM, unmount
+and check independently (including `disk image`), then use `more mountpoint`
+after writable remount and `verify mountpoint` after read-only remount.
+It checks nested/concurrent creation, regular and special inodes, checksum
+policy, hard links between policies, noninherited user flags, and continued
+rejection of creation under parents with xattrs.
