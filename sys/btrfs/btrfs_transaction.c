@@ -129,7 +129,7 @@ btrfs_trans_join(struct btrfs_fs *bmp,
 	struct btrfs_trans_handle *handle;
 	struct btrfs_transaction *trans;
 	uint64_t generation;
-	int dirty, end_error, error, retried = 0;
+	int dirty, end_error, error, retried = 0, grown = 0;
 
 	*handlep = NULL;
 retry:
@@ -188,6 +188,15 @@ retry:
 			if (error != 0)
 				return (error);
 			retried = 1;
+			goto retry;
+		}
+		if (error == ENOSPC && reservation != NULL &&
+		    reservation->btr_data != 0 && !grown) {
+			error = btrfs_space_grow_data(bmp, reservation->btr_data);
+			if (error != 0)
+				return (error);
+			grown = 1;
+			retried = 0;
 			goto retry;
 		}
 		return (error);

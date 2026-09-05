@@ -532,6 +532,12 @@ btrfs_build_super(struct btrfs_transaction *trans,
 	sb->chunk_root_generation = htole64(chunk.brl_generation);
 	sb->chunk_root_level = chunk.brl_level;
 	sb->bytes_used = htole64(trans->bt_bytes_used);
+	if (trans->bt_dev_bytes_added >
+	    letoh64(sb->dev_item.total_bytes) -
+	    letoh64(sb->dev_item.bytes_used))
+		return (EINVAL);
+	sb->dev_item.bytes_used = htole64(letoh64(sb->dev_item.bytes_used) +
+	    trans->bt_dev_bytes_added);
 	sb->log_root = 0;
 	sb->__unused_log_root_transid = 0;
 	sb->log_root_level = 0;
@@ -1069,6 +1075,7 @@ btrfs_validate_dev_item(const struct btrfs_super_block *sb,
 	if (letoh64(key->offset) != devid ||
 	    devid != letoh64(sb->dev_item.devid) ||
 	    total_bytes != letoh64(sb->dev_item.total_bytes) ||
+	    bytes_used != letoh64(sb->dev_item.bytes_used) ||
 	    bytes_used > total_bytes ||
 	    letoh32(dev_item->sector_size) != letoh32(sb->sectorsize) ||
 	    memcmp(dev_item->uuid, sb->dev_item.uuid, BTRFS_UUID_SIZE) != 0 ||

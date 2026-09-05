@@ -22,6 +22,7 @@
 #include <sys/errno.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
+#include <sys/proc.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -396,7 +397,8 @@ btrfs_space_check_commit_reserve(struct btrfs_transaction *trans)
 
 	TAILQ_FOREACH(reservation, &trans->bt_commit_reservations,
 	    brs_entry) {
-		KASSERT(reservation->brs_type == BTRFS_BLOCK_GROUP_METADATA);
+		KASSERT(reservation->brs_type == BTRFS_BLOCK_GROUP_METADATA ||
+		    reservation->brs_type == BTRFS_BLOCK_GROUP_SYSTEM);
 		KASSERT(bytes <= UINT64_MAX - reservation->brs_bytes);
 		bytes += reservation->brs_bytes;
 	}
@@ -696,6 +698,333 @@ btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 	return (0);
 }
 
+/*
+ * Find a physical stripe without crossing any existing device extent,
+ * previously selected DUP stripe, or superblock stripe. The caller holds
+ * the chunk-allocation lock, so this private mapping snapshot is current.
+ */
+static int
+btrfs_chunk_physical(const struct btrfs_chunk_map *chunks, unsigned int count,
+    struct btrfs_chunk_map *chunk, unsigned int mirror, uint64_t device_size)
+{
+	uint64_t start = 1024 * 1024, end, next, occupied, length;
+	unsigned int i, j;
+
+	while (start <= device_size && chunk->length <= device_size - start) {
+		end = start + chunk->length;
+		next = start;
+		for (i = 0; i <= count; i++) {
+			const struct btrfs_chunk_map *c =
+			    i == count ? chunk : &chunks[i];
+			unsigned int mirrors = i == count ? mirror : c->nmirrors;
+
+			for (j = 0; j < mirrors; j++) {
+				occupied = c->physical[j];
+				length = c->length;
+				if (start < occupied + length && occupied < end)
+					next = MAX(next, occupied + length);
+			}
+		}
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			occupied = superblock_addrs[i];
+			if (start < occupied + 65536 && occupied < end)
+				next = MAX(next, occupied + 65536);
+		}
+		if (next == start) {
+			chunk->physical[mirror] = start;
+			return (0);
+		}
+		if (next > UINT64_MAX - 65535)
+			break;
+		start = roundup(next, 65536);
+	}
+	return (ENOSPC);
+}
+
+/*
+ * Data growth can be published after commit: no allocation needs the new
+ * mapping to write the chunk/device/free-space records themselves. Prepare
+ * both replacement indexes first, commit all records, then install the
+ * indexes together. A failed or ambiguous commit exposes no new data space.
+ *
+ * This routine is entered without a transaction handle. Its private join
+ * reserves no data, so reservation failure cannot recursively request growth.
+ */
+int
+btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
+{
+	struct btrfs_chunk_map *chunks = NULL, *oldchunks, *chunk;
+	struct btrfs_block_group **groups = NULL, **oldgroups, *group = NULL, *g;
+	struct btrfs_trans_reservation reservation = { 0 };
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_root *chunk_root, *dev_root, *group_root, *free_root = NULL;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	struct btrfs_dev_item device;
+	struct btrfs_dev_extent extent = { 0 };
+	struct btrfs_block_group_item bgitem = { 0 };
+	struct btrfs_free_space_info info = { 0 };
+	struct btrfs_chunk *item;
+	const uint8_t *data;
+	uint8_t record[offsetof(struct btrfs_chunk, stripe) +
+	    BTRFS_MAX_MIRRORS * sizeof(struct btrfs_stripe)];
+	uint64_t available = 0, physical_used = 0, device_size, generation;
+	uint64_t logical, owner, bytes;
+	uint32_t nodesize, size, itemsize;
+	unsigned int count = 0, i, j, template = UINT_MAX;
+	int error, end_error;
+
+	if (needed == 0 || needed > UINT64_MAX - 65535)
+		return (EINVAL);
+	rw_enter_write(&bmp->bm_chunk_alloc_lock);
+	error = btrfs_commit_current(bmp, curproc);
+	if (error != 0)
+		goto out;
+	if (bmp->bm_readonly) {
+		error = EROFS;
+		goto out;
+	}
+	count = btrfs_space_group_count(bmp);
+	KASSERT(count == bmp->bm_nchunks);
+	for (i = 0; i < count; i++) {
+		g = btrfs_space_group_at(bmp, i);
+		mtx_enter(&g->bbg_lock);
+		if (g->bbg_flags & BTRFS_BLOCK_GROUP_DATA)
+			available += g->bbg_free_bytes;
+		mtx_leave(&g->bbg_lock);
+	}
+	if (available >= needed) {
+		error = 0;
+		goto out;
+	}
+	if (count == 0 || count == UINT_MAX) {
+		error = EOVERFLOW;
+		goto out;
+	}
+	chunks = mallocarray(count + 1, sizeof(*chunks), M_BTRFS,
+	    M_WAITOK | M_ZERO);
+	groups = mallocarray(count + 1, sizeof(*groups), M_BTRFS,
+	    M_WAITOK | M_ZERO);
+	rw_enter_read(&bmp->bm_mapping_lock);
+	memcpy(chunks, bmp->bm_chunks, count * sizeof(*chunks));
+	memcpy(groups, bmp->bm_block_groups, count * sizeof(*groups));
+	rw_exit_read(&bmp->bm_mapping_lock);
+	for (i = 0; i < count; i++) {
+		if ((chunks[i].type & (BTRFS_BLOCK_GROUP_DATA |
+		    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM)) ==
+		    BTRFS_BLOCK_GROUP_DATA)
+			template = i;
+		for (j = 0; j < chunks[i].nmirrors; j++) {
+			if (physical_used > UINT64_MAX - chunks[i].length) {
+				error = EOVERFLOW;
+				goto out;
+			}
+			physical_used += chunks[i].length;
+		}
+	}
+	if (template == UINT_MAX) {
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	chunk = &chunks[count];
+	*chunk = chunks[template];
+	logical = chunks[count - 1].logical + chunks[count - 1].length;
+	if (logical > UINT64_MAX - 65535) {
+		error = EOVERFLOW;
+		goto out;
+	}
+	chunk->logical = roundup(logical, 65536);
+	device_size = letoh64(bmp->bm_super.dev_item.total_bytes);
+	chunk->length = MAX(32ULL * 1024 * 1024, roundup(needed, 65536));
+	/*
+	 * Smaller chunks use fragmented device tails. Every stripe has the
+	 * same length, and each trial reselects all DUP mirrors.
+	 */
+	for (;;) {
+		if (chunk->length < needed ||
+		    chunk->length > UINT64_MAX - chunk->logical) {
+			error = ENOSPC;
+			goto out;
+		}
+		for (j = 0; j < chunk->nmirrors; j++) {
+			error = btrfs_chunk_physical(chunks, count, chunk, j,
+			    device_size);
+			if (error != 0)
+				break;
+		}
+		if (error == 0)
+			break;
+		if (chunk->length <= 1024 * 1024)
+			goto out;
+		chunk->length = (chunk->length / 2) & ~65535ULL;
+	}
+	bytes = chunk->length * chunk->nmirrors;
+	if (physical_used > device_size || bytes > device_size - physical_used) {
+		error = EINVAL;
+		goto out;
+	}
+	group = malloc(sizeof(*group), M_BTRFS, M_WAITOK | M_ZERO);
+	mtx_init(&group->bbg_lock, IPL_NONE);
+	TAILQ_INIT(&group->bbg_free_extents);
+	group->bbg_bytenr = chunk->logical;
+	group->bbg_length = chunk->length;
+	group->bbg_flags = chunk->type;
+	error = btrfs_space_add_free(group, chunk->logical, chunk->length);
+	if (error != 0)
+		goto out;
+	groups[count] = group;
+
+	error = btrfs_get_root(bmp, BTRFS_CHUNK_TREE_OBJECTID, &chunk_root);
+	if (error == 0)
+		error = btrfs_get_root(bmp, BTRFS_DEV_TREE_OBJECTID, &dev_root);
+	owner = (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE) ?
+	    BTRFS_BLOCK_GROUP_TREE_OBJECTID : BTRFS_EXTENT_TREE_OBJECTID;
+	if (error == 0)
+		error = btrfs_get_root(bmp, owner, &group_root);
+	if (error == 0 && (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE))
+		error = btrfs_get_root(bmp, BTRFS_FREE_SPACE_TREE_OBJECTID,
+		    &free_root);
+	if (error != 0)
+		goto out;
+	key.objectid = htole64(BTRFS_DEV_ITEMS_OBJECTID);
+	key.type = BTRFS_DEV_ITEM_KEY;
+	key.offset = bmp->bm_super.dev_item.devid;
+	error = btrfs_search_slot(chunk_root, &key, &path);
+	if (error == 0)
+		error = btrfs_path_item(&path, NULL, &data, &size);
+	if (error == 0 && size != sizeof(device))
+		error = EINVAL;
+	if (error == 0)
+		memcpy(&device, data, sizeof(device));
+	btrfs_release_path(&path);
+	if (error != 0)
+		goto out;
+	if (letoh64(device.bytes_used) != physical_used ||
+	    letoh64(bmp->bm_super.dev_item.bytes_used) != physical_used) {
+		error = EINVAL;
+		goto out;
+	}
+	device.bytes_used = htole64(physical_used + bytes);
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	reservation.btr_metadata = (uint64_t)nodesize * 192;
+	reservation.btr_system = (uint64_t)nodesize * 64;
+	error = btrfs_trans_join(bmp, &reservation, &handle);
+	if (error != 0)
+		goto out;
+	generation = handle->bth_transaction->bt_generation;
+	error = btrfs_replace_item(handle, chunk_root, &key, &device,
+	    sizeof(device));
+	if (error != 0)
+		goto abort;
+	memset(record, 0, sizeof(record));
+	item = (struct btrfs_chunk *)record;
+	item->length = htole64(chunk->length);
+	item->owner = htole64(chunk->owner);
+	item->stripe_len = htole64(chunk->stripe_len);
+	item->type = htole64(chunk->type);
+	item->io_align = htole32(chunk->io_align);
+	item->io_width = htole32(chunk->io_width);
+	item->sector_size = htole32(chunk->sector_size);
+	item->num_stripes = htole16(chunk->nmirrors);
+	item->sub_stripes = htole16(chunk->sub_stripes);
+	for (j = 0; j < chunk->nmirrors; j++) {
+		item->stripe[j].devid = htole64(chunk->devid[j]);
+		item->stripe[j].offset = htole64(chunk->physical[j]);
+		memcpy(item->stripe[j].dev_uuid, chunk->dev_uuid[j],
+		    BTRFS_UUID_SIZE);
+	}
+	itemsize = offsetof(struct btrfs_chunk, stripe) +
+	    chunk->nmirrors * sizeof(struct btrfs_stripe);
+	key.objectid = htole64(BTRFS_FIRST_CHUNK_TREE_OBJECTID);
+	key.type = BTRFS_CHUNK_ITEM_KEY;
+	key.offset = htole64(chunk->logical);
+	error = btrfs_insert_item(handle, chunk_root, &key, record, itemsize);
+	if (error != 0)
+		goto abort;
+	extent.chunk_tree = htole64(BTRFS_CHUNK_TREE_OBJECTID);
+	extent.chunk_objectid = htole64(BTRFS_FIRST_CHUNK_TREE_OBJECTID);
+	extent.chunk_offset = htole64(chunk->logical);
+	extent.length = htole64(chunk->length);
+	memcpy(extent.chunk_tree_uuid, bmp->bm_chunk_tree_uuid, BTRFS_UUID_SIZE);
+	for (j = 0; j < chunk->nmirrors; j++) {
+		key.objectid = htole64(chunk->devid[j]);
+		key.type = BTRFS_DEV_EXTENT_KEY;
+		key.offset = htole64(chunk->physical[j]);
+		error = btrfs_insert_item(handle, dev_root, &key, &extent,
+		    sizeof(extent));
+		if (error != 0)
+			goto abort;
+	}
+	bgitem.chunk_objectid = htole64(BTRFS_FIRST_CHUNK_TREE_OBJECTID);
+	bgitem.flags = htole64(chunk->type);
+	key.objectid = htole64(chunk->logical);
+	key.type = BTRFS_BLOCK_GROUP_ITEM_KEY;
+	key.offset = htole64(chunk->length);
+	error = btrfs_insert_item(handle, group_root, &key, &bgitem,
+	    sizeof(bgitem));
+	if (error != 0)
+		goto abort;
+	if (free_root != NULL) {
+		info.extent_count = htole32(1);
+		key.type = BTRFS_FREE_SPACE_INFO_KEY;
+		error = btrfs_insert_item(handle, free_root, &key, &info,
+		    sizeof(info));
+		if (error == 0) {
+			key.type = BTRFS_FREE_SPACE_EXTENT_KEY;
+			error = btrfs_insert_item(handle, free_root, &key, NULL, 0);
+		}
+		if (error != 0)
+			goto abort;
+	}
+	handle->bth_transaction->bt_dev_bytes_added += bytes;
+	error = btrfs_trans_end(handle);
+	handle = NULL;
+	if (error == 0)
+		error = btrfs_trans_commit(bmp, generation, curproc);
+	if (error != 0)
+		goto out;
+
+	rw_enter_write(&bmp->bm_mapping_lock);
+	KASSERT(bmp->bm_nchunks == count && bmp->bm_nblock_groups == count);
+	oldchunks = bmp->bm_chunks;
+	oldgroups = bmp->bm_block_groups;
+	bmp->bm_chunks = chunks;
+	bmp->bm_block_groups = groups;
+	bmp->bm_nchunks = bmp->bm_nblock_groups = count + 1;
+	rw_exit_write(&bmp->bm_mapping_lock);
+	free(oldchunks, M_BTRFS, count * sizeof(*oldchunks));
+	free(oldgroups, M_BTRFS, count * sizeof(*oldgroups));
+	chunks = NULL;
+	groups = NULL;
+	group = NULL;
+	goto out;
+abort:
+	btrfs_trans_abort(handle, error);
+out:
+	if (handle != NULL) {
+		end_error = btrfs_trans_end(handle);
+		if (error == 0)
+			error = end_error;
+	}
+	if (group != NULL) {
+		struct btrfs_free_extent *space;
+
+		while ((space = TAILQ_FIRST(&group->bbg_free_extents)) != NULL) {
+			TAILQ_REMOVE(&group->bbg_free_extents, space, bfe_entry);
+			free(space, M_BTRFS, sizeof(*space));
+		}
+		free(group, M_BTRFS, sizeof(*group));
+	}
+	if (chunks != NULL)
+		free(chunks, M_BTRFS, (count + 1) * sizeof(*chunks));
+	if (groups != NULL)
+		free(groups, M_BTRFS, (count + 1) * sizeof(*groups));
+	rw_exit_write(&bmp->bm_chunk_alloc_lock);
+	return (error);
+}
+
 static int
 btrfs_space_reserve_type(struct btrfs_fs *bmp,
     struct btrfs_reserved_space_list *reservations, uint64_t type,
@@ -893,14 +1222,16 @@ btrfs_space_keep_delayed(struct btrfs_trans_handle *handle)
 		return;
 	TAILQ_FOREACH_SAFE(reservation, &handle->bth_reservations, brs_entry,
 	    next) {
-		if (reservation->brs_type != BTRFS_BLOCK_GROUP_METADATA ||
+		if ((reservation->brs_type != BTRFS_BLOCK_GROUP_METADATA &&
+		    reservation->brs_type != BTRFS_BLOCK_GROUP_SYSTEM) ||
 		    reservation->brs_bytes == 0)
 			continue;
 		TAILQ_REMOVE(&handle->bth_reservations, reservation, brs_entry);
 		mtx_enter(&trans->bt_lock);
 		TAILQ_FOREACH(existing, &trans->bt_commit_reservations,
 		    brs_entry) {
-			if (existing->brs_group == reservation->brs_group)
+			if (existing->brs_group == reservation->brs_group &&
+			    existing->brs_type == reservation->brs_type)
 				break;
 		}
 		KASSERT(trans->bt_commit_reserve_target <=
@@ -1149,7 +1480,8 @@ btrfs_space_discard_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 		if (extent->bte_bytenr != bytenr ||
 		    extent->bte_length != length)
 			continue;
-		if (extent->bte_type != BTRFS_BLOCK_GROUP_METADATA ||
+		if ((extent->bte_type != BTRFS_BLOCK_GROUP_METADATA &&
+		    extent->bte_type != BTRFS_BLOCK_GROUP_SYSTEM) ||
 		    extent->bte_discarded) {
 			error = EINVAL;
 			break;
@@ -1609,7 +1941,8 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
 		    extent->bte_bytenr, extent->bte_length)) {
 			/* New, detached metadata has no committed owner. */
 			if (extent->bte_discarded &&
-			    extent->bte_type == BTRFS_BLOCK_GROUP_METADATA &&
+			    (extent->bte_type == BTRFS_BLOCK_GROUP_METADATA ||
+			    extent->bte_type == BTRFS_BLOCK_GROUP_SYSTEM) &&
 			    extent->bte_bytenr == bytenr &&
 			    extent->bte_length == length)
 				error = 0;
