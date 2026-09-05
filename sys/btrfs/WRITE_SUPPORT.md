@@ -23,8 +23,10 @@ Keep read and write feature masks separate: parsing does not imply maintenance.
 Current limits:
 
 * Only the top-level filesystem tree is writable; other subvolumes are readable.
-  Simultaneous subvolume mounts require a design discussion before implementation.
-  They must share device ownership, allocation, transactions, and caches.
+  Simultaneous writable subvolume mounts, including overlapping views, are a
+  design goal. Multiple mounts remain disabled pending coherent vnode identity:
+  VM objects, executable-write protection, IPC, and revoke/unmount must share
+  file identity while pathname traversal and mount policy retain their view.
 * No truncate, unlink, rmdir, rename, or device-node creation.
 * Writes convert uncompressed inline files of at most one sector to regular
   extents. Larger/compressed inline files, NODATASUM, encoded mappings, and
@@ -43,7 +45,10 @@ Current limits:
 
 ## Transactions and durability
 
-One mount owns one open transaction. Operations join with typed reservations,
+The filesystem instance owns the device, roots, allocation, caches, and one
+open transaction. A separate mount view owns the selected root and VFS mount
+policy. Transaction failure makes the filesystem and all its views read-only.
+Operations join with typed reservations,
 encode affected inodes and attach immutable data payloads before ending their
 handles. Ending a handle does not commit. A committer closes joins and drains
 handles; new writers wait for publication. Commit must not acquire arbitrary
@@ -79,7 +84,7 @@ items. Freed extents remain pinned until durable publication.
 
 Device buffers supply physical reads; extent buffers provide logical metadata
 identity, validation, locks, and transaction ownership. COW uses private storage
-and transaction-aware B-tree APIs. Roots are persistent mount-owned objects:
+and transaction-aware B-tree APIs. Roots are persistent filesystem-owned objects:
 readers snapshot their locations; writers retain root locks and COW paths from
 the root downward. Validate against the path's view generation.
 

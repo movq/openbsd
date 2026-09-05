@@ -44,7 +44,7 @@ static int
 btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
     uint32_t csum)
 {
-	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
 	const uint8_t *data;
 	struct btrfs_path path = { 0 };
@@ -137,7 +137,7 @@ static int
 btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
     uint64_t length)
 {
-	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
 	const uint8_t *data;
 	struct btrfs_path path = { 0 };
@@ -287,7 +287,7 @@ btrfs_delayed_data_ref_add(struct btrfs_trans_handle *handle,
 {
 	struct btrfs_delayed_data_ref *ref, *new;
 	struct btrfs_transaction *trans;
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	uint32_t sectorsize;
 
 	if (handle == NULL || handle->bth_transaction == NULL ||
@@ -400,7 +400,7 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
     const struct btrfs_delayed_data_ref *ref)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	const struct btrfs_extent_inline_ref *candidate;
 	const struct btrfs_extent_data_ref *candidate_data;
 	struct btrfs_extent_inline_ref *inline_ref, *matched_inline = NULL;
@@ -644,7 +644,7 @@ int
 btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 {
 	struct btrfs_ordered_extent *ordered;
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	uint32_t sectorsize;
 	int error;
 
@@ -727,7 +727,7 @@ int
 btrfs_read_ordered_sector(struct btrfs_node *node, uint64_t file_offset,
     void *data)
 {
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	struct btrfs_ordered_extent *ordered;
 	struct btrfs_transaction *trans;
 	uint32_t sectorsize;

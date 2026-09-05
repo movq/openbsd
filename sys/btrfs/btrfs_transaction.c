@@ -31,13 +31,13 @@
 #include <btrfs/btrfs_var.h>
 
 static struct btrfs_transaction *
-	btrfs_trans_alloc(struct btrfs_mount *, uint64_t);
+	btrfs_trans_alloc(struct btrfs_fs *, uint64_t);
 static int	btrfs_materialize_tree_ref(struct btrfs_trans_handle *,
 		    const struct btrfs_delayed_tree_ref *);
-static int	btrfs_sync_device(struct btrfs_mount *, struct proc *);
+static int	btrfs_sync_device(struct btrfs_fs *, struct proc *);
 
 static struct btrfs_transaction *
-btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
+btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 {
 	struct btrfs_transaction *trans;
 
@@ -58,7 +58,7 @@ btrfs_trans_alloc(struct btrfs_mount *bmp, uint64_t generation)
 }
 
 int
-btrfs_trans_init(struct btrfs_mount *bmp)
+btrfs_trans_init(struct btrfs_fs *bmp)
 {
 	uint64_t generation;
 	int error;
@@ -73,14 +73,14 @@ btrfs_trans_init(struct btrfs_mount *bmp)
 	if (generation == UINT64_MAX && bmp->bm_last_transid == UINT64_MAX) {
 		bmp->bm_transaction->bt_error = EOVERFLOW;
 		bmp->bm_transaction->bt_state = BTRFS_TRANS_ABORTED;
-		if ((bmp->bm_mount->mnt_flag & MNT_RDONLY) == 0) {
+		if (!bmp->bm_readonly) {
 			free(bmp->bm_transaction, M_BTRFS,
 			    sizeof(*bmp->bm_transaction));
 			bmp->bm_transaction = NULL;
 			return (EOVERFLOW);
 		}
 	}
-	if ((bmp->bm_mount->mnt_flag & MNT_RDONLY) == 0) {
+	if (!bmp->bm_readonly) {
 		error = btrfs_space_reserve_commit(bmp->bm_transaction);
 		if (error != 0) {
 			free(bmp->bm_transaction, M_BTRFS,
@@ -93,7 +93,7 @@ btrfs_trans_init(struct btrfs_mount *bmp)
 }
 
 void
-btrfs_trans_destroy(struct btrfs_mount *bmp)
+btrfs_trans_destroy(struct btrfs_fs *bmp)
 {
 	struct btrfs_transaction *trans = bmp->bm_transaction;
 
@@ -121,7 +121,7 @@ btrfs_trans_destroy(struct btrfs_mount *bmp)
 }
 
 int
-btrfs_trans_join(struct btrfs_mount *bmp,
+btrfs_trans_join(struct btrfs_fs *bmp,
     const struct btrfs_trans_reservation *reservation,
     struct btrfs_trans_handle **handlep)
 {
@@ -132,7 +132,7 @@ btrfs_trans_join(struct btrfs_mount *bmp,
 
 	*handlep = NULL;
 retry:
-	if (bmp->bm_mount->mnt_flag & MNT_RDONLY)
+	if (bmp->bm_readonly)
 		return (EROFS);
 	handle = malloc(sizeof(*handle), M_BTRFS, M_WAITOK | M_ZERO);
 	TAILQ_INIT(&handle->bth_reservations);
@@ -152,7 +152,7 @@ retry:
 			if (trans->bt_commit_reserve_target == 0) {
 				trans->bt_error = ENOSPC;
 				trans->bt_state = BTRFS_TRANS_ABORTED;
-				bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+				btrfs_fs_set_readonly(bmp);
 				mtx_leave(&bmp->bm_trans_mtx);
 				free(handle, M_BTRFS, sizeof(*handle));
 				return (ENOSPC);
@@ -199,7 +199,7 @@ int
 btrfs_trans_commit_handle(struct btrfs_transaction *trans,
     struct btrfs_trans_handle **handlep)
 {
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_trans_handle *handle;
 	int error;
 
@@ -231,7 +231,7 @@ int
 btrfs_trans_end(struct btrfs_trans_handle *handle)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	int error;
 
 	btrfs_space_keep_delayed(handle);
@@ -263,7 +263,7 @@ void
 btrfs_trans_abort(struct btrfs_trans_handle *handle, int error)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 
 	if (error == 0)
 		error = EIO;
@@ -272,7 +272,7 @@ btrfs_trans_abort(struct btrfs_trans_handle *handle, int error)
 	if (trans->bt_error == 0)
 		trans->bt_error = error;
 	trans->bt_state = BTRFS_TRANS_ABORTED;
-	bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+	btrfs_fs_set_readonly(bmp);
 	wakeup(&bmp->bm_transaction);
 	mtx_leave(&bmp->bm_trans_mtx);
 }
@@ -283,7 +283,7 @@ btrfs_delayed_ref_add(struct btrfs_trans_handle *handle, uint64_t bytenr,
 {
 	struct btrfs_delayed_tree_ref *ref, *new;
 	struct btrfs_transaction *trans;
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	uint32_t sectorsize;
 
 	if (handle == NULL || handle->bth_transaction == NULL)
@@ -336,7 +336,7 @@ btrfs_materialize_tree_ref(struct btrfs_trans_handle *handle,
     const struct btrfs_delayed_tree_ref *ref)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_extent_item *extent;
 	struct btrfs_extent_inline_ref *candidate, *inline_ref;
 	struct btrfs_path path = { 0 };
@@ -557,7 +557,7 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 }
 
 static int
-btrfs_sync_device(struct btrfs_mount *bmp, struct proc *p)
+btrfs_sync_device(struct btrfs_fs *bmp, struct proc *p)
 {
 	int error, flush_error, force = 1;
 
@@ -572,7 +572,7 @@ btrfs_sync_device(struct btrfs_mount *bmp, struct proc *p)
 }
 
 int
-btrfs_trans_commit(struct btrfs_mount *bmp, uint64_t minimum_generation,
+btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
     struct proc *p)
 {
 	struct btrfs_super_block *super = NULL;
@@ -661,7 +661,7 @@ btrfs_delayed_refs_finish(struct btrfs_transaction *trans, int committed)
 }
 
 int
-btrfs_trans_close(struct btrfs_mount *bmp, uint64_t minimum_generation,
+btrfs_trans_close(struct btrfs_fs *bmp, uint64_t minimum_generation,
     struct btrfs_transaction **transp)
 {
 	struct btrfs_transaction *trans;
@@ -719,7 +719,7 @@ btrfs_trans_close(struct btrfs_mount *bmp, uint64_t minimum_generation,
 }
 
 int
-btrfs_trans_finish(struct btrfs_mount *bmp,
+btrfs_trans_finish(struct btrfs_fs *bmp,
     struct btrfs_transaction *trans, int error)
 {
 	struct btrfs_transaction *next = NULL;
@@ -774,12 +774,12 @@ btrfs_trans_finish(struct btrfs_mount *bmp,
 		bmp->bm_last_transid = trans->bt_generation;
 		bmp->bm_transaction = next;
 		if (reserve_error != 0)
-			bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+			btrfs_fs_set_readonly(bmp);
 	} else {
 		if (trans->bt_error == 0)
 			trans->bt_error = error;
 		trans->bt_state = BTRFS_TRANS_ABORTED;
-		bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+		btrfs_fs_set_readonly(bmp);
 	}
 	bmp->bm_committer = 0;
 	wakeup(&bmp->bm_transaction);
