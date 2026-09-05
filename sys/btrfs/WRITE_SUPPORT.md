@@ -47,6 +47,8 @@ Current limits:
 * Regular-file `truncate`/`ftruncate` and `O_TRUNC` support shrinking
   uncompressed regular/preallocated mappings and supported inline files,
   unchanged sizes, and sparse growth.
+  Whole compressed mappings and inline files can be discarded without decoding;
+  retaining part of an affected compressed regular mapping is unsupported.
   Growth converts supported inline data and COWs partial data sectors with zero
   tails before exposing the new size. It rejects
   compressed/encoded overlap and regular mappings beyond the old
