@@ -14,6 +14,7 @@ transaction; there is no log tree.
 
 Device nodes use native special-device operations and alias handling, including
 `nodev` and securelevel policy. Device I/O also works on read-only mounts.
+Size changes to devices, FIFOs, and sockets are no-ops, as on FFS.
 Device numbers retain their major/minor values using Linux's on-disk encoding;
 driver assignments are OS-specific. Creation rejects minors above 20 bits;
 loading rejects majors above OpenBSD's 8-bit range with `EOVERFLOW`.

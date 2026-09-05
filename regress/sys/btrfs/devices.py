@@ -65,8 +65,15 @@ def verify_seed():
 
 
 def io():
+    before = os.stat("null")
+    for length in (0, 8193, (1 << 63) - 1):
+        os.truncate("null", length)
+    after = os.stat("null")
+    assert (before.st_size, before.st_mtime_ns, before.st_ctime_ns) == (
+        after.st_size, after.st_mtime_ns, after.st_ctime_ns)
     fd = os.open("null", os.O_RDWR)
     try:
+        os.ftruncate(fd, 12345)
         assert os.write(fd, b"discarded") == 9
         assert os.read(fd, 64) == b""
         assert stat.S_ISCHR(os.fstat(fd).st_mode)
@@ -92,6 +99,7 @@ def io():
         expect_error(errno.ENXIO, os.open, name, os.O_RDONLY)
     # Alias tracking must see both the root filesystem and this mount.
     for name in ("rootdisk", "selfdisk"):
+        os.truncate(name, 12345)
         expect_error(errno.EBUSY, os.open, name, os.O_RDONLY)
     # Two concurrent clones exercise bitmap sharing with /dev/bpf and reclaim.
     descriptors = [os.open(name, os.O_RDWR)
@@ -121,6 +129,10 @@ def create():
     os.link("null", "null-alias")
     os.chmod("null-alias", 0o640)
     os.chflags("null-alias", stat.UF_NODUMP)
+    for flag in (stat.UF_IMMUTABLE, stat.UF_APPEND):
+        os.chflags("null", flag)
+        expect_error(errno.EPERM, os.truncate, "null-alias", 0)
+    os.chflags("null", stat.UF_NODUMP)
     for name in COLLISIONS:
         os.mknod(name, stat.S_IFCHR | 0o600, os.makedev(2, 2))
         fd = os.open(".", os.O_RDONLY)
