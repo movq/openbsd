@@ -12,6 +12,12 @@ implementation, including IPC on read-only mounts. Regular files use shared
 advisory locking and kqueue facilities. Sync operations commit the full
 transaction; there is no log tree.
 
+`stat` and `chflags` map btrfs nodump, immutable, and append flags to
+`UF_NODUMP`, `UF_IMMUTABLE`, and `UF_APPEND`. Owners may change these flags,
+including clearing immutable/append. Other btrfs inode flags are preserved.
+System flags and opaque directories are unsupported: btrfs has no separate
+system immutable/append state to enforce OpenBSD securelevel semantics.
+
 The writable format is one device, CRC32C, existing SINGLE/DUP chunks, and
 skinny metadata. Only `MIXED_BACKREF`, `BIG_METADATA`, `EXTENDED_IREF`,
 `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted; no compat-ro bits
