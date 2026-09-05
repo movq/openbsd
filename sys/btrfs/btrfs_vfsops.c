@@ -57,6 +57,23 @@ static int	btrfs_root(struct mount *, struct vnode **);
 static int	btrfs_statfs(struct mount *, struct statfs *, struct proc *);
 static int	btrfs_sync(struct mount *, int, int, struct ucred *,
 		    struct proc *);
+static int	btrfs_fhtovp(struct mount *, struct fid *, struct vnode **);
+static int	btrfs_vptofh(struct vnode *, struct fid *);
+
+/*
+ * OpenBSD has sixteen payload bytes in a fid. Never truncate a tree ID or
+ * generation to fit: VPTOFH rejects identities outside this encoding.
+ */
+struct btrfs_fid {
+	uint16_t	bfid_len;
+	uint16_t	bfid_version;
+	uint32_t	bfid_treeid;
+	uint64_t	bfid_ino;
+	uint32_t	bfid_generation;
+} __packed;
+
+_Static_assert(sizeof(struct btrfs_fid) <= sizeof(struct fid),
+    "btrfs file handle exceeds VFS identifier");
 
 /* Attach/detach serialization; ordinary vnode and transaction paths omit it. */
 static struct rwlock btrfs_mount_lock = RWLOCK_INITIALIZER("btrfsmnt");
@@ -74,8 +91,8 @@ const struct vfsops btrfs_vfsops = {
 	.vfs_statfs	= btrfs_statfs,
 	.vfs_sync	= btrfs_sync,
 	.vfs_vget	= btrfs_vget,
-	.vfs_fhtovp	= (void *)eopnotsupp,
-	.vfs_vptofh	= (void *)eopnotsupp,
+	.vfs_fhtovp	= btrfs_fhtovp,
+	.vfs_vptofh	= btrfs_vptofh,
 	.vfs_init	= (void *)nullop,
 	.vfs_sysctl	= (void *)eopnotsupp,
 	.vfs_checkexp	= (void *)eopnotsupp,
@@ -625,6 +642,68 @@ btrfs_sync(struct mount *mp, int waitfor, int stall, struct ucred *cred,
     struct proc *p)
 {
 	return (btrfs_commit_current(VFSTOBTRFS(mp), p));
+}
+
+static int
+btrfs_fhtovp(struct mount *mp, struct fid *fhp, struct vnode **vpp)
+{
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
+	struct btrfs_fid *fid = (struct btrfs_fid *)fhp;
+	struct btrfs_node *node;
+	struct btrfs_root *root;
+	int error, found;
+
+	*vpp = NULL;
+	if (fid->bfid_len != sizeof(*fid) || fid->bfid_version != 1)
+		return (EINVAL);
+	if (fid->bfid_treeid != BTRFS_FS_TREE_OBJECTID &&
+	    fid->bfid_treeid < BTRFS_FIRST_FREE_OBJECTID)
+		return (ESTALE);
+	error = btrfs_get_root(view->bmv_fs, fid->bfid_treeid, &root);
+	if (error != 0)
+		return (error == ENOENT ? ESTALE : error);
+	/*
+	 * Check scope before vget: disjoint views own separate vnode
+	 * identities, and a handle must not escape its selected hierarchy.
+	 */
+	error = btrfs_ancestor(view->bmv_fs, fid->bfid_treeid,
+	    view->bmv_treeid, &found);
+	if (error != 0)
+		return (error == ENOENT ? ESTALE : error);
+	if (!found)
+		return (ESTALE);
+	error = btrfs_vget_tree(mp, fid->bfid_treeid, fid->bfid_ino, vpp);
+	if (error != 0)
+		return (error == ENOENT ? ESTALE : error);
+	node = VTOBTRFS(*vpp);
+	if (node->bn_inode.bi_generation != fid->bfid_generation ||
+	    node->bn_inode.bi_nlink == 0) {
+		vput(*vpp);
+		*vpp = NULL;
+		return (ESTALE);
+	}
+	return (0);
+}
+
+static int
+btrfs_vptofh(struct vnode *vp, struct fid *fhp)
+{
+	struct btrfs_node *node = VTOBTRFS(vp);
+	struct btrfs_fid *fid = (struct btrfs_fid *)fhp;
+
+	KASSERT(VOP_ISLOCKED(vp));
+	if (node->bn_inode.bi_nlink == 0)
+		return (ESTALE);
+	if (node->bn_treeid > UINT32_MAX ||
+	    node->bn_inode.bi_generation > UINT32_MAX)
+		return (EOVERFLOW);
+	memset(fhp, 0, sizeof(*fhp));
+	fid->bfid_len = sizeof(*fid);
+	fid->bfid_version = 1;
+	fid->bfid_treeid = node->bn_treeid;
+	fid->bfid_ino = node->bn_ino;
+	fid->bfid_generation = node->bn_inode.bi_generation;
+	return (0);
 }
 
 static int
