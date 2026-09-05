@@ -159,3 +159,9 @@ with `-O ^no-holes` use reject_legacy/verify_seed. Independently check and
 restore the image between phases. A zlib seed also supports
 compressed/verify_compressed (verify on the restored copy), which grows past
 an aligned compressed extent and writes the new sparse tail.
+
+With the compressed fixture imported using `--compress zstd`, zstd/verify_zstd
+also exercise compressed reads on writable mounts, rejected inline and regular
+overwrites with unrelated pending changes, hard links, attributes, and repeated
+COW of the uncompressed tail. Run verify_zstd after both writable and read-only
+remounts, with independent filesystem, checksum, and mirror checks between.
