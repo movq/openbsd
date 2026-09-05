@@ -879,14 +879,12 @@ out:
 	return (error);
 }
 
-int
-btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
+static int
+btrfs_iterate_dir_item(struct btrfs_path *path,
     btrfs_dir_iter_fn callback, void *arg)
 {
 	const struct btrfs_dir_item *dir_item;
 	const struct btrfs_key *key;
-	struct btrfs_path path = { 0 };
-	struct btrfs_key target;
 	struct btrfs_dir_entry entry;
 	const uint8_t *data, *name;
 	uint64_t location, transid;
@@ -895,73 +893,113 @@ btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
 	size_t record_size, remaining;
 	int error;
 
+	error = btrfs_path_item(path, &key, &data, &size);
+	if (error != 0)
+		return (error);
+	remaining = size;
+	while (remaining != 0) {
+		if (remaining < sizeof(*dir_item))
+			return (EINVAL);
+		dir_item = (const struct btrfs_dir_item *)data;
+		data_len = letoh16(dir_item->data_len);
+		name_len = letoh16(dir_item->name_len);
+		if (name_len == 0 || name_len > BTRFS_NAME_MAX ||
+		    data_len != 0 || name_len > remaining - sizeof(*dir_item))
+			return (EINVAL);
+		record_size = sizeof(*dir_item) + name_len;
+		name = data + sizeof(*dir_item);
+		if (!btrfs_ref_name_valid(name, name_len))
+			return (EINVAL);
+		if (key->type == BTRFS_DIR_ITEM_KEY &&
+		    letoh64(key->offset) !=
+		    (crc32c(1, name, name_len) ^ 0xffffffffU))
+			return (EINVAL);
+
+		location = letoh64(dir_item->location.objectid);
+		transid = letoh64(dir_item->transid);
+		if (location < BTRFS_FIRST_FREE_OBJECTID ||
+		    transid > path->bp_view_generation ||
+		    dir_item->type > BTRFS_FT_SYMLINK)
+			return (EINVAL);
+		if (dir_item->location.type == BTRFS_ROOT_ITEM_KEY) {
+			if (dir_item->type != BTRFS_FT_DIR)
+				return (EINVAL);
+		} else if (dir_item->location.type != BTRFS_INODE_ITEM_KEY ||
+		    letoh64(dir_item->location.offset) != 0)
+			return (EINVAL);
+
+		if (callback != NULL) {
+			entry.bde_name = name;
+			entry.bde_objectid = location;
+			/* Only DIR_INDEX items supply a readdir position. */
+			entry.bde_index = key->type == BTRFS_DIR_INDEX_KEY ?
+			    letoh64(key->offset) : 0;
+			entry.bde_namelen = name_len;
+			entry.bde_type = dir_item->type;
+			entry.bde_subvolume =
+			    dir_item->location.type == BTRFS_ROOT_ITEM_KEY;
+			error = callback(&entry, arg);
+			if (error != 0)
+				return (error);
+		}
+
+		data += record_size;
+		remaining -= record_size;
+	}
+	return (0);
+}
+
+int
+btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
+    btrfs_dir_iter_fn callback, void *arg)
+{
+	const struct btrfs_key *key;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target;
+	int error;
+
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(objectid);
 	target.type = BTRFS_DIR_INDEX_KEY;
 	error = btrfs_search_lower_bound(root, &target, &path);
 	while (error == 0) {
-		error = btrfs_path_item(&path, &key, &data, &size);
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error != 0 || key->objectid != target.objectid ||
+		    key->type != target.type)
+			break;
+		error = btrfs_iterate_dir_item(&path, callback, arg);
 		if (error != 0)
-			break;
-		if (letoh64(key->objectid) > objectid ||
-		    key->type > BTRFS_DIR_INDEX_KEY)
-			break;
-		remaining = size;
-		while (remaining != 0) {
-			if (remaining < sizeof(*dir_item))
-				goto invalid;
-			dir_item = (const struct btrfs_dir_item *)data;
-			data_len = letoh16(dir_item->data_len);
-			name_len = letoh16(dir_item->name_len);
-			if (name_len == 0 || name_len > BTRFS_NAME_MAX ||
-			    data_len != 0 ||
-			    name_len > remaining - sizeof(*dir_item))
-				goto invalid;
-			record_size = sizeof(*dir_item) + name_len;
-			name = data + sizeof(*dir_item);
-			if (!btrfs_ref_name_valid(name, name_len))
-				goto invalid;
-
-			location = letoh64(dir_item->location.objectid);
-			transid = letoh64(dir_item->transid);
-			if (location < BTRFS_FIRST_FREE_OBJECTID ||
-			    transid > path.bp_view_generation ||
-			    dir_item->type > BTRFS_FT_SYMLINK)
-				goto invalid;
-			if (dir_item->location.type == BTRFS_ROOT_ITEM_KEY) {
-				if (dir_item->type != BTRFS_FT_DIR)
-					goto invalid;
-			} else if (dir_item->location.type !=
-			    BTRFS_INODE_ITEM_KEY ||
-			    letoh64(dir_item->location.offset) != 0)
-				goto invalid;
-
-			if (callback != NULL) {
-				entry.bde_name = name;
-				entry.bde_objectid = location;
-				entry.bde_index = letoh64(key->offset);
-				entry.bde_namelen = name_len;
-				entry.bde_type = dir_item->type;
-				entry.bde_subvolume =
-				    dir_item->location.type ==
-				    BTRFS_ROOT_ITEM_KEY;
-				error = callback(&entry, arg);
-				if (error != 0)
-					goto out;
-			}
-
-			data += record_size;
-			remaining -= record_size;
-		}
+			goto out;
 		error = btrfs_next_item(&path);
 	}
-
 	if (error == ENOENT)
 		error = 0;
-	goto out;
-invalid:
-	error = EINVAL;
 out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+int
+btrfs_lookup_directory(struct btrfs_root *root, uint64_t objectid,
+    const char *name, size_t namelen, btrfs_dir_iter_fn callback, void *arg)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target;
+	int error;
+
+	if (namelen > BTRFS_NAME_MAX ||
+	    !btrfs_ref_name_valid((const uint8_t *)name, namelen))
+		return (EINVAL);
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(objectid);
+	target.type = BTRFS_DIR_ITEM_KEY;
+	target.offset = htole64(crc32c(1, (const uint8_t *)name,
+	    namelen) ^ 0xffffffffU);
+	error = btrfs_search_slot(root, &target, &path);
+	if (error == 0)
+		error = btrfs_iterate_dir_item(&path, callback, arg);
+	else if (error == ENOENT)
+		error = 0;
 	btrfs_release_path(&path);
 	return (error);
 }

@@ -137,6 +137,9 @@ highest-object-ID allocation across creates in different directories. Namespace
 items and affected inode items use one handle; update the name cache and emit
 notifications only after successful mutation. Directory size is twice the sum
 of name lengths, and Btrfs directories have a link count of one.
+Pathname lookup searches the name's `DIR_ITEM` hash bucket; readdir walks
+`DIR_INDEX` items. Both use the same record validation, including subvolume
+entries and the path's transaction view.
 
 Free-space indexes are built from block-group bounds minus allocated extents,
 excluding logical ranges that map to a superblock's 64 KiB stripe on any

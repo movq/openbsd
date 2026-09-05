@@ -249,7 +249,8 @@ btrfs_lookup(void *v)
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
 	if (error != 0)
 		goto out;
-	error = btrfs_iterate_directory(root, node->bn_ino,
+	error = btrfs_lookup_directory(root, node->bn_ino,
+	    cnp->cn_nameptr, cnp->cn_namelen,
 	    btrfs_lookup_entry, &ctx);
 	if (error == BTRFS_LOOKUP_FOUND)
 		error = 0;
