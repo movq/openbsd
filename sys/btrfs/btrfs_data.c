@@ -773,6 +773,99 @@ out:
 	return (error);
 }
 
+/*
+ * Preflight growth before joining a transaction.  Return the sector needing
+ * COW to preserve the old prefix and zero its tail, or UINT64_MAX for purely
+ * sparse growth.  The caller retains the vnode lock through mutation.
+ */
+int
+btrfs_check_file_extend(struct btrfs_node *node, uint64_t size,
+    uint64_t *tail_offset)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_file_extent extent;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	uint64_t cursor, end, oldsize, sector_end;
+	uint32_t sectorsize;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	oldsize = node->bn_inode.bi_size;
+	*tail_offset = UINT64_MAX;
+	if (size <= oldsize || size > LLONG_MAX)
+		return (EINVAL);
+	if ((letoh64(bmp->bm_super.incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_NO_HOLES) == 0 ||
+	    (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM))
+		return (EOPNOTSUPP);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	end = roundup(size, sectorsize);
+	error = btrfs_get_root(bmp, node->bn_treeid, &root);
+	if (error != 0)
+		return (error);
+	error = btrfs_find_file_extent(bmp, root, &path, node->bn_ino,
+	    0, end, &extent);
+	if (error != 0)
+		goto out;
+	if (extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+		    extent.bfe_encryption != 0 || extent.bfe_other_encoding != 0 ||
+		    extent.bfe_length > sectorsize) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+		if (extent.bfe_length != oldsize ||
+		    extent.bfe_inline_size != oldsize ||
+		    node->bn_inode.bi_nbytes != oldsize) {
+			error = EINVAL;
+			goto out;
+		}
+		*tail_offset = 0;
+		cursor = sectorsize;
+	} else {
+		cursor = oldsize & ~((uint64_t)sectorsize - 1);
+	}
+	btrfs_release_path(&path);
+	while (cursor < end) {
+		error = btrfs_find_file_extent(bmp, root, &path,
+		    node->bn_ino, cursor, end, &extent);
+		if (error != 0)
+			goto out;
+		sector_end = extent.bfe_logical + extent.bfe_length;
+		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+		    extent.bfe_encryption != 0 || extent.bfe_other_encoding != 0 ||
+		    (extent.bfe_logical & (sectorsize - 1)) != 0 ||
+		    (extent.bfe_length & (sectorsize - 1)) != 0) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+		if (extent.bfe_type == BTRFS_FILE_EXTENT_REG) {
+			/*
+			 * Only the partial EOF sector may contain data.
+			 * Preallocation beyond EOF reads as zero; a regular
+			 * mapping there would require range replacement.
+			 */
+			if (cursor >= oldsize ||
+			    sector_end > roundup(oldsize, sectorsize)) {
+				error = EOPNOTSUPP;
+				goto out;
+			}
+			*tail_offset = cursor;
+		} else if (extent.bfe_type != BTRFS_FILE_EXTENT_HOLE &&
+		    extent.bfe_type != BTRFS_FILE_EXTENT_PREALLOC) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+		cursor = sector_end;
+		btrfs_release_path(&path);
+	}
+	error = 0;
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
 int
 btrfs_write_file_sector(struct btrfs_trans_handle *handle,
     struct btrfs_node *node, uint64_t file_offset, const void *data,
