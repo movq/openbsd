@@ -313,6 +313,7 @@ struct btrfs_trans_handle {
 	struct btrfs_transaction	*bth_transaction;
 	struct btrfs_reserved_space_list bth_reservations;
 	uint8_t				 bth_commit;
+	uint8_t				 bth_delayed;
 };
 
 typedef int (*btrfs_extent_iter_fn)(const struct btrfs_extent_record *,
@@ -639,6 +640,7 @@ void	btrfs_space_destroy(struct btrfs_mount *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);
+void	btrfs_space_keep_delayed(struct btrfs_trans_handle *);
 void	btrfs_space_release(struct btrfs_trans_handle *);
 int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
 	    uint64_t, uint64_t *);
