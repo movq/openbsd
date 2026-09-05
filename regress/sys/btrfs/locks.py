@@ -162,7 +162,8 @@ def reclaim(mountpoint):
     # may keep its current directory inside the mount during this test.
     requests = []
     for use_flock in (False, True):
-        name = os.path.join(mountpoint, "lock-reclaim-" + str(use_flock))
+        name = os.path.join(mountpoint,
+                            f"lock-reclaim-{os.getpid()}-{use_flock}")
         put(name, b"reclaim locks\n")
         lock = fcntl.flock if use_flock else fcntl.lockf
         fd = os.open(name, os.O_RDWR)
