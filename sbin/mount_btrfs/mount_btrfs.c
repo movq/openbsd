@@ -15,6 +15,7 @@ static void	usage(void);
 
 static const struct mntopt mopts[] = {
 	MOPT_STDOPTS,
+	MOPT_SYNC,
 	{ NULL, 0, 0 }
 };
 
