@@ -132,7 +132,9 @@ ipc.py uses create/verify phases and a readonly phase after a read-only
 remount. It covers FIFO and Unix-domain socket creation, hard-link aliases,
 blocking/nonblocking pipe I/O, EOF, kqueue readiness, socket connections,
 permissions, hash collisions, and directory accounting. Run the independent
-checks between mounts as above.
+checks between mounts as above. IPC and device tests also check that explicit
+truncate/ftruncate leaves special-file sizes and timestamps unchanged on both
+writable and read-only mounts.
 
 devices.py uses create/verify, readonly, and nodev phases for character/block
 device creation, device-number persistence, hard links, attributes, permissions,
