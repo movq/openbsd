@@ -605,17 +605,14 @@ static int
 btrfs_statfs(struct mount *mp, struct statfs *sbp, struct proc *p)
 {
 	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
-	uint64_t bytes_used, sectorsize, total_bytes;
+	int error;
 
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	total_bytes = letoh64(bmp->bm_super.total_bytes);
-	bytes_used = letoh64(bmp->bm_super.bytes_used);
+	error = btrfs_space_statfs(bmp, sbp);
+	if (error != 0)
+		return (error);
 
-	sbp->f_bsize = sectorsize;
+	sbp->f_bsize = letoh32(bmp->bm_super.sectorsize);
 	sbp->f_iosize = letoh32(bmp->bm_super.nodesize);
-	sbp->f_blocks = total_bytes / sectorsize;
-	sbp->f_bfree = (total_bytes - bytes_used) / sectorsize;
-	sbp->f_bavail = sbp->f_bfree;
 	sbp->f_files = 0;
 	sbp->f_ffree = 0;
 	sbp->f_favail = 0;
