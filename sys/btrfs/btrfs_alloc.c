@@ -993,6 +993,14 @@ btrfs_update_space_items(struct btrfs_trans_handle *handle)
 			error = EINVAL;
 			goto out;
 		}
+		/*
+		 * Rewriting unchanged usage would COW the extent tree even
+		 * for an idle sync, creating unreserved delayed-reference
+		 * work.  Compare against the transaction's current item so
+		 * later preparation passes still publish accounting changes.
+		 */
+		if (letoh64(item.used) == used)
+			continue;
 		item.used = htole64(used);
 		error = btrfs_replace_item(handle, root, &key, &item,
 		    sizeof(item));
