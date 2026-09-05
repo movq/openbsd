@@ -686,7 +686,8 @@ btrfs_setattr(void *v)
 	struct btrfs_inode saved;
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_trans_reservation reservation = { 0 };
-	struct vattr *vap = ap->a_vap;
+	struct vattr attr = *ap->a_vap;
+	struct vattr *vap = &attr;
 	struct ucred *cred = ap->a_cred;
 	struct buf *bp = NULL;
 	struct timespec now;
@@ -707,9 +708,27 @@ btrfs_setattr(void *v)
 	if (vap->va_size != VNOVAL) {
 		if (vp->v_type == VDIR)
 			return (EISDIR);
-		if (vp->v_type != VREG)
+		if (vp->v_type == VCHR || vp->v_type == VBLK ||
+		    vp->v_type == VFIFO || vp->v_type == VSOCK) {
+			/*
+			 * Special files have no file data to truncate. A
+			 * size-only request needs no writable transaction.
+			 */
+			if (node->bn_inode.bi_flags &
+			    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND))
+				return (EPERM);
+			vap->va_size = VNOVAL;
+			if (vap->va_flags == VNOVAL &&
+			    vap->va_uid == (uid_t)VNOVAL &&
+			    vap->va_gid == (gid_t)VNOVAL &&
+			    vap->va_mode == (mode_t)VNOVAL &&
+			    vap->va_atime.tv_nsec == VNOVAL &&
+			    vap->va_mtime.tv_nsec == VNOVAL &&
+			    (vap->va_vaflags & VA_UTIMES_CHANGE) == 0)
+				return (0);
+		} else if (vp->v_type != VREG)
 			return (EOPNOTSUPP);
-		if (vap->va_size > LLONG_MAX)
+		else if (vap->va_size > LLONG_MAX)
 			return (EFBIG);
 	}
 	if ((vap->va_atime.tv_nsec != VNOVAL &&

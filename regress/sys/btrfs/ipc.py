@@ -11,10 +11,17 @@ from namespace import COLLISIONS, child_checks, expect_error, wait
 
 
 def pipe_io():
+    before = os.stat("pipe")
+    os.truncate("pipe", 8193)
+    os.truncate("pipe", 0)
+    after = os.stat("pipe")
+    assert (before.st_size, before.st_mtime_ns, before.st_ctime_ns) == (
+        after.st_size, after.st_mtime_ns, after.st_ctime_ns)
     expect_error(errno.ENXIO, os.open, "pipe", os.O_WRONLY | os.O_NONBLOCK)
     reader = os.open("pipe", os.O_RDONLY | os.O_NONBLOCK)
     assert os.read(reader, 1) == b""
     writer = os.open("alias", os.O_WRONLY | os.O_NONBLOCK)
+    os.ftruncate(writer, 12345)
     expect_error(errno.EAGAIN, os.read, reader, 1)
     assert os.fpathconf(writer, "PC_PIPE_BUF") >= 512
     queue = select.kqueue()
