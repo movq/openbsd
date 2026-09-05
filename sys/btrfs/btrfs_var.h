@@ -650,6 +650,7 @@ int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
 int	btrfs_read_ordered_sector(struct btrfs_node *, uint64_t, void *);
+int	btrfs_check_file_extend(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_write_file_sector(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, const void *, uint64_t);
 int	btrfs_iterate_extent_items(struct btrfs_fs *,

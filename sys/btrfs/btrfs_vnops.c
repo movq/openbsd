@@ -642,11 +642,14 @@ btrfs_setattr(void *v)
 	struct btrfs_trans_reservation reservation = { 0 };
 	struct vattr *vap = ap->a_vap;
 	struct ucred *cred = ap->a_cred;
+	struct buf *bp = NULL;
 	struct timespec now;
+	uint8_t *data = NULL;
 	uid_t uid;
 	gid_t gid;
-	uint64_t flags;
-	uint32_t dirty = 0;
+	uint64_t flags, tail_offset = UINT64_MAX;
+	uint32_t dirty = 0, sectorsize;
+	long hint = NOTE_ATTRIB;
 	int end_error, error;
 
 	KASSERT(VOP_ISLOCKED(vp));
@@ -655,8 +658,14 @@ btrfs_setattr(void *v)
 	    vap->va_blocksize != VNOVAL || vap->va_rdev != VNOVAL ||
 	    (int)vap->va_bytes != VNOVAL || vap->va_gen != VNOVAL)
 		return (EINVAL);
-	if (vap->va_size != VNOVAL)
-		return (EOPNOTSUPP);
+	if (vap->va_size != VNOVAL) {
+		if (vp->v_type == VDIR)
+			return (EISDIR);
+		if (vp->v_type != VREG)
+			return (EOPNOTSUPP);
+		if (vap->va_size > LLONG_MAX)
+			return (EFBIG);
+	}
 	if ((vap->va_atime.tv_nsec != VNOVAL &&
 	    (vap->va_atime.tv_nsec < 0 ||
 	    vap->va_atime.tv_nsec >= 1000000000)) ||
@@ -690,6 +699,7 @@ btrfs_setattr(void *v)
 	}
 	if ((flags & (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) &&
 	    (vap->va_flags == VNOVAL ||
+	    vap->va_size != VNOVAL ||
 	    vap->va_uid != (uid_t)VNOVAL || vap->va_gid != (gid_t)VNOVAL ||
 	    vap->va_mode != (mode_t)VNOVAL ||
 	    vap->va_atime.tv_nsec != VNOVAL ||
@@ -746,15 +756,36 @@ btrfs_setattr(void *v)
 		dirty |= BTRFS_INODE_DIRTY_MTIME;
 	if (vap->va_vaflags & VA_UTIMES_CHANGE)
 		dirty |= BTRFS_INODE_DIRTY_CTIME;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if (vap->va_size != VNOVAL) {
+		if (vap->va_size < node->bn_inode.bi_size)
+			return (EOPNOTSUPP);
+		if (vap->va_size > node->bn_inode.bi_size) {
+			error = btrfs_check_file_extend(node, vap->va_size,
+			    &tail_offset);
+			if (error != 0)
+				return (error);
+			hint |= NOTE_EXTEND;
+		}
+		dirty |= BTRFS_INODE_DIRTY_SIZE | BTRFS_INODE_DIRTY_MTIME;
+	}
 	if (dirty == 0)
 		return (0);
 
+	if (tail_offset != UINT64_MAX) {
+		error = bread(vp, tail_offset / sectorsize, sectorsize, &bp);
+		if (error != 0)
+			goto out;
+		data = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
+		memcpy(data, bp->b_data, node->bn_inode.bi_size - tail_offset);
+		reservation.btr_data = sectorsize;
+	}
 	reservation.btr_metadata =
 	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
 	    BTRFS_VOP_METADATA_BLOCKS;
 	error = btrfs_trans_join(bmp, &reservation, &handle);
 	if (error != 0)
-		return (error);
+		goto out;
 	memcpy(&saved, &node->bn_inode, sizeof(saved));
 	getnanotime(&now);
 	node->bn_inode.bi_uid = uid;
@@ -767,7 +798,10 @@ btrfs_setattr(void *v)
 		node->bn_inode.bi_atime = vap->va_atime;
 	if (vap->va_mtime.tv_nsec != VNOVAL)
 		node->bn_inode.bi_mtime = vap->va_mtime;
-	if ((uid != saved.bi_uid || gid != saved.bi_gid) &&
+	else if (vap->va_size != VNOVAL)
+		node->bn_inode.bi_mtime = now;
+	if ((uid != saved.bi_uid || gid != saved.bi_gid ||
+	    vap->va_size != VNOVAL) &&
 	    cred->cr_uid != 0 && !vnoperm(vp)) {
 		node->bn_inode.bi_mode &= ~(S_ISUID | S_ISGID);
 		dirty |= BTRFS_INODE_DIRTY_MODE;
@@ -777,7 +811,18 @@ btrfs_setattr(void *v)
 	node->bn_inode.bi_dirty_fields |= dirty;
 	node->bn_inode.bi_last_dirty_transid =
 	    handle->bth_transaction->bt_generation;
-	error = btrfs_write_inode(handle, node);
+	if (data != NULL)
+		error = btrfs_write_file_sector(handle, node, tail_offset,
+		    data, saved.bi_size);
+	else
+		error = 0;
+	if (error == 0) {
+		if (vap->va_size != VNOVAL) {
+			node->bn_inode.bi_size = vap->va_size;
+			node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE;
+		}
+		error = btrfs_write_inode(handle, node);
+	}
 	if (error != 0)
 		btrfs_trans_abort(handle, error);
 	end_error = btrfs_trans_end(handle);
@@ -785,10 +830,25 @@ btrfs_setattr(void *v)
 		error = end_error;
 	if (error != 0) {
 		memcpy(&node->bn_inode, &saved, sizeof(saved));
-		return (error);
+		goto out;
 	}
-	VN_KNOTE(vp, NOTE_ATTRIB);
-	return (0);
+	if (hint & NOTE_EXTEND) {
+		(void)uvm_vnp_uncache(vp);
+		if (data != NULL)
+			memcpy(bp->b_data, data, sectorsize);
+		uvm_vnp_setsize(vp, node->bn_inode.bi_size);
+	}
+	VN_KNOTE(vp, hint);
+	if ((vp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
+	    (node->bn_inode.bi_flags & BTRFS_INODE_SYNC))
+		error = btrfs_trans_commit(bmp,
+		    node->bn_inode.bi_last_dirty_transid, ap->a_p);
+out:
+	if (bp != NULL)
+		brelse(bp);
+	if (data != NULL)
+		free(data, M_BTRFS, sectorsize);
+	return (error);
 }
 
 static int
