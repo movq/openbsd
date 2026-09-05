@@ -1233,7 +1233,8 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 		return (0);
 	}
 
-	lookup_size = MAX(node->bn_inode.bi_size, end);
+	/* Synthetic holes must cover complete sectors for range replacement. */
+	lookup_size = roundup(MAX(node->bn_inode.bi_size, end), sectorsize);
 	error = btrfs_get_root(node->bn_mount, node->bn_treeid, &root);
 	if (error != 0)
 		return (error);
