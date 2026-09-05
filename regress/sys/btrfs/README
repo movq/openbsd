@@ -1,5 +1,5 @@
 These tests require a disposable btrfs image mounted writable, root, and
-Python 3.  They leave their files in place because unlink is not implemented.
+Python 3. They leave their final file names in place pending final-link unlink.
 Use a new test directory for each run.  For example, inside the test VM:
 
     python3 /mnt/src/regress/sys/btrfs/namespace.py create /mnt/btrfs/ns
@@ -59,6 +59,16 @@ introduce inconsistent metadata. Run `reject device mountpoint` in the VM;
 repeated writable mounts must fail while read-only imported data remains
 accessible. The bad-bit case preserves the run count, exercising validation
 against extent ownership in addition to structural count checks.
+
+unlink.py uses create/verify/readonly phases for nonfinal-link removal.
+It covers ordinary and extended packed references, hash collisions across
+commits, inode identity, open-descriptor writes, cache invalidation, concurrent
+removal, symlink/FIFO/device aliases, directory accounting, flags, sticky and
+ordinary permissions, and notifications. Final-link attempts must fail without
+mutation. On a small fixture, `capacity new-directory` fills metadata and
+checks failed unlink atomicity and continued sync. Test both metadata sizes,
+with and without free-space/block-group trees, and check the unmounted images
+before writable and read-only verification.
 
 readdir.py uses seed/gaps on the host and exercise/verify in the VM.
 Import its seed with `mkfs.btrfs --rootdir`, then run `gaps image` while
