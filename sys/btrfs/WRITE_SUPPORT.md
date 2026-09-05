@@ -84,9 +84,11 @@ Each mutation rebuilds the leaf in zeroed scratch storage, preserving packed
 little-endian keys and payloads while compacting all item data.  A changed
 first key is propagated through the required ancestor separators.  Insertion
 performs a byte-balanced two-way split of a full leaf, recursively splits full
-internal nodes, and grows the root.  Child references moved between internal
-nodes and new root/parent relationships are queued as delayed reference
-changes.  When a large middle item prevents every two-way partition, insertion
+internal nodes, and grows the root.  Writable trees consistently use implicit
+block references keyed by root: new blocks queue adds, replaced or detached
+blocks queue drops, and moves within a tree leave references unchanged.
+Full/shared backreferences remain excluded by writable mount validation.
+When a large middle item prevents every two-way partition, insertion
 uses three leaves: the old prefix, the new item, and the old suffix.  Both new
 sibling pointers are inserted into the parent as one batch, including through
 recursive internal-node splits or root growth.  Deleting the sole item in a
@@ -515,7 +517,8 @@ provides:
 * Split full leaves in two by used bytes, fall back to three leaves when a
   large middle item prevents a valid two-way partition, and recursively split
   full internal nodes.
-* Grow a full root and queue reference changes for every new or moved node.
+* Grow a full root and queue implicit references for new nodes; existing nodes
+  retain their references when they move within the same tree.
 * Mark dirty blocks and roots exactly once per transaction.
 
 Empty-node removal and root shrinking are implemented.  More aggressive
@@ -682,8 +685,9 @@ The following write-path foundations are in place:
 * Completed: add insertion-time B-tree topology growth.  Full leaves split in
   two by packed bytes, full internal nodes split recursively, and a full root
   grows one level.  New blank metadata blocks remain transaction-owned, while
-  new, moved, and root references are represented through delayed-reference
-  changes.
+  new and replaced blocks are represented through delayed implicit-reference
+  changes.  Parent changes, including root growth and shrinkage, retain the
+  same implicit root reference for each surviving block.
 * Completed: add the three-way leaf-split fallback for a large middle item.
   The new item is isolated between the source leaf's valid prefix and suffix,
   and both new sibling pointers propagate atomically through available,
