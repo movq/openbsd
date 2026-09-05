@@ -647,7 +647,7 @@ btrfs_setattr(void *v)
 	uint8_t *data = NULL;
 	uid_t uid;
 	gid_t gid;
-	uint64_t flags, tail_offset = UINT64_MAX;
+	uint64_t flags, holes = 0, tail_offset = UINT64_MAX;
 	uint32_t dirty = 0, sectorsize;
 	long hint = NOTE_ATTRIB;
 	int end_error, error;
@@ -765,6 +765,10 @@ btrfs_setattr(void *v)
 			    &tail_offset);
 			if (error != 0)
 				return (error);
+			error = btrfs_count_file_holes(node, vap->va_size,
+			    &holes);
+			if (error != 0)
+				return (error);
 			hint |= NOTE_EXTEND;
 		}
 		dirty |= BTRFS_INODE_DIRTY_SIZE | BTRFS_INODE_DIRTY_MTIME;
@@ -783,6 +787,11 @@ btrfs_setattr(void *v)
 	reservation.btr_metadata =
 	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
 	    BTRFS_VOP_METADATA_BLOCKS;
+	if (holes > UINT64_MAX / reservation.btr_metadata - 1) {
+		error = EOVERFLOW;
+		goto out;
+	}
+	reservation.btr_metadata *= 1 + holes;
 	error = btrfs_trans_join(bmp, &reservation, &handle);
 	if (error != 0)
 		goto out;
@@ -816,6 +825,9 @@ btrfs_setattr(void *v)
 		    data, saved.bi_size);
 	else
 		error = 0;
+	if (error == 0 && vap->va_size != VNOVAL)
+		error = btrfs_fill_file_holes(handle, node, saved.bi_size,
+		    vap->va_size);
 	if (error == 0) {
 		if (vap->va_size != VNOVAL) {
 			node->bn_inode.bi_size = vap->va_size;
@@ -1111,7 +1123,7 @@ btrfs_write(void *v)
 	struct uio *uio = ap->a_uio;
 	struct timespec now;
 	uint8_t *data = NULL;
-	uint64_t file_offset, file_size;
+	uint64_t file_offset, file_size, holes, metadata_reserve, metadata_unit;
 	uint32_t sectorsize;
 	daddr_t block;
 	off_t move_offset, unit_offset;
@@ -1149,6 +1161,7 @@ btrfs_write(void *v)
 	reservation.btr_metadata =
 	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
 	    BTRFS_VOP_METADATA_BLOCKS;
+	metadata_unit = reservation.btr_metadata;
 	/*
 	 * A sparse write to an inline file also materializes sector zero.
 	 * Reserve both replacements before either becomes visible.
@@ -1166,6 +1179,7 @@ btrfs_write(void *v)
 			reservation.btr_metadata *= 2;
 		}
 	}
+	metadata_reserve = reservation.btr_metadata;
 	error = vn_fsizechk(vp, uio, ap->a_ioflag, &overrun);
 	if (error != 0)
 		return (error);
@@ -1195,7 +1209,18 @@ btrfs_write(void *v)
 		file_offset = (uint64_t)block * sectorsize;
 		file_size = MAX(node->bn_inode.bi_size,
 		    (uint64_t)move_offset + moved);
-		error = btrfs_trans_join(bmp, &reservation, &handle);
+		error = btrfs_count_file_holes(node, file_size, &holes);
+		if (error == 0) {
+			if (holes > (UINT64_MAX - metadata_reserve) /
+			    metadata_unit)
+				error = EOVERFLOW;
+			else {
+				reservation.btr_metadata = metadata_reserve +
+				    holes * metadata_unit;
+				error = btrfs_trans_join(bmp, &reservation,
+				    &handle);
+			}
+		}
 		if (error == 0) {
 			memcpy(&saved, &node->bn_inode, sizeof(saved));
 			getnanotime(&now);
@@ -1217,6 +1242,12 @@ btrfs_write(void *v)
 			    handle->bth_transaction->bt_generation;
 			error = btrfs_write_file_sector(handle, node,
 			    file_offset, data, file_size);
+			if (error == 0) {
+				error = btrfs_fill_file_holes(handle, node,
+				    saved.bi_size, file_size);
+				if (error != 0)
+					btrfs_trans_abort(handle, error);
+			}
 			end_error = btrfs_trans_end(handle);
 			handle = NULL;
 			if (error == 0)

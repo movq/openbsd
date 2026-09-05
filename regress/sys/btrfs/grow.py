@@ -186,13 +186,6 @@ def reject():
     os.sync()
 
 
-def reject_legacy():
-    for size in SIZES:
-        name = f"import-{size}"
-        fail(name, errno.EOPNOTSUPP, os.truncate, name, size + 8192)
-    os.sync()
-
-
 def compressed():
     # Verify the compressed prefix independently with host-side restore.
     reject()

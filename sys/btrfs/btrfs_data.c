@@ -268,12 +268,17 @@ btrfs_encode_file_extent(struct btrfs_file_extent_item *item,
 {
 	memset(item, 0, sizeof(*item));
 	item->generation = htole64(generation);
+	if (extent->bfe_type == BTRFS_FILE_EXTENT_HOLE) {
+		item->ram_bytes = htole64(extent->bfe_length);
+		item->type = BTRFS_FILE_EXTENT_REG;
+		item->num_bytes = htole64(extent->bfe_length);
+		return;
+	}
 	item->ram_bytes = htole64(extent->bfe_ram_bytes);
 	item->compression = extent->bfe_compression;
 	item->encryption = extent->bfe_encryption;
 	item->other_encoding = htole16(extent->bfe_other_encoding);
-	item->type = extent->bfe_type == BTRFS_FILE_EXTENT_HOLE ?
-	    BTRFS_FILE_EXTENT_REG : extent->bfe_type;
+	item->type = extent->bfe_type;
 	item->disk_bytenr = htole64(extent->bfe_disk_bytenr);
 	item->disk_num_bytes = htole64(extent->bfe_disk_num_bytes);
 	item->offset = htole64(extent->bfe_disk_offset);
@@ -774,6 +779,95 @@ out:
 }
 
 /*
+ * Older filesystems require explicit items for every hole below rounded EOF.
+ * Count missing items before joining, then fill them after the data mutation
+ * has succeeded.  Both passes run with the vnode locked.  Existing mappings
+ * (including preallocation beyond EOF) must survive unchanged.
+ */
+static int
+btrfs_file_holes(struct btrfs_trans_handle *handle, struct btrfs_node *node,
+    uint64_t oldsize, uint64_t size, uint64_t *count)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_file_extent extent;
+	struct btrfs_file_extent_item item;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_key key;
+	uint64_t cursor, end, extent_end, holes = 0;
+	uint32_t sectorsize;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	if (count != NULL)
+		*count = 0;
+	if (size <= oldsize || (letoh64(bmp->bm_super.incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_NO_HOLES))
+		return (0);
+	if (size > LLONG_MAX)
+		return (EFBIG);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	cursor = roundup(oldsize, sectorsize);
+	end = roundup(size, sectorsize);
+	if (cursor == end)
+		return (0);
+	error = btrfs_get_root(bmp, node->bn_treeid, &root);
+	if (error != 0)
+		return (error);
+	while (cursor < end) {
+		error = btrfs_find_file_extent(bmp, root, &path,
+		    node->bn_ino, cursor, end, &extent);
+		if (error != 0)
+			goto out;
+		extent_end = extent.bfe_logical + extent.bfe_length;
+		if (extent_end <= cursor ||
+		    (extent.bfe_logical & (sectorsize - 1)) != 0 ||
+		    (extent.bfe_length & (sectorsize - 1)) != 0) {
+			error = EINVAL;
+			goto out;
+		}
+		btrfs_release_path(&path);
+		if (!extent.bfe_item_present) {
+			KASSERT(extent.bfe_type == BTRFS_FILE_EXTENT_HOLE);
+			holes++;
+			if (handle != NULL) {
+				memset(&key, 0, sizeof(key));
+				key.objectid = htole64(node->bn_ino);
+				key.type = BTRFS_EXTENT_DATA_KEY;
+				key.offset = htole64(extent.bfe_logical);
+				btrfs_encode_file_extent(&item, &extent,
+				    handle->bth_transaction->bt_generation);
+				error = btrfs_insert_item(handle, root, &key,
+				    &item, sizeof(item));
+				if (error != 0)
+					goto out;
+			}
+		}
+		cursor = extent_end;
+	}
+	if (count != NULL)
+		*count = holes;
+	error = 0;
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+int
+btrfs_count_file_holes(struct btrfs_node *node, uint64_t size, uint64_t *count)
+{
+	return (btrfs_file_holes(NULL, node, node->bn_inode.bi_size, size,
+	    count));
+}
+
+int
+btrfs_fill_file_holes(struct btrfs_trans_handle *handle,
+    struct btrfs_node *node, uint64_t oldsize, uint64_t size)
+{
+	return (btrfs_file_holes(handle, node, oldsize, size, NULL));
+}
+
+/*
  * Preflight growth before joining a transaction.  Return the sector needing
  * COW to preserve the old prefix and zero its tail, or UINT64_MAX for purely
  * sparse growth.  The caller retains the vnode lock through mutation.
@@ -795,9 +889,7 @@ btrfs_check_file_extend(struct btrfs_node *node, uint64_t size,
 	*tail_offset = UINT64_MAX;
 	if (size <= oldsize || size > LLONG_MAX)
 		return (EINVAL);
-	if ((letoh64(bmp->bm_super.incompat_flags) &
-	    BTRFS_FEATURE_INCOMPAT_NO_HOLES) == 0 ||
-	    (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM))
+	if (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM)
 		return (EOPNOTSUPP);
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	end = roundup(size, sectorsize);

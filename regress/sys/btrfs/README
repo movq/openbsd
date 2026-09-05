@@ -155,8 +155,8 @@ size limits, and notifications. The capacity phase on a fresh small seed
 image fills data space and checks failed inline/tail COW without inode changes,
 followed by successful growth of an empty file. Use seed_compressed for
 compression fixtures and reject/verify_compressed_seed for rejection tests;
-with `-O ^no-holes` use reject_legacy/verify_seed. Independently check and
-restore the image between phases. A zlib seed also supports
+repeat uncompressed exercise/verify with `-O ^no-holes`. Independently check
+and restore the image between phases. A zlib seed also supports
 compressed/verify_compressed (verify on the restored copy), which grows past
 an aligned compressed extent and writes the new sparse tail.
 
@@ -165,3 +165,10 @@ also exercise compressed reads on writable mounts, rejected inline and regular
 overwrites with unrelated pending changes, hard links, attributes, and repeated
 COW of the uncompressed tail. Run verify_zstd after both writable and read-only
 remounts, with independent filesystem, checksum, and mirror checks between.
+
+holes.py uses seed/write/verify to test splitting stored holes at their start,
+middle, and end, repeated splits, writes across mapping boundaries, and sparse
+extension. Import with `-O ^no-holes` and run both independent checks between
+write and verify; repeat with `NO_HOLES`. Its capacity phase on a fresh small
+image without `NO_HOLES` fills metadata and checks that failed growth and sparse
+writes preserve data and inode state and allow sync without becoming read-only.
