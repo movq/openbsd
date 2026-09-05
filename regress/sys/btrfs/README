@@ -54,7 +54,15 @@ legacy/separate block groups, and imported bitmap free space. Its capacity
 phase on a fresh small image fills all allocatable device gaps, checks ENOSPC
 without changing the file or making the mount read-only, and reclaims/reuses
 the data. Existing statfs capacity tests require a device with no room for
-additional data chunks now. Run hold, wait for /tmp/btrfs-chunks-ready, and
+additional data chunks now. metadata/metadata_verify fill metadata through
+chunk growth and final device exhaustion, then check the namespace after
+remount. combined/combined_verify exercise concurrent data and metadata growth.
+On a fresh unmounted image, chunks_fixture.py image shrinks the initial system
+group while maintaining all chunk/device/block-group/free-space records and
+superblock copies. Check that fixture independently, then run create or
+combined to force protected system growth and bootstrap-array publication.
+Cover both node sizes and SINGLE/DUP with legacy and separate block groups.
+Run hold, wait for /tmp/btrfs-chunks-ready, and
 reset the VM to test durability of newly allocated mappings; verify after
 mounting again. Run both independent checkers while unmounted.
 

@@ -91,6 +91,63 @@ def capacity(base):
     print(f"device capacity and reuse passed after {count} sectors", flush=True)
 
 
+def metadata(base):
+    import enospc
+    before = os.statvfs(base.parent).f_blocks
+    enospc.main(str(base))
+    assert os.statvfs(base).f_blocks > before
+    assert not os.statvfs(base).f_flag & os.ST_RDONLY
+    print("metadata growth to device exhaustion passed", flush=True)
+
+
+def metadata_verify(base):
+    groups = sorted(base.iterdir())
+    assert groups
+    for i, group in enumerate(groups):
+        assert group.name == f"group-{i:04d}"
+        names = sorted(group.iterdir())
+        assert len(names) == 128 or i == len(groups) - 1
+        for j, name in enumerate(names):
+            assert name.name == f"{j:04d}-" + "x" * 240
+            assert name.stat().st_size == 0 and name.stat().st_nlink == 1
+    print("grown metadata namespace verified", flush=True)
+
+
+def combined(base):
+    def names(worker):
+        root = base / f"names-{worker}"
+        root.mkdir()
+        for group in range(64):
+            directory = root / str(group)
+            directory.mkdir()
+            for i in range(128):
+                (directory / (f"{i:04d}-" + "x" * 240)).touch()
+        sync(root)
+
+    base.mkdir()
+    before = os.statvfs(base).f_blocks
+    children = [child_checks(lambda w=w: names(w)) for w in range(2)]
+    children += [child_checks(lambda w=w: write_file(base / str(w), w, 3072))
+                 for w in range(4)]
+    for pid in children:
+        wait(pid)
+    (base / "initial-blocks").write_text(str(before))
+    (base / "sector-count").write_text("3072")
+    sync(base)
+    combined_verify(base)
+
+
+def combined_verify(base):
+    verify(base)
+    for worker in range(2):
+        for group in range(64):
+            directory = base / f"names-{worker}" / str(group)
+            assert len(list(directory.iterdir())) == 128
+            for i in range(128):
+                assert (directory / (f"{i:04d}-" + "x" * 240)).stat().st_size == 0
+    print("simultaneous metadata and data growth passed", flush=True)
+
+
 def hold(base):
     import time
     create(base)

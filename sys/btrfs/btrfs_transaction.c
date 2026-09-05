@@ -128,7 +128,7 @@ btrfs_trans_join(struct btrfs_fs *bmp,
 {
 	struct btrfs_trans_handle *handle;
 	struct btrfs_transaction *trans;
-	uint64_t generation;
+	uint64_t generation, failed_type, needed;
 	int dirty, end_error, error, retried = 0, grown = 0;
 
 	*handlep = NULL;
@@ -170,6 +170,7 @@ retry:
 
 	error = btrfs_space_reserve(handle, reservation);
 	if (error != 0) {
+		failed_type = handle->bth_failed_type;
 		generation = trans->bt_generation;
 		mtx_enter(&trans->bt_lock);
 		dirty = !TAILQ_EMPTY(&trans->bt_dirty_extent_buffers);
@@ -191,11 +192,21 @@ retry:
 			goto retry;
 		}
 		if (error == ENOSPC && reservation != NULL &&
-		    reservation->btr_data != 0 && !grown) {
-			error = btrfs_space_grow_data(bmp, reservation->btr_data);
+		    !reservation->btr_chunk && grown < 3 && failed_type != 0) {
+			if (failed_type == BTRFS_BLOCK_GROUP_DATA)
+				needed = reservation->btr_data;
+			else if (failed_type == BTRFS_BLOCK_GROUP_SYSTEM)
+				needed = reservation->btr_system;
+			else {
+				needed = reservation->btr_metadata;
+				if (letoh64(bmp->bm_super.compat_ro_flags) &
+				    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)
+					needed *= 2;
+			}
+			error = btrfs_space_grow(bmp, failed_type, needed);
 			if (error != 0)
 				return (error);
-			grown = 1;
+			grown++;
 			retried = 0;
 			goto retry;
 		}
@@ -767,6 +778,7 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 		(void)btrfs_roots_finish(trans, 1);
 		generation = trans->bt_generation + 1;
 		btrfs_space_commit(trans);
+		btrfs_space_publish_chunk(trans);
 		next = btrfs_trans_alloc(bmp, generation);
 		reserve_error = btrfs_space_reserve_commit(next);
 		if (reserve_error != 0) {
