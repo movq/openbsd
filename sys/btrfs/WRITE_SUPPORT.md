@@ -48,9 +48,10 @@ Current limits:
   NODATASUM, compressed/encoded overlap, and regular mappings beyond the old
   rounded EOF; preallocation remains zero-filled. Shrinking, unlink, rmdir,
   and rename are unsupported.
-* Writes convert uncompressed inline files of at most one sector to regular
-  extents. Larger/compressed inline files, NODATASUM, encoded mappings, and
-  compressed overlap remain unsupported. Regular/preallocated uncompressed
+* Writes and growth convert uncompressed or Zstd inline files of at most one
+  decoded sector to regular extents. Larger inline files, other compression
+  codecs, NODATASUM, encoded mappings, and compressed regular overlap remain
+  unsupported. Regular/preallocated uncompressed
   mappings can be split; NODATACOW data is replaced by COW. Compressed reads
   support Zstd only.
 * Creation rejects parents with xattrs or NODATACOW pending inheritance support.

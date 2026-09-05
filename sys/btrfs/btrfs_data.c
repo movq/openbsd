@@ -867,6 +867,26 @@ btrfs_fill_file_holes(struct btrfs_trans_handle *handle,
 	return (btrfs_file_holes(handle, node, oldsize, size, NULL));
 }
 
+static int
+btrfs_check_inline_conversion(struct btrfs_node *node,
+    const struct btrfs_file_extent *extent)
+{
+	uint32_t sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+
+	KASSERT(extent->bfe_type == BTRFS_FILE_EXTENT_INLINE);
+	if ((extent->bfe_compression != BTRFS_COMPRESS_NONE &&
+	    extent->bfe_compression != BTRFS_COMPRESS_ZSTD) ||
+	    extent->bfe_encryption != 0 || extent->bfe_other_encoding != 0 ||
+	    extent->bfe_length > sectorsize)
+		return (EOPNOTSUPP);
+	if (extent->bfe_length != node->bn_inode.bi_size ||
+	    extent->bfe_length != node->bn_inode.bi_nbytes ||
+	    (extent->bfe_compression == BTRFS_COMPRESS_NONE &&
+	    extent->bfe_inline_size != extent->bfe_length))
+		return (EINVAL);
+	return (0);
+}
+
 /*
  * Preflight growth before joining a transaction.  Return the sector needing
  * COW to preserve the old prefix and zero its tail, or UINT64_MAX for purely
@@ -901,18 +921,9 @@ btrfs_check_file_extend(struct btrfs_node *node, uint64_t size,
 	if (error != 0)
 		goto out;
 	if (extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
-		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
-		    extent.bfe_encryption != 0 || extent.bfe_other_encoding != 0 ||
-		    extent.bfe_length > sectorsize) {
-			error = EOPNOTSUPP;
+		error = btrfs_check_inline_conversion(node, &extent);
+		if (error != 0)
 			goto out;
-		}
-		if (extent.bfe_length != oldsize ||
-		    extent.bfe_inline_size != oldsize ||
-		    node->bn_inode.bi_nbytes != oldsize) {
-			error = EINVAL;
-			goto out;
-		}
 		*tail_offset = 0;
 		cursor = sectorsize;
 	} else {
@@ -1043,26 +1054,21 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 			 * Preserve sector zero in the same reserved handle
 			 * before installing a write beyond it.
 			 */
-			if (first.bfe_compression != BTRFS_COMPRESS_NONE ||
-			    first.bfe_encryption != 0 ||
-			    first.bfe_other_encoding != 0 ||
-			    first.bfe_length > sectorsize) {
-				error = EOPNOTSUPP;
+			error = btrfs_check_inline_conversion(node, &first);
+			if (error != 0)
 				goto out;
-			}
-			if (first.bfe_inline_size != first.bfe_length ||
-			    first.bfe_length != node->bn_inode.bi_size ||
-			    first.bfe_length != node->bn_inode.bi_nbytes) {
-				error = EINVAL;
-				goto out;
-			}
 			inline_data = malloc(sectorsize, M_BTRFS,
 			    M_WAITOK | M_ZERO);
-			memcpy(inline_data, first.bfe_inline_data,
-			    first.bfe_inline_size);
+			if (first.bfe_compression == BTRFS_COMPRESS_NONE)
+				memcpy(inline_data, first.bfe_inline_data,
+				    first.bfe_inline_size);
+			else
+				error = btrfs_read_compressed_extent(node,
+				    &first, 0, first.bfe_length, inline_data);
 			btrfs_release_path(&path);
-			error = btrfs_write_file_sector(handle, node, 0,
-			    inline_data, node->bn_inode.bi_size);
+			if (error == 0)
+				error = btrfs_write_file_sector(handle, node, 0,
+				    inline_data, node->bn_inode.bi_size);
 			free(inline_data, M_BTRFS, sectorsize);
 			if (error != 0)
 				goto out;
@@ -1081,17 +1087,13 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	btrfs_release_path(&path);
 
 	if (old.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
-		if (old.bfe_compression != BTRFS_COMPRESS_NONE ||
-		    old.bfe_encryption != 0 || old.bfe_other_encoding != 0 ||
-		    old.bfe_length > sectorsize)
-			return (EOPNOTSUPP);
-		if (old.bfe_inline_size != old.bfe_length ||
-		    old.bfe_length != node->bn_inode.bi_size ||
-		    old.bfe_length != node->bn_inode.bi_nbytes)
-			return (EINVAL);
+		error = btrfs_check_inline_conversion(node, &old);
+		if (error != 0)
+			return (error);
 		inline_bytes = old.bfe_length;
-		/* The caller's zero-filled sector includes all inline data. */
+		/* The caller's sector includes all decoded inline data. */
 		old.bfe_length = sectorsize;
+		old.bfe_compression = BTRFS_COMPRESS_NONE;
 	}
 	old_end = old.bfe_logical + old.bfe_length;
 	if (old.bfe_logical > file_offset || old_end < end ||
