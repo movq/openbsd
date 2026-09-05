@@ -243,6 +243,7 @@ struct btrfs_block_group {
 	uint64_t			 bbg_reserved_bytes;
 	uint64_t			 bbg_allocated_bytes;
 	uint64_t			 bbg_pinned_bytes;
+	uint64_t			 bbg_excluded_bytes;
 	uint64_t			 bbg_flags;
 	/* Scratch fields used only while constructing the mount-time index. */
 	uint64_t			 bbg_build_cursor;

@@ -139,9 +139,12 @@ notifications only after successful mutation. Directory size is twice the sum
 of name lengths, and Btrfs directories have a link count of one.
 
 Free-space indexes are built from block-group bounds minus allocated extents,
-with accounting checked against the extent tree and superblock. Keep free,
-reserved, transaction-allocated, and pinned space distinct. Reservations are
-typed for data/metadata/system space, including mixed block groups.
+excluding logical ranges that map to a superblock's 64 KiB stripe on any
+mirror. These exclusions are separate from on-disk block-group usage, because
+they have no extent items. Accounting is checked against the extent tree and
+superblock. Keep free, reserved, transaction-allocated, and pinned space
+distinct. Reservations are typed for data/metadata/system space, including
+mixed block groups.
 
 An emergency metadata reserve is retained for commit and excluded from ordinary
 handles. It covers four maximum-height COW/split paths plus accounting margin.
