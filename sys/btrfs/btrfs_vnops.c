@@ -992,6 +992,9 @@ btrfs_write(void *v)
 	struct btrfs_inode saved;
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_trans_reservation reservation = { 0 };
+	struct btrfs_file_extent first;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
 	struct buf *bp = NULL;
 	struct uio *uio = ap->a_uio;
 	struct timespec now;
@@ -1032,17 +1035,34 @@ btrfs_write(void *v)
 		return (EFBIG);
 	if ((node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0)
 		return (EOPNOTSUPP);
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	reservation.btr_data = sectorsize;
+	reservation.btr_metadata =
+	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
+	    BTRFS_VOP_METADATA_BLOCKS;
+	/*
+	 * A sparse write to an inline file also materializes sector zero.
+	 * Reserve both replacements before either becomes visible.
+	 */
+	if ((uint64_t)uio->uio_offset >= sectorsize) {
+		error = btrfs_get_root(bmp, node->bn_treeid, &root);
+		if (error == 0)
+			error = btrfs_find_file_extent(bmp, root, &path,
+			    node->bn_ino, 0, node->bn_inode.bi_size, &first);
+		btrfs_release_path(&path);
+		if (error != 0)
+			return (error);
+		if (first.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+			reservation.btr_data *= 2;
+			reservation.btr_metadata *= 2;
+		}
+	}
 	error = vn_fsizechk(vp, uio, ap->a_ioflag, &overrun);
 	if (error != 0)
 		return (error);
 	unit_offset = uio->uio_offset;
 	resid = uio->uio_resid;
 
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	reservation.btr_data = sectorsize;
-	reservation.btr_metadata =
-	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
-	    BTRFS_VOP_METADATA_BLOCKS;
 	data = malloc(sectorsize, M_BTRFS, M_WAITOK);
 	while (uio->uio_resid != 0) {
 		block = (uint64_t)uio->uio_offset / sectorsize;

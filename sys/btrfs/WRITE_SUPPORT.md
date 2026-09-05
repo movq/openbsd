@@ -26,9 +26,11 @@ Current limits:
   Simultaneous subvolume mounts require a design discussion before implementation.
   They must share device ownership, allocation, transactions, and caches.
 * No truncate, unlink, rmdir, rename, or device-node creation.
-* Writes reject inline files, NODATASUM, encoded mappings, and compressed
-  overlap. Regular/preallocated uncompressed mappings can be split;
-  NODATACOW data is replaced by COW.
+* Writes convert uncompressed inline files of at most one sector to regular
+  extents. Larger/compressed inline files, NODATASUM, encoded mappings, and
+  compressed overlap remain unsupported. Regular/preallocated uncompressed
+  mappings can be split; NODATACOW data is replaced by COW. Compressed reads
+  support Zstd only.
 * Creation rejects parents with xattrs or NODATACOW pending inheritance support.
   New inodes inherit parent group and compression flags, but write uncompressed
   data. Inline symlink targets are limited to `MAXPATHLEN - 1` bytes.
