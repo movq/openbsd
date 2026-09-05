@@ -30,12 +30,12 @@
 
 #include <btrfs/btrfs_var.h>
 
-static void	btrfs_root_init(struct btrfs_mount *, struct btrfs_root *,
+static void	btrfs_root_init(struct btrfs_fs *, struct btrfs_root *,
 		    struct rwlock *, uint64_t,
 		    const struct btrfs_root_location *);
 static struct btrfs_root *
-		btrfs_root_lookup(struct btrfs_mount *, uint64_t);
-static void	btrfs_root_insert(struct btrfs_mount *, uint64_t,
+		btrfs_root_lookup(struct btrfs_fs *, uint64_t);
+static void	btrfs_root_insert(struct btrfs_fs *, uint64_t,
 		    const struct btrfs_root_location *);
 static int	btrfs_root_dirty(struct btrfs_trans_handle *,
 		    struct btrfs_root *);
@@ -67,7 +67,7 @@ static int	btrfs_mutate_item(struct btrfs_trans_handle *,
 #define BTRFS_SPLIT_MAX_RIGHTS	2
 
 static void
-btrfs_root_init(struct btrfs_mount *bmp, struct btrfs_root *root,
+btrfs_root_init(struct btrfs_fs *bmp, struct btrfs_root *root,
     struct rwlock *lock, uint64_t owner,
     const struct btrfs_root_location *location)
 {
@@ -86,7 +86,7 @@ btrfs_root_init(struct btrfs_mount *bmp, struct btrfs_root *root,
 }
 
 static struct btrfs_root *
-btrfs_root_lookup(struct btrfs_mount *bmp, uint64_t owner)
+btrfs_root_lookup(struct btrfs_fs *bmp, uint64_t owner)
 {
 	struct btrfs_root_entry *entry;
 	struct btrfs_root *root = NULL;
@@ -103,7 +103,7 @@ btrfs_root_lookup(struct btrfs_mount *bmp, uint64_t owner)
 }
 
 static void
-btrfs_root_insert(struct btrfs_mount *bmp, uint64_t owner,
+btrfs_root_insert(struct btrfs_fs *bmp, uint64_t owner,
     const struct btrfs_root_location *location)
 {
 	struct btrfs_root_entry *entry;
@@ -118,7 +118,7 @@ btrfs_root_insert(struct btrfs_mount *bmp, uint64_t owner,
 }
 
 void
-btrfs_init_roots(struct btrfs_mount *bmp,
+btrfs_init_roots(struct btrfs_fs *bmp,
     const struct btrfs_bootstrap *bootstrap)
 {
 	struct btrfs_root_location location;
@@ -140,7 +140,7 @@ btrfs_init_roots(struct btrfs_mount *bmp,
 	location.brl_bytenr = bootstrap->bb_fs_root;
 	location.brl_generation = bootstrap->bb_fs_root_generation;
 	location.brl_level = bootstrap->bb_fs_root_level;
-	btrfs_root_insert(bmp, bmp->bm_treeid, &location);
+	btrfs_root_insert(bmp, BTRFS_FS_TREE_OBJECTID, &location);
 
 	location.brl_bytenr = bootstrap->bb_csum_root;
 	location.brl_generation = bootstrap->bb_csum_root_generation;
@@ -158,7 +158,7 @@ btrfs_init_roots(struct btrfs_mount *bmp,
 }
 
 void
-btrfs_free_roots(struct btrfs_mount *bmp)
+btrfs_free_roots(struct btrfs_fs *bmp)
 {
 	struct btrfs_root_entry *entry;
 
@@ -292,7 +292,7 @@ out:
 }
 
 int
-btrfs_get_root(struct btrfs_mount *bmp, uint64_t owner,
+btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
     struct btrfs_root **rootp)
 {
 	struct btrfs_root_item item;
@@ -1886,7 +1886,7 @@ btrfs_search_predecessor(struct btrfs_root *root,
 }
 
 int
-btrfs_read_data_csums(struct btrfs_mount *bmp, uint64_t logical,
+btrfs_read_data_csums(struct btrfs_fs *bmp, uint64_t logical,
     uint64_t length, uint32_t *csums)
 {
 	const struct btrfs_key *key;
@@ -1985,7 +1985,7 @@ out:
 }
 
 int
-btrfs_lookup_data_csum(struct btrfs_mount *bmp, uint64_t logical,
+btrfs_lookup_data_csum(struct btrfs_fs *bmp, uint64_t logical,
     uint32_t *csump)
 {
 	return (btrfs_read_data_csums(bmp, logical,

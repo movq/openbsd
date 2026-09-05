@@ -478,7 +478,7 @@ int
 btrfs_build_super(struct btrfs_transaction *trans,
     struct btrfs_super_block *sb)
 {
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	struct btrfs_root_backup *backup;
 	struct btrfs_root_location csum, dev, extent, fs, root, chunk;
 	unsigned int slot;
@@ -508,7 +508,7 @@ btrfs_build_super(struct btrfs_transaction *trans,
 		error = btrfs_snapshot_root(trans,
 		    BTRFS_EXTENT_TREE_OBJECTID, &extent);
 	if (error == 0)
-		error = btrfs_snapshot_root(trans, bmp->bm_treeid, &fs);
+		error = btrfs_snapshot_root(trans, BTRFS_FS_TREE_OBJECTID, &fs);
 	if (error == 0)
 		error = btrfs_snapshot_root(trans, BTRFS_DEV_TREE_OBJECTID,
 		    &dev);
@@ -565,7 +565,7 @@ btrfs_build_super(struct btrfs_transaction *trans,
  * outside that prefix is not a superblock mirror of this filesystem.
  */
 int
-btrfs_super_mirror_writable(const struct btrfs_mount *bmp, unsigned int index)
+btrfs_super_mirror_writable(const struct btrfs_fs *bmp, unsigned int index)
 {
 	const struct btrfs_super_mirror *mirror;
 	uint64_t size;
@@ -579,7 +579,7 @@ btrfs_super_mirror_writable(const struct btrfs_mount *bmp, unsigned int index)
 }
 
 int
-btrfs_write_super_mirrors(struct btrfs_mount *bmp,
+btrfs_write_super_mirrors(struct btrfs_fs *bmp,
     const struct btrfs_super_block *template)
 {
 	struct btrfs_super_block *sb;

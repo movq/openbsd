@@ -26,7 +26,7 @@
 #include <btrfs/btrfs_var.h>
 
 struct btrfs_space_build {
-	struct btrfs_mount	*bsb_mount;
+	struct btrfs_fs		*bsb_mount;
 	uint64_t		 bsb_bytes_used;
 };
 
@@ -43,12 +43,12 @@ static int	btrfs_space_add_extent(const struct btrfs_extent_record *,
 		    void *);
 static int	btrfs_space_add_free(struct btrfs_block_group *, uint64_t,
 		    uint64_t);
-static int	btrfs_space_exclude_supers(struct btrfs_mount *,
+static int	btrfs_space_exclude_supers(struct btrfs_fs *,
 		    struct btrfs_block_group *, const struct btrfs_chunk_map *);
 static int	btrfs_space_check_type(uint64_t);
 static int	btrfs_space_group_matches(const struct btrfs_block_group *,
 		    uint64_t, int);
-static int	btrfs_space_reserve_type(struct btrfs_mount *,
+static int	btrfs_space_reserve_type(struct btrfs_fs *,
 		    struct btrfs_reserved_space_list *, uint64_t, uint64_t);
 static void	btrfs_space_release_list(
 		    struct btrfs_reserved_space_list *);
@@ -57,7 +57,7 @@ static int	btrfs_space_ranges_overlap(uint64_t, uint64_t, uint64_t,
 		    uint64_t);
 static int	btrfs_space_range_is_free(const struct btrfs_block_group *,
 		    uint64_t, uint64_t);
-static void	btrfs_space_destroy_groups(struct btrfs_mount *, int);
+static void	btrfs_space_destroy_groups(struct btrfs_fs *, int);
 static unsigned int
 		btrfs_space_insert_free_locked(struct btrfs_block_group *,
 		    struct btrfs_free_extent *,
@@ -66,11 +66,11 @@ static void	btrfs_space_check_group(struct btrfs_block_group *);
 static void	btrfs_space_check_commit_reserve(
 		    struct btrfs_transaction *);
 static struct btrfs_block_group *
-		btrfs_space_find_group(struct btrfs_mount *, uint64_t,
+		btrfs_space_find_group(struct btrfs_fs *, uint64_t,
 		    uint64_t);
 
 static struct btrfs_block_group *
-btrfs_space_find_group(struct btrfs_mount *bmp, uint64_t bytenr,
+btrfs_space_find_group(struct btrfs_fs *bmp, uint64_t bytenr,
     uint64_t length)
 {
 	struct btrfs_block_group *group;
@@ -128,7 +128,7 @@ btrfs_space_check_type(uint64_t type)
  * logical range.  This runs while constructing the mount's free-space index.
  */
 static int
-btrfs_space_exclude_supers(struct btrfs_mount *bmp,
+btrfs_space_exclude_supers(struct btrfs_fs *bmp,
     struct btrfs_block_group *group, const struct btrfs_chunk_map *chunk)
 {
 	struct {
@@ -204,8 +204,7 @@ btrfs_space_exclude_supers(struct btrfs_mount *bmp,
 		}
 		group->bbg_free_bytes -= removed;
 		group->bbg_excluded_bytes += removed;
-		if (removed != end - start &&
-		    (bmp->bm_mount->mnt_flag & MNT_RDONLY) == 0) {
+		if (removed != end - start && !bmp->bm_readonly) {
 			printf("btrfs: allocated extent overlaps superblock"
 			    " stripe at %llu\n", (unsigned long long)start);
 			return (EINVAL);
@@ -231,7 +230,7 @@ static int
 btrfs_space_handle_error(struct btrfs_trans_handle *handle)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	int error;
 
 	mtx_enter(&bmp->bm_trans_mtx);
@@ -382,7 +381,7 @@ btrfs_space_add_block_group(const struct btrfs_block_group_record *record,
     void *arg)
 {
 	struct btrfs_space_build *build = arg;
-	struct btrfs_mount *bmp = build->bsb_mount;
+	struct btrfs_fs *bmp = build->bsb_mount;
 	struct btrfs_block_group *group;
 	const struct btrfs_chunk_map *chunk;
 	unsigned int i;
@@ -434,7 +433,7 @@ btrfs_space_add_extent(const struct btrfs_extent_record *record, void *arg)
 }
 
 int
-btrfs_space_init(struct btrfs_mount *bmp)
+btrfs_space_init(struct btrfs_fs *bmp)
 {
 	struct btrfs_space_build build;
 	struct btrfs_block_group *group;
@@ -521,7 +520,7 @@ fail:
 }
 
 static void
-btrfs_space_destroy_groups(struct btrfs_mount *bmp, int initialized)
+btrfs_space_destroy_groups(struct btrfs_fs *bmp, int initialized)
 {
 	struct btrfs_block_group *group;
 	struct btrfs_free_extent *space;
@@ -551,13 +550,13 @@ btrfs_space_destroy_groups(struct btrfs_mount *bmp, int initialized)
 }
 
 void
-btrfs_space_destroy(struct btrfs_mount *bmp)
+btrfs_space_destroy(struct btrfs_fs *bmp)
 {
 	btrfs_space_destroy_groups(bmp, 1);
 }
 
 static int
-btrfs_space_reserve_type(struct btrfs_mount *bmp,
+btrfs_space_reserve_type(struct btrfs_fs *bmp,
     struct btrfs_reserved_space_list *reservations, uint64_t type,
     uint64_t bytes)
 {
@@ -624,7 +623,7 @@ int
 btrfs_space_reserve(struct btrfs_trans_handle *handle,
     const struct btrfs_trans_reservation *request)
 {
-	struct btrfs_mount *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	uint32_t sectorsize;
 	int error;
 
@@ -663,7 +662,7 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 int
 btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 {
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	uint64_t bytes;
 	uint32_t nodesize;
 	int error;
@@ -742,7 +741,7 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
     uint64_t length, uint64_t alignment, uint64_t *bytenrp)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_reserved_space_list *reservations;
 	struct btrfs_reserved_space *reservation;
 	struct btrfs_trans_extent *allocated;
@@ -1039,7 +1038,7 @@ int
 btrfs_update_space_items(struct btrfs_trans_handle *handle)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_block_group *group;
 	struct btrfs_block_group_item item;
 	struct btrfs_path path = { 0 };
@@ -1123,7 +1122,7 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
     uint64_t length)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_trans_extent *extent, *pinned;
 	struct btrfs_block_group *group;
 	uint32_t sectorsize;

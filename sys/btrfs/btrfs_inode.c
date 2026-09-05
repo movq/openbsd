@@ -39,7 +39,7 @@ static void	btrfs_encode_timespec(const struct timespec *,
 		    struct btrfs_timespec *);
 static void	btrfs_decode_inode(const struct btrfs_inode_item *,
 		    struct btrfs_inode *);
-static int	btrfs_decode_file_extent(const struct btrfs_mount *,
+static int	btrfs_decode_file_extent(const struct btrfs_fs *,
 		    uint64_t, const struct btrfs_key *, const uint8_t *,
 		    uint32_t, struct btrfs_file_extent *);
 static int	btrfs_prepare_append(struct btrfs_root *,
@@ -246,7 +246,7 @@ int
 btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
     mode_t mode, uid_t uid, gid_t gid, const char *link, struct vnode **vpp)
 {
-	struct btrfs_mount *bmp = dir->bn_mount;
+	struct btrfs_fs *bmp = dir->bn_mount;
 	struct btrfs_trans_reservation reservation = { 0 };
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_path path = { 0 };
@@ -542,7 +542,7 @@ int
 btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
     const char *name, size_t namelen)
 {
-	struct btrfs_mount *bmp = dir->bn_mount;
+	struct btrfs_fs *bmp = dir->bn_mount;
 	struct btrfs_trans_reservation reservation = { 0 };
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_root *root;
@@ -812,7 +812,7 @@ out:
 }
 
 int
-btrfs_find_subvol_parent(struct btrfs_mount *bmp, uint64_t treeid,
+btrfs_find_subvol_parent(struct btrfs_fs *bmp, uint64_t treeid,
     uint64_t *parent_treeidp, uint64_t *parent_diridp)
 {
 	const struct btrfs_root_ref *ref;
@@ -827,9 +827,9 @@ btrfs_find_subvol_parent(struct btrfs_mount *bmp, uint64_t treeid,
 	unsigned int nrefs = 0;
 	int error;
 
-	if (treeid == bmp->bm_treeid) {
+	if (treeid == BTRFS_FS_TREE_OBJECTID) {
 		*parent_treeidp = treeid;
-		*parent_diridp = bmp->bm_root_dirid;
+		*parent_diridp = BTRFS_FIRST_FREE_OBJECTID;
 		return (0);
 	}
 
@@ -859,7 +859,7 @@ btrfs_find_subvol_parent(struct btrfs_mount *bmp, uint64_t treeid,
 
 		parent_treeid = letoh64(key->offset);
 		parent_dirid = letoh64(ref->dirid);
-		if ((parent_treeid != bmp->bm_treeid &&
+		if ((parent_treeid != BTRFS_FS_TREE_OBJECTID &&
 		    (parent_treeid < BTRFS_FIRST_FREE_OBJECTID ||
 		    parent_treeid > BTRFS_LAST_FREE_OBJECTID)) ||
 		    parent_dirid < BTRFS_FIRST_FREE_OBJECTID ||
@@ -1008,7 +1008,7 @@ btrfs_lookup_directory(struct btrfs_root *root, uint64_t objectid,
 }
 
 static int
-btrfs_decode_file_extent(const struct btrfs_mount *bmp,
+btrfs_decode_file_extent(const struct btrfs_fs *bmp,
     uint64_t view_generation, const struct btrfs_key *key,
     const uint8_t *data, uint32_t item_size, struct btrfs_file_extent *decoded)
 {
@@ -1097,7 +1097,7 @@ btrfs_decode_file_extent(const struct btrfs_mount *bmp,
 }
 
 int
-btrfs_find_file_extent(const struct btrfs_mount *bmp,
+btrfs_find_file_extent(const struct btrfs_fs *bmp,
     struct btrfs_root *root, struct btrfs_path *path, uint64_t objectid,
     uint64_t position, uint64_t file_size, struct btrfs_file_extent *extent)
 {

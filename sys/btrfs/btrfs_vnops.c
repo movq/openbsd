@@ -217,7 +217,8 @@ btrfs_lookup(void *v)
 	struct vnode **vpp = ap->a_vpp;
 	struct componentname *cnp = ap->a_cnp;
 	struct btrfs_node *node = VTOBTRFS(dvp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(dvp->v_mount);
 	struct btrfs_lookup_ctx ctx;
 	struct btrfs_root *root;
 	uint64_t parent, parent_treeid;
@@ -246,8 +247,8 @@ btrfs_lookup(void *v)
 
 	if (cnp->cn_flags & ISDOTDOT) {
 		parent_treeid = node->bn_treeid;
-		if (node->bn_ino == bmp->bm_root_dirid &&
-		    node->bn_treeid == bmp->bm_treeid) {
+		if (node->bn_ino == view->bmv_root_dirid &&
+		    node->bn_treeid == view->bmv_treeid) {
 			vref(dvp);
 			*vpp = dvp;
 			goto found;
@@ -526,16 +527,26 @@ out:
 }
 
 static int
+btrfs_node_readonly(struct btrfs_node *node)
+{
+	struct btrfs_mount *view =
+	    VFSTOBTRFSVIEW(node->bn_vnode->v_mount);
+
+	return (node->bn_mount->bm_readonly ||
+	    (view->bmv_mount->mnt_flag & MNT_RDONLY) ||
+	    view->bmv_subvol_readonly ||
+	    node->bn_treeid != view->bmv_treeid ||
+	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY));
+}
+
+static int
 btrfs_open(void *v)
 {
 	struct vop_open_args *ap = v;
 	struct btrfs_node *node = VTOBTRFS(ap->a_vp);
 
 	if (ap->a_mode & FWRITE) {
-		if ((ap->a_vp->v_mount->mnt_flag & MNT_RDONLY) ||
-		    node->bn_mount->bm_subvol_readonly ||
-		    node->bn_treeid != node->bn_mount->bm_treeid ||
-		    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
+		if (btrfs_node_readonly(node))
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
 			return (EPERM);
@@ -559,10 +570,7 @@ btrfs_access(void *v)
 	if (ap->a_mode & VWRITE) {
 		if (ap->a_vp->v_type != VFIFO &&
 		    ap->a_vp->v_type != VSOCK &&
-		    ((ap->a_vp->v_mount->mnt_flag & MNT_RDONLY) ||
-		    node->bn_mount->bm_subvol_readonly ||
-		    node->bn_treeid != node->bn_mount->bm_treeid ||
-		    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY)))
+		    btrfs_node_readonly(node))
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
 			return (EPERM);
@@ -610,7 +618,7 @@ btrfs_setattr(void *v)
 	struct vop_setattr_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_inode saved;
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_trans_reservation reservation = { 0 };
@@ -637,10 +645,7 @@ btrfs_setattr(void *v)
 	    (vap->va_mtime.tv_nsec < 0 ||
 	    vap->va_mtime.tv_nsec >= 1000000000)))
 		return (EINVAL);
-	if ((vp->v_mount->mnt_flag & MNT_RDONLY) ||
-	    bmp->bm_subvol_readonly ||
-	    node->bn_treeid != bmp->bm_treeid ||
-	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
+	if (btrfs_node_readonly(node))
 		return (EROFS);
 	if (node->bn_inode.bi_flags &
 	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND))
@@ -744,7 +749,7 @@ btrfs_read_regular_extent(struct btrfs_node *node,
     const struct btrfs_file_extent *extent, uint64_t file_offset, size_t size,
     uint8_t *destination)
 {
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct buf *bp = NULL;
 	uint32_t *csums = NULL;
 	uint64_t block, logical, relative;
@@ -814,7 +819,7 @@ static int
 btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
     uint8_t *destination)
 {
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
@@ -941,7 +946,7 @@ btrfs_read(void *v)
 	struct vop_read_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct buf *bp = NULL;
 	struct uio *uio = ap->a_uio;
 	uint64_t file_size;
@@ -988,7 +993,7 @@ btrfs_write(void *v)
 	struct vop_write_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_inode saved;
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_trans_reservation reservation = { 0 };
@@ -1014,10 +1019,7 @@ btrfs_write(void *v)
 		return (EINVAL);
 	if (uio->uio_resid == 0)
 		return (0);
-	if ((vp->v_mount->mnt_flag & MNT_RDONLY) ||
-	    bmp->bm_subvol_readonly ||
-	    node->bn_treeid != bmp->bm_treeid ||
-	    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
+	if (btrfs_node_readonly(node))
 		return (EROFS);
 	if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
 		return (EPERM);
@@ -1164,7 +1166,7 @@ btrfs_fsync(void *v)
 {
 	struct vop_fsync_args *ap = v;
 	struct btrfs_node *node = VTOBTRFS(ap->a_vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_transaction *trans;
 	uint64_t generation;
 	int error = 0;
@@ -1195,7 +1197,7 @@ btrfs_readlink(void *v)
 	struct vop_readlink_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
@@ -1350,7 +1352,8 @@ btrfs_readdir(void *v)
 	struct vop_readdir_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(vp->v_mount);
 	struct btrfs_readdir_ctx ctx;
 	struct btrfs_root *root;
 	struct uio *uio = ap->a_uio;
@@ -1375,7 +1378,7 @@ btrfs_readdir(void *v)
 	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOTDOT) {
 		parent_treeid = node->bn_treeid;
 		if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID &&
-		    node->bn_treeid != bmp->bm_treeid)
+		    node->bn_treeid != view->bmv_treeid)
 			error = btrfs_find_subvol_parent(bmp, node->bn_treeid,
 			    &parent_treeid, &parent);
 		else {
@@ -1423,7 +1426,7 @@ btrfs_reclaim(void *v)
 	struct vop_reclaim_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 
 	if (node->bn_hashed) {
 		mtx_enter(&bmp->bm_nodemtx);

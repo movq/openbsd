@@ -79,7 +79,7 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
     struct btrfs_extent_buffer **ebp)
 {
 	struct btrfs_extent_buffer *eb, *new;
-	struct btrfs_mount *bmp = root->br_mount;
+	struct btrfs_fs *bmp = root->br_mount;
 	uint32_t sectorsize;
 	int error;
 
@@ -168,7 +168,7 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 {
 	struct btrfs_transaction *trans;
 	struct btrfs_extent_buffer *eb, *collision;
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	struct btrfs_header *header;
 	uint64_t bytenr, flags;
 	uint32_t nodesize;
@@ -259,7 +259,7 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 {
 	struct btrfs_transaction *trans;
 	struct btrfs_extent_buffer *eb, *collision;
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	struct btrfs_header *header;
 	const struct btrfs_header *source_header;
 	uint64_t bytenr, flags;
@@ -354,7 +354,7 @@ btrfs_extent_buffer_discard(struct btrfs_trans_handle *handle,
     struct btrfs_extent_buffer *eb)
 {
 	struct btrfs_transaction *trans;
-	struct btrfs_mount *bmp;
+	struct btrfs_fs *bmp;
 	uint32_t nodesize;
 	int error;
 
@@ -435,7 +435,7 @@ btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *handle,
 void
 btrfs_extent_buffer_put(struct btrfs_extent_buffer *eb)
 {
-	struct btrfs_mount *bmp = eb->eb_mount;
+	struct btrfs_fs *bmp = eb->eb_mount;
 	int last;
 
 	KASSERT(eb->eb_refs > 0);
@@ -470,7 +470,7 @@ static void
 btrfs_extent_buffer_fail_transaction(struct btrfs_transaction *trans,
     int error)
 {
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 
 	if (error == 0)
 		error = EIO;
@@ -478,7 +478,7 @@ btrfs_extent_buffer_fail_transaction(struct btrfs_transaction *trans,
 	if (trans->bt_error == 0)
 		trans->bt_error = error;
 	trans->bt_state = BTRFS_TRANS_ABORTED;
-	bmp->bm_mount->mnt_flag |= MNT_RDONLY;
+	btrfs_fs_set_readonly(bmp);
 	wakeup(&bmp->bm_transaction);
 	mtx_leave(&bmp->bm_trans_mtx);
 }
@@ -487,7 +487,7 @@ int
 btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 {
 	struct btrfs_extent_buffer *eb;
-	struct btrfs_mount *bmp = trans->bt_mount;
+	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_header *header;
 	uint64_t flags;
 	uint32_t csum, nodesize;

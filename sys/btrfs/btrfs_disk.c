@@ -33,13 +33,13 @@ struct btrfs_free_space_state {
 };
 
 static int	btrfs_first_item(struct btrfs_root *, struct btrfs_path *);
-static int	btrfs_find_chunk(const struct btrfs_mount *, uint64_t,
+static int	btrfs_find_chunk(const struct btrfs_fs *, uint64_t,
 		    uint64_t, unsigned int *);
 static int	btrfs_finish_extent(uint64_t, uint64_t, int);
 static int	btrfs_emit_backref(uint64_t, uint8_t, uint64_t,
 		    const uint8_t *, size_t, int, uint64_t *,
 		    btrfs_backref_iter_fn, void *);
-static int	btrfs_read_extent_item(struct btrfs_mount *,
+static int	btrfs_read_extent_item(struct btrfs_fs *,
 		    const struct btrfs_key *, const uint8_t *, uint32_t,
 		    struct btrfs_extent_record *, uint64_t *,
 		    btrfs_extent_iter_fn, btrfs_backref_iter_fn, void *);
@@ -54,7 +54,7 @@ btrfs_first_item(struct btrfs_root *root, struct btrfs_path *path)
 }
 
 static int
-btrfs_find_chunk(const struct btrfs_mount *bmp, uint64_t bytenr,
+btrfs_find_chunk(const struct btrfs_fs *bmp, uint64_t bytenr,
     uint64_t length, unsigned int *indexp)
 {
 	const struct btrfs_chunk_map *chunk;
@@ -165,7 +165,7 @@ btrfs_emit_backref(uint64_t bytenr, uint8_t type, uint64_t key_offset,
 }
 
 static int
-btrfs_read_extent_item(struct btrfs_mount *bmp,
+btrfs_read_extent_item(struct btrfs_fs *bmp,
     const struct btrfs_key *key, const uint8_t *data, uint32_t size,
     struct btrfs_extent_record *record, uint64_t *refsp,
     btrfs_extent_iter_fn extent_callback,
@@ -341,7 +341,7 @@ btrfs_read_extent_item(struct btrfs_mount *bmp,
 }
 
 int
-btrfs_iterate_extent_items(struct btrfs_mount *bmp,
+btrfs_iterate_extent_items(struct btrfs_fs *bmp,
     btrfs_extent_iter_fn extent_callback,
     btrfs_backref_iter_fn backref_callback, void *arg)
 {
@@ -436,7 +436,7 @@ btrfs_iterate_extent_items(struct btrfs_mount *bmp,
 }
 
 int
-btrfs_iterate_block_groups(struct btrfs_mount *bmp,
+btrfs_iterate_block_groups(struct btrfs_fs *bmp,
     btrfs_block_group_iter_fn callback, void *arg)
 {
 	const struct btrfs_block_group_item *item;
@@ -520,7 +520,7 @@ btrfs_iterate_block_groups(struct btrfs_mount *bmp,
 }
 
 int
-btrfs_iterate_chunk_items(struct btrfs_mount *bmp,
+btrfs_iterate_chunk_items(struct btrfs_fs *bmp,
     btrfs_chunk_iter_fn callback, void *arg)
 {
 	const struct btrfs_key *key;
@@ -571,7 +571,7 @@ btrfs_iterate_chunk_items(struct btrfs_mount *bmp,
 }
 
 int
-btrfs_iterate_device_extents(struct btrfs_mount *bmp,
+btrfs_iterate_device_extents(struct btrfs_fs *bmp,
     btrfs_dev_extent_iter_fn callback, void *arg)
 {
 	const struct btrfs_dev_extent *item;
@@ -672,7 +672,7 @@ btrfs_iterate_device_extents(struct btrfs_mount *bmp,
 }
 
 int
-btrfs_iterate_free_space(struct btrfs_mount *bmp,
+btrfs_iterate_free_space(struct btrfs_fs *bmp,
     btrfs_free_space_iter_fn callback, void *arg)
 {
 	const struct btrfs_free_space_info *info;
