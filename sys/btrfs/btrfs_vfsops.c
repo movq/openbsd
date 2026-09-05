@@ -673,13 +673,12 @@ btrfs_node_insert(struct btrfs_node *node)
 	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_node *other;
 
-	vn_lock(node->bn_vnode, LK_EXCLUSIVE | LK_RETRY);
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
 	mtx_enter(&bmp->bm_nodemtx);
 	LIST_FOREACH(other, &bmp->bm_nodes, bn_entry) {
 		if (other->bn_treeid == node->bn_treeid &&
 		    other->bn_ino == node->bn_ino) {
 			mtx_leave(&bmp->bm_nodemtx);
-			VOP_UNLOCK(node->bn_vnode);
 			return (EEXIST);
 		}
 	}
@@ -702,13 +701,9 @@ btrfs_vget_tree(struct mount *mp, uint64_t treeid, uint64_t ino,
     struct vnode **vpp)
 {
 	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
-	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
 	struct btrfs_root *root;
 	struct btrfs_inode inode;
-	struct btrfs_node *node;
-	struct vnode *vp, *alias;
-	enum vtype type;
-	dev_t rdev = 0;
+	struct vnode *vp;
 	int error;
 
 	if (ino < BTRFS_FIRST_FREE_OBJECTID ||
@@ -731,9 +726,41 @@ again:
 	error = btrfs_find_inode(root, ino, &inode);
 	if (error != 0)
 		return (error);
-	type = IFTOVT(inode.bi_mode);
+	error = btrfs_alloc_node(mp, root, ino, &inode, &vp);
+	if (error != 0)
+		return (error);
+	error = btrfs_init_node(&vp);
+	if (error != 0) {
+		vput(vp);
+		vgone(vp);
+		if (error == EEXIST)
+			goto again;
+		return (error);
+	}
+	*vpp = vp;
+	return (0);
+}
+
+/*
+ * Preallocate a locked, private vnode. Creation does this before joining a
+ * transaction so vnode exhaustion cannot leave a new directory entry behind.
+ * Alias registration and cache publication belong to btrfs_init_node.
+ */
+int
+btrfs_alloc_node(struct mount *mp, struct btrfs_root *root, uint64_t ino,
+    const struct btrfs_inode *inode, struct vnode **vpp)
+{
+	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
+	struct btrfs_node *node;
+	struct vnode *vp;
+	enum vtype type = IFTOVT(inode->bi_mode);
+	dev_t rdev;
+	int error;
+
+	*vpp = NULL;
 	if (type == VCHR || type == VBLK) {
-		error = btrfs_decode_rdev(inode.bi_rdev, &rdev);
+		error = btrfs_decode_rdev(inode->bi_rdev, &rdev);
 		if (error != 0)
 			return (error);
 	}
@@ -752,9 +779,9 @@ again:
 	node->bn_vnode = vp;
 	node->bn_mount = bmp;
 	node->bn_root = root;
-	node->bn_treeid = treeid;
+	node->bn_treeid = root->br_owner;
 	node->bn_ino = ino;
-	node->bn_inode = inode;
+	node->bn_inode = *inode;
 	rrw_init_flags(&node->bn_lock, "btrfsnode",
 	    RWL_DUPOK | RWL_IS_VNODE);
 	vp->v_data = node;
@@ -763,22 +790,35 @@ again:
 	if (type == VFIFO)
 		vp->v_op = &btrfs_fifo_vops;
 #endif
-	if (treeid == view->bmv_treeid && ino == view->bmv_root_dirid)
+	if (node->bn_treeid == view->bmv_treeid && ino == view->bmv_root_dirid)
 		vp->v_flag |= VROOT;
 
-	error = btrfs_node_insert(node);
-	if (error == EEXIST) {
-		vrele(vp);
-		goto again;
-	}
-	if (error != 0) {
-		vrele(vp);
-		return (error);
-	}
+	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	*vpp = vp;
+	return (0);
+}
 
-	if (type == VCHR || type == VBLK) {
+/*
+ * checkalias may lock unrelated vnodes, including one whose fsync is draining
+ * transaction handles. Never call with a handle. Keep the node private until
+ * alias adoption has settled its vnode identity.
+ */
+int
+btrfs_init_node(struct vnode **vpp)
+{
+	struct vnode *vp = *vpp, *alias;
+	struct btrfs_node *node = VTOBTRFS(vp);
+	dev_t rdev;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(vp));
+	KASSERT(!node->bn_hashed);
+	if (vp->v_type == VCHR || vp->v_type == VBLK) {
+		error = btrfs_decode_rdev(node->bn_inode.bi_rdev, &rdev);
+		if (error != 0)
+			return (error);
 		vp->v_op = &btrfs_spec_vops;
-		alias = checkalias(vp, rdev, mp);
+		alias = checkalias(vp, rdev, vp->v_mount);
 		if (alias != NULL) {
 			/* Carry the locked inode over to an anonymous device. */
 			alias->v_data = node;
@@ -787,14 +827,12 @@ again:
 			vrele(vp);
 			vgone(vp);
 			vp = alias;
-			mtx_enter(&bmp->bm_nodemtx);
 			node->bn_vnode = vp;
-			mtx_leave(&bmp->bm_nodemtx);
 		}
 	}
 
 	*vpp = vp;
-	return (0);
+	return (btrfs_node_insert(node));
 }
 
 void

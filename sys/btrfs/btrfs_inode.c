@@ -235,13 +235,6 @@ out:
 	return (error);
 }
 
-/*
- * The parent vnode lock protects its index and hash buckets.  The namespace
- * lock also protects the highest object ID across creates in different
- * directories.  Namespace items, the optional symlink extent, and the parent
- * inode belong to one transaction; any error after the first mutation aborts
- * that transaction.
- */
 /* Btrfs stores Linux new_encode_dev: 12 major and 20 minor bits. */
 int
 btrfs_decode_rdev(uint64_t disk, dev_t *dev)
@@ -256,6 +249,13 @@ btrfs_decode_rdev(uint64_t disk, dev_t *dev)
 	return (0);
 }
 
+/*
+ * The parent vnode lock protects its index and hash buckets. The namespace
+ * lock protects inode number selection through vnode publication. Preallocate
+ * the vnode before mutation and register aliases after ending the handle.
+ * Namespace items, the optional symlink extent, and the parent inode belong
+ * to one transaction; errors after the first mutation abort it.
+ */
 int
 btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
     mode_t mode, uid_t uid, gid_t gid, dev_t dev, const char *link,
@@ -389,6 +389,14 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	if (error != 0)
 		goto out;
 
+	/* Only type and device identity are needed before encoding the inode. */
+	memset(&saved, 0, sizeof(saved));
+	saved.bi_mode = mode;
+	saved.bi_rdev = rdev;
+	error = btrfs_alloc_node(dir->bn_vnode->v_mount, root, ino, &saved, vpp);
+	if (error != 0)
+		goto out;
+
 	/* Include the inline target and possible hash bucket delete/reinsert. */
 	reservation.btr_metadata = (uint64_t)nodesize *
 	    (link != NULL ? 160 : 128);
@@ -410,6 +418,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	    (BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_COMPRESS));
 	btrfs_encode_timespec(&now, &inode.atime);
 	inode.ctime = inode.mtime = inode.otime = inode.atime;
+	btrfs_decode_inode(&inode, &VTOBTRFS(*vpp)->bn_inode);
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(ino);
 	target.type = BTRFS_INODE_ITEM_KEY;
@@ -477,9 +486,6 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	    BTRFS_INODE_DIRTY_MTIME | BTRFS_INODE_DIRTY_CTIME |
 	    BTRFS_INODE_DIRTY_SEQUENCE;
 	error = btrfs_write_inode(handle, dir);
-	if (error == 0)
-		error = btrfs_vget_tree(dir->bn_vnode->v_mount,
-		    dir->bn_treeid, ino, vpp);
 	if (error != 0) {
 		dir->bn_inode = saved;
 		goto abort;
@@ -495,8 +501,23 @@ out:
 		if (error == 0)
 			error = end_error;
 	}
+	if (error == 0) {
+		error = btrfs_init_node(vpp);
+		if (error == EEXIST) {
+			/* A lookup may have instantiated the completed inode. */
+			vput(*vpp);
+			vgone(*vpp);
+			*vpp = NULL;
+			error = btrfs_vget_tree(dir->bn_vnode->v_mount,
+			    dir->bn_treeid, ino, vpp);
+			if (error == 0)
+				VTOBTRFS(*vpp)->bn_inode.bi_last_dirty_transid =
+				    generation;
+		}
+	}
 	if (error != 0 && *vpp != NULL) {
 		vput(*vpp);
+		vgone(*vpp);
 		*vpp = NULL;
 	}
 	if (bucket != NULL)

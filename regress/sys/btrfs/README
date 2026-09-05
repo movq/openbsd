@@ -142,6 +142,8 @@ null/zero I/O, kqueue, advisory locks, BPF clones, mounted-device aliases, and
 unknown device numbers. It uses OpenBSD/amd64 device assignments and never
 writes disk devices. Its `reclaim mountpoint` phase forcibly unmounts with
 open null/BPF descriptors and checks device-vnode survival and cleanup.
+Its `race new-directory` phase races alias creation and fsync against attribute
+changes and fsync on an existing device vnode to check transaction lock order.
 Import its seed fixture (created as root on the host)
 with --rootdir, then run `fix-seed image` on the unmounted image: mkfs.btrfs 7.0
 sets imported rdev fields to zero, so this phase uses btrfs-corrupt-block to
