@@ -1584,7 +1584,22 @@ static int
 btrfs_advlock(void *v)
 {
 	struct vop_advlock_args *ap = v;
-	struct btrfs_node *node = VTOBTRFS(ap->a_vp);
+	struct vnode *vp = ap->a_vp;
+	struct btrfs_node *node;
+	int reclaiming;
+
+	/*
+	 * vclean sets VXLOCK before draining the vnode. Advisory locking
+	 * bypasses vn_lock, so reject new requests during that drain too.
+	 * In particular, an interrupted waiter may retry while reclaim is
+	 * still purging locks and has not installed dead_vops yet.
+	 */
+	mtx_enter(&vnode_mtx);
+	reclaiming = (vp->v_lflag & VXLOCK) != 0;
+	mtx_leave(&vnode_mtx);
+	if (reclaiming)
+		return (EBADF);
+	node = VTOBTRFS(vp);
 
 	/* The shared lock engine serializes state and sleeps without bn_lock. */
 	return (lf_advlock(&node->bn_lockf, node->bn_inode.bi_size,
