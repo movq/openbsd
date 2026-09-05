@@ -35,7 +35,12 @@ Current limits:
   A read-only view may join a writable filesystem; a filesystem first opened
   read-only cannot gain writable views until all views have been unmounted.
   Remount updates and subvolume creation/property changes are unsupported.
-* No truncate, unlink, rmdir, rename, or device-node creation.
+* Regular-file `truncate`/`ftruncate` support unchanged sizes and sparse growth
+  on `NO_HOLES` filesystems. Growth converts supported inline data and COWs
+  partial data sectors with zero tails before exposing the new size. It rejects
+  NODATASUM, compressed/encoded overlap, and regular mappings beyond the old
+  rounded EOF; preallocation remains zero-filled. Shrinking, unlink, rmdir,
+  rename, and device-node creation are unsupported.
 * Writes convert uncompressed inline files of at most one sector to regular
   extents. Larger/compressed inline files, NODATASUM, encoded mappings, and
   compressed overlap remain unsupported. Regular/preallocated uncompressed
@@ -137,7 +142,7 @@ Hard links change inode references, not data ownership `(root, inode, file-base)
 
 ## Dependencies for further work
 
-Truncate/range deletion and orphan recovery precede last-link removal.
+Shrinking/range deletion and orphan recovery precede last-link removal.
 Writable mount must recover orphans before unlink is exposed. Rename requires
 multi-vnode locking and atomic destination replacement.
 
