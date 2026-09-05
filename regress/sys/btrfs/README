@@ -21,6 +21,12 @@ Then in the VM:
     python3 /mnt/src/regress/sys/btrfs/namespace.py verify /mnt/btrfs/ns
     umount /mnt/btrfs
 
+flags.py uses create/verify phases and readonly after a read-only remount.
+It covers nodump/immutable/append round trips, owner and nonowner permissions,
+clearing flags, writes through existing descriptors, append writes, hard-link
+aliases, directory policy, FIFO metadata, rejected flag masks, and kqueue
+attribute notifications. Run the independent checks between mounts.
+
 Run all driver-involving SSH commands under timeout.  Repeat with both 4 KiB
 and 16 KiB metadata nodes to cover tree growth, and check the resulting image
 with btrfs-progs.  The test covers concurrent creation in separate and shared
