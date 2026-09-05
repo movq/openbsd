@@ -1148,8 +1148,17 @@ btrfs_readlink(void *v)
 		goto out;
 	}
 	if (extent.bfe_type != BTRFS_FILE_EXTENT_INLINE ||
-	    extent.bfe_logical != 0 || extent.bfe_length != file_size ||
-	    extent.bfe_inline_size != file_size) {
+	    extent.bfe_logical != 0 ||
+	    extent.bfe_length != extent.bfe_inline_size ||
+	    extent.bfe_inline_size < file_size ||
+	    extent.bfe_inline_size - file_size > 1) {
+		error = EINVAL;
+		goto out;
+	}
+	/* mkfs.btrfs may store a trailing NUL beyond the inode's size. */
+	if ((extent.bfe_inline_size != file_size &&
+	    extent.bfe_inline_data[file_size] != '\0') ||
+	    memchr(extent.bfe_inline_data, '\0', file_size) != NULL) {
 		error = EINVAL;
 		goto out;
 	}
