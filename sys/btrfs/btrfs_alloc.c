@@ -21,6 +21,7 @@
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/malloc.h>
+#include <sys/mount.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -42,6 +43,8 @@ static int	btrfs_space_add_extent(const struct btrfs_extent_record *,
 		    void *);
 static int	btrfs_space_add_free(struct btrfs_block_group *, uint64_t,
 		    uint64_t);
+static int	btrfs_space_exclude_supers(struct btrfs_mount *,
+		    struct btrfs_block_group *, const struct btrfs_chunk_map *);
 static int	btrfs_space_check_type(uint64_t);
 static int	btrfs_space_group_matches(const struct btrfs_block_group *,
 		    uint64_t, int);
@@ -116,6 +119,99 @@ btrfs_space_check_type(uint64_t type)
 
 	return ((type & types) == type && type != 0 &&
 	    (type & (type - 1)) == 0);
+}
+
+/*
+ * Superblock stripes have no extent items.  Reverse-map each physical mirror
+ * into the chunk and remove the entire 64 KiB stripe from allocatable gaps.
+ * Merge the exclusions first: different DUP mirrors can map to the same
+ * logical range.  This runs while constructing the mount's free-space index.
+ */
+static int
+btrfs_space_exclude_supers(struct btrfs_mount *bmp,
+    struct btrfs_block_group *group, const struct btrfs_chunk_map *chunk)
+{
+	struct {
+		uint64_t start, end;
+	} ranges[BTRFS_MAX_MIRRORS * BTRFS_SUPER_MIRROR_MAX + 1], range;
+	struct btrfs_free_extent *space, *next, *suffix;
+	uint64_t start, end, cut_start, cut_end, removed, space_end;
+	unsigned int i, j, mirror, count = 0, merged = 0;
+
+	if (group->bbg_bytenr < superblock_addrs[0]) {
+		ranges[count].start = group->bbg_bytenr;
+		ranges[count++].end = MIN(superblock_addrs[0],
+		    group->bbg_bytenr + group->bbg_length);
+	}
+	for (mirror = 0; mirror < chunk->nmirrors; mirror++) {
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			if (superblock_addrs[i] < chunk->physical[mirror] ||
+			    superblock_addrs[i] - chunk->physical[mirror] >=
+			    chunk->length)
+				continue;
+			start = chunk->logical + superblock_addrs[i] -
+			    chunk->physical[mirror];
+			ranges[count].start = start;
+			ranges[count++].end = start + MIN(65536,
+			    group->bbg_bytenr + group->bbg_length - start);
+		}
+	}
+	for (i = 1; i < count; i++) {
+		range = ranges[i];
+		for (j = i; j > 0 && ranges[j - 1].start > range.start; j--)
+			ranges[j] = ranges[j - 1];
+		ranges[j] = range;
+	}
+	for (i = 0; i < count; i++) {
+		if (merged != 0 && ranges[i].start <= ranges[merged - 1].end)
+			ranges[merged - 1].end =
+			    MAX(ranges[merged - 1].end, ranges[i].end);
+		else
+			ranges[merged++] = ranges[i];
+	}
+	for (i = 0; i < merged; i++) {
+		start = ranges[i].start;
+		end = ranges[i].end;
+		removed = 0;
+		TAILQ_FOREACH_SAFE(space, &group->bbg_free_extents, bfe_entry,
+		    next) {
+			space_end = space->bfe_bytenr + space->bfe_length;
+			if (space_end <= start)
+				continue;
+			if (space->bfe_bytenr >= end)
+				break;
+			cut_start = MAX(start, space->bfe_bytenr);
+			cut_end = MIN(end, space_end);
+			if (space->bfe_bytenr < cut_start && cut_end < space_end) {
+				suffix = malloc(sizeof(*suffix), M_BTRFS,
+				    M_WAITOK | M_ZERO);
+				suffix->bfe_bytenr = cut_end;
+				suffix->bfe_length = space_end - cut_end;
+				TAILQ_INSERT_AFTER(&group->bbg_free_extents,
+				    space, suffix, bfe_entry);
+				space->bfe_length = cut_start - space->bfe_bytenr;
+			} else if (space->bfe_bytenr < cut_start) {
+				space->bfe_length = cut_start - space->bfe_bytenr;
+			} else if (cut_end < space_end) {
+				space->bfe_bytenr = cut_end;
+				space->bfe_length = space_end - cut_end;
+			} else {
+				TAILQ_REMOVE(&group->bbg_free_extents, space,
+				    bfe_entry);
+				free(space, M_BTRFS, sizeof(*space));
+			}
+			removed += cut_end - cut_start;
+		}
+		group->bbg_free_bytes -= removed;
+		group->bbg_excluded_bytes += removed;
+		if (removed != end - start &&
+		    (bmp->bm_mount->mnt_flag & MNT_RDONLY) == 0) {
+			printf("btrfs: allocated extent overlaps superblock"
+			    " stripe at %llu\n", (unsigned long long)start);
+			return (EINVAL);
+		}
+	}
+	return (0);
 }
 
 static int
@@ -248,8 +344,11 @@ btrfs_space_check_group(struct btrfs_block_group *group)
 	KASSERT(group->bbg_disk_used <= group->bbg_length);
 	KASSERT(group->bbg_allocated_bytes <=
 	    group->bbg_length - group->bbg_disk_used);
-	KASSERT(list_bytes == group->bbg_length -
+	KASSERT(group->bbg_excluded_bytes <= group->bbg_length -
 	    group->bbg_disk_used - group->bbg_allocated_bytes);
+	KASSERT(list_bytes == group->bbg_length -
+	    group->bbg_disk_used - group->bbg_allocated_bytes -
+	    group->bbg_excluded_bytes);
 	KASSERT(group->bbg_pinned_bytes <= group->bbg_disk_used);
 #else
 	(void)group;
@@ -388,8 +487,13 @@ btrfs_space_init(struct btrfs_mount *bmp)
 		    end - group->bbg_build_cursor);
 		if (error != 0)
 			goto fail;
+		error = btrfs_space_exclude_supers(bmp, group,
+		    &bmp->bm_chunks[i]);
+		if (error != 0)
+			goto fail;
 		if (group->bbg_free_bytes !=
-		    group->bbg_length - group->bbg_disk_used) {
+		    group->bbg_length - group->bbg_disk_used -
+		    group->bbg_excluded_bytes) {
 			printf("btrfs: block group %llu free-space mismatch\n",
 			    (unsigned long long)group->bbg_bytenr);
 			error = EINVAL;
