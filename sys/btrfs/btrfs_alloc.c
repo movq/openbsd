@@ -668,6 +668,7 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
 			allocated->bte_bytenr = aligned;
 			allocated->bte_length = length;
 			allocated->bte_type = type;
+			allocated->bte_commit = handle->bth_commit;
 			mtx_enter(&trans->bt_lock);
 			KASSERT(trans->bt_allocated_bytes <=
 			    UINT64_MAX - length);
@@ -739,8 +740,14 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 		    reservation->brs_type == type)
 			break;
 	}
-	if (reservation == NULL)
-		return (EINVAL);
+	if (reservation == NULL) {
+		/* The allocation may belong to an earlier operation's group. */
+		reservation = malloc(sizeof(*reservation), M_BTRFS,
+		    M_WAITOK | M_ZERO);
+		reservation->brs_group = group;
+		reservation->brs_type = type;
+		TAILQ_INSERT_TAIL(reservations, reservation, brs_entry);
+	}
 
 	space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
 	space->bfe_bytenr = bytenr;
@@ -771,6 +778,9 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 		KASSERT(trans->bt_commit_reserved_bytes <=
 		    UINT64_MAX - length);
 		trans->bt_commit_reserved_bytes += length;
+		/* An ordinary allocation was never charged to this pool. */
+		if (!extent->bte_commit)
+			trans->bt_commit_reserve_target += length;
 	}
 	TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
 	ngarbage = btrfs_space_insert_free_locked(group, space, garbage);
@@ -789,6 +799,92 @@ unlock:
 		free(space, M_BTRFS, sizeof(*space));
 	}
 	return (error);
+}
+
+/*
+ * A detached COW block may already have an extent item: commit itself can
+ * empty an extent-tree leaf after materializing its delayed add.  Keep the
+ * allocation unavailable until the matching drop has been materialized.
+ */
+int
+btrfs_space_discard_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
+    uint64_t length)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_trans_extent *extent;
+	int error = ENOENT;
+
+	mtx_enter(&trans->bt_lock);
+	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
+		if (extent->bte_bytenr != bytenr ||
+		    extent->bte_length != length)
+			continue;
+		if (extent->bte_type != BTRFS_BLOCK_GROUP_METADATA ||
+		    extent->bte_discarded) {
+			error = EINVAL;
+			break;
+		}
+		extent->bte_discarded = 1;
+		error = 0;
+		break;
+	}
+	mtx_leave(&trans->bt_lock);
+	return (error);
+}
+
+int
+btrfs_space_release_discarded(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_trans_extent *extent;
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target;
+	const struct btrfs_key *key;
+	uint64_t bytenr, length;
+	int error;
+
+	KASSERT(handle->bth_commit);
+	KASSERT(trans->bt_writers == 0);
+	/*
+	 * Data-reference processing can queue more tree references.  Wait for
+	 * the next preparation pass in that case, including canceled adds for
+	 * blocks which never acquired an extent item.
+	 */
+	if (!TAILQ_EMPTY(&trans->bt_delayed_tree_refs) ||
+	    !TAILQ_EMPTY(&trans->bt_delayed_data_refs))
+		return (0);
+	error = btrfs_get_root(trans->bt_mount, BTRFS_EXTENT_TREE_OBJECTID,
+	    &root);
+	if (error != 0)
+		return (error);
+	for (;;) {
+		TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
+			if (extent->bte_discarded)
+				break;
+		}
+		if (extent == NULL)
+			return (0);
+		bytenr = extent->bte_bytenr;
+		length = extent->bte_length;
+		memset(&target, 0, sizeof(target));
+		target.objectid = htole64(bytenr);
+		error = btrfs_search_lower_bound(root, &target, &path);
+		if (error == 0) {
+			error = btrfs_path_item(&path, &key, NULL, NULL);
+			/* A block group can begin at this same logical address. */
+			if (error == 0 && key->objectid == target.objectid &&
+			    key->type != BTRFS_BLOCK_GROUP_ITEM_KEY)
+				error = EINVAL;
+		} else if (error == ENOENT)
+			error = 0;
+		btrfs_release_path(&path);
+		if (error != 0)
+			return (error);
+		error = btrfs_space_cancel_alloc(handle, bytenr, length);
+		if (error != 0)
+			return (error);
+	}
 }
 
 int
@@ -899,7 +995,14 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
 		if (btrfs_space_ranges_overlap(bytenr, length,
 		    extent->bte_bytenr, extent->bte_length)) {
-			error = EINVAL;
+			/* New, detached metadata has no committed owner. */
+			if (extent->bte_discarded &&
+			    extent->bte_type == BTRFS_BLOCK_GROUP_METADATA &&
+			    extent->bte_bytenr == bytenr &&
+			    extent->bte_length == length)
+				error = 0;
+			else
+				error = EINVAL;
 			goto unlock;
 		}
 	}
@@ -948,6 +1051,7 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	btrfs_space_check_commit_reserve(trans);
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
+		KASSERT(!extent->bte_discarded);
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
 		group = extent->bte_group;
 		mtx_enter(&group->bbg_lock);
