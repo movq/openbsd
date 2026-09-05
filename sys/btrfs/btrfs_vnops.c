@@ -615,6 +615,12 @@ btrfs_getattr(void *v)
 	vap->va_rdev = inode->bi_rdev;
 	vap->va_size = inode->bi_size;
 	vap->va_flags = 0;
+	if (inode->bi_flags & BTRFS_INODE_NODUMP)
+		vap->va_flags |= UF_NODUMP;
+	if (inode->bi_flags & BTRFS_INODE_IMMUTABLE)
+		vap->va_flags |= UF_IMMUTABLE;
+	if (inode->bi_flags & BTRFS_INODE_APPEND)
+		vap->va_flags |= UF_APPEND;
 	vap->va_gen = inode->bi_generation;
 	vap->va_blocksize = letoh32(node->bn_mount->bm_super.nodesize);
 	vap->va_bytes = inode->bi_nbytes;
@@ -639,6 +645,7 @@ btrfs_setattr(void *v)
 	struct timespec now;
 	uid_t uid;
 	gid_t gid;
+	uint64_t flags;
 	uint32_t dirty = 0;
 	int end_error, error;
 
@@ -648,7 +655,7 @@ btrfs_setattr(void *v)
 	    vap->va_blocksize != VNOVAL || vap->va_rdev != VNOVAL ||
 	    (int)vap->va_bytes != VNOVAL || vap->va_gen != VNOVAL)
 		return (EINVAL);
-	if (vap->va_size != VNOVAL || vap->va_flags != VNOVAL)
+	if (vap->va_size != VNOVAL)
 		return (EOPNOTSUPP);
 	if ((vap->va_atime.tv_nsec != VNOVAL &&
 	    (vap->va_atime.tv_nsec < 0 ||
@@ -659,8 +666,35 @@ btrfs_setattr(void *v)
 		return (EINVAL);
 	if (btrfs_node_readonly(node))
 		return (EROFS);
-	if (node->bn_inode.bi_flags &
-	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND))
+	flags = node->bn_inode.bi_flags;
+	if (vap->va_flags != VNOVAL) {
+		if (cred->cr_uid != node->bn_inode.bi_uid &&
+		    !vnoperm(vp) && (error = suser_ucred(cred)) != 0)
+			return (error);
+		/*
+		 * Btrfs has one immutable/append pair.  Expose it as user
+		 * flags; system flags need distinct persistent state.
+		 * Preserve all unrelated format and policy bits.
+		 */
+		if (vap->va_flags & ~(UF_NODUMP | UF_IMMUTABLE | UF_APPEND))
+			return (EOPNOTSUPP);
+		flags &= ~(BTRFS_INODE_NODUMP | BTRFS_INODE_IMMUTABLE |
+		    BTRFS_INODE_APPEND);
+		if (vap->va_flags & UF_NODUMP)
+			flags |= BTRFS_INODE_NODUMP;
+		if (vap->va_flags & UF_IMMUTABLE)
+			flags |= BTRFS_INODE_IMMUTABLE;
+		if (vap->va_flags & UF_APPEND)
+			flags |= BTRFS_INODE_APPEND;
+		dirty |= BTRFS_INODE_DIRTY_FLAGS;
+	}
+	if ((flags & (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) &&
+	    (vap->va_flags == VNOVAL ||
+	    vap->va_uid != (uid_t)VNOVAL || vap->va_gid != (gid_t)VNOVAL ||
+	    vap->va_mode != (mode_t)VNOVAL ||
+	    vap->va_atime.tv_nsec != VNOVAL ||
+	    vap->va_mtime.tv_nsec != VNOVAL ||
+	    (vap->va_vaflags & VA_UTIMES_CHANGE)))
 		return (EPERM);
 
 	uid = vap->va_uid == (uid_t)VNOVAL ?
@@ -725,6 +759,7 @@ btrfs_setattr(void *v)
 	getnanotime(&now);
 	node->bn_inode.bi_uid = uid;
 	node->bn_inode.bi_gid = gid;
+	node->bn_inode.bi_flags = flags;
 	if (vap->va_mode != (mode_t)VNOVAL)
 		node->bn_inode.bi_mode = (node->bn_inode.bi_mode & S_IFMT) |
 		    (vap->va_mode & ALLPERMS);
