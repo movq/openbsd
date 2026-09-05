@@ -79,7 +79,6 @@ def create():
     expect_error(errno.ENAMETOOLONG, put, "z" * 256, b"")
     expect_error(errno.ENOTDIR, os.mkdir, "negative/child")
     expect_error(errno.EOPNOTSUPP, os.mkfifo, "unsupported-fifo")
-    expect_error(errno.EOPNOTSUPP, os.symlink, "target", "unsupported-symlink")
     expect_error(errno.EOPNOTSUPP, os.link, "negative", "unsupported-link")
     put("sparse", b"start")
     fd = os.open("sparse", os.O_RDWR)

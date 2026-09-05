@@ -47,7 +47,7 @@ static int	btrfs_mknod(void *);
 static int	btrfs_symlink(void *);
 static int	btrfs_link(void *);
 static int	btrfs_makeinode(struct vnode *, struct vnode **,
-		    struct componentname *, struct vattr *);
+		    struct componentname *, struct vattr *, const char *);
 static int	btrfs_open(void *);
 static int	btrfs_close(void *);
 static int	btrfs_access(void *);
@@ -304,7 +304,7 @@ out:
 
 static int
 btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
-    struct componentname *cnp, struct vattr *vap)
+    struct componentname *cnp, struct vattr *vap, const char *link)
 {
 	struct btrfs_node *dir = VTOBTRFS(dvp);
 	mode_t mode;
@@ -313,7 +313,8 @@ btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
 	KASSERT(VOP_ISLOCKED(dvp));
 	KASSERT(cnp->cn_flags & HASBUF);
 	*vpp = NULL;
-	if (vap->va_type != VREG && vap->va_type != VDIR) {
+	if (vap->va_type != VREG && vap->va_type != VDIR &&
+	    vap->va_type != VLNK) {
 		error = EOPNOTSUPP;
 		goto out;
 	}
@@ -326,7 +327,7 @@ btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
 	    !vnoperm(dvp) && suser_ucred(cnp->cn_cred))
 		mode &= ~S_ISGID;
 	error = btrfs_create_inode(dir, cnp->cn_nameptr, cnp->cn_namelen,
-	    mode, cnp->cn_cred->cr_uid, dir->bn_inode.bi_gid, vpp);
+	    mode, cnp->cn_cred->cr_uid, dir->bn_inode.bi_gid, link, vpp);
 	if (error != 0)
 		goto out;
 	cache_purge(dvp);
@@ -355,7 +356,7 @@ btrfs_create(void *v)
 	struct vop_create_args *ap = v;
 
 	return (btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp,
-	    ap->a_vap));
+	    ap->a_vap, NULL));
 }
 
 static int
@@ -364,7 +365,8 @@ btrfs_mkdir(void *v)
 	struct vop_mkdir_args *ap = v;
 	int error;
 
-	error = btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp, ap->a_vap);
+	error = btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp, ap->a_vap,
+	    NULL);
 	vput(ap->a_dvp);
 	return (error);
 }
@@ -383,11 +385,16 @@ static int
 btrfs_symlink(void *v)
 {
 	struct vop_symlink_args *ap = v;
+	struct vattr attr = *ap->a_vap;
+	int error;
 
-	*ap->a_vpp = NULL;
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	attr.va_type = VLNK;
+	error = btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp, &attr,
+	    ap->a_target);
 	vput(ap->a_dvp);
-	return (EOPNOTSUPP);
+	if (error == 0)
+		vput(*ap->a_vpp);
+	return (error);
 }
 
 static int

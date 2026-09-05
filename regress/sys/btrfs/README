@@ -25,6 +25,12 @@ directory size/link accounting, nested parent lookup, and readdir.
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
 
+symlink.py uses the same create/verify phases as namespace.py.  It covers
+relative, absolute, dangling, chained and looping links, directory traversal,
+short readlink buffers, maximum target/name lengths, hash collisions across
+commits, permissions, concurrent creation, and directory accounting.  Run
+both phases with an intervening unmount, independent check, and remount.
+
 On a small disposable image, enospc.py fills the existing metadata block group
 with empty files.  It checks that failed creation leaves no entry or parent
 metadata changes, and that the filesystem remains writable and can sync.
