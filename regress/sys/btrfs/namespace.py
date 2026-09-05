@@ -78,7 +78,6 @@ def create():
     expect_error(errno.ENAMETOOLONG, os.mkdir, "z" * 256)
     expect_error(errno.ENAMETOOLONG, put, "z" * 256, b"")
     expect_error(errno.ENOTDIR, os.mkdir, "negative/child")
-    expect_error(errno.EOPNOTSUPP, os.mkfifo, "unsupported-fifo")
     put("sparse", b"start")
     fd = os.open("sparse", os.O_RDWR)
     assert os.pwrite(fd, b"end", 8191) == 3

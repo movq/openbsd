@@ -565,6 +565,10 @@ again:
 	if (error != 0)
 		return (error);
 	type = IFTOVT(inode.bi_mode);
+#ifndef FIFO
+	if (type == VFIFO)
+		return (EOPNOTSUPP);
+#endif
 
 	node = malloc(sizeof(*node), M_BTRFS, M_WAITOK | M_ZERO);
 	error = getnewvnode(VT_BTRFS, mp, &btrfs_vops, &vp);
@@ -582,6 +586,10 @@ again:
 	    RWL_DUPOK | RWL_IS_VNODE);
 	vp->v_data = node;
 	vp->v_type = type;
+#ifdef FIFO
+	if (type == VFIFO)
+		vp->v_op = &btrfs_fifo_vops;
+#endif
 	if (treeid == bmp->bm_treeid && ino == bmp->bm_root_dirid)
 		vp->v_flag |= VROOT;
 
