@@ -41,6 +41,8 @@
 #include <sys/unistd.h>
 #include <sys/vnode.h>
 
+#include <miscfs/fifofs/fifo.h>
+
 #include <btrfs/btrfs_var.h>
 
 static int	btrfs_lookup(void *);
@@ -76,6 +78,9 @@ static void	filt_btrfsdetach(struct knote *);
 static int	filt_btrfsread(struct knote *, long);
 static int	filt_btrfswrite(struct knote *, long);
 static int	filt_btrfsvnode(struct knote *, long);
+#ifdef FIFO
+static int	btrfs_fifo_reclaim(void *);
+#endif
 
 const struct vops btrfs_vops = {
 	.vop_lookup	= btrfs_lookup,
@@ -113,6 +118,47 @@ const struct vops btrfs_vops = {
 	.vop_advlock	= btrfs_advlock,
 	.vop_bwrite	= vop_generic_bwrite,
 };
+
+#ifdef FIFO
+const struct vops btrfs_fifo_vops = {
+	.vop_access	= btrfs_access,
+	.vop_getattr	= btrfs_getattr,
+	.vop_setattr	= btrfs_setattr,
+	.vop_fsync	= btrfs_fsync,
+	.vop_inactive	= btrfs_inactive,
+	.vop_reclaim	= btrfs_fifo_reclaim,
+	.vop_lock	= btrfs_lock,
+	.vop_unlock	= btrfs_unlock,
+	.vop_print	= btrfs_print,
+	.vop_islocked	= btrfs_islocked,
+	.vop_bwrite	= vop_generic_bwrite,
+
+	/* Keep in sync with fifo_vops. */
+	.vop_lookup	= vop_generic_lookup,
+	.vop_create	= vop_generic_badop,
+	.vop_mknod	= vop_generic_badop,
+	.vop_open	= fifo_open,
+	.vop_close	= fifo_close,
+	.vop_read	= fifo_read,
+	.vop_write	= fifo_write,
+	.vop_ioctl	= fifo_ioctl,
+	.vop_kqfilter	= fifo_kqfilter,
+	.vop_revoke	= vop_generic_revoke,
+	.vop_remove	= vop_generic_badop,
+	.vop_link	= vop_generic_badop,
+	.vop_rename	= vop_generic_badop,
+	.vop_mkdir	= vop_generic_badop,
+	.vop_rmdir	= vop_generic_badop,
+	.vop_symlink	= vop_generic_badop,
+	.vop_readdir	= vop_generic_badop,
+	.vop_readlink	= vop_generic_badop,
+	.vop_abortop	= vop_generic_badop,
+	.vop_bmap	= vop_generic_bmap,
+	.vop_strategy	= vop_generic_badop,
+	.vop_pathconf	= fifo_pathconf,
+	.vop_advlock	= fifo_advlock,
+};
+#endif
 
 #define BTRFS_LOOKUP_FOUND	(-1)
 #define BTRFS_VOP_METADATA_BLOCKS	64
@@ -324,7 +370,11 @@ btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
 	KASSERT(cnp->cn_flags & HASBUF);
 	*vpp = NULL;
 	if (vap->va_type != VREG && vap->va_type != VDIR &&
-	    vap->va_type != VLNK) {
+	    vap->va_type != VLNK && vap->va_type != VSOCK
+#ifdef FIFO
+	    && vap->va_type != VFIFO
+#endif
+	    ) {
 		error = EOPNOTSUPP;
 		goto out;
 	}
@@ -385,10 +435,16 @@ static int
 btrfs_mknod(void *v)
 {
 	struct vop_mknod_args *ap = v;
+	int error;
 
-	*ap->a_vpp = NULL;
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EOPNOTSUPP);
+	error = btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp,
+	    ap->a_vap, NULL);
+	/* mknod's caller releases the parent only. */
+	if (error == 0) {
+		vput(*ap->a_vpp);
+		*ap->a_vpp = NULL;
+	}
+	return (error);
 }
 
 static int
@@ -501,10 +557,12 @@ btrfs_access(void *v)
 	uint32_t mode;
 
 	if (ap->a_mode & VWRITE) {
-		if ((ap->a_vp->v_mount->mnt_flag & MNT_RDONLY) ||
+		if (ap->a_vp->v_type != VFIFO &&
+		    ap->a_vp->v_type != VSOCK &&
+		    ((ap->a_vp->v_mount->mnt_flag & MNT_RDONLY) ||
 		    node->bn_mount->bm_subvol_readonly ||
 		    node->bn_treeid != node->bn_mount->bm_treeid ||
-		    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY))
+		    (node->bn_inode.bi_flags & BTRFS_INODE_READONLY)))
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
 			return (EPERM);
@@ -1359,6 +1417,15 @@ btrfs_reclaim(void *v)
 	vp->v_data = NULL;
 	return (0);
 }
+
+#ifdef FIFO
+static int
+btrfs_fifo_reclaim(void *v)
+{
+	fifo_reclaim(v);
+	return (btrfs_reclaim(v));
+}
+#endif
 
 static int
 btrfs_lock(void *v)
