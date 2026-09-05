@@ -76,9 +76,7 @@ btrfs_root_init(struct btrfs_fs *bmp, struct btrfs_root *root,
 	root->br_devvp = bmp->bm_devvp;
 	root->br_dev = NODEV;
 	root->br_super = &bmp->bm_super;
-	root->br_chunks = bmp->bm_chunks;
 	root->br_lock = lock;
-	root->br_nchunks = bmp->bm_nchunks;
 	root->br_bytenr = location->brl_bytenr;
 	root->br_generation = location->brl_generation;
 	root->br_view_generation = letoh64(bmp->bm_super.generation);

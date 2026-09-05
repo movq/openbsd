@@ -259,8 +259,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	memset(&chunk_tree, 0, sizeof(chunk_tree));
 	chunk_tree.br_devvp = devvp;
 	chunk_tree.br_super = sb;
-	chunk_tree.br_chunks = system_chunks;
-	chunk_tree.br_nchunks = nsystem_chunks;
+	chunk_tree.br_bootstrap_chunks = system_chunks;
+	chunk_tree.br_bootstrap_nchunks = nsystem_chunks;
 	chunk_tree.br_bytenr = chunk_root;
 	chunk_tree.br_generation = letoh64(sb->chunk_root_generation);
 	chunk_tree.br_view_generation = generation;
@@ -284,8 +284,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	memset(&root_tree, 0, sizeof(root_tree));
 	root_tree.br_devvp = devvp;
 	root_tree.br_super = sb;
-	root_tree.br_chunks = chunks;
-	root_tree.br_nchunks = nchunks;
+	root_tree.br_bootstrap_chunks = chunks;
+	root_tree.br_bootstrap_nchunks = nchunks;
 	root_tree.br_bytenr = root;
 	root_tree.br_generation = generation;
 	root_tree.br_view_generation = generation;
@@ -325,8 +325,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	memset(&csum_tree, 0, sizeof(csum_tree));
 	csum_tree.br_devvp = devvp;
 	csum_tree.br_super = sb;
-	csum_tree.br_chunks = chunks;
-	csum_tree.br_nchunks = nchunks;
+	csum_tree.br_bootstrap_chunks = chunks;
+	csum_tree.br_bootstrap_nchunks = nchunks;
 	csum_tree.br_bytenr = csum_root.brl_bytenr;
 	csum_tree.br_generation = csum_root.brl_generation;
 	csum_tree.br_view_generation = generation;
@@ -343,8 +343,8 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	memset(&fs_tree, 0, sizeof(fs_tree));
 	fs_tree.br_devvp = devvp;
 	fs_tree.br_super = sb;
-	fs_tree.br_chunks = chunks;
-	fs_tree.br_nchunks = nchunks;
+	fs_tree.br_bootstrap_chunks = chunks;
+	fs_tree.br_bootstrap_nchunks = nchunks;
 	fs_tree.br_bytenr = letoh64(fs_root_item.bytenr);
 	fs_tree.br_generation = letoh64(fs_root_item.generation);
 	fs_tree.br_view_generation = generation;
