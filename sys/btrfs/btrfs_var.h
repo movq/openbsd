@@ -493,6 +493,8 @@ struct btrfs_mount {
 	struct mutex			 bm_ebmtx;
 	struct btrfs_node_list		 bm_nodes;
 	struct mutex			 bm_nodemtx;
+	/* Serializes namespace allocation across parent directories. */
+	struct rwlock			 bm_namespace_lock;
 };
 
 struct btrfs_node {
@@ -604,6 +606,8 @@ int	btrfs_path_item(const struct btrfs_path *, const struct btrfs_key **,
 void	btrfs_release_path(struct btrfs_path *);
 int	btrfs_find_inode(struct btrfs_root *, uint64_t, struct btrfs_inode *);
 int	btrfs_write_inode(struct btrfs_trans_handle *, struct btrfs_node *);
+int	btrfs_create_inode(struct btrfs_node *, const char *, size_t,
+	    mode_t, uid_t, gid_t, struct vnode **);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_mount *, uint64_t, uint64_t *,
 	    uint64_t *);

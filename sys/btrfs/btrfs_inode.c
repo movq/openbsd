@@ -25,10 +25,12 @@
 #include <sys/systm.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
+#include <sys/malloc.h>
 #include <sys/stat.h>
 #include <sys/vnode.h>
 
 #include <btrfs/btrfs_var.h>
+#include <lib/libkern/crc32c.h>
 
 static int	btrfs_ref_name_valid(const uint8_t *, uint16_t);
 static void	btrfs_decode_timespec(const struct btrfs_timespec *,
@@ -228,6 +230,225 @@ out:
 	return (error);
 }
 
+/*
+ * The parent vnode lock protects its index and hash buckets.  The namespace
+ * lock also protects the highest object ID across creates in different
+ * directories.  All four namespace items and the parent inode belong to one
+ * transaction; any error after the first mutation aborts that transaction.
+ */
+int
+btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
+    mode_t mode, uid_t uid, gid_t gid, struct vnode **vpp)
+{
+	struct btrfs_mount *bmp = dir->bn_mount;
+	struct btrfs_trans_reservation reservation = { 0 };
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_key target, hashkey;
+	const struct btrfs_key *key;
+	const uint8_t *data;
+	struct btrfs_inode_item inode;
+	struct btrfs_inode saved;
+	struct btrfs_dir_item *entry;
+	struct btrfs_inode_ref *ref;
+	struct timespec now;
+	uint8_t *bucket = NULL;
+	uint8_t record[sizeof(*entry) + BTRFS_NAME_MAX];
+	uint8_t reference[sizeof(*ref) + BTRFS_NAME_MAX];
+	uint64_t ino, index = 2, generation;
+	uint32_t nodesize, size, bucket_size = 0, record_size;
+	int error, end_error;
+
+	KASSERT(VOP_ISLOCKED(dir->bn_vnode));
+	*vpp = NULL;
+	if (!btrfs_ref_name_valid((const uint8_t *)name, namelen))
+		return (EINVAL);
+	if (dir->bn_inode.bi_size > UINT64_MAX - namelen * 2)
+		return (EOVERFLOW);
+	/* Inheritance of ACLs and other directory xattrs is not implemented. */
+	if (dir->bn_inode.bi_flags & BTRFS_INODE_NODATACOW)
+		return (EOPNOTSUPP);
+	rw_enter_write(&bmp->bm_namespace_lock);
+	error = btrfs_get_root(bmp, dir->bn_treeid, &root);
+	if (error != 0)
+		goto out;
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(dir->bn_ino);
+	target.type = BTRFS_XATTR_ITEM_KEY;
+	error = btrfs_search_lower_bound(root, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error == 0 && key->objectid == target.objectid &&
+		    key->type == target.type)
+			error = EOPNOTSUPP;
+	}
+	btrfs_release_path(&path);
+	if (error != 0 && error != ENOENT)
+		goto out;
+
+	memset(&target, 0xff, sizeof(target));
+	target.objectid = htole64(BTRFS_LAST_FREE_OBJECTID);
+	error = btrfs_search_predecessor(root, &target, &path);
+	if (error == 0)
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+	if (error != 0)
+		goto out;
+	ino = letoh64(key->objectid);
+	btrfs_release_path(&path);
+	if (ino < BTRFS_FIRST_FREE_OBJECTID ||
+	    ino >= BTRFS_LAST_FREE_OBJECTID) {
+		error = ENOSPC;
+		goto out;
+	}
+	ino++;
+
+	target.objectid = htole64(dir->bn_ino);
+	target.type = BTRFS_DIR_INDEX_KEY;
+	target.offset = htole64(UINT64_MAX);
+	error = btrfs_search_predecessor(root, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error != 0)
+			goto out;
+		if (key->objectid == target.objectid &&
+		    key->type == target.type) {
+			index = letoh64(key->offset);
+			if (index < 2 || index >= INT64_MAX - 1) {
+				error = EOVERFLOW;
+				goto out;
+			}
+			index++;
+		}
+	} else if (error != ENOENT)
+		goto out;
+	btrfs_release_path(&path);
+
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	record_size = sizeof(*entry) + namelen;
+	bucket = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+	memset(&hashkey, 0, sizeof(hashkey));
+	hashkey.objectid = htole64(dir->bn_ino);
+	hashkey.type = BTRFS_DIR_ITEM_KEY;
+	/* Btrfs uses raw CRC32C seeded with ~1, without final inversion. */
+	hashkey.offset = htole64(crc32c(1, (const uint8_t *)name,
+	    namelen) ^ 0xffffffffU);
+	error = btrfs_search_slot(root, &hashkey, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, NULL, &data, &size);
+		if (error != 0)
+			goto out;
+		if (size > nodesize - sizeof(struct btrfs_header) -
+		    sizeof(struct btrfs_item) - record_size) {
+			error = ENOSPC;
+			goto out;
+		}
+		bucket_size = size;
+		memcpy(bucket, data, size);
+	} else if (error != ENOENT)
+		goto out;
+	btrfs_release_path(&path);
+
+	/* Five items, including a possible delete/reinsert of a hash bucket. */
+	reservation.btr_metadata = (uint64_t)nodesize * 128;
+	error = btrfs_trans_join(bmp, &reservation, &handle);
+	if (error != 0)
+		goto out;
+	generation = handle->bth_transaction->bt_generation;
+	getnanotime(&now);
+	memset(&inode, 0, sizeof(inode));
+	inode.generation = inode.transid = htole64(generation);
+	inode.nlink = htole32(1);	/* Btrfs directories also have one link. */
+	inode.uid = htole32(uid);
+	inode.gid = htole32(gid);
+	inode.mode = htole32(mode);
+	inode.sequence = htole64(1);
+	inode.flags = htole64(dir->bn_inode.bi_flags &
+	    (BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_COMPRESS));
+	btrfs_encode_timespec(&now, &inode.atime);
+	inode.ctime = inode.mtime = inode.otime = inode.atime;
+	memset(&target, 0, sizeof(target));
+	target.objectid = htole64(ino);
+	target.type = BTRFS_INODE_ITEM_KEY;
+	error = btrfs_insert_item(handle, root, &target, &inode,
+	    sizeof(inode));
+	if (error != 0)
+		goto abort;
+
+	memset(record, 0, sizeof(record));
+	entry = (struct btrfs_dir_item *)record;
+	entry->location = target;
+	entry->transid = htole64(generation);
+	entry->name_len = htole16(namelen);
+	entry->type = S_ISDIR(mode) ? BTRFS_FT_DIR : BTRFS_FT_REG_FILE;
+	memcpy(record + sizeof(*entry), name, namelen);
+	memcpy(bucket + bucket_size, record, record_size);
+	/*
+	 * Replacement cannot split a full leaf yet.  Delete and insert the
+	 * expanded bucket under the parent lock, using the insertion splitter.
+	 */
+	if (bucket_size != 0)
+		error = btrfs_delete_item(handle, root, &hashkey);
+	if (error == 0)
+		error = btrfs_insert_item(handle, root, &hashkey, bucket,
+		    bucket_size + record_size);
+	if (error != 0)
+		goto abort;
+	target.objectid = htole64(dir->bn_ino);
+	target.type = BTRFS_DIR_INDEX_KEY;
+	target.offset = htole64(index);
+	error = btrfs_insert_item(handle, root, &target, record, record_size);
+	if (error != 0)
+		goto abort;
+	ref = (struct btrfs_inode_ref *)reference;
+	ref->index = htole64(index);
+	ref->name_len = htole16(namelen);
+	memcpy(reference + sizeof(*ref), name, namelen);
+	target.objectid = htole64(ino);
+	target.type = BTRFS_INODE_REF_KEY;
+	target.offset = htole64(dir->bn_ino);
+	error = btrfs_insert_item(handle, root, &target, reference,
+	    sizeof(*ref) + namelen);
+	if (error != 0)
+		goto abort;
+
+	saved = dir->bn_inode;
+	dir->bn_inode.bi_size += namelen * 2;
+	dir->bn_inode.bi_mtime = dir->bn_inode.bi_ctime = now;
+	dir->bn_inode.bi_sequence++;
+	dir->bn_inode.bi_last_dirty_transid = generation;
+	dir->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE |
+	    BTRFS_INODE_DIRTY_MTIME | BTRFS_INODE_DIRTY_CTIME |
+	    BTRFS_INODE_DIRTY_SEQUENCE;
+	error = btrfs_write_inode(handle, dir);
+	if (error == 0)
+		error = btrfs_vget_tree(dir->bn_vnode->v_mount,
+		    dir->bn_treeid, ino, vpp);
+	if (error != 0) {
+		dir->bn_inode = saved;
+		goto abort;
+	}
+	VTOBTRFS(*vpp)->bn_inode.bi_last_dirty_transid = generation;
+	goto out;
+abort:
+	btrfs_trans_abort(handle, error);
+out:
+	btrfs_release_path(&path);
+	if (handle != NULL) {
+		end_error = btrfs_trans_end(handle);
+		if (error == 0)
+			error = end_error;
+	}
+	if (error != 0 && *vpp != NULL) {
+		vput(*vpp);
+		*vpp = NULL;
+	}
+	if (bucket != NULL)
+		free(bucket, M_BTRFS, nodesize);
+	rw_exit_write(&bmp->bm_namespace_lock);
+	return (error);
+}
+
 int
 btrfs_find_dir_parent(struct btrfs_root *root, uint64_t objectid,
     uint64_t *parentp)
@@ -397,7 +618,6 @@ btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
 {
 	const struct btrfs_dir_item *dir_item;
 	const struct btrfs_key *key;
-	const struct btrfs_super_block *sb = root->br_super;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key target;
 	struct btrfs_dir_entry entry;
@@ -438,7 +658,7 @@ btrfs_iterate_directory(struct btrfs_root *root, uint64_t objectid,
 			location = letoh64(dir_item->location.objectid);
 			transid = letoh64(dir_item->transid);
 			if (location < BTRFS_FIRST_FREE_OBJECTID ||
-			    transid > letoh64(sb->generation) ||
+			    transid > path.bp_view_generation ||
 			    dir_item->type > BTRFS_FT_SYMLINK)
 				goto invalid;
 			if (dir_item->location.type == BTRFS_ROOT_ITEM_KEY) {

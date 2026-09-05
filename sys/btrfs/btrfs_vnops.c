@@ -32,6 +32,7 @@
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/namei.h>
+#include <sys/pool.h>
 #include <sys/proc.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
@@ -40,6 +41,13 @@
 #include <btrfs/btrfs_var.h>
 
 static int	btrfs_lookup(void *);
+static int	btrfs_create(void *);
+static int	btrfs_mkdir(void *);
+static int	btrfs_mknod(void *);
+static int	btrfs_symlink(void *);
+static int	btrfs_link(void *);
+static int	btrfs_makeinode(struct vnode *, struct vnode **,
+		    struct componentname *, struct vattr *);
 static int	btrfs_open(void *);
 static int	btrfs_close(void *);
 static int	btrfs_access(void *);
@@ -62,8 +70,8 @@ static int	btrfs_pathconf(void *);
 
 const struct vops btrfs_vops = {
 	.vop_lookup	= btrfs_lookup,
-	.vop_create	= eopnotsupp,
-	.vop_mknod	= eopnotsupp,
+	.vop_create	= btrfs_create,
+	.vop_mknod	= btrfs_mknod,
 	.vop_open	= btrfs_open,
 	.vop_close	= btrfs_close,
 	.vop_access	= btrfs_access,
@@ -76,11 +84,11 @@ const struct vops btrfs_vops = {
 	.vop_revoke	= vop_generic_revoke,
 	.vop_fsync	= btrfs_fsync,
 	.vop_remove	= eopnotsupp,
-	.vop_link	= eopnotsupp,
+	.vop_link	= btrfs_link,
 	.vop_rename	= eopnotsupp,
-	.vop_mkdir	= eopnotsupp,
+	.vop_mkdir	= btrfs_mkdir,
 	.vop_rmdir	= eopnotsupp,
-	.vop_symlink	= eopnotsupp,
+	.vop_symlink	= btrfs_symlink,
 	.vop_readdir	= btrfs_readdir,
 	.vop_readlink	= btrfs_readlink,
 	.vop_abortop	= vop_generic_abortop,
@@ -243,8 +251,10 @@ btrfs_lookup(void *v)
 		    cnp->cn_nameiop == CREATE) {
 			error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred,
 			    cnp->cn_proc);
-			if (error == 0)
+			if (error == 0) {
+				cnp->cn_flags |= SAVENAME;
 				error = EJUSTRETURN;
+			}
 		}
 		if (error == ENOENT && (cnp->cn_flags & MAKEENTRY))
 			cache_enter(dvp, NULL, cnp);
@@ -282,13 +292,112 @@ found:
 	if (cnp->cn_flags & MAKEENTRY)
 		cache_enter(dvp, *vpp, cnp);
 out:
-	if (error == 0 && *vpp != dvp && (!lockparent || !lastcn) &&
+	if ((error == 0 || error == EJUSTRETURN) &&
+	    *vpp != dvp && (!lockparent || !lastcn) &&
 	    (cnp->cn_flags & PDIRUNLOCK) == 0) {
 		VOP_UNLOCK(dvp);
 		cnp->cn_flags |= PDIRUNLOCK;
 	}
 	KASSERT((*vpp != NULL && VOP_ISLOCKED(*vpp)) || error != 0);
 	return (error);
+}
+
+static int
+btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
+    struct componentname *cnp, struct vattr *vap)
+{
+	struct btrfs_node *dir = VTOBTRFS(dvp);
+	mode_t mode;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(dvp));
+	KASSERT(cnp->cn_flags & HASBUF);
+	*vpp = NULL;
+	if (vap->va_type != VREG && vap->va_type != VDIR) {
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	error = VOP_ACCESS(dvp, VWRITE | VEXEC, cnp->cn_cred, cnp->cn_proc);
+	if (error != 0)
+		goto out;
+	mode = MAKEIMODE(vap->va_type, vap->va_mode);
+	if ((mode & S_ISGID) &&
+	    !groupmember(dir->bn_inode.bi_gid, cnp->cn_cred) &&
+	    !vnoperm(dvp) && suser_ucred(cnp->cn_cred))
+		mode &= ~S_ISGID;
+	error = btrfs_create_inode(dir, cnp->cn_nameptr, cnp->cn_namelen,
+	    mode, cnp->cn_cred->cr_uid, dir->bn_inode.bi_gid, vpp);
+	if (error != 0)
+		goto out;
+	cache_purge(dvp);
+	if (cnp->cn_flags & MAKEENTRY)
+		cache_enter(dvp, *vpp, cnp);
+	VN_KNOTE(dvp, NOTE_WRITE);
+	if ((dvp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
+	    (dir->bn_inode.bi_flags &
+	    (BTRFS_INODE_SYNC | BTRFS_INODE_DIRSYNC))) {
+		error = btrfs_trans_commit(dir->bn_mount,
+		    dir->bn_inode.bi_last_dirty_transid, cnp->cn_proc);
+		if (error != 0) {
+			vput(*vpp);
+			*vpp = NULL;
+		}
+	}
+out:
+	if (error != 0 || (cnp->cn_flags & SAVESTART) == 0)
+		pool_put(&namei_pool, cnp->cn_pnbuf);
+	return (error);
+}
+
+static int
+btrfs_create(void *v)
+{
+	struct vop_create_args *ap = v;
+
+	return (btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp,
+	    ap->a_vap));
+}
+
+static int
+btrfs_mkdir(void *v)
+{
+	struct vop_mkdir_args *ap = v;
+	int error;
+
+	error = btrfs_makeinode(ap->a_dvp, ap->a_vpp, ap->a_cnp, ap->a_vap);
+	vput(ap->a_dvp);
+	return (error);
+}
+
+static int
+btrfs_mknod(void *v)
+{
+	struct vop_mknod_args *ap = v;
+
+	*ap->a_vpp = NULL;
+	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	return (EOPNOTSUPP);
+}
+
+static int
+btrfs_symlink(void *v)
+{
+	struct vop_symlink_args *ap = v;
+
+	*ap->a_vpp = NULL;
+	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	vput(ap->a_dvp);
+	return (EOPNOTSUPP);
+}
+
+static int
+btrfs_link(void *v)
+{
+	struct vop_link_args *ap = v;
+
+	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	vput(ap->a_dvp);
+	return (EOPNOTSUPP);
 }
 
 static int
