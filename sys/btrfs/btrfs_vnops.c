@@ -27,7 +27,9 @@
 #include <sys/dirent.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
+#include <sys/event.h>
 #include <sys/fcntl.h>
+#include <sys/file.h>
 #include <sys/lock.h>
 #include <sys/lockf.h>
 #include <sys/malloc.h>
@@ -69,6 +71,11 @@ static int	btrfs_islocked(void *);
 static int	btrfs_print(void *);
 static int	btrfs_pathconf(void *);
 static int	btrfs_advlock(void *);
+static int	btrfs_kqfilter(void *);
+static void	filt_btrfsdetach(struct knote *);
+static int	filt_btrfsread(struct knote *, long);
+static int	filt_btrfswrite(struct knote *, long);
+static int	filt_btrfsvnode(struct knote *, long);
 
 const struct vops btrfs_vops = {
 	.vop_lookup	= btrfs_lookup,
@@ -82,7 +89,7 @@ const struct vops btrfs_vops = {
 	.vop_read	= btrfs_read,
 	.vop_write	= btrfs_write,
 	.vop_ioctl	= btrfs_ioctl,
-	.vop_kqfilter	= eopnotsupp,
+	.vop_kqfilter	= btrfs_kqfilter,
 	.vop_revoke	= vop_generic_revoke,
 	.vop_fsync	= btrfs_fsync,
 	.vop_remove	= eopnotsupp,
@@ -1329,6 +1336,96 @@ btrfs_print(void *v)
 	    (unsigned long long)node->bn_ino);
 #endif
 	return (0);
+}
+
+static int
+btrfs_kqfilter(void *v)
+{
+	static const struct filterops read_filtops = {
+		.f_flags = FILTEROP_ISFD,
+		.f_detach = filt_btrfsdetach,
+		.f_event = filt_btrfsread,
+	};
+	static const struct filterops write_filtops = {
+		.f_flags = FILTEROP_ISFD,
+		.f_detach = filt_btrfsdetach,
+		.f_event = filt_btrfswrite,
+	};
+	static const struct filterops vnode_filtops = {
+		.f_flags = FILTEROP_ISFD,
+		.f_detach = filt_btrfsdetach,
+		.f_event = filt_btrfsvnode,
+	};
+	struct vop_kqfilter_args *ap = v;
+	struct vnode *vp = ap->a_vp;
+	struct knote *kn = ap->a_kn;
+
+	switch (kn->kn_filter) {
+	case EVFILT_READ:
+		kn->kn_fop = &read_filtops;
+		break;
+	case EVFILT_WRITE:
+		kn->kn_fop = &write_filtops;
+		break;
+	case EVFILT_VNODE:
+		kn->kn_fop = &vnode_filtops;
+		break;
+	default:
+		return (EINVAL);
+	}
+	kn->kn_hook = (caddr_t)vp;
+	klist_insert_locked(&vp->v_klist, kn);
+	return (0);
+}
+
+static void
+filt_btrfsdetach(struct knote *kn)
+{
+	struct vnode *vp = (struct vnode *)kn->kn_hook;
+
+	klist_remove_locked(&vp->v_klist, kn);
+}
+
+static int
+filt_btrfsread(struct knote *kn, long hint)
+{
+	struct vnode *vp = (struct vnode *)kn->kn_hook;
+
+	/* Reclaim has already freed the inode when VFS sends NOTE_REVOKE. */
+	if (hint == NOTE_REVOKE) {
+		kn->kn_flags |= EV_EOF | EV_ONESHOT;
+		return (1);
+	}
+	kn->kn_data = VTOBTRFS(vp)->bn_inode.bi_size - foffset(kn->kn_fp);
+	if (kn->kn_data == 0 && (kn->kn_sfflags & NOTE_EOF)) {
+		kn->kn_fflags |= NOTE_EOF;
+		return (1);
+	}
+	if (kn->kn_flags & (__EV_POLL | __EV_SELECT))
+		return (1);
+	return (kn->kn_data != 0);
+}
+
+static int
+filt_btrfswrite(struct knote *kn, long hint)
+{
+	if (hint == NOTE_REVOKE) {
+		kn->kn_flags |= EV_EOF | EV_ONESHOT;
+		return (1);
+	}
+	kn->kn_data = 0;
+	return (1);
+}
+
+static int
+filt_btrfsvnode(struct knote *kn, long hint)
+{
+	kn->kn_fflags |= kn->kn_sfflags & hint;
+	if (hint == NOTE_REVOKE) {
+		kn->kn_flags |= EV_EOF;
+		return (1);
+	}
+	return (kn->kn_fflags != 0);
 }
 
 static int
