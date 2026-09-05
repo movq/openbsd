@@ -35,9 +35,9 @@ Current limits:
   A read-only view may join a writable filesystem; a filesystem first opened
   read-only cannot gain writable views until all views have been unmounted.
   Remount updates and subvolume creation/property changes are unsupported.
-* Regular-file `truncate`/`ftruncate` support unchanged sizes and sparse growth
-  on `NO_HOLES` filesystems. Growth converts supported inline data and COWs
-  partial data sectors with zero tails before exposing the new size. It rejects
+* Regular-file `truncate`/`ftruncate` support unchanged sizes and sparse growth.
+  Growth converts supported inline data and COWs partial data sectors with zero
+  tails before exposing the new size. It rejects
   NODATASUM, compressed/encoded overlap, and regular mappings beyond the old
   rounded EOF; preallocation remains zero-filled. Shrinking, unlink, rmdir,
   rename, and device-node creation are unsupported.
@@ -115,6 +115,11 @@ temporary sector copies and attach immutable ordered payloads, then update clean
 buffers. Cache misses consult ordered data before disk; repeated sector writes
 replace the payload and checksum. Strategy writeback is disabled because it
 lacks the vnode lock needed for tree/inode mutation.
+
+Without `NO_HOLES`, writes and growth count missing hole items under the vnode
+lock and reserve their insertion cost before joining. Fill gaps in the same
+handle after data mutation succeeds. Hole splits retain zero disk fields;
+preallocated and regular mappings retain their ownership and offsets.
 
 Lock order is vnode, namespace allocation, transaction handle, root, extent
 buffers from top down, allocator/block group, delayed references. The transaction
