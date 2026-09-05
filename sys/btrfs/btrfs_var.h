@@ -255,9 +255,21 @@ struct btrfs_trans_reservation {
 	uint64_t	btr_metadata;
 	uint64_t	btr_system;
 	int		btr_reclaim;
+	int		btr_chunk;
 };
 
 #define BTRFS_RECLAIM_METADATA_BLOCKS	128
+#define BTRFS_CHUNK_SYSTEM_BLOCKS		64
+
+struct btrfs_pending_chunk {
+	struct btrfs_chunk_map	*chunks;
+	struct btrfs_block_group	**groups;
+	unsigned int		count;
+	uint32_t		system_size;
+	uint8_t			system[sizeof(struct btrfs_key) +
+	    offsetof(struct btrfs_chunk, stripe) +
+	    BTRFS_MAX_MIRRORS * sizeof(struct btrfs_stripe)];
+};
 
 struct btrfs_reserved_space {
 	TAILQ_ENTRY(btrfs_reserved_space) brs_entry;
@@ -308,6 +320,7 @@ struct btrfs_transaction {
 	uint64_t			 bt_pinned_bytes;
 	uint64_t			 bt_bytes_used;
 	uint64_t			 bt_dev_bytes_added;
+	struct btrfs_pending_chunk	*bt_new_chunk;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
 	int				 bt_error;
@@ -320,6 +333,7 @@ struct btrfs_trans_handle {
 	struct btrfs_reserved_space_list bth_reservations;
 	uint8_t				 bth_commit;
 	uint8_t				 bth_delayed;
+	uint64_t			 bth_failed_type;
 };
 
 typedef int (*btrfs_extent_iter_fn)(const struct btrfs_extent_record *,
@@ -699,7 +713,8 @@ int	btrfs_iterate_free_space(struct btrfs_fs *,
 int	btrfs_space_init(struct btrfs_fs *);
 void	btrfs_space_destroy(struct btrfs_fs *);
 int	btrfs_space_statfs(struct btrfs_fs *, struct statfs *);
-int	btrfs_space_grow_data(struct btrfs_fs *, uint64_t);
+int	btrfs_space_grow(struct btrfs_fs *, uint64_t, uint64_t);
+void	btrfs_space_publish_chunk(struct btrfs_transaction *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);

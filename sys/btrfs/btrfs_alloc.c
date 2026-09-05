@@ -742,19 +742,20 @@ btrfs_chunk_physical(const struct btrfs_chunk_map *chunks, unsigned int count,
 }
 
 /*
- * Data growth can be published after commit: no allocation needs the new
- * mapping to write the chunk/device/free-space records themselves. Prepare
- * both replacement indexes first, commit all records, then install the
- * indexes together. A failed or ambiguous commit exposes no new data space.
+ * The protected cleanup/allocation reserve pays for creating the group.
+ * No allocation needs the new mapping before commit. Prepare replacement
+ * indexes privately and let transaction completion publish them before
+ * replenishing reserves. Failed or ambiguous commit exposes no new space.
  *
  * This routine is entered without a transaction handle. Its private join
- * reserves no data, so reservation failure cannot recursively request growth.
+ * sets btr_chunk so reservation failure cannot recursively request growth.
  */
 int
-btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
+btrfs_space_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
 {
-	struct btrfs_chunk_map *chunks = NULL, *oldchunks, *chunk;
-	struct btrfs_block_group **groups = NULL, **oldgroups, *group = NULL, *g;
+	struct btrfs_chunk_map *chunks = NULL, *chunk;
+	struct btrfs_block_group **groups = NULL, *group = NULL, *g;
+	struct btrfs_pending_chunk *pending;
 	struct btrfs_trans_reservation reservation = { 0 };
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_root *chunk_root, *dev_root, *group_root, *free_root = NULL;
@@ -774,7 +775,8 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	unsigned int count = 0, i, j, template = UINT_MAX;
 	int error, end_error;
 
-	if (needed == 0 || needed > UINT64_MAX - 65535)
+	if (!btrfs_space_check_type(type) ||
+	    needed == 0 || needed > UINT64_MAX - 65535)
 		return (EINVAL);
 	rw_enter_write(&bmp->bm_chunk_alloc_lock);
 	error = btrfs_commit_current(bmp, curproc);
@@ -786,10 +788,27 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	}
 	count = btrfs_space_group_count(bmp);
 	KASSERT(count == bmp->bm_nchunks);
+	/*
+	 * Chunk-tree mutation needs system COW space. Grow that pool first
+	 * when the protected promise is the only remaining margin.
+	 */
 	for (i = 0; i < count; i++) {
 		g = btrfs_space_group_at(bmp, i);
 		mtx_enter(&g->bbg_lock);
-		if (g->bbg_flags & BTRFS_BLOCK_GROUP_DATA)
+		if (g->bbg_flags & BTRFS_BLOCK_GROUP_SYSTEM)
+			available += g->bbg_free_bytes;
+		mtx_leave(&g->bbg_lock);
+	}
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	if (available < (uint64_t)nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS) {
+		type = BTRFS_BLOCK_GROUP_SYSTEM;
+		needed = (uint64_t)nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS;
+	}
+	available = 0;
+	for (i = 0; i < count; i++) {
+		g = btrfs_space_group_at(bmp, i);
+		mtx_enter(&g->bbg_lock);
+		if (g->bbg_flags & type)
 			available += g->bbg_free_bytes;
 		mtx_leave(&g->bbg_lock);
 	}
@@ -812,7 +831,7 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	for (i = 0; i < count; i++) {
 		if ((chunks[i].type & (BTRFS_BLOCK_GROUP_DATA |
 		    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM)) ==
-		    BTRFS_BLOCK_GROUP_DATA)
+		    type)
 			template = i;
 		for (j = 0; j < chunks[i].nmirrors; j++) {
 			if (physical_used > UINT64_MAX - chunks[i].length) {
@@ -836,6 +855,8 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	chunk->logical = roundup(logical, 65536);
 	device_size = letoh64(bmp->bm_super.dev_item.total_bytes);
 	chunk->length = MAX(32ULL * 1024 * 1024, roundup(needed, 65536));
+	if (type == BTRFS_BLOCK_GROUP_SYSTEM)
+		chunk->length = MAX(8ULL * 1024 * 1024, roundup(needed, 65536));
 	/*
 	 * Smaller chunks use fragmented device tails. Every stripe has the
 	 * same length, and each trial reselects all DUP mirrors.
@@ -858,11 +879,12 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 			goto out;
 		chunk->length = (chunk->length / 2) & ~65535ULL;
 	}
-	bytes = chunk->length * chunk->nmirrors;
-	if (physical_used > device_size || bytes > device_size - physical_used) {
+	if (physical_used > device_size || chunk->length >
+	    (device_size - physical_used) / chunk->nmirrors) {
 		error = EINVAL;
 		goto out;
 	}
+	bytes = chunk->length * chunk->nmirrors;
 	group = malloc(sizeof(*group), M_BTRFS, M_WAITOK | M_ZERO);
 	mtx_init(&group->bbg_lock, IPL_NONE);
 	TAILQ_INIT(&group->bbg_free_extents);
@@ -873,6 +895,14 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	if (error != 0)
 		goto out;
 	groups[count] = group;
+	itemsize = offsetof(struct btrfs_chunk, stripe) +
+	    chunk->nmirrors * sizeof(struct btrfs_stripe);
+	if (type == BTRFS_BLOCK_GROUP_SYSTEM &&
+	    letoh32(bmp->bm_super.sys_chunk_array_size) >
+	    BTRFS_SYSTEM_CHUNK_ARRAY_SIZE - sizeof(key) - itemsize) {
+		error = ENOSPC;
+		goto out;
+	}
 
 	error = btrfs_get_root(bmp, BTRFS_CHUNK_TREE_OBJECTID, &chunk_root);
 	if (error == 0)
@@ -908,8 +938,11 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	}
 	device.bytes_used = htole64(physical_used + bytes);
 	nodesize = letoh32(bmp->bm_super.nodesize);
-	reservation.btr_metadata = (uint64_t)nodesize * 192;
-	reservation.btr_system = (uint64_t)nodesize * 64;
+	reservation.btr_metadata = (uint64_t)nodesize *
+	    BTRFS_RECLAIM_METADATA_BLOCKS;
+	reservation.btr_system = (uint64_t)nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS;
+	reservation.btr_reclaim = 1;
+	reservation.btr_chunk = 1;
 	error = btrfs_trans_join(bmp, &reservation, &handle);
 	if (error != 0)
 		goto out;
@@ -979,6 +1012,23 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 			goto abort;
 	}
 	handle->bth_transaction->bt_dev_bytes_added += bytes;
+	pending = malloc(sizeof(*pending), M_BTRFS, M_WAITOK | M_ZERO);
+	pending->chunks = chunks;
+	pending->groups = groups;
+	pending->count = count + 1;
+	if (type == BTRFS_BLOCK_GROUP_SYSTEM) {
+		key.objectid = htole64(BTRFS_FIRST_CHUNK_TREE_OBJECTID);
+		key.type = BTRFS_CHUNK_ITEM_KEY;
+		key.offset = htole64(chunk->logical);
+		memcpy(pending->system, &key, sizeof(key));
+		memcpy(pending->system + sizeof(key), record, itemsize);
+		pending->system_size = sizeof(key) + itemsize;
+	}
+	KASSERT(handle->bth_transaction->bt_new_chunk == NULL);
+	handle->bth_transaction->bt_new_chunk = pending;
+	chunks = NULL;
+	groups = NULL;
+	group = NULL;
 	error = btrfs_trans_end(handle);
 	handle = NULL;
 	if (error == 0)
@@ -986,19 +1036,6 @@ btrfs_space_grow_data(struct btrfs_fs *bmp, uint64_t needed)
 	if (error != 0)
 		goto out;
 
-	rw_enter_write(&bmp->bm_mapping_lock);
-	KASSERT(bmp->bm_nchunks == count && bmp->bm_nblock_groups == count);
-	oldchunks = bmp->bm_chunks;
-	oldgroups = bmp->bm_block_groups;
-	bmp->bm_chunks = chunks;
-	bmp->bm_block_groups = groups;
-	bmp->bm_nchunks = bmp->bm_nblock_groups = count + 1;
-	rw_exit_write(&bmp->bm_mapping_lock);
-	free(oldchunks, M_BTRFS, count * sizeof(*oldchunks));
-	free(oldgroups, M_BTRFS, count * sizeof(*oldgroups));
-	chunks = NULL;
-	groups = NULL;
-	group = NULL;
 	goto out;
 abort:
 	btrfs_trans_abort(handle, error);
@@ -1023,6 +1060,32 @@ out:
 		free(groups, M_BTRFS, (count + 1) * sizeof(*groups));
 	rw_exit_write(&bmp->bm_chunk_alloc_lock);
 	return (error);
+}
+
+void
+btrfs_space_publish_chunk(struct btrfs_transaction *trans)
+{
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_pending_chunk *pending = trans->bt_new_chunk;
+	struct btrfs_chunk_map *oldchunks;
+	struct btrfs_block_group **oldgroups;
+	unsigned int count;
+
+	if (pending == NULL)
+		return;
+	count = pending->count - 1;
+	rw_enter_write(&bmp->bm_mapping_lock);
+	KASSERT(bmp->bm_nchunks == count && bmp->bm_nblock_groups == count);
+	oldchunks = bmp->bm_chunks;
+	oldgroups = bmp->bm_block_groups;
+	bmp->bm_chunks = pending->chunks;
+	bmp->bm_block_groups = pending->groups;
+	bmp->bm_nchunks = bmp->bm_nblock_groups = pending->count;
+	rw_exit_write(&bmp->bm_mapping_lock);
+	free(oldchunks, M_BTRFS, count * sizeof(*oldchunks));
+	free(oldgroups, M_BTRFS, count * sizeof(*oldgroups));
+	free(pending, M_BTRFS, sizeof(*pending));
+	trans->bt_new_chunk = NULL;
 }
 
 static int
@@ -1097,7 +1160,7 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_reserved_space *reservation;
-	uint64_t metadata, reclaim = 0;
+	uint64_t metadata, reclaim_metadata = 0, reclaim_system = 0;
 	uint32_t sectorsize;
 	int error;
 
@@ -1128,18 +1191,25 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 	}
 	error = btrfs_space_reserve_type(bmp, &handle->bth_reservations,
 	    BTRFS_BLOCK_GROUP_SYSTEM, request->btr_system);
-	if (error == 0)
+	handle->bth_failed_type = BTRFS_BLOCK_GROUP_SYSTEM;
+	if (error == 0) {
+		handle->bth_failed_type = BTRFS_BLOCK_GROUP_METADATA;
 		error = btrfs_space_reserve_type(bmp,
 		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_METADATA,
 		    metadata);
-	if (error == 0)
+	}
+	if (error == 0) {
+		handle->bth_failed_type = BTRFS_BLOCK_GROUP_DATA;
 		error = btrfs_space_reserve_type(bmp,
 		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_DATA,
 		    request->btr_data);
+	}
+	if (error == 0)
+		handle->bth_failed_type = 0;
 	if (error != 0)
 		btrfs_space_release(handle);
 	if (error == ENOSPC && request->btr_reclaim &&
-	    request->btr_system == 0 && request->btr_data == 0) {
+	    request->btr_data == 0) {
 		/*
 		 * Ordinary writers cannot spend the minimum orphan batch.
 		 * Transfer the entire promise; unused bytes follow delayed
@@ -1147,9 +1217,14 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 		 */
 		mtx_enter(&trans->bt_lock);
 		TAILQ_FOREACH(reservation, &trans->bt_reclaim_reservations,
-		    brs_entry)
-			reclaim += reservation->brs_bytes;
-		if (metadata <= reclaim) {
+		    brs_entry) {
+			if (reservation->brs_type == BTRFS_BLOCK_GROUP_METADATA)
+				reclaim_metadata += reservation->brs_bytes;
+			if (reservation->brs_type == BTRFS_BLOCK_GROUP_SYSTEM)
+				reclaim_system += reservation->brs_bytes;
+		}
+		if (metadata <= reclaim_metadata &&
+		    request->btr_system <= reclaim_system) {
 			TAILQ_CONCAT(&handle->bth_reservations,
 			    &trans->bt_reclaim_reservations, brs_entry);
 			handle->bth_delayed = 1;
@@ -1187,6 +1262,10 @@ btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 		error = btrfs_space_reserve_type(bmp,
 		    &trans->bt_reclaim_reservations, BTRFS_BLOCK_GROUP_METADATA,
 		    reclaim);
+	if (error == 0)
+		error = btrfs_space_reserve_type(bmp,
+		    &trans->bt_reclaim_reservations, BTRFS_BLOCK_GROUP_SYSTEM,
+		    nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS);
 	if (error != 0) {
 		btrfs_space_release_list(&trans->bt_commit_reservations);
 		btrfs_space_release_list(&trans->bt_reclaim_reservations);
@@ -2051,9 +2130,25 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 	struct btrfs_free_extent *space, *garbage[2];
 	struct btrfs_block_group *group;
 	unsigned int i, ngarbage;
+	struct btrfs_pending_chunk *pending;
 
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!trans->bt_commit_handle);
+	pending = trans->bt_new_chunk;
+	if (pending != NULL) {
+		group = pending->groups[pending->count - 1];
+		while ((space = TAILQ_FIRST(&group->bbg_free_extents)) != NULL) {
+			TAILQ_REMOVE(&group->bbg_free_extents, space, bfe_entry);
+			free(space, M_BTRFS, sizeof(*space));
+		}
+		free(group, M_BTRFS, sizeof(*group));
+		free(pending->chunks, M_BTRFS,
+		    pending->count * sizeof(*pending->chunks));
+		free(pending->groups, M_BTRFS,
+		    pending->count * sizeof(*pending->groups));
+		free(pending, M_BTRFS, sizeof(*pending));
+		trans->bt_new_chunk = NULL;
+	}
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_roots));
 	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_tree_refs));
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));

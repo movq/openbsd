@@ -538,6 +538,18 @@ btrfs_build_super(struct btrfs_transaction *trans,
 		return (EINVAL);
 	sb->dev_item.bytes_used = htole64(letoh64(sb->dev_item.bytes_used) +
 	    trans->bt_dev_bytes_added);
+	if (trans->bt_new_chunk != NULL &&
+	    trans->bt_new_chunk->system_size != 0) {
+		uint32_t size = letoh32(sb->sys_chunk_array_size);
+		uint32_t extra = trans->bt_new_chunk->system_size;
+
+		if (size > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE ||
+		    extra > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE - size)
+			return (ENOSPC);
+		memcpy(sb->sys_chunk_array + size, trans->bt_new_chunk->system,
+		    extra);
+		sb->sys_chunk_array_size = htole32(size + extra);
+	}
 	sb->log_root = 0;
 	sb->__unused_log_root_transid = 0;
 	sb->log_root_level = 0;
