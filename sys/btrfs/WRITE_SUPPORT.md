@@ -177,6 +177,12 @@ for flock and POSIX byte-range locks.  Locks refer to the inode across path
 aliases, use its current size for SEEK_END, and are purged at vnode reclaim.
 They require no on-disk changes.
 
+`VOP_KQFILTER` supports read, write, and vnode filters using the VFS knote list.
+Read readiness reflects file size and descriptor offset, with OpenBSD's EOF
+and poll/select semantics.  Writes report WRITE and, on growth, EXTEND;
+attribute changes report ATTRIB, and namespace creation reports parent WRITE.
+VFS reclaim reports REVOKE and EOF without accessing freed inode state.
+
 A writable transaction also retains an emergency metadata commit reserve
 before any ordinary handle can join.  It is sized for four full-height COW
 paths splitting at every level, plus accounting margin.  Ordinary handles
@@ -853,6 +859,11 @@ Targets restored using `btrfs restore -S` matched the originals.
 blocking wakeups, and close/exit lifetime.  Read-only mounts and forced unmount
 with blocked POSIX and flock waiters also passed, followed by an independent
 checksum check.
+
+`regress/sys/btrfs/kqueue.py` checks read/write readiness, EOF, poll/select,
+mutation notifications, subscription masks, and wakeup after an append.
+Read-only readiness and forced-unmount revoke delivery for read, write, and
+vnode filters passed, followed by an independent checksum check.
 
 `regress/sys/btrfs/enospc.py` fills metadata with empty files and checks that
 reservation failure leaves the failed name absent and parent metadata
