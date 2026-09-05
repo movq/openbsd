@@ -138,6 +138,11 @@ source locks protect link counts/references. Namespace allocation serializes
 inode-number selection. Publish name-cache changes and notifications only
 after successful mutation.
 
+Creation preallocates a private vnode before joining a transaction and registers
+device aliases after ending its handle. Alias registration may lock unrelated
+vnodes whose fsync is draining handles. Publish the inode-cache entry only after
+alias adoption has fixed the vnode identity.
+
 Free-space indexes subtract allocated extents and physical superblock stripes
 from block-group bounds. Stripe exclusions have no extent items and are separate
 from block-group usage. Keep free, reserved, allocated, and pinned space distinct,

@@ -709,5 +709,8 @@ int	btrfs_read_compressed_extent(struct btrfs_node *,
 	    const struct btrfs_file_extent *, uint64_t, size_t, void *);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
 int	btrfs_vget_tree(struct mount *, uint64_t, uint64_t, struct vnode **);
+int	btrfs_alloc_node(struct mount *, struct btrfs_root *, uint64_t,
+	    const struct btrfs_inode *, struct vnode **);
+int	btrfs_init_node(struct vnode **);
 
 #endif

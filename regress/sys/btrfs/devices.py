@@ -182,6 +182,37 @@ def reclaim(directory):
         os.close(fd)
 
 
+def race():
+    os.mknod("sync", stat.S_IFCHR | 0o600, os.makedev(2, 2))
+    fd = os.open("sync", os.O_RDWR)
+    ready, start = os.pipe()
+    for worker in range(4):
+        os.mkdir(f"worker-{worker}")
+
+    def create_aliases(worker):
+        os.close(start)
+        os.read(ready, 1)
+        for number in range(100):
+            name = f"worker-{worker}/{number}"
+            os.mknod(name, stat.S_IFCHR | 0o600, os.makedev(2, 2))
+            alias = os.open(name, os.O_RDWR)
+            os.fsync(alias)
+            os.close(alias)
+
+    children = [child_checks(lambda w=w: create_aliases(w)) for w in range(4)]
+    os.close(ready)
+    os.write(start, b"go!!")
+    os.close(start)
+    for number in range(100):
+        os.fchmod(fd, 0o600 | (number & 1))
+        os.fsync(fd)
+    for pid in children:
+        wait(pid)
+    os.close(fd)
+    for worker in range(4):
+        assert len(os.listdir(f"worker-{worker}")) == 100
+
+
 if __name__ == "__main__":
     phase, directory = sys.argv[1:]
     if phase == "fix-seed":
@@ -192,13 +223,15 @@ if __name__ == "__main__":
         reclaim(os.path.abspath(directory))
         print("devices reclaim passed", flush=True)
         sys.exit(0)
-    if phase in ("seed", "create"):
+    if phase in ("seed", "create", "race"):
         os.mkdir(directory)
     os.chdir(directory)
     if phase == "seed":
         seed()
     elif phase == "create":
         create()
+    elif phase == "race":
+        race()
     elif phase == "seed-verify":
         verify_seed()
         io()
