@@ -79,6 +79,11 @@ Current limits:
   free-space-tree/block-group-tree maintenance, device management, relocation,
   log replay, qgroups, or zoned support.
 
+`statfs` reports the logical capacity of existing block groups, counting DUP
+once. Free blocks include reservations but exclude pending allocations, pinned
+extents, and superblock stripes. Available blocks count only unreserved space
+in data-capable groups; metadata space and fragmentation can still limit writes.
+
 ## Transactions and durability
 
 The filesystem instance owns the device, roots, allocation, caches, and one

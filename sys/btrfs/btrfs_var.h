@@ -373,6 +373,7 @@ struct buf;
 struct btrfs_node;
 struct btrfs_root_entry;
 struct proc;
+struct statfs;
 struct vnode;
 LIST_HEAD(btrfs_extent_buffer_list, btrfs_extent_buffer);
 LIST_HEAD(btrfs_node_list, btrfs_node);
@@ -674,6 +675,7 @@ int	btrfs_iterate_free_space(struct btrfs_fs *,
 	    btrfs_free_space_iter_fn, void *);
 int	btrfs_space_init(struct btrfs_fs *);
 void	btrfs_space_destroy(struct btrfs_fs *);
+int	btrfs_space_statfs(struct btrfs_fs *, struct statfs *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);

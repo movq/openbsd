@@ -555,6 +555,46 @@ btrfs_space_destroy(struct btrfs_fs *bmp)
 	btrfs_space_destroy_groups(bmp, 1);
 }
 
+int
+btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
+{
+	struct btrfs_block_group *group;
+	uint64_t total = 0, free = 0, available = 0;
+	uint64_t length, group_free, group_available, sectorsize;
+	unsigned int i;
+
+	/*
+	 * Only existing chunks can be allocated. Report logical capacity,
+	 * counting DUP space once, and retain superblock stripes as overhead.
+	 * Reservations are free storage but unavailable to new operations;
+	 * pinned extents remain used until durable publication.
+	 *
+	 * Groups are immutable for the lifetime of the filesystem. Sample
+	 * their live counters under the same locks used by the allocator.
+	 */
+	for (i = 0; i < bmp->bm_nblock_groups; i++) {
+		group = &bmp->bm_block_groups[i];
+		mtx_enter(&group->bbg_lock);
+		length = group->bbg_length;
+		group_free = group->bbg_free_bytes + group->bbg_reserved_bytes;
+		group_available = (group->bbg_flags & BTRFS_BLOCK_GROUP_DATA) ?
+		    group->bbg_free_bytes : 0;
+		mtx_leave(&group->bbg_lock);
+		if (length > UINT64_MAX - total ||
+		    group_free > UINT64_MAX - free ||
+		    group_available > UINT64_MAX - available)
+			return (EOVERFLOW);
+		total += length;
+		free += group_free;
+		available += group_available;
+	}
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	sbp->f_blocks = total / sectorsize;
+	sbp->f_bfree = free / sectorsize;
+	sbp->f_bavail = available / sectorsize;
+	return (0);
+}
+
 static int
 btrfs_space_reserve_type(struct btrfs_fs *bmp,
     struct btrfs_reserved_space_list *reservations, uint64_t type,
