@@ -191,6 +191,15 @@ overwrites with unrelated pending changes, hard links, attributes, and repeated
 COW of the uncompressed tail. Run verify_zstd after both writable and read-only
 remounts, with independent filesystem, checksum, and mirror checks between.
 
+shrink.py uses seed/exercise/verify/readonly with independent checks between
+mounts. It covers imported and created files, zero/partial/aligned truncation,
+live read mappings, regrowth without stale data, pending-sector cancellation,
+split data references, hard links, O_TRUNC, flags, notifications, and huge holes.
+Repeat with 4 KiB and 16 KiB nodes, explicit holes (`-O ^no-holes`), and imported
+NODATASUM/NODATACOW files. Its capacity phase on a fresh seed with a small data
+block group checks data and metadata reservation failures without file changes,
+followed by successful sparse shrinking and whole-extent deletion.
+
 holes.py uses seed/write/verify to test splitting stored holes at their start,
 middle, and end, repeated splits, writes across mapping boundaries, and sparse
 extension. Import with `-O ^no-holes` and run both independent checks between

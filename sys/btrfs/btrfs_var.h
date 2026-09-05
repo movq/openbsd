@@ -617,7 +617,7 @@ int	btrfs_cow_block(struct btrfs_trans_handle *, struct btrfs_root *,
 	    struct btrfs_extent_buffer **);
 /*
  * Item keys and payloads are supplied in their packed on-disk encoding.
- * Insertion grows tree topology as needed; empty-node removal is not present.
+ * Insertion and deletion grow and prune tree topology as needed.
  */
 int	btrfs_insert_item(struct btrfs_trans_handle *, struct btrfs_root *,
 	    const struct btrfs_key *, const void *, uint32_t);
@@ -653,6 +653,10 @@ int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    uint64_t, struct btrfs_file_extent *);
 int	btrfs_read_ordered_sector(struct btrfs_node *, uint64_t, void *);
 int	btrfs_check_file_extend(struct btrfs_node *, uint64_t, uint64_t *);
+int	btrfs_check_file_shrink(struct btrfs_node *, uint64_t, uint64_t *,
+	    uint64_t *);
+int	btrfs_shrink_file(struct btrfs_trans_handle *, struct btrfs_node *,
+	    uint64_t);
 int	btrfs_count_file_holes(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, uint64_t);

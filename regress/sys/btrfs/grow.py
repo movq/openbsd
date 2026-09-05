@@ -68,7 +68,6 @@ def grow_case(name, size):
     assert mapping[:] == original(size) + bytes(FINAL - size)
     mapping.close()
     os.ftruncate(fd, FINAL)
-    fail(name, errno.EOPNOTSUPP, os.ftruncate, fd, 0)
     assert os.pwrite(fd, b"tail", FINAL - 4) == 4
     os.fsync(fd)
     os.close(fd)
@@ -118,8 +117,10 @@ def notifications():
     events = queue.control(None, 4, 5)
     assert len(events) == 1
     assert events[0].fflags == select.KQ_NOTE_ATTRIB | select.KQ_NOTE_EXTEND
-    fail("events", errno.EOPNOTSUPP, os.ftruncate, fd, 1)
-    assert queue.control(None, 4, 0) == []
+    os.ftruncate(fd, 1)
+    events = queue.control(None, 4, 5)
+    assert len(events) == 1
+    assert events[0].fflags == select.KQ_NOTE_ATTRIB
     queue.close()
     os.close(fd)
 
