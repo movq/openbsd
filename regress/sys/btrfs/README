@@ -161,6 +161,13 @@ compressed-inline write rejection without attribute changes. Zlib reads are
 not implemented, so unmount, use btrfs restore on the host, and run verify-seed
 on the restored directory to check the unchanged data independently.
 
+Use inline.py's seed-zstd/write-zstd/verify-zstd phases with `--compress zstd`
+to cover conversion of compressed inline prefixes, overwrites, sparse writes,
+and truncate growth across sector boundaries. Its capacity-zstd phase
+checks ENOSPC atomicity for both sparse writes and growth. Repeat with and
+without `NO_HOLES`, and check/restore independently between mounts. Use
+verify-restored-zstd for restored data, since restore does not recreate links.
+
 grow.py uses seed on the host, exercise in the VM, then verify and readonly
 after unmount/check/remount. Import the seed using the rootdir command above.
 It covers sparse truncate/ftruncate growth of imported inline and regular
@@ -176,7 +183,7 @@ compressed/verify_compressed (verify on the restored copy), which grows past
 an aligned compressed extent and writes the new sparse tail.
 
 With the compressed fixture imported using `--compress zstd`, zstd/verify_zstd
-also exercise compressed reads on writable mounts, rejected inline and regular
+also exercise compressed reads on writable mounts, rejected larger inline and regular
 overwrites with unrelated pending changes, hard links, attributes, and repeated
 COW of the uncompressed tail. Run verify_zstd after both writable and read-only
 remounts, with independent filesystem, checksum, and mirror checks between.

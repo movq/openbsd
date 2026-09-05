@@ -177,18 +177,18 @@ def readonly():
         assert state(name) == before
 
 
-def reject():
+def reject(sizes=(2048, 6003, 65539)):
     # mkfs leaves small incompressible inputs uncompressed.  These cases
     # cover compressed inline data and unaligned regular EOF sectors.
-    for size in (2048, 6003, 65539):
+    for size in sizes:
         name = f"import-{size}"
         fail(name, errno.EOPNOTSUPP, os.truncate, name, size + 8192)
     os.sync()
 
 
-def compressed():
+def compressed(reject_sizes=(2048, 6003, 65539)):
     # Verify the compressed prefix independently with host-side restore.
-    reject()
+    reject(reject_sizes)
     os.truncate("import-8192", 12288)
     fd = os.open("import-8192", os.O_RDWR)
     os.pwrite(fd, b"tail", 12284)
@@ -209,9 +209,9 @@ def verify_compressed():
 
 def zstd():
     verify_compressed_seed()
-    # Writes into compressed inline/regular mappings must reject before
+    # Writes into unsupported compressed mappings must reject before
     # changing the inode or the surrounding open transaction.
-    for size in (2048, 6003, 8192, 65539):
+    for size in (6003, 8192, 65539):
         name = f"import-{size}"
         fd = os.open(name, os.O_RDWR)
         for offset in (0, size // 2, size - 1):
@@ -220,11 +220,7 @@ def zstd():
             assert Path(name).read_bytes() == original(size)
             os.fsync(fd)
         os.close(fd)
-    # A distant write cannot mix inline and regular mappings, either.
-    fd = os.open("import-2048", os.O_RDWR)
-    fail("import-2048", errno.EOPNOTSUPP, os.pwrite, fd, b"fail", 16384)
-    os.close(fd)
-    compressed()
+    compressed((6003, 65539))
     verify_compressed()
     os.link("import-6003", "compressed-alias")
     os.chmod("compressed-alias", 0o640)
@@ -245,7 +241,7 @@ def verify_zstd():
     verify_compressed()
     assert os.stat("compressed-alias").st_ino == os.stat("import-6003").st_ino
     assert Path("compressed-alias").read_bytes() == original(6003)
-    for size in (2048, 6003, 8192, 65539):
+    for size in (6003, 8192, 65539):
         for offset in (0, size // 2, size - 1):
             assert Path(f"survivor-{size}-{offset}").read_bytes() == b"pending"
 

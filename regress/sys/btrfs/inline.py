@@ -42,6 +42,44 @@ def seed():
     Path("capacity-inline").write_bytes(original(100))
 
 
+GROWTH = ((511, 512), (2048, 4096), (2048, 16387), (2047, 8193))
+
+
+def seed_zstd():
+    seed()
+    Path("compressed-overwrite").write_bytes(original(2048))
+    Path("capacity-compressed").write_bytes(original(2048))
+    for size, end in GROWTH:
+        Path(f"grow-{size}-{end}").write_bytes(original(size))
+
+
+def write_zstd():
+    write()
+    write_case("compressed-overwrite", 2048, [(7, b"replacement")])
+    for size, end in GROWTH:
+        name = f"grow-{size}-{end}"
+        fd = os.open(name, os.O_RDWR)
+        try:
+            assert os.read(fd, size + 1) == original(size)
+            os.ftruncate(fd, end)
+            assert os.pread(fd, end + 1, 0) == original(size) + bytes(end - size)
+            assert os.fstat(fd).st_blocks == 8
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    verify_zstd()
+
+
+def verify_zstd(restored=False):
+    verify(restored)
+    assert Path("compressed-overwrite").read_bytes() == expected(
+        2048, [(7, b"replacement")])
+    assert Path("capacity-compressed").read_bytes() == original(2048)
+    for size, end in GROWTH:
+        assert Path(f"grow-{size}-{end}").read_bytes() == (
+            original(size) + bytes(end - size))
+
+
 def verify_seed():
     for name, (size, _) in CASES.items():
         assert Path(name).read_bytes() == original(size), name
@@ -80,7 +118,7 @@ def write():
     verify()
 
 
-def verify():
+def verify(restored=False):
     for name, (size, writes) in CASES.items():
         data = expected(size, writes)
         assert Path(name).read_bytes() == data, name
@@ -88,12 +126,13 @@ def verify():
         assert info.st_size == len(data)
         assert info.st_blocks > 0
     assert Path("alias").read_bytes() == expected(*CASES["sparse"])
-    assert os.stat("alias").st_ino == os.stat("sparse").st_ino
-    assert os.stat("sparse").st_nlink == 2
+    if not restored:
+        assert os.stat("alias").st_ino == os.stat("sparse").st_ino
+        assert os.stat("sparse").st_nlink == 2
     assert Path("capacity-inline").read_bytes() == original(100)
 
 
-def capacity():
+def capacity(name="capacity-inline", size=100):
     fd = os.open("filler", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     try:
         for sector in range(32768):
@@ -107,19 +146,20 @@ def capacity():
         os.fsync(fd)
     finally:
         os.close(fd)
-    before = os.stat("capacity-inline")
-    fd = os.open("capacity-inline", os.O_RDWR)
+    before = os.stat(name)
+    fd = os.open(name, os.O_RDWR)
     try:
         # Need space for the preserved inline prefix and the distant write.
         expect_error(errno.ENOSPC, os.pwrite, fd, b"fail", 16384)
+        expect_error(errno.ENOSPC, os.ftruncate, fd, 16384)
     finally:
         os.close(fd)
-    after = os.stat("capacity-inline")
+    after = os.stat(name)
     assert (before.st_size, before.st_blocks, before.st_mtime_ns,
             before.st_ctime_ns) == (
                 after.st_size, after.st_blocks, after.st_mtime_ns,
                 after.st_ctime_ns)
-    assert Path("capacity-inline").read_bytes() == original(100)
+    assert Path(name).read_bytes() == original(size)
     assert not os.statvfs(".").f_flag & os.ST_RDONLY
     os.sync()
     assert not os.statvfs(".").f_flag & os.ST_RDONLY
@@ -147,10 +187,14 @@ def reject():
 
 if __name__ == "__main__":
     phase, directory = sys.argv[1:]
-    if phase == "seed":
+    if phase in ("seed", "seed-zstd"):
         os.mkdir(directory)
     os.chdir(directory)
     {"seed": seed, "write": write, "verify": verify,
+     "seed-zstd": seed_zstd, "write-zstd": write_zstd,
+     "verify-zstd": verify_zstd,
+     "verify-restored-zstd": lambda: verify_zstd(restored=True),
+     "capacity-zstd": lambda: capacity("capacity-compressed", 2048),
      "capacity": capacity, "reject": reject,
      "verify-seed": verify_seed}[phase]()
     print(f"inline {phase} passed", flush=True)
