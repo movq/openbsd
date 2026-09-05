@@ -560,6 +560,24 @@ btrfs_build_super(struct btrfs_transaction *trans,
 	return (btrfs_validate_super(sb, letoh64(sb->bytenr)));
 }
 
+/*
+ * The filesystem can occupy only a prefix of its device.  A readable sector
+ * outside that prefix is not a superblock mirror of this filesystem.
+ */
+int
+btrfs_super_mirror_writable(const struct btrfs_mount *bmp, unsigned int index)
+{
+	const struct btrfs_super_mirror *mirror;
+	uint64_t size;
+
+	KASSERT(index < BTRFS_SUPER_MIRROR_MAX);
+	mirror = &bmp->bm_super_mirrors[index];
+	size = letoh64(bmp->bm_super.dev_item.total_bytes);
+	return ((mirror->bsm_flags & BTRFS_SUPER_MIRROR_READABLE) != 0 &&
+	    mirror->bsm_bytenr <= size &&
+	    sizeof(struct btrfs_super_block) <= size - mirror->bsm_bytenr);
+}
+
 int
 btrfs_write_super_mirrors(struct btrfs_mount *bmp,
     const struct btrfs_super_block *template)
@@ -575,7 +593,7 @@ btrfs_write_super_mirrors(struct btrfs_mount *bmp,
 	sb = malloc(sizeof(*sb), M_BTRFS, M_WAITOK);
 	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
 		mirror = &bmp->bm_super_mirrors[i];
-		if ((mirror->bsm_flags & BTRFS_SUPER_MIRROR_READABLE) == 0)
+		if (!btrfs_super_mirror_writable(bmp, i))
 			continue;
 		memcpy(sb, template, sizeof(*sb));
 		sb->bytenr = htole64(mirror->bsm_bytenr);

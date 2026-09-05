@@ -593,8 +593,7 @@ btrfs_trans_commit(struct btrfs_mount *bmp, uint64_t minimum_generation,
 		bmp->bm_backup_roots_valid =
 		    btrfs_validate_backup_roots(&bmp->bm_super);
 		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
-			if ((bmp->bm_super_mirrors[i].bsm_flags &
-			    BTRFS_SUPER_MIRROR_READABLE) == 0)
+			if (!btrfs_super_mirror_writable(bmp, i))
 				continue;
 			bmp->bm_super_mirrors[i].bsm_generation =
 			    trans->bt_generation;
