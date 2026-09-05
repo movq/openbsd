@@ -56,3 +56,8 @@ For example:
     python3 /mnt/src/regress/sys/btrfs/enospc.py /mnt/btrfs/full
 
 Unmount and run the independent filesystem checker after this test as well.
+
+hardlink.py uses create/verify phases and a readonly phase after a read-only
+remount.  It checks shared inode identity, data, attributes and advisory locks,
+link counts, symlink aliases, concurrent links, hash collisions, notifications,
+permissions, and failure atomicity when a packed inode-reference item fills.

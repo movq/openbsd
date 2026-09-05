@@ -42,6 +42,11 @@ static void	btrfs_decode_inode(const struct btrfs_inode_item *,
 static int	btrfs_decode_file_extent(const struct btrfs_mount *,
 		    uint64_t, const struct btrfs_key *, const uint8_t *,
 		    uint32_t, struct btrfs_file_extent *);
+static int	btrfs_prepare_append(struct btrfs_root *,
+		    const struct btrfs_key *, uint8_t *, uint32_t, uint32_t *);
+static int	btrfs_insert_append(struct btrfs_trans_handle *,
+		    struct btrfs_root *, const struct btrfs_key *,
+		    const uint8_t *, uint32_t, uint32_t);
 
 static int
 btrfs_ref_name_valid(const uint8_t *name, uint16_t namelen)
@@ -248,7 +253,6 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	struct btrfs_root *root;
 	struct btrfs_key target, hashkey;
 	const struct btrfs_key *key;
-	const uint8_t *data;
 	struct btrfs_inode_item inode;
 	struct btrfs_file_extent_item *extent;
 	struct btrfs_inode saved;
@@ -260,7 +264,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	uint8_t record[sizeof(*entry) + BTRFS_NAME_MAX];
 	uint8_t reference[sizeof(*ref) + BTRFS_NAME_MAX];
 	uint64_t ino, index = 2, generation;
-	uint32_t nodesize, size, bucket_size = 0, record_size;
+	uint32_t nodesize, bucket_size = 0, record_size;
 	size_t linklen = 0, link_size = 0;
 	int error, end_error;
 
@@ -357,21 +361,10 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	/* Btrfs uses raw CRC32C seeded with ~1, without final inversion. */
 	hashkey.offset = htole64(crc32c(1, (const uint8_t *)name,
 	    namelen) ^ 0xffffffffU);
-	error = btrfs_search_slot(root, &hashkey, &path);
-	if (error == 0) {
-		error = btrfs_path_item(&path, NULL, &data, &size);
-		if (error != 0)
-			goto out;
-		if (size > nodesize - sizeof(struct btrfs_header) -
-		    sizeof(struct btrfs_item) - record_size) {
-			error = ENOSPC;
-			goto out;
-		}
-		bucket_size = size;
-		memcpy(bucket, data, size);
-	} else if (error != ENOENT)
+	error = btrfs_prepare_append(root, &hashkey, bucket, record_size,
+	    &bucket_size);
+	if (error != 0)
 		goto out;
-	btrfs_release_path(&path);
 
 	/* Include the inline target and possible hash bucket delete/reinsert. */
 	reservation.btr_metadata = (uint64_t)nodesize *
@@ -425,15 +418,8 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	    S_ISLNK(mode) ? BTRFS_FT_SYMLINK : BTRFS_FT_REG_FILE;
 	memcpy(record + sizeof(*entry), name, namelen);
 	memcpy(bucket + bucket_size, record, record_size);
-	/*
-	 * Replacement cannot split a full leaf yet.  Delete and insert the
-	 * expanded bucket under the parent lock, using the insertion splitter.
-	 */
-	if (bucket_size != 0)
-		error = btrfs_delete_item(handle, root, &hashkey);
-	if (error == 0)
-		error = btrfs_insert_item(handle, root, &hashkey, bucket,
-		    bucket_size + record_size);
+	error = btrfs_insert_append(handle, root, &hashkey, bucket,
+	    bucket_size, record_size);
 	if (error != 0)
 		goto abort;
 	target.objectid = htole64(dir->bn_ino);
@@ -490,6 +476,222 @@ out:
 	if (link_item != NULL)
 		free(link_item, M_BTRFS, link_size);
 	rw_exit_write(&bmp->bm_namespace_lock);
+	return (error);
+}
+
+/*
+ * Read a packed item before mutation, leaving room for an additional record.
+ * The caller holds the vnode locks protecting the item's contents.
+ */
+static int
+btrfs_prepare_append(struct btrfs_root *root, const struct btrfs_key *key,
+    uint8_t *buffer, uint32_t extra, uint32_t *sizep)
+{
+	struct btrfs_path path = { 0 };
+	const uint8_t *data;
+	uint32_t size, capacity;
+	int error;
+
+	*sizep = 0;
+	capacity = letoh32(root->br_super->nodesize) -
+	    sizeof(struct btrfs_header) - sizeof(struct btrfs_item);
+	error = btrfs_search_slot(root, key, &path);
+	if (error == ENOENT)
+		error = 0;
+	else if (error == 0) {
+		error = btrfs_path_item(&path, NULL, &data, &size);
+		if (error == 0) {
+			if (extra > capacity || size > capacity - extra)
+				error = ENOSPC;
+			else {
+				memcpy(buffer, data, size);
+				*sizep = size;
+			}
+		}
+	}
+	btrfs_release_path(&path);
+	return (error);
+}
+
+static int
+btrfs_insert_append(struct btrfs_trans_handle *handle, struct btrfs_root *root,
+    const struct btrfs_key *key, const uint8_t *buffer, uint32_t oldsize,
+    uint32_t extra)
+{
+	int error = 0;
+
+	/* Delete/reinsert permits the expanded item to split its leaf. */
+	if (oldsize != 0)
+		error = btrfs_delete_item(handle, root, key);
+	if (error == 0)
+		error = btrfs_insert_item(handle, root, key, buffer,
+		    oldsize + extra);
+	return (error);
+}
+
+/*
+ * Add a name without changing the inode's data extent references: these are
+ * keyed by inode, not by directory entry.  Parent and source vnode locks
+ * serialize directory indexes and the packed per-parent inode references.
+ * All capacity checks precede mutation; a later error aborts the transaction.
+ */
+int
+btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
+    const char *name, size_t namelen)
+{
+	struct btrfs_mount *bmp = dir->bn_mount;
+	struct btrfs_trans_reservation reservation = { 0 };
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key hashkey, refkey, indexkey;
+	const struct btrfs_key *key;
+	struct btrfs_dir_item *entry;
+	struct btrfs_inode_ref *ref;
+	struct btrfs_inode saved_dir, saved_node;
+	struct timespec now;
+	uint8_t *bucket = NULL, *reference = NULL;
+	uint8_t record[sizeof(*entry) + BTRFS_NAME_MAX];
+	uint64_t index = 2, generation;
+	uint32_t nodesize, bucket_size, ref_size, record_size, ref_extra;
+	int error, end_error;
+
+	KASSERT(VOP_ISLOCKED(dir->bn_vnode));
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	if (node->bn_mount != bmp || node->bn_treeid != dir->bn_treeid)
+		return (EXDEV);
+	if (namelen > BTRFS_NAME_MAX ||
+	    !btrfs_ref_name_valid((const uint8_t *)name, namelen))
+		return (EINVAL);
+	if (dir->bn_inode.bi_size > UINT64_MAX - namelen * 2)
+		return (EOVERFLOW);
+	error = btrfs_get_root(bmp, dir->bn_treeid, &root);
+	if (error != 0)
+		return (error);
+	memset(&indexkey, 0, sizeof(indexkey));
+	indexkey.objectid = htole64(dir->bn_ino);
+	indexkey.type = BTRFS_DIR_INDEX_KEY;
+	indexkey.offset = htole64(UINT64_MAX);
+	error = btrfs_search_predecessor(root, &indexkey, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error != 0)
+			goto out;
+		if (key->objectid == indexkey.objectid &&
+		    key->type == indexkey.type) {
+			index = letoh64(key->offset);
+			if (index < 2 || index >= INT64_MAX - 1) {
+				error = EOVERFLOW;
+				goto out;
+			}
+			index++;
+		}
+	} else if (error != ENOENT)
+		goto out;
+	btrfs_release_path(&path);
+	indexkey.offset = htole64(index);
+
+	nodesize = letoh32(bmp->bm_super.nodesize);
+	bucket = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+	reference = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+	record_size = sizeof(*entry) + namelen;
+	hashkey = indexkey;
+	hashkey.type = BTRFS_DIR_ITEM_KEY;
+	hashkey.offset = htole64(crc32c(1, (const uint8_t *)name,
+	    namelen) ^ 0xffffffffU);
+	error = btrfs_prepare_append(root, &hashkey, bucket, record_size,
+	    &bucket_size);
+	if (error != 0)
+		goto out;
+	memset(&refkey, 0, sizeof(refkey));
+	refkey.objectid = htole64(node->bn_ino);
+	refkey.type = BTRFS_INODE_REF_KEY;
+	refkey.offset = htole64(dir->bn_ino);
+	ref_extra = sizeof(*ref) + namelen;
+	error = btrfs_prepare_append(root, &refkey, reference, ref_extra,
+	    &ref_size);
+	if (error == ENOSPC)
+		error = EMLINK;
+	if (error != 0)
+		goto out;
+	ref = (struct btrfs_inode_ref *)(reference + ref_size);
+	ref->index = htole64(index);
+	ref->name_len = htole16(namelen);
+	memcpy(reference + ref_size + sizeof(*ref), name, namelen);
+
+	/* Two inode updates and two potentially growing packed items. */
+	reservation.btr_metadata = (uint64_t)nodesize * 160;
+	error = btrfs_trans_join(bmp, &reservation, &handle);
+	if (error != 0)
+		goto out;
+	generation = handle->bth_transaction->bt_generation;
+	memset(record, 0, sizeof(record));
+	entry = (struct btrfs_dir_item *)record;
+	entry->location.objectid = htole64(node->bn_ino);
+	entry->location.type = BTRFS_INODE_ITEM_KEY;
+	entry->transid = htole64(generation);
+	entry->name_len = htole16(namelen);
+	switch (node->bn_vnode->v_type) {
+	case VREG: entry->type = BTRFS_FT_REG_FILE; break;
+	case VLNK: entry->type = BTRFS_FT_SYMLINK; break;
+	case VCHR: entry->type = BTRFS_FT_CHRDEV; break;
+	case VBLK: entry->type = BTRFS_FT_BLKDEV; break;
+	case VFIFO: entry->type = BTRFS_FT_FIFO; break;
+	case VSOCK: entry->type = BTRFS_FT_SOCK; break;
+	default:
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	memcpy(record + sizeof(*entry), name, namelen);
+	memcpy(bucket + bucket_size, record, record_size);
+	error = btrfs_insert_append(handle, root, &hashkey, bucket,
+	    bucket_size, record_size);
+	if (error == 0)
+		error = btrfs_insert_item(handle, root, &indexkey, record,
+		    record_size);
+	if (error == 0)
+		error = btrfs_insert_append(handle, root, &refkey, reference,
+		    ref_size, ref_extra);
+	if (error != 0)
+		goto abort;
+
+	saved_dir = dir->bn_inode;
+	saved_node = node->bn_inode;
+	getnanotime(&now);
+	dir->bn_inode.bi_size += namelen * 2;
+	dir->bn_inode.bi_mtime = dir->bn_inode.bi_ctime = now;
+	dir->bn_inode.bi_sequence++;
+	dir->bn_inode.bi_last_dirty_transid = generation;
+	dir->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE |
+	    BTRFS_INODE_DIRTY_MTIME | BTRFS_INODE_DIRTY_CTIME |
+	    BTRFS_INODE_DIRTY_SEQUENCE;
+	node->bn_inode.bi_nlink++;
+	node->bn_inode.bi_ctime = now;
+	node->bn_inode.bi_last_dirty_transid = generation;
+	node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NLINK |
+	    BTRFS_INODE_DIRTY_CTIME;
+	error = btrfs_write_inode(handle, node);
+	if (error == 0)
+		error = btrfs_write_inode(handle, dir);
+	if (error != 0) {
+		dir->bn_inode = saved_dir;
+		node->bn_inode = saved_node;
+		goto abort;
+	}
+	goto out;
+abort:
+	btrfs_trans_abort(handle, error);
+out:
+	btrfs_release_path(&path);
+	if (handle != NULL) {
+		end_error = btrfs_trans_end(handle);
+		if (error == 0)
+			error = end_error;
+	}
+	if (bucket != NULL)
+		free(bucket, M_BTRFS, nodesize);
+	if (reference != NULL)
+		free(reference, M_BTRFS, nodesize);
 	return (error);
 }
 
