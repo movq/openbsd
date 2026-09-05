@@ -12,6 +12,10 @@ implementation, including IPC on read-only mounts. Regular files use shared
 advisory locking and kqueue facilities. Sync operations commit the full
 transaction; there is no log tree.
 
+Directory reads use persistent directory indexes as seek cookies and resume
+with a tree search. Index gaps are allowed; indexes whose next cookie cannot
+fit in a signed VFS offset return `EOVERFLOW`.
+
 Device nodes use native special-device operations and alias handling, including
 `nodev` and securelevel policy. Device I/O also works on read-only mounts.
 Size changes to devices, FIFOs, and sockets are no-ops, as on FFS.
