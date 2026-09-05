@@ -410,10 +410,62 @@ static int
 btrfs_link(void *v)
 {
 	struct vop_link_args *ap = v;
+	struct vnode *dvp = ap->a_dvp, *vp = ap->a_vp;
+	struct componentname *cnp = ap->a_cnp;
+	struct btrfs_node *dir = VTOBTRFS(dvp), *node;
+	int error;
 
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	vput(ap->a_dvp);
-	return (EOPNOTSUPP);
+	KASSERT(VOP_ISLOCKED(dvp));
+	KASSERT(cnp->cn_flags & HASBUF);
+	if (vp->v_type == VDIR) {
+		error = EPERM;
+		goto out;
+	}
+	error = vn_lock(vp, LK_EXCLUSIVE);
+	if (error != 0)
+		goto out;
+	node = VTOBTRFS(vp);
+	if (vp->v_mount != dvp->v_mount ||
+	    node->bn_treeid != dir->bn_treeid) {
+		error = EXDEV;
+		goto unlock;
+	}
+	error = VOP_ACCESS(dvp, VWRITE | VEXEC, cnp->cn_cred, cnp->cn_proc);
+	if (error != 0)
+		goto unlock;
+	if (node->bn_inode.bi_flags & BTRFS_INODE_READONLY) {
+		error = EROFS;
+		goto unlock;
+	}
+	if (node->bn_inode.bi_flags &
+	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) {
+		error = EPERM;
+		goto unlock;
+	}
+	if (node->bn_inode.bi_nlink >= LINK_MAX) {
+		error = EMLINK;
+		goto unlock;
+	}
+	error = btrfs_link_inode(dir, node, cnp->cn_nameptr, cnp->cn_namelen);
+	if (error != 0)
+		goto unlock;
+	cache_purge(dvp);
+	if (cnp->cn_flags & MAKEENTRY)
+		cache_enter(dvp, vp, cnp);
+	VN_KNOTE(vp, NOTE_LINK);
+	VN_KNOTE(dvp, NOTE_WRITE);
+	if ((dvp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
+	    (dir->bn_inode.bi_flags &
+	    (BTRFS_INODE_SYNC | BTRFS_INODE_DIRSYNC)) ||
+	    (node->bn_inode.bi_flags & BTRFS_INODE_SYNC))
+		error = btrfs_trans_commit(dir->bn_mount,
+		    node->bn_inode.bi_last_dirty_transid, cnp->cn_proc);
+unlock:
+	VOP_UNLOCK(vp);
+out:
+	VOP_ABORTOP(dvp, cnp);
+	vput(dvp);
+	return (error);
 }
 
 static int
