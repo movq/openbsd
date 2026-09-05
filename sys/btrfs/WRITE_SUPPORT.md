@@ -1,197 +1,131 @@
 # Btrfs write support
 
-This is a guide to the writer's design constraints and remaining work.
-Implementation details belong in the code; test instructions are in
-`regress/sys/btrfs/README`.
+This document records the writer's constraints and design obligations.
+Test procedures and coverage belong in `regress/sys/btrfs/README`.
 
-## Supported operations and format
+## Supported scope
 
 Writable mounts support regular-file creation and uncompressed sector writes,
-mkdir, inline symlinks, hard links, and ownership, mode, and timestamp changes.
-Advisory locks and kqueue read/write/vnode filters use OpenBSD's shared VFS
-facilities. `fsync`, synchronous I/O, mount sync, and clean unmount perform a
-full transaction commit; there is no log tree.
+directories, inline symlinks, hard links, FIFOs, Unix-domain socket nodes, and
+ownership, mode, and timestamp changes. FIFOs use the shared OpenBSD pipe
+implementation, including IPC on read-only mounts. Regular files use shared
+advisory locking and kqueue facilities. Sync operations commit the full
+transaction; there is no log tree.
 
-Writable mount validation requires:
+The writable format is one device, CRC32C, existing SINGLE/DUP chunks, and
+skinny metadata. Only `MIXED_BACKREF`, `BIG_METADATA`, `EXTENDED_IREF`,
+`SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted; no compat-ro bits
+are supported. Mount requires the newest valid superblock, no pending log,
+no seeding device or read-only selected tree, and an extent tree without
+legacy extent items, shared references, snapshots, or simple-quota owner refs.
+Keep read and write feature masks separate: parsing does not imply maintenance.
 
-* One device, CRC32C, and existing SINGLE or DUP chunks.
-* Skinny metadata and only `MIXED_BACKREF`, `BIG_METADATA`, `EXTENDED_IREF`,
-  `SKINNY_METADATA`, and `NO_HOLES` incompat bits; no compat-ro bits.
-* No pending log root, seeding device, or read-only selected filesystem tree.
-* The newest valid superblock generation, without fallback to older mirrors.
-* No legacy extent items, simple-quota owner refs, shared block/data refs, or
-  snapshots. The complete extent tree is checked before enabling writes.
+Current limits:
 
-Additional subvolumes can be traversed, but only the top-level filesystem tree
-can be modified. Simultaneous mounts of different subvolumes need a design
-discussion before implementation: allocation, transactions, device ownership,
-and caches cannot safely be independent for mounts sharing one filesystem.
-
-Current operation limits:
-
-* No truncate, unlink, rmdir, rename, or special-node creation.
+* Only the top-level filesystem tree is writable; other subvolumes are readable.
+  Simultaneous subvolume mounts require a design discussion before implementation.
+  They must share device ownership, allocation, transactions, and caches.
+* No truncate, unlink, rmdir, rename, or device-node creation.
 * Writes reject inline files, NODATASUM, encoded mappings, and compressed
-  overlap. Existing compressed data remains readable. Regular/preallocated
-  uncompressed mappings can be split, and NODATACOW data is replaced by COW.
-* Creation rejects parents with xattrs or NODATACOW until inheritance is
-  implemented. New inodes inherit the parent group and compression flags;
-  new data is always uncompressed.
-* Symlink targets are inline and limited to `MAXPATHLEN - 1` bytes.
-* Hard links cannot cross filesystem trees or target directories. Packed
-  per-parent inode references overflow into hashed extended references when
-  `EXTENDED_IREF` is enabled; otherwise a full item returns `EMLINK`.
-  Directory hash and extended-reference buckets have a one-item capacity limit.
-* Allocation uses existing block groups only. There is no chunk allocation,
+  overlap. Regular/preallocated uncompressed mappings can be split;
+  NODATACOW data is replaced by COW.
+* Creation rejects parents with xattrs or NODATACOW pending inheritance support.
+  New inodes inherit parent group and compression flags, but write uncompressed
+  data. Inline symlink targets are limited to `MAXPATHLEN - 1` bytes.
+* Hard links cannot cross trees or target directories. Packed inode references
+  overflow into extended references only with `EXTENDED_IREF`; otherwise they
+  return `EMLINK`. Hash buckets are limited to one item's capacity.
+* Allocation uses existing block groups. There is no chunk allocation,
   free-space-tree/block-group-tree maintenance, device management, relocation,
   log replay, qgroups, or zoned support.
 
-Read and write feature masks must remain separate: parsing a feature does not
-imply that the writer maintains its accounting.
+## Transactions and durability
 
-## Durability and failure rules
+One mount owns one open transaction. Operations join with typed reservations,
+encode affected inodes and attach immutable data payloads before ending their
+handles. Ending a handle does not commit. A committer closes joins and drains
+handles; new writers wait for publication. Commit must not acquire arbitrary
+vnode locks.
 
-* The highest valid superblock generation is the commit point. All data and
-  metadata reachable from it must already be durable.
-* Committed metadata is never overwritten. COW redirects parent pointers or
-  persistent root locations and queues delayed extent-reference changes.
-* Freed extents remain pinned until the new superblock is durable.
-* Reserve worst-case space before visible mutation. Expected capacity failures
-  must leave namespace and inode state unchanged and permit later operations.
-* An error after partial tree mutation aborts the transaction and makes the
-  mount read-only. Do not continue using partially updated in-memory trees.
-* Mutable inode state is host-endian; encode little-endian items at the tree
-  boundary, preserving fields the writer does not model.
+Reserve worst-case space before visible mutation. Capacity failures must leave
+namespace and inode state unchanged and allow later operations. Errors after
+partial tree mutation abort the transaction and make the mount read-only.
+Mutable inode state is host-endian; encoding preserves unmodeled fields.
 
-One mount owns one open transaction. Operations join it with typed reservations;
-ending a handle does not commit. A committer closes joins and waits for active
-handles. New writers wait until publication installs the next generation.
-Commit does not acquire arbitrary vnode locks: each operation encodes its inode
-items and attaches its data before ending its handle.
+The highest valid superblock generation is the commit point:
 
-Commit order:
+1. Write ordered data to every required mirror.
+2. Drain delayed references, update block-group accounting, and rewrite dirty
+   root items to a fixed point. Include allocator change sequence in the
+   stability check: this work can COW more trees and queue more references.
+3. Finalize metadata headers/checksums and write every required mirror.
+4. Drain device buffers and issue `DIOCCACHESYNC`.
+5. Write updated superblocks at usable mirrors within the recorded device size.
+6. Drain and cache-sync again, then publish in memory and release pinned space.
 
-1. Close joins and drain operation handles.
-2. Write ordered data to every required mirror.
-3. Materialize delayed references, update block-group accounting, and rewrite
-   dirty root items to a fixed point. These changes can themselves COW trees
-   and queue more references; use the allocator's change sequence as well as
-   queue emptiness to detect stability.
-4. Finalize metadata headers/checksums and write every required mirror.
-5. Drain device buffers and issue `DIOCCACHESYNC`.
-6. Write superblocks with updated roots, generation, usage, and backup root,
-   at usable mirror offsets within the filesystem's recorded device size.
-7. Drain and cache-sync again, then publish in memory and release pinned space.
+`bwrite()` and device `VOP_FSYNC` alone do not flush volatile device caches.
+Every DUP copy is required. Once superblock writing has been attempted, attempt
+the final barrier even if a mirror failed; ambiguous publication requires an
+error and read-only mount.
 
-`bwrite()` completion and device `VOP_FSYNC` alone do not guarantee persistence
-through a volatile device cache. Every DUP copy is required. Once superblock
-writing has been attempted, attempt the final barrier even if a mirror failed;
-an ambiguous publication requires an error and read-only mount.
+Committed metadata is never overwritten. Abort restores saved roots and marks
+transaction-owned extent buffers stale before releasing new allocations.
+Detached COW blocks retain allocations until delayed drops remove their extent
+items. Freed extents remain pinned until durable publication.
 
-Abort restores saved root locations and marks transaction-owned extent buffers
-stale before releasing new allocations. Successful publication releases
-transaction ownership only after durability is established.
+## Cache, locking, and allocation obligations
 
-Detached COW blocks keep their allocations until delayed references are drained
-and their extent items are gone. Commit can detach an extent-tree block whose
-add was already materialized; immediate reuse would race its pending drop.
+Device buffers supply physical reads; extent buffers provide logical metadata
+identity, validation, locks, and transaction ownership. COW uses private storage
+and transaction-aware B-tree APIs. Roots are persistent mount-owned objects:
+readers snapshot their locations; writers retain root locks and COW paths from
+the root downward. Validate against the path's view generation.
 
-## Caches, locking, and allocation
+Regular-file buffers use logical sector offsets. Vnode-locked writes modify
+temporary sector copies and attach immutable ordered payloads, then update clean
+buffers. Cache misses consult ordered data before disk; repeated sector writes
+replace the payload and checksum. Strategy writeback is disabled because it
+lacks the vnode lock needed for tree/inode mutation.
 
-The device buffer cache supplies physical reads. The extent-buffer layer adds
-logical metadata identity, mirror-independent validation, locks, and transaction
-ownership. COW metadata uses private storage so mutation cannot alias committed
-device buffers. Tree mutation goes through the transaction-aware B-tree APIs,
-which maintain separators, splits, root growth/shrinkage, and delayed implicit
-references. Do not bypass them with raw block clones or layout edits.
+Lock order is vnode, namespace allocation, transaction handle, root, extent
+buffers from top down, allocator/block group, delayed references. The transaction
+mutex protects transitions and handles only; never hold it across I/O or tree
+searches. Release paths bottom-up and queue reference changes instead of editing
+the extent tree recursively. Parent locks protect directory buckets/indexes;
+source locks protect link counts/references. Namespace allocation serializes
+inode-number selection. Publish name-cache changes and notifications only
+after successful mutation.
 
-Roots are mount-owned persistent objects. Readers snapshot their locations
-under a lock; write searches retain the root lock and lock/COW paths from the
-root downward. Validation uses the path's view generation, which may be newer
-than the committed superblock.
+Free-space indexes subtract allocated extents and physical superblock stripes
+from block-group bounds. Stripe exclusions have no extent items and are separate
+from block-group usage. Keep free, reserved, allocated, and pinned space distinct,
+with typed reservations accounting for mixed groups.
 
-Regular-file buffers are indexed by vnode and logical sector. A vnode-locked
-writer reads or zero-fills a sector, applies `uiomove` to a temporary copy,
-reserves space, and attaches an immutable ordered payload to the transaction.
-Successful sectors update clean logical buffers. Cache misses consult ordered
-payloads before disk data; repeated writes to a sector replace the earlier
-payload and checksum. Strategy writeback is disabled because it lacks the
-vnode lock needed for tree/inode mutation. Compressed reads currently repeat
-decompression for each logical buffer they intersect.
+An emergency metadata reserve covers commit and is excluded from ordinary
+handles. Failure to establish it rejects writable mount; failure to replenish
+after publication leaves that generation durable and the mount read-only.
+Operations with delayed work transfer unused reservations to commit. Reservation
+failure may commit pending work and retry once before returning `ENOSPC`.
 
-Lock order:
+Delayed references merge by extent and ownership. Only the final drop pins an
+extent; for data it also removes its checksum range, preserving neighbors.
+Hard links change inode references, not data ownership `(root, inode, file-base)`.
 
-1. Vnode locks (parent directory before non-directory source for hard links).
-2. Namespace allocation lock when allocating new inode numbers.
-3. Transaction handle, without retaining the mount transaction mutex.
-4. Root lock, then extent-buffer locks from higher to lower levels.
-5. Allocator/block-group lock, then delayed-reference lock.
+## Dependencies for further work
 
-The transaction mutex protects state transitions, handle counts, and waiters;
-never hold it across I/O or tree searches. Release paths bottom-up. Queue extent
-reference changes instead of recursively editing the extent tree while holding
-another tree's path.
+Truncate/range deletion and orphan recovery precede last-link removal.
+Writable mount must recover orphans before unlink is exposed. Rename requires
+multi-vnode locking and atomic destination replacement.
 
-Parent locks protect directory indexes and hash buckets. Source vnode locks
-protect link counts and packed inode references. The namespace lock serializes
-highest-object-ID allocation across creates in different directories. Namespace
-items and affected inode items use one handle; update the name cache and emit
-notifications only after successful mutation. Directory size is twice the sum
-of name lengths, and Btrfs directories have a link count of one.
-Pathname lookup searches the name's `DIR_ITEM` hash bucket; readdir walks
-`DIR_INDEX` items. Both use the same record validation, including subvolume
-entries and the path's transaction view.
+Chunk allocation must transactionally update chunk/device trees, block groups,
+device usage, and possibly the superblock system array. Replace immutable chunk
+map pointers with a mount-owned service with safe lifetimes before publication.
 
-Free-space indexes are built from block-group bounds minus allocated extents,
-excluding logical ranges that map to a superblock's 64 KiB stripe on any
-mirror. These exclusions are separate from on-disk block-group usage, because
-they have no extent items. Accounting is checked against the extent tree and
-superblock. Keep free, reserved, transaction-allocated, and pinned space
-distinct. Reservations are typed for data/metadata/system space, including
-mixed block groups.
+Transaction overlap requires root versioning and per-generation ownership of
+pinned space, ordered data, and extent buffers. Other later work includes broader
+writable formats, clustered I/O, decompression caching, and the log tree.
 
-An emergency metadata reserve is retained for commit and excluded from ordinary
-handles. It covers four maximum-height COW/split paths plus accounting margin.
-Failure to establish it rejects writable mount; failure to replenish after a
-successful commit leaves that generation durable and the mount read-only.
-Operations that queue delayed references also transfer their unused metadata
-reservations to commit. These estimates conservatively include delayed work;
-only operations with no such work release all unused space immediately.
-A reservation failure can commit pending work and retry once before returning
-`ENOSPC`, without changing the failing operation's inode or namespace state.
-
-Delayed references are merged by extent and ownership identity. Only a final
-reference drop pins an extent; for data it also removes the physical checksum
-range while preserving neighboring checksums. Hard links change inode
-references, not data extent references. Data extent ownership is keyed by
-`(root, inode, file-base)`.
-
-## Next work and validation
-
-Extend namespace operations together with their recovery requirements:
-truncate/range deletion and orphan recovery are prerequisites for removing the
-last link of an open file. Writable mount must recover orphan items before
-unlink is exposed. Rename requires explicit multi-vnode locking and atomic
-handling of destination replacement.
-
-Chunk allocation will need transactional updates to the chunk and device trees,
-block groups, device usage, and possibly the superblock system chunk array.
-The current immutable chunk-map pointers must become a mount-owned service
-with safe lifetimes before publishing map changes.
-
-Later work includes broader writable feature support, clustered I/O and
-decompression caching, transaction overlap, and the log tree. Overlap requires
-root versioning and ownership of pinned space, ordered data, and extent buffers
-across generations.
-
-Use disposable images and run `btrfs check --readonly --check-data-csum` while
-unmounted after each operation class, followed by remount verification.
-`btrfs restore` can independently verify data without mounting on the host.
-Exercise 4 KiB and 16 KiB nodes, tree growth/shrinkage, concurrent writers,
-capacity failures, and read-only rejection. Run driver-involving VM commands
-under `timeout`; serial/DDB access is needed for hangs.
-
-Recovery testing must also cover allocation/reservation exhaustion and injected
-failures around data, metadata, both cache barriers, and superblock mirrors.
-Crash workloads may recover either the old or new committed state, but never
-dangling references, bad checksums, or mixed generations. Keep malformed-image
-and read-only coverage as the writer expands.
+Validate each operation class with unmounted independent filesystem/data checks
+and remount verification. Recovery work also needs reservation exhaustion and
+fault injection around data, metadata, cache barriers, and superblock mirrors:
+either old or new committed state is valid, mixed generations are not.

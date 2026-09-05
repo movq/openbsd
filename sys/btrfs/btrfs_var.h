@@ -517,6 +517,9 @@ struct btrfs_node {
 #define VTOBTRFS(vp)	((struct btrfs_node *)(vp)->v_data)
 
 extern const struct vops btrfs_vops;
+#ifdef FIFO
+extern const struct vops btrfs_fifo_vops;
+#endif
 
 int	btrfs_read_super_mirrors(struct vnode *, struct proc *,
 	    struct btrfs_super_candidate *, struct btrfs_super_mirror *);

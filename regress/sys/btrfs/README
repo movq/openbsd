@@ -97,3 +97,9 @@ In the VM, mount the image and run:
 Repeat after read-only remount.  This covers packed hash collisions, long and
 UTF-8 names, hard links, symlinks, missing names, subvolume entries and parent
 traversal, and rejection of mutation in an additional subvolume.
+
+ipc.py uses create/verify phases and a readonly phase after a read-only
+remount. It covers FIFO and Unix-domain socket creation, hard-link aliases,
+blocking/nonblocking pipe I/O, EOF, kqueue readiness, socket connections,
+permissions, hash collisions, directory accounting, and unsupported device
+creation. Run the independent checks between mounts as above.

@@ -270,7 +270,8 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 
 	KASSERT(VOP_ISLOCKED(dir->bn_vnode));
 	*vpp = NULL;
-	if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode))
+	if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode) &&
+	    !S_ISFIFO(mode) && !S_ISSOCK(mode))
 		return (EOPNOTSUPP);
 	if (S_ISLNK(mode) != (link != NULL))
 		return (EINVAL);
@@ -415,7 +416,9 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	entry->transid = htole64(generation);
 	entry->name_len = htole16(namelen);
 	entry->type = S_ISDIR(mode) ? BTRFS_FT_DIR :
-	    S_ISLNK(mode) ? BTRFS_FT_SYMLINK : BTRFS_FT_REG_FILE;
+	    S_ISLNK(mode) ? BTRFS_FT_SYMLINK :
+	    S_ISFIFO(mode) ? BTRFS_FT_FIFO :
+	    S_ISSOCK(mode) ? BTRFS_FT_SOCK : BTRFS_FT_REG_FILE;
 	memcpy(record + sizeof(*entry), name, namelen);
 	memcpy(bucket + bucket_size, record, record_size);
 	error = btrfs_insert_append(handle, root, &hashkey, bucket,
