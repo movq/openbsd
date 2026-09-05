@@ -144,7 +144,7 @@ def create(base):
     wait(child_checks(user))
     os.unlink(sticky / "root-alias")
     denied(errno.EPERM, base / "worker-0")
-    expect_error(errno.EOPNOTSUPP, os.rmdir, base / "worker-0")
+    expect_error(errno.ENOTEMPTY, os.rmdir, sticky)
     expect_error(errno.ENOENT, os.unlink, base / "absent")
     sync(base)
     verify(base)

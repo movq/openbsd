@@ -616,6 +616,8 @@ btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
 	if (node->bn_mount != bmp || node->bn_treeid != dir->bn_treeid)
 		return (EXDEV);
+	if (dir->bn_inode.bi_nlink == 0)
+		return (ENOENT);
 	if (namelen > BTRFS_NAME_MAX ||
 	    !btrfs_ref_name_valid((const uint8_t *)name, namelen))
 		return (EINVAL);
@@ -832,7 +834,7 @@ btrfs_prepare_remove_ref(struct btrfs_root *root, struct btrfs_key *key,
 /*
  * Parent and target locks protect all three namespace records. Validate the
  * hash bucket, reference and index together before reserving or changing any
- * tree. Final-link removal additionally needs persistent orphan recovery.
+ * tree. Final-link removal persists a marker for restartable orphan recovery.
  */
 int
 btrfs_unlink_inode(struct btrfs_node *dir, struct btrfs_node *node,
@@ -861,6 +863,37 @@ btrfs_unlink_inode(struct btrfs_node *dir, struct btrfs_node *node,
 		return (EXDEV);
 	if (node->bn_inode.bi_nlink == 0)
 		return (ENOENT);
+	if (node->bn_vnode->v_type == VDIR) {
+		struct btrfs_key target = { 0 };
+		const struct btrfs_key *key;
+		uint64_t parent;
+
+		if (node->bn_inode.bi_size != 0)
+			return (ENOTEMPTY);
+		if (node->bn_inode.bi_nlink != 1 ||
+		    node->bn_inode.bi_nbytes != 0)
+			return (EINVAL);
+		error = btrfs_find_dir_parent(root, node->bn_ino, &parent);
+		if (error != 0)
+			return (error);
+		if (parent != dir->bn_ino)
+			return (EINVAL);
+		/* Check both namespace key types, independently of inode size. */
+		target.objectid = htole64(node->bn_ino);
+		target.type = BTRFS_DIR_ITEM_KEY;
+		error = btrfs_search_lower_bound(root, &target, &path);
+		if (error == 0) {
+			error = btrfs_path_item(&path, &key, NULL, NULL);
+			if (error == 0 && key->objectid == target.objectid &&
+			    (key->type == BTRFS_DIR_ITEM_KEY ||
+			    key->type == BTRFS_DIR_INDEX_KEY))
+				error = ENOTEMPTY;
+		} else if (error == ENOENT)
+			error = 0;
+		btrfs_release_path(&path);
+		if (error != 0)
+			return (error);
+	}
 	if (namelen > BTRFS_NAME_MAX ||
 	    !btrfs_ref_name_valid((const uint8_t *)name, namelen) ||
 	    dir->bn_inode.bi_size < namelen * 2)

@@ -276,6 +276,8 @@ btrfs_lookup(void *v)
 
 	if (dvp->v_type != VDIR)
 		return (ENOTDIR);
+	if (node->bn_inode.bi_nlink == 0)
+		return (ENOENT);
 	error = VOP_ACCESS(dvp, VEXEC, cnp->cn_cred, cnp->cn_proc);
 	if (error != 0)
 		return (error);
@@ -606,23 +608,25 @@ btrfs_node_readonly(struct btrfs_node *node)
 }
 
 static int
-btrfs_remove(void *v)
+btrfs_remove_name(struct vnode *dvp, struct vnode *vp,
+    struct componentname *cnp, int directory)
 {
-	struct vop_remove_args *ap = v;
-	struct vnode *dvp = ap->a_dvp, *vp = ap->a_vp;
-	struct componentname *cnp = ap->a_cnp;
 	struct btrfs_node *dir = VTOBTRFS(dvp), *node = VTOBTRFS(vp);
 	int error;
 
 	KASSERT(VOP_ISLOCKED(dvp));
 	KASSERT(VOP_ISLOCKED(vp));
-	if (vp->v_type == VDIR) {
+	if (!directory && vp->v_type == VDIR) {
 		error = EPERM;
 		goto out;
 	}
 	if (vp->v_mount != dvp->v_mount ||
 	    node->bn_treeid != dir->bn_treeid) {
-		error = EXDEV;
+		error = directory ? EBUSY : EXDEV;
+		goto out;
+	}
+	if (directory && node->bn_ino == BTRFS_FIRST_FREE_OBJECTID) {
+		error = EBUSY;
 		goto out;
 	}
 	if (btrfs_node_readonly(node)) {
@@ -664,14 +668,23 @@ out:
 }
 
 static int
+btrfs_remove(void *v)
+{
+	struct vop_remove_args *ap = v;
+
+	return (btrfs_remove_name(ap->a_dvp, ap->a_vp, ap->a_cnp, 0));
+}
+
+static int
 btrfs_rmdir(void *v)
 {
 	struct vop_rmdir_args *ap = v;
+	int error;
 
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	error = btrfs_remove_name(ap->a_dvp, ap->a_vp, ap->a_cnp, 1);
 	vput(ap->a_vp);
 	vput(ap->a_dvp);
-	return (EOPNOTSUPP);
+	return (error);
 }
 
 static int
@@ -1673,6 +1686,11 @@ btrfs_readdir(void *v)
 		return (EINVAL);
 	if (vp->v_type != VDIR)
 		return (ENOTDIR);
+	if (node->bn_inode.bi_nlink == 0) {
+		if (ap->a_eofflag != NULL)
+			*ap->a_eofflag = 1;
+		return (0);
+	}
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.brc_uio = uio;
 	ctx.brc_offset = uio->uio_offset;
