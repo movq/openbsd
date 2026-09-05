@@ -47,14 +47,15 @@ Current limits:
 * Regular-file `truncate`/`ftruncate` support unchanged sizes and sparse growth.
   Growth converts supported inline data and COWs partial data sectors with zero
   tails before exposing the new size. It rejects
-  NODATASUM, compressed/encoded overlap, and regular mappings beyond the old
+  compressed/encoded overlap and regular mappings beyond the old
   rounded EOF; preallocation remains zero-filled. Shrinking, unlink, rmdir,
   and rename are unsupported.
 * Writes and growth convert uncompressed or Zstd inline files of at most one
   decoded sector to regular extents. Larger inline files, other compression
-  codecs, NODATASUM, encoded mappings, and compressed regular overlap remain
+  codecs, encoded mappings, and compressed regular overlap remain
   unsupported. Regular/preallocated uncompressed
-  mappings can be split; NODATACOW data is replaced by COW. Compressed reads
+  mappings can be split; NODATACOW data is replaced by COW, preserving
+  NODATASUM by omitting data checksums. Compressed reads
   support Zstd only.
 * Creation rejects parents with xattrs or NODATACOW pending inheritance support.
   New inodes inherit parent group and compression flags, but write uncompressed

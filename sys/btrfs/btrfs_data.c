@@ -909,8 +909,6 @@ btrfs_check_file_extend(struct btrfs_node *node, uint64_t size,
 	*tail_offset = UINT64_MAX;
 	if (size <= oldsize || size > LLONG_MAX)
 		return (EINVAL);
-	if (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM)
-		return (EOPNOTSUPP);
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	end = roundup(size, sectorsize);
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
@@ -985,7 +983,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	uint64_t bytenr, end, inline_bytes = 0, left, lookup_size, old_end;
 	uint64_t ref_offset, right;
 	uint32_t csum, sectorsize;
-	int error, old_ref_mod, old_refs;
+	int error, nodatasum, old_ref_mod, old_refs;
 
 	if (handle == NULL || handle->bth_transaction == NULL ||
 	    node == NULL || node->bn_vnode == NULL || data == NULL)
@@ -1001,10 +999,9 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	    file_size > MAX(node->bn_inode.bi_size,
 	    file_offset + sectorsize))
 		return (EINVAL);
-	if ((node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0)
-		return (EOPNOTSUPP);
+	nodatasum = (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0;
 	end = file_offset + sectorsize;
-	csum = crc32c(0, data, sectorsize);
+	csum = nodatasum ? 0 : crc32c(0, data, sectorsize);
 
 	mtx_enter(&trans->bt_lock);
 	TAILQ_FOREACH(ordered, &trans->bt_ordered_extents, boe_entry) {
@@ -1015,10 +1012,12 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	}
 	mtx_leave(&trans->bt_lock);
 	if (ordered != NULL) {
-		error = btrfs_set_data_csum(handle, ordered->boe_bytenr,
-		    csum);
-		if (error != 0)
-			goto abort;
+		if (!nodatasum) {
+			error = btrfs_set_data_csum(handle, ordered->boe_bytenr,
+			    csum);
+			if (error != 0)
+				goto abort;
+		}
 		if (file_size > node->bn_inode.bi_size) {
 			node->bn_inode.bi_size = file_size;
 			node->bn_inode.bi_dirty_fields |=
@@ -1128,9 +1127,11 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	new_ordered->boe_bytenr = bytenr;
 	new_ordered->boe_length = sectorsize;
 
-	error = btrfs_set_data_csum(handle, bytenr, csum);
-	if (error != 0)
-		goto abort;
+	if (!nodatasum) {
+		error = btrfs_set_data_csum(handle, bytenr, csum);
+		if (error != 0)
+			goto abort;
+	}
 
 	left = file_offset - old.bfe_logical;
 	right = old_end - end;

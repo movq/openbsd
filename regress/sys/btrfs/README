@@ -197,3 +197,13 @@ extension. Import with `-O ^no-holes` and run both independent checks between
 write and verify; repeat with `NO_HOLES`. Its capacity phase on a fresh small
 image without `NO_HOLES` fills metadata and checks that failed growth and sparse
 writes preserve data and inode state and allow sync without becoming read-only.
+
+nodatasum.py tests imported NODATASUM/NODATACOW files alongside checksummed
+controls. Run `seed directory`, then `format directory image 4096 no-holes`
+on the host while unmounted; use `16384 holes` for explicit-hole coverage.
+In the VM run `exercise mountpoint`, then unmount and run the independent
+checks and `disk image` to check inode flags and checksum coverage. Run
+`verify mountpoint` after writable/read-only remounts and `verify-restored`
+on a host-restored copy. Its `capacity mountpoint` phase checks write/growth
+ENOSPC atomicity for every policy. Coverage includes inline conversion, split
+extents, ordered and committed COW, sparse growth, hard links, and chflags.

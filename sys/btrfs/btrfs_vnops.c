@@ -1222,8 +1222,6 @@ btrfs_write(void *v)
 	    (uint64_t)uio->uio_offset > LLONG_MAX ||
 	    uio->uio_resid > LLONG_MAX - (uint64_t)uio->uio_offset)
 		return (EFBIG);
-	if ((node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0)
-		return (EOPNOTSUPP);
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	reservation.btr_data = sectorsize;
 	reservation.btr_metadata =
