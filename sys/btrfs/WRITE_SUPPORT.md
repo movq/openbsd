@@ -6,11 +6,17 @@ Test procedures and coverage belong in `regress/sys/btrfs/README`.
 ## Supported scope
 
 Writable mounts support regular-file creation and uncompressed sector writes,
-directories, inline symlinks, hard links, FIFOs, Unix-domain socket nodes, and
+directories, inline symlinks, hard links, FIFOs, Unix-domain socket and device nodes, and
 ownership, mode, and timestamp changes. FIFOs use the shared OpenBSD pipe
 implementation, including IPC on read-only mounts. Regular files use shared
 advisory locking and kqueue facilities. Sync operations commit the full
 transaction; there is no log tree.
+
+Device nodes use native special-device operations and alias handling, including
+`nodev` and securelevel policy. Device I/O also works on read-only mounts.
+Device numbers retain their major/minor values using Linux's on-disk encoding;
+driver assignments are OS-specific. Creation rejects minors above 20 bits;
+loading rejects majors above OpenBSD's 8-bit range with `EOVERFLOW`.
 
 `stat` and `chflags` map btrfs nodump, immutable, and append flags to
 `UF_NODUMP`, `UF_IMMUTABLE`, and `UF_APPEND`. Owners may change these flags,
@@ -40,7 +46,7 @@ Current limits:
   tails before exposing the new size. It rejects
   NODATASUM, compressed/encoded overlap, and regular mappings beyond the old
   rounded EOF; preallocation remains zero-filled. Shrinking, unlink, rmdir,
-  rename, and device-node creation are unsupported.
+  and rename are unsupported.
 * Writes convert uncompressed inline files of at most one sector to regular
   extents. Larger/compressed inline files, NODATASUM, encoded mappings, and
   compressed overlap remain unsupported. Regular/preallocated uncompressed

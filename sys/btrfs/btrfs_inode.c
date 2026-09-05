@@ -242,9 +242,24 @@ out:
  * inode belong to one transaction; any error after the first mutation aborts
  * that transaction.
  */
+/* Btrfs stores Linux new_encode_dev: 12 major and 20 minor bits. */
+int
+btrfs_decode_rdev(uint64_t disk, dev_t *dev)
+{
+	uint32_t maj, min;
+
+	maj = (disk >> 8) & 0xfff;
+	min = (disk & 0xff) | ((disk >> 12) & 0xfff00);
+	if (disk > UINT32_MAX || maj > 0xff)
+		return (EOVERFLOW);
+	*dev = makedev(maj, min);
+	return (0);
+}
+
 int
 btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
-    mode_t mode, uid_t uid, gid_t gid, const char *link, struct vnode **vpp)
+    mode_t mode, uid_t uid, gid_t gid, dev_t dev, const char *link,
+    struct vnode **vpp)
 {
 	struct btrfs_fs *bmp = dir->bn_mount;
 	struct btrfs_trans_reservation reservation = { 0 };
@@ -263,7 +278,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	uint8_t *link_item = NULL;
 	uint8_t record[sizeof(*entry) + BTRFS_NAME_MAX];
 	uint8_t reference[sizeof(*ref) + BTRFS_NAME_MAX];
-	uint64_t ino, index = 2, generation;
+	uint64_t ino, index = 2, generation, rdev = 0;
 	uint32_t nodesize, bucket_size = 0, record_size;
 	size_t linklen = 0, link_size = 0;
 	int error, end_error;
@@ -271,8 +286,15 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	KASSERT(VOP_ISLOCKED(dir->bn_vnode));
 	*vpp = NULL;
 	if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode) &&
-	    !S_ISFIFO(mode) && !S_ISSOCK(mode))
+	    !S_ISFIFO(mode) && !S_ISSOCK(mode) &&
+	    !S_ISCHR(mode) && !S_ISBLK(mode))
 		return (EOPNOTSUPP);
+	if (S_ISCHR(mode) || S_ISBLK(mode)) {
+		if (minor(dev) > 0xfffff)
+			return (EOVERFLOW);
+		rdev = (minor(dev) & 0xff) | (major(dev) << 8) |
+		    ((uint64_t)(minor(dev) & 0xfff00) << 12);
+	}
 	if (S_ISLNK(mode) != (link != NULL))
 		return (EINVAL);
 	if (link != NULL) {
@@ -381,6 +403,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	inode.uid = htole32(uid);
 	inode.gid = htole32(gid);
 	inode.mode = htole32(mode);
+	inode.rdev = htole64(rdev);
 	inode.size = inode.nbytes = htole64(linklen);
 	inode.sequence = htole64(1);
 	inode.flags = htole64(dir->bn_inode.bi_flags &
@@ -417,6 +440,8 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	entry->name_len = htole16(namelen);
 	entry->type = S_ISDIR(mode) ? BTRFS_FT_DIR :
 	    S_ISLNK(mode) ? BTRFS_FT_SYMLINK :
+	    S_ISCHR(mode) ? BTRFS_FT_CHRDEV :
+	    S_ISBLK(mode) ? BTRFS_FT_BLKDEV :
 	    S_ISFIFO(mode) ? BTRFS_FT_FIFO :
 	    S_ISSOCK(mode) ? BTRFS_FT_SOCK : BTRFS_FT_REG_FILE;
 	memcpy(record + sizeof(*entry), name, namelen);
