@@ -27,9 +27,10 @@
 struct btrfs_free_space_state {
 	uint64_t	last_end;
 	uint32_t	expected;
-	uint32_t	found;
+	uint64_t	found;
 	uint32_t	flags;
 	uint8_t		have_info;
+	uint8_t		last_bit;
 };
 
 static int	btrfs_first_item(struct btrfs_root *, struct btrfs_path *);
@@ -682,7 +683,7 @@ btrfs_iterate_free_space(struct btrfs_fs *bmp,
 	struct btrfs_free_space_state *states = NULL;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
-	uint64_t compat_ro, end, nbits;
+	uint64_t bit, compat_ro, end, nbits;
 	uint32_t sectorsize, size;
 	size_t expected_size;
 	unsigned int i, index;
@@ -758,10 +759,12 @@ btrfs_iterate_free_space(struct btrfs_fs *bmp,
 				}
 				record.bfs_type =
 				    BTRFS_FREE_SPACE_RECORD_EXTENT;
+				states[index].found++;
 			} else {
 				nbits = record.bfs_length / sectorsize;
 				expected_size = (nbits + 7) / 8;
 				if (expected_size != size ||
+				    record.bfs_bytenr != states[index].last_end ||
 				    (states[index].flags &
 				    BTRFS_FREE_SPACE_USING_BITMAPS) == 0) {
 					error = EINVAL;
@@ -777,9 +780,16 @@ btrfs_iterate_free_space(struct btrfs_fs *bmp,
 				    BTRFS_FREE_SPACE_RECORD_BITMAP;
 				record.bfs_bitmap = data;
 				record.bfs_bitmap_size = size;
+				/* Count free runs, including bitmap boundaries. */
+				for (bit = 0; bit < nbits; bit++) {
+					int set = (data[bit / 8] >>
+					    (bit & 7)) & 1;
+					if (set && !states[index].last_bit)
+						states[index].found++;
+					states[index].last_bit = set;
+				}
 			}
 			states[index].last_end = end;
-			states[index].found++;
 			break;
 		default:
 			error = EINVAL;
@@ -798,7 +808,10 @@ btrfs_iterate_free_space(struct btrfs_fs *bmp,
 		error = 0;
 		for (i = 0; i < bmp->bm_nchunks; i++) {
 			if (!states[i].have_info ||
-			    states[i].found != states[i].expected) {
+			    states[i].found != states[i].expected ||
+			    ((states[i].flags & BTRFS_FREE_SPACE_USING_BITMAPS) &&
+			    states[i].last_end != bmp->bm_chunks[i].logical +
+			    bmp->bm_chunks[i].length)) {
 				error = EINVAL;
 				break;
 			}
