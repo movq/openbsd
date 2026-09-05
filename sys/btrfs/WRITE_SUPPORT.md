@@ -67,7 +67,8 @@ Current limits:
   other compressed/encoded overlap and regular mappings beyond the old
   rounded EOF; preallocation remains zero-filled. Shrinking reserves the
   entire range deletion in one transaction and may return `ENOSPC` for highly
-  fragmented files. Unlink, rmdir, and rename are unsupported.
+  fragmented files. Unlink supports removing a name while another hard link
+  remains. Final-link removal, rmdir, and rename are unsupported.
 * Writes and growth convert uncompressed or Zstd inline files of at most one
   decoded sector to regular extents. Larger inline files, other compression
   codecs, and encoded mappings remain unsupported. Uncompressed and Zstd
@@ -83,7 +84,10 @@ Current limits:
   `MAXPATHLEN - 1` bytes.
 * Hard links cannot cross trees or target directories. Packed inode references
   overflow into extended references only with `EXTENDED_IREF`; otherwise they
-  return `EMLINK`. Hash buckets are limited to one item's capacity.
+  return `EMLINK`. Hash buckets are limited to one item's capacity. Unlink
+  validates and removes the matching hash record, persistent directory index,
+  and ordinary or extended reference in one reserved handle. Parent and target
+  vnode locks protect the plan; data ownership and open descriptors survive.
 * Allocation uses existing block groups. There is no chunk allocation,
   device management, relocation,
   log replay, qgroups, or zoned support.
@@ -206,7 +210,7 @@ delayed adds, checksums, payloads, and unpublished allocations together.
 ## Dependencies for further work
 
 Orphan recovery and bounded, restartable range deletion precede last-link removal.
-Writable mount must recover orphans before unlink is exposed. Rename requires
+Writable mount must recover orphans before final-link unlink is exposed. Rename requires
 multi-vnode locking and atomic destination replacement.
 
 Chunk allocation must transactionally update chunk/device trees, block groups,

@@ -642,6 +642,8 @@ int	btrfs_create_inode(struct btrfs_node *, const char *, size_t,
 	    mode_t, uid_t, gid_t, dev_t, const char *, struct vnode **);
 int	btrfs_link_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
+int	btrfs_unlink_inode(struct btrfs_node *, struct btrfs_node *,
+	    const char *, size_t);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_fs *, uint64_t, uint64_t *,
 	    uint64_t *);
