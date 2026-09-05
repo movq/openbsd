@@ -30,8 +30,12 @@
 
 static int	btrfs_set_data_csum(struct btrfs_trans_handle *, uint64_t,
 		    uint32_t);
+static int	btrfs_set_data_csum_locked(struct btrfs_trans_handle *, uint64_t,
+		    uint32_t);
 static int	btrfs_delete_data_csums(struct btrfs_trans_handle *, uint64_t,
 		    uint64_t);
+static int	btrfs_delete_data_csums_locked(struct btrfs_trans_handle *,
+		    uint64_t, uint64_t);
 static void	btrfs_encode_file_extent(struct btrfs_file_extent_item *,
 		    const struct btrfs_file_extent *, uint64_t);
 static int	btrfs_find_separate_data_ref(struct btrfs_root *, uint64_t,
@@ -44,6 +48,19 @@ static int
 btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
     uint32_t csum)
 {
+	int error;
+
+	/* Adjacent allocations from different vnodes can share one item. */
+	rw_enter_write(&handle->bth_transaction->bt_csum_lock);
+	error = btrfs_set_data_csum_locked(handle, logical, csum);
+	rw_exit_write(&handle->bth_transaction->bt_csum_lock);
+	return (error);
+}
+
+static int
+btrfs_set_data_csum_locked(struct btrfs_trans_handle *handle, uint64_t logical,
+    uint32_t csum)
+{
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
 	const uint8_t *data;
@@ -52,11 +69,13 @@ btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
 	struct btrfs_key key;
 	uint8_t *payload = NULL;
 	uint64_t item_end, span, start;
-	uint32_t disk_csum, item_size, sectorsize;
+	uint32_t disk_csum, item_size, sectorsize, capacity;
 	size_t index;
 	int error;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	/* Bound copying and leave room for neighboring items in the leaf. */
+	capacity = letoh32(bmp->bm_super.nodesize) / 4;
 	if ((logical & (sectorsize - 1)) != 0)
 		return (EINVAL);
 	if (logical > UINT64_MAX - sectorsize)
@@ -103,6 +122,33 @@ btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
 			free(payload, M_BTRFS, item_size);
 			return (error);
 		}
+		if (logical == item_end &&
+		    item_size <= capacity - sizeof(disk_csum)) {
+			payload = malloc(item_size + sizeof(disk_csum),
+			    M_BTRFS, M_WAITOK);
+			memcpy(payload, data, item_size);
+			disk_csum = htole32(csum);
+			memcpy(payload + item_size, &disk_csum,
+			    sizeof(disk_csum));
+			memcpy(&key, found_key, sizeof(key));
+			btrfs_release_path(&path);
+			/*
+			 * Keys and checksum ranges are sector aligned, so the
+			 * next item cannot overlap this one-sector extension.
+			 * Replacement cannot split a full leaf; reinsertion can.
+			 */
+			error = btrfs_replace_item(handle, root, &key, payload,
+			    item_size + sizeof(disk_csum));
+			if (error == ENOSPC) {
+				error = btrfs_delete_item(handle, root, &key);
+				if (error == 0)
+					error = btrfs_insert_item(handle, root,
+					    &key, payload,
+					    item_size + sizeof(disk_csum));
+			}
+			free(payload, M_BTRFS, item_size + sizeof(disk_csum));
+			return (error);
+		}
 		btrfs_release_path(&path);
 	} else if (error != ENOENT) {
 		goto out;
@@ -136,6 +182,18 @@ out:
 static int
 btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
     uint64_t length)
+{
+	int error;
+
+	rw_enter_write(&handle->bth_transaction->bt_csum_lock);
+	error = btrfs_delete_data_csums_locked(handle, logical, length);
+	rw_exit_write(&handle->bth_transaction->bt_csum_lock);
+	return (error);
+}
+
+static int
+btrfs_delete_data_csums_locked(struct btrfs_trans_handle *handle,
+    uint64_t logical, uint64_t length)
 {
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
