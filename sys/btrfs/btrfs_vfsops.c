@@ -46,8 +46,8 @@ static int	btrfs_write_extent_valid(
 		    const struct btrfs_extent_record *, void *);
 static int	btrfs_write_backref_valid(
 		    const struct btrfs_backref_record *, void *);
-static int	btrfs_validate_writable(struct btrfs_mount *);
-static int	btrfs_commit_current(struct btrfs_mount *, struct proc *);
+static int	btrfs_validate_writable(struct btrfs_fs *);
+static int	btrfs_commit_current(struct btrfs_fs *, struct proc *);
 static int	btrfs_start(struct mount *, int, struct proc *);
 static int	btrfs_unmount(struct mount *, int, struct proc *);
 static int	btrfs_root(struct mount *, struct vnode **);
@@ -129,7 +129,8 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 {
 	const struct btrfs_super_block *anchor, *sb;
 	struct btrfs_bootstrap bootstrap = { 0 };
-	struct btrfs_mount *bmp = NULL;
+	struct btrfs_fs *bmp = NULL;
+	struct btrfs_mount *view = NULL;
 	struct btrfs_super_candidate *candidates = NULL;
 	struct btrfs_super_mirror mirrors[BTRFS_SUPER_MIRROR_MAX];
 	uint64_t best_generation, selected_generation;
@@ -233,7 +234,13 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	}
 
 	bmp = malloc(sizeof(*bmp), M_BTRFS, M_WAITOK | M_ZERO);
-	bmp->bm_mount = mp;
+	LIST_INIT(&bmp->bm_mounts);
+	bmp->bm_readonly = readonly;
+	view = malloc(sizeof(*view), M_BTRFS, M_WAITOK | M_ZERO);
+	view->bmv_mount = mp;
+	view->bmv_fs = bmp;
+	view->bmv_treeid = BTRFS_FS_TREE_OBJECTID;
+	view->bmv_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
 	bmp->bm_devvp = devvp;
 	bmp->bm_dev = devvp->v_rdev;
 	bmp->bm_open_flags = open_flags;
@@ -247,14 +254,12 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	bmp->bm_backup_roots_valid = btrfs_validate_backup_roots(sb);
 	bmp->bm_seeding =
 	    (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING) != 0;
-	bmp->bm_subvol_readonly =
+	view->bmv_subvol_readonly =
 	    (bootstrap.bb_fs_root_flags & BTRFS_ROOT_SUBVOL_RDONLY) != 0;
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
-	bmp->bm_treeid = BTRFS_FS_TREE_OBJECTID;
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
 	    sizeof(bmp->bm_chunk_tree_uuid));
-	bmp->bm_root_dirid = BTRFS_FIRST_FREE_OBJECTID;
 	btrfs_init_roots(bmp, &bootstrap);
 	LIST_INIT(&bmp->bm_extent_buffers);
 	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
@@ -267,6 +272,10 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 		goto out;
 	if (!readonly) {
 		stage = "validating writable image";
+		if (view->bmv_subvol_readonly) {
+			error = EROFS;
+			goto out;
+		}
 		error = btrfs_validate_writable(bmp);
 		if (error != 0)
 			goto out;
@@ -276,7 +285,10 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct proc *p)
 	if (error != 0)
 		goto out;
 
-	mp->mnt_data = bmp;
+	mtx_enter(&bmp->bm_trans_mtx);
+	LIST_INSERT_HEAD(&bmp->bm_mounts, view, bmv_entry);
+	mtx_leave(&bmp->bm_trans_mtx);
+	mp->mnt_data = view;
 	mp->mnt_stat.f_fsid.val[0] = devvp->v_rdev;
 	mp->mnt_stat.f_fsid.val[1] = mp->mnt_vfc->vfc_typenum;
 	mp->mnt_stat.f_namemax = BTRFS_NAME_MAX;
@@ -302,6 +314,8 @@ out:
 			btrfs_free_roots(bmp);
 			free(bmp, M_BTRFS, sizeof(*bmp));
 		}
+		if (view != NULL)
+			free(view, M_BTRFS, sizeof(*view));
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 		(void)VOP_CLOSE(devvp, open_flags, FSCRED, p);
 		VOP_UNLOCK(devvp);
@@ -338,13 +352,11 @@ btrfs_write_backref_valid(const struct btrfs_backref_record *backref,
 }
 
 static int
-btrfs_validate_writable(struct btrfs_mount *bmp)
+btrfs_validate_writable(struct btrfs_fs *bmp)
 {
 	unsigned int i;
 	uint64_t profile;
 
-	if (bmp->bm_subvol_readonly)
-		return (EROFS);
 	for (i = 0; i < bmp->bm_nchunks; i++) {
 		profile = bmp->bm_chunks[i].type &
 		    (BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 |
@@ -365,7 +377,7 @@ btrfs_start(struct mount *mp, int flags, struct proc *p)
 }
 
 static int
-btrfs_commit_current(struct btrfs_mount *bmp, struct proc *p)
+btrfs_commit_current(struct btrfs_fs *bmp, struct proc *p)
 {
 	struct btrfs_transaction *trans;
 	uint64_t generation;
@@ -387,7 +399,8 @@ btrfs_commit_current(struct btrfs_mount *bmp, struct proc *p)
 static int
 btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 {
-	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
 	struct btrfs_transaction *trans;
 	struct vnode *devvp = bmp->bm_devvp;
 	int aborted = 0, error, flags = 0;
@@ -409,6 +422,10 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	if (error != 0)
 		return (error);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
+	mtx_enter(&bmp->bm_trans_mtx);
+	LIST_REMOVE(view, bmv_entry);
+	KASSERT(LIST_EMPTY(&bmp->bm_mounts));
+	mtx_leave(&bmp->bm_trans_mtx);
 	btrfs_trans_destroy(bmp);
 	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
 	btrfs_space_destroy(bmp);
@@ -424,6 +441,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	free(bmp->bm_chunks, M_BTRFS,
 	    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
 	free(bmp, M_BTRFS, sizeof(*bmp));
+	free(view, M_BTRFS, sizeof(*view));
 	mp->mnt_data = NULL;
 	mp->mnt_flag &= ~MNT_LOCAL;
 	return (0);
@@ -432,10 +450,10 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 static int
 btrfs_root(struct mount *mp, struct vnode **vpp)
 {
-	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
 	int error;
 
-	error = btrfs_vget(mp, bmp->bm_root_dirid, vpp);
+	error = btrfs_vget(mp, view->bmv_root_dirid, vpp);
 	if (error == 0)
 		(*vpp)->v_flag |= VROOT;
 	return (error);
@@ -444,7 +462,7 @@ btrfs_root(struct mount *mp, struct vnode **vpp)
 static int
 btrfs_statfs(struct mount *mp, struct statfs *sbp, struct proc *p)
 {
-	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
 	uint64_t bytes_used, sectorsize, total_bytes;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
@@ -471,7 +489,7 @@ btrfs_sync(struct mount *mp, int waitfor, int stall, struct ucred *cred,
 }
 
 static int
-btrfs_node_lookup(struct btrfs_mount *bmp, uint64_t treeid, uint64_t ino,
+btrfs_node_lookup(struct btrfs_fs *bmp, uint64_t treeid, uint64_t ino,
     struct vnode **vpp)
 {
 	struct btrfs_node *node;
@@ -510,7 +528,7 @@ again:
 static int
 btrfs_node_insert(struct btrfs_node *node)
 {
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_node *other;
 
 	vn_lock(node->bn_vnode, LK_EXCLUSIVE | LK_RETRY);
@@ -532,16 +550,17 @@ btrfs_node_insert(struct btrfs_node *node)
 int
 btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 {
-	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
 
-	return (btrfs_vget_tree(mp, bmp->bm_treeid, ino, vpp));
+	return (btrfs_vget_tree(mp, view->bmv_treeid, ino, vpp));
 }
 
 int
 btrfs_vget_tree(struct mount *mp, uint64_t treeid, uint64_t ino,
     struct vnode **vpp)
 {
-	struct btrfs_mount *bmp = VFSTOBTRFS(mp);
+	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
+	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
 	struct btrfs_root *root;
 	struct btrfs_inode inode;
 	struct btrfs_node *node;
@@ -590,7 +609,7 @@ again:
 	if (type == VFIFO)
 		vp->v_op = &btrfs_fifo_vops;
 #endif
-	if (treeid == bmp->bm_treeid && ino == bmp->bm_root_dirid)
+	if (treeid == view->bmv_treeid && ino == view->bmv_root_dirid)
 		vp->v_flag |= VROOT;
 
 	error = btrfs_node_insert(node);
@@ -605,4 +624,15 @@ again:
 
 	*vpp = vp;
 	return (0);
+}
+
+void
+btrfs_fs_set_readonly(struct btrfs_fs *bmp)
+{
+	struct btrfs_mount *view;
+
+	MUTEX_ASSERT_LOCKED(&bmp->bm_trans_mtx);
+	bmp->bm_readonly = 1;
+	LIST_FOREACH(view, &bmp->bm_mounts, bmv_entry)
+		view->bmv_mount->mnt_flag |= MNT_RDONLY;
 }

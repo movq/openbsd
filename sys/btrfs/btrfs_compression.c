@@ -47,7 +47,7 @@ static int
 btrfs_read_compressed_regular(struct btrfs_node *node,
     const struct btrfs_file_extent *extent, uint8_t *compressed)
 {
-	struct btrfs_mount *bmp = node->bn_mount;
+	struct btrfs_fs *bmp = node->bn_mount;
 	struct buf *bp = NULL;
 	uint32_t *csums = NULL;
 	uint64_t inode_flags, logical;

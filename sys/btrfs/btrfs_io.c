@@ -203,7 +203,7 @@ btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 }
 
 int
-btrfs_read_data_block(struct btrfs_mount *bmp, uint64_t logical,
+btrfs_read_data_block(struct btrfs_fs *bmp, uint64_t logical,
     const uint32_t *expected_csum, struct buf **bpp)
 {
 	btrfs_io_validate_fn validate = NULL;

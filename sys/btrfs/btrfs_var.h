@@ -181,7 +181,7 @@ struct btrfs_free_extent {
 };
 TAILQ_HEAD(btrfs_free_extent_list, btrfs_free_extent);
 
-struct btrfs_mount;
+struct btrfs_fs;
 struct btrfs_root;
 struct btrfs_transaction;
 struct btrfs_extent_buffer;
@@ -284,7 +284,7 @@ enum btrfs_trans_state {
 };
 
 struct btrfs_transaction {
-	struct btrfs_mount		*bt_mount;
+	struct btrfs_fs			*bt_mount;
 	struct mutex			 bt_lock;
 	struct btrfs_reserved_space_list bt_commit_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;
@@ -379,7 +379,7 @@ LIST_HEAD(btrfs_node_list, btrfs_node);
 LIST_HEAD(btrfs_root_list, btrfs_root_entry);
 
 struct btrfs_root {
-	struct btrfs_mount		*br_mount;
+	struct btrfs_fs			*br_mount;
 	struct vnode			*br_devvp;
 	const struct btrfs_super_block	*br_super;
 	const struct btrfs_chunk_map	*br_chunks;
@@ -403,7 +403,7 @@ struct btrfs_root_entry {
 struct btrfs_extent_buffer {
 	LIST_ENTRY(btrfs_extent_buffer)	 eb_entry;
 	TAILQ_ENTRY(btrfs_extent_buffer) eb_dirty_entry;
-	struct btrfs_mount		*eb_mount;
+	struct btrfs_fs			*eb_mount;
 	struct btrfs_transaction	*eb_transaction;
 	struct buf			*eb_buf;
 	void				*eb_private;
@@ -468,8 +468,25 @@ struct btrfs_bootstrap {
 	uint8_t			 bb_chunk_tree_uuid[BTRFS_UUID_SIZE];
 };
 
+/*
+ * A mount describes a namespace view. Device state, allocation, and
+ * transactions belong to the filesystem, independently of its selected root.
+ * Multiple live views remain disabled until vnode identity is shared safely.
+ */
 struct btrfs_mount {
-	struct mount			*bm_mount;
+	LIST_ENTRY(btrfs_mount)		 bmv_entry;
+	struct mount			*bmv_mount;
+	struct btrfs_fs			*bmv_fs;
+	uint64_t			 bmv_treeid;
+	uint64_t			 bmv_root_dirid;
+	uint8_t				 bmv_subvol_readonly;
+};
+LIST_HEAD(btrfs_mount_list, btrfs_mount);
+
+struct btrfs_fs {
+	/* Membership and read-only transitions use bm_trans_mtx. */
+	struct btrfs_mount_list		 bm_mounts;
+	int				 bm_readonly;
 	struct vnode			*bm_devvp;
 	dev_t				 bm_dev;
 	int				 bm_open_flags;
@@ -479,7 +496,6 @@ struct btrfs_mount {
 	unsigned int			 bm_selected_super;
 	uint8_t				 bm_backup_roots_valid;
 	uint8_t				 bm_seeding;
-	uint8_t				 bm_subvol_readonly;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
 	struct btrfs_block_group	*bm_block_groups;
@@ -488,8 +504,6 @@ struct btrfs_mount {
 	struct mutex			 bm_trans_mtx;
 	uint64_t			 bm_last_transid;
 	int				 bm_committer;
-	uint64_t			 bm_treeid;
-	uint64_t			 bm_root_dirid;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
 	struct btrfs_root_list		 bm_roots;
 	struct mutex			 bm_rootmtx;
@@ -504,7 +518,7 @@ struct btrfs_mount {
 struct btrfs_node {
 	LIST_ENTRY(btrfs_node)		 bn_entry;
 	struct vnode			*bn_vnode;
-	struct btrfs_mount		*bn_mount;
+	struct btrfs_fs			*bn_mount;
 	struct rrwlock			 bn_lock;
 	struct lockf_state		*bn_lockf;
 	uint64_t			 bn_treeid;
@@ -513,7 +527,8 @@ struct btrfs_node {
 	struct btrfs_inode		 bn_inode;
 };
 
-#define VFSTOBTRFS(mp)	((struct btrfs_mount *)(mp)->mnt_data)
+#define VFSTOBTRFSVIEW(mp) ((struct btrfs_mount *)(mp)->mnt_data)
+#define VFSTOBTRFS(mp)	(VFSTOBTRFSVIEW(mp)->bmv_fs)
 #define VTOBTRFS(vp)	((struct btrfs_node *)(vp)->v_data)
 
 extern const struct vops btrfs_vops;
@@ -531,12 +546,13 @@ int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
 int	btrfs_build_super(struct btrfs_transaction *,
 	    struct btrfs_super_block *);
-int	btrfs_super_mirror_writable(const struct btrfs_mount *, unsigned int);
-int	btrfs_write_super_mirrors(struct btrfs_mount *,
+void	btrfs_fs_set_readonly(struct btrfs_fs *);
+int	btrfs_super_mirror_writable(const struct btrfs_fs *, unsigned int);
+int	btrfs_write_super_mirrors(struct btrfs_fs *,
 	    const struct btrfs_super_block *);
-void	btrfs_init_roots(struct btrfs_mount *, const struct btrfs_bootstrap *);
-void	btrfs_free_roots(struct btrfs_mount *);
-int	btrfs_get_root(struct btrfs_mount *, uint64_t, struct btrfs_root **);
+void	btrfs_init_roots(struct btrfs_fs *, const struct btrfs_bootstrap *);
+void	btrfs_free_roots(struct btrfs_fs *);
+int	btrfs_get_root(struct btrfs_fs *, uint64_t, struct btrfs_root **);
 int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
 	    struct btrfs_root_item *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
@@ -619,30 +635,30 @@ int	btrfs_create_inode(struct btrfs_node *, const char *, size_t,
 int	btrfs_link_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
-int	btrfs_find_subvol_parent(struct btrfs_mount *, uint64_t, uint64_t *,
+int	btrfs_find_subvol_parent(struct btrfs_fs *, uint64_t, uint64_t *,
 	    uint64_t *);
 int	btrfs_iterate_directory(struct btrfs_root *, uint64_t,
 	    btrfs_dir_iter_fn, void *);
 int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,
 	    size_t, btrfs_dir_iter_fn, void *);
-int	btrfs_find_file_extent(const struct btrfs_mount *,
+int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
 int	btrfs_read_ordered_sector(struct btrfs_node *, uint64_t, void *);
 int	btrfs_write_file_sector(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, const void *, uint64_t);
-int	btrfs_iterate_extent_items(struct btrfs_mount *,
+int	btrfs_iterate_extent_items(struct btrfs_fs *,
 	    btrfs_extent_iter_fn, btrfs_backref_iter_fn, void *);
-int	btrfs_iterate_block_groups(struct btrfs_mount *,
+int	btrfs_iterate_block_groups(struct btrfs_fs *,
 	    btrfs_block_group_iter_fn, void *);
-int	btrfs_iterate_chunk_items(struct btrfs_mount *,
+int	btrfs_iterate_chunk_items(struct btrfs_fs *,
 	    btrfs_chunk_iter_fn, void *);
-int	btrfs_iterate_device_extents(struct btrfs_mount *,
+int	btrfs_iterate_device_extents(struct btrfs_fs *,
 	    btrfs_dev_extent_iter_fn, void *);
-int	btrfs_iterate_free_space(struct btrfs_mount *,
+int	btrfs_iterate_free_space(struct btrfs_fs *,
 	    btrfs_free_space_iter_fn, void *);
-int	btrfs_space_init(struct btrfs_mount *);
-void	btrfs_space_destroy(struct btrfs_mount *);
+int	btrfs_space_init(struct btrfs_fs *);
+void	btrfs_space_destroy(struct btrfs_fs *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);
@@ -659,24 +675,24 @@ int	btrfs_update_space_items(struct btrfs_trans_handle *);
 int	btrfs_space_pin(struct btrfs_trans_handle *, uint64_t, uint64_t);
 void	btrfs_space_commit(struct btrfs_transaction *);
 void	btrfs_space_abort(struct btrfs_transaction *);
-int	btrfs_trans_init(struct btrfs_mount *);
-void	btrfs_trans_destroy(struct btrfs_mount *);
-int	btrfs_trans_join(struct btrfs_mount *,
+int	btrfs_trans_init(struct btrfs_fs *);
+void	btrfs_trans_destroy(struct btrfs_fs *);
+int	btrfs_trans_join(struct btrfs_fs *,
 	    const struct btrfs_trans_reservation *,
 	    struct btrfs_trans_handle **);
 int	btrfs_trans_commit_handle(struct btrfs_transaction *,
 	    struct btrfs_trans_handle **);
 int	btrfs_trans_end(struct btrfs_trans_handle *);
 void	btrfs_trans_abort(struct btrfs_trans_handle *, int);
-int	btrfs_trans_close(struct btrfs_mount *, uint64_t,
+int	btrfs_trans_close(struct btrfs_fs *, uint64_t,
 	    struct btrfs_transaction **);
-int	btrfs_trans_commit(struct btrfs_mount *, uint64_t, struct proc *);
-int	btrfs_trans_finish(struct btrfs_mount *, struct btrfs_transaction *,
+int	btrfs_trans_commit(struct btrfs_fs *, uint64_t, struct proc *);
+int	btrfs_trans_finish(struct btrfs_fs *, struct btrfs_transaction *,
 	    int);
-int	btrfs_read_data_csums(struct btrfs_mount *, uint64_t, uint64_t,
+int	btrfs_read_data_csums(struct btrfs_fs *, uint64_t, uint64_t,
 	    uint32_t *);
-int	btrfs_lookup_data_csum(struct btrfs_mount *, uint64_t, uint32_t *);
-int	btrfs_read_data_block(struct btrfs_mount *, uint64_t,
+int	btrfs_lookup_data_csum(struct btrfs_fs *, uint64_t, uint32_t *);
+int	btrfs_read_data_block(struct btrfs_fs *, uint64_t,
 	    const uint32_t *, struct buf **);
 int	btrfs_read_compressed_extent(struct btrfs_node *,
 	    const struct btrfs_file_extent *, uint64_t, size_t, void *);
