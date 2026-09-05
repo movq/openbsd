@@ -158,6 +158,13 @@ and transaction-aware B-tree APIs. Roots are persistent filesystem-owned objects
 readers snapshot their locations; writers retain root locks and COW paths from
 the root downward. Validate against the path's view generation.
 
+Live I/O copies physical mappings under a short filesystem mapping lock,
+released before device access. Only bootstrap roots use fixed chunk tables.
+The mapping lock also protects the block-group pointer index; each group has
+stable storage and an index number for the filesystem lifetime, so reservations
+and pending extents can retain group pointers across index replacement.
+Mount-time disk validation runs before mutation begins.
+
 Regular-file buffers use logical sector offsets. Vnode-locked writes modify
 temporary sector copies and attach immutable ordered payloads, then update clean
 buffers. Cache misses consult ordered data before disk; repeated sector writes
@@ -241,8 +248,8 @@ EOF handling. Namespace removal still needs an ordinary reservation; protected
 cleanup space guarantees progress only for already detached inodes.
 
 Chunk allocation must transactionally update chunk/device trees, block groups,
-device usage, and possibly the superblock system array. Replace immutable chunk
-map pointers with a mount-owned service with safe lifetimes before publication.
+device usage, and possibly the superblock system array. Publish expanded mapping
+and group indexes together, preserving existing mappings and group identities.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader

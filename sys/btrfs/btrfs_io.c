@@ -30,6 +30,9 @@
 
 static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
+static int	btrfs_read_mapped(struct vnode *, const struct btrfs_io_map *,
+		    uint32_t, uint64_t, btrfs_io_validate_fn, void *,
+		    struct btrfs_io_result *, struct buf **);
 static int	btrfs_validate_data_csum(const void *, size_t, void *);
 
 static int
@@ -82,15 +85,26 @@ btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
 }
 
 int
-btrfs_read_logical(struct vnode *devvp,
-    const struct btrfs_chunk_map *chunks, unsigned int nchunks,
+btrfs_lookup_fs_logical(struct btrfs_fs *bmp, uint64_t logical,
+    uint32_t length, struct btrfs_io_map *map)
+{
+	int error;
+
+	/* A physical mapping is a value; no index pointer escapes this lock. */
+	rw_enter_read(&bmp->bm_mapping_lock);
+	error = btrfs_lookup_logical(bmp->bm_chunks, bmp->bm_nchunks,
+	    logical, length, map);
+	rw_exit_read(&bmp->bm_mapping_lock);
+	return (error);
+}
+
+int
+btrfs_read_logical(const struct btrfs_root *root,
     uint64_t logical, uint32_t length, uint64_t type_mask,
     btrfs_io_validate_fn validate, void *validate_arg,
     struct btrfs_io_result *result, struct buf **bpp)
 {
 	struct btrfs_io_map map;
-	struct buf *bp;
-	unsigned int i;
 	int error;
 
 	*bpp = NULL;
@@ -98,22 +112,40 @@ btrfs_read_logical(struct vnode *devvp,
 		memset(result, 0, sizeof(*result));
 		result->bir_mirror = -1;
 	}
-	if (devvp == NULL || chunks == NULL || length == 0 ||
-	    type_mask == 0)
-		return (EINVAL);
-
-	error = btrfs_lookup_logical(chunks, nchunks, logical, length, &map);
+	if (root->br_mount != NULL)
+		error = btrfs_lookup_fs_logical(root->br_mount, logical,
+		    length, &map);
+	else if (root->br_bootstrap_chunks != NULL)
+		error = btrfs_lookup_logical(root->br_bootstrap_chunks,
+		    root->br_bootstrap_nchunks, logical, length, &map);
+	else
+		error = EINVAL;
 	if (error != 0)
 		return (error);
-	if ((map.type & type_mask) == 0)
+	return (btrfs_read_mapped(root->br_devvp, &map, length, type_mask,
+	    validate, validate_arg, result, bpp));
+}
+
+static int
+btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
+    uint32_t length, uint64_t type_mask, btrfs_io_validate_fn validate,
+    void *validate_arg, struct btrfs_io_result *result, struct buf **bpp)
+{
+	struct buf *bp;
+	unsigned int i;
+	int error;
+
+	if (devvp == NULL || length == 0 || type_mask == 0)
+		return (EINVAL);
+	if ((map->type & type_mask) == 0)
 		return (EINVAL);
 	if (result != NULL)
-		result->bir_nmirrors = map.nmirrors;
+		result->bir_nmirrors = map->nmirrors;
 
 	error = EIO;
-	for (i = 0; i < map.nmirrors; i++) {
+	for (i = 0; i < map->nmirrors; i++) {
 		bp = NULL;
-		error = bread(devvp, map.physical[i] / DEV_BSIZE, length, &bp);
+		error = bread(devvp, map->physical[i] / DEV_BSIZE, length, &bp);
 		if (error == 0 && bp->b_resid != 0)
 			error = EIO;
 		if (error == 0 && validate != NULL)
@@ -134,11 +166,11 @@ btrfs_read_logical(struct vnode *devvp,
 }
 
 int
-btrfs_write_logical(struct vnode *devvp,
-    const struct btrfs_chunk_map *chunks, unsigned int nchunks,
+btrfs_write_logical(struct btrfs_fs *bmp,
     uint64_t logical, uint32_t length, uint64_t type_mask,
     const void *data, struct btrfs_io_result *result)
 {
+	struct vnode *devvp = bmp->bm_devvp;
 	struct btrfs_io_map map;
 	struct buf *bp;
 	void *copy;
@@ -149,11 +181,11 @@ btrfs_write_logical(struct vnode *devvp,
 		memset(result, 0, sizeof(*result));
 		result->bir_mirror = -1;
 	}
-	if (devvp == NULL || chunks == NULL || data == NULL || length == 0 ||
+	if (devvp == NULL || data == NULL || length == 0 ||
 	    length > MAXBSIZE || type_mask == 0)
 		return (EINVAL);
 
-	error = btrfs_lookup_logical(chunks, nchunks, logical, length, &map);
+	error = btrfs_lookup_fs_logical(bmp, logical, length, &map);
 	if (error != 0)
 		return (error);
 	if ((map.type & type_mask) == 0)
@@ -207,17 +239,21 @@ btrfs_read_data_block(struct btrfs_fs *bmp, uint64_t logical,
     const uint32_t *expected_csum, struct buf **bpp)
 {
 	btrfs_io_validate_fn validate = NULL;
+	struct btrfs_io_map map;
 	uint32_t sectorsize;
 	int error;
 
+	*bpp = NULL;
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	if ((logical & (sectorsize - 1)) != 0)
 		return (EINVAL);
 	if (expected_csum != NULL)
 		validate = btrfs_validate_data_csum;
-	error = btrfs_read_logical(bmp->bm_devvp, bmp->bm_chunks,
-	    bmp->bm_nchunks, logical, sectorsize, BTRFS_BLOCK_GROUP_DATA,
-	    validate, (void *)expected_csum, NULL, bpp);
+	error = btrfs_lookup_fs_logical(bmp, logical, sectorsize, &map);
+	if (error == 0)
+		error = btrfs_read_mapped(bmp->bm_devvp, &map, sectorsize,
+		    BTRFS_BLOCK_GROUP_DATA, validate, (void *)expected_csum,
+		    NULL, bpp);
 	if (error == ENOENT)
 		error = EINVAL;
 	return (error);

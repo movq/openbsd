@@ -94,8 +94,8 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
 	if (bmp != NULL) {
 		KASSERT(root->br_devvp == bmp->bm_devvp);
 		KASSERT(root->br_super == &bmp->bm_super);
-		KASSERT(root->br_chunks == bmp->bm_chunks);
-		KASSERT(root->br_nchunks == bmp->bm_nchunks);
+		KASSERT(root->br_bootstrap_chunks == NULL);
+		KASSERT(root->br_bootstrap_nchunks == 0);
 	}
 #endif
 
@@ -533,8 +533,7 @@ btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 		    eb->eb_bytenr, eb->eb_generation, trans->bt_generation,
 		    eb->eb_owner, eb->eb_level);
 		if (error == 0)
-			error = btrfs_write_logical(bmp->bm_devvp,
-			    bmp->bm_chunks, bmp->bm_nchunks, eb->eb_bytenr,
+			error = btrfs_write_logical(bmp, eb->eb_bytenr,
 			    nodesize, BTRFS_BLOCK_GROUP_METADATA |
 			    BTRFS_BLOCK_GROUP_SYSTEM, header, NULL);
 		eb->eb_writeback = 0;
@@ -619,8 +618,7 @@ btrfs_extent_buffer_load(const struct btrfs_root *root,
 	validation.ebv_view_generation = view_generation;
 	validation.ebv_owner = eb->eb_owner;
 	validation.ebv_level = eb->eb_level;
-	error = btrfs_read_logical(root->br_devvp, root->br_chunks,
-	    root->br_nchunks, eb->eb_bytenr,
+	error = btrfs_read_logical(root, eb->eb_bytenr,
 	    letoh32(root->br_super->nodesize),
 	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM,
 	    btrfs_extent_buffer_validate, &validation, NULL, &bp);

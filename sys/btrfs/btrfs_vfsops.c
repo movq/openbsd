@@ -294,6 +294,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	bmp->bm_backup_roots_valid = btrfs_validate_backup_roots(sb);
 	bmp->bm_seeding =
 	    (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING) != 0;
+	rw_init(&bmp->bm_mapping_lock, "btrmap");
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
