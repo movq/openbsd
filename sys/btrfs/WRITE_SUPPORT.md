@@ -45,21 +45,22 @@ Current limits:
   read-only cannot gain writable views until all views have been unmounted.
   Remount updates and subvolume creation/property changes are unsupported.
 * Regular-file `truncate`/`ftruncate` and `O_TRUNC` support shrinking
-  uncompressed regular/preallocated mappings and supported inline files,
-  unchanged sizes, and sparse growth.
+  uncompressed or Zstd regular mappings, preallocation, and supported inline
+  files, unchanged sizes, and sparse growth.
   Whole compressed mappings and inline files can be discarded without decoding;
-  retaining part of an affected compressed regular mapping is unsupported.
+  retaining part of a compressed regular mapping requires Zstd.
   Growth converts supported inline data and COWs partial data sectors with zero
   tails before exposing the new size. It rejects
-  compressed/encoded overlap and regular mappings beyond the old
+  other compressed/encoded overlap and regular mappings beyond the old
   rounded EOF; preallocation remains zero-filled. Shrinking reserves the
   entire range deletion in one transaction and may return `ENOSPC` for highly
   fragmented files. Unlink, rmdir, and rename are unsupported.
 * Writes and growth convert uncompressed or Zstd inline files of at most one
   decoded sector to regular extents. Larger inline files, other compression
-  codecs, encoded mappings, and compressed regular overlap remain
-  unsupported. Regular/preallocated uncompressed
-  mappings can be split; NODATACOW data is replaced by COW, preserving
+  codecs, and encoded mappings remain unsupported. Uncompressed and Zstd
+  regular mappings and uncompressed preallocation can be split; retained
+  compressed pieces keep their original allocation, decoded size, and offsets.
+  NODATACOW data is replaced by COW, preserving
   NODATASUM by omitting data checksums. Compressed reads
   support Zstd only.
 * Creation rejects parents with xattrs pending inheritance support.

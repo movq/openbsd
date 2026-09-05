@@ -186,8 +186,8 @@ compressed/verify_compressed (verify on the restored copy), which grows past
 an aligned compressed extent and writes the new sparse tail.
 
 With the compressed fixture imported using `--compress zstd`, zstd/verify_zstd
-also exercise compressed reads on writable mounts, rejected larger inline and regular
-overwrites with unrelated pending changes, hard links, attributes, and repeated
+also exercise compressed reads and sector replacements on writable mounts
+with unrelated pending changes, hard links, attributes, and repeated
 COW of the uncompressed tail. Run verify_zstd after both writable and read-only
 remounts, with independent filesystem, checksum, and mirror checks between.
 
@@ -200,12 +200,21 @@ NODATASUM/NODATACOW files. Its capacity phase on a fresh seed with a small data
 block group checks data and metadata reservation failures without file changes,
 followed by successful sparse shrinking and whole-extent deletion.
 
-shrink_compressed.py uses seed/exercise/verify_metadata with fixtures imported
-using `--compress zstd` or `zlib`. It tests O_TRUNC without decoding,
+shrink_compressed.py uses seed/exercise/verify_metadata with `--compress zlib`
+fixtures and exercise_zstd with `--compress zstd`. It tests O_TRUNC without decoding,
 deletion at compressed extent boundaries, preserved prefix references,
-sparse regrowth, and failure atomicity when retaining compressed overlap.
+sparse regrowth, and failure atomicity when retaining zlib overlap.
 Run verify in the VM for Zstd, and on host `btrfs restore` output for all codecs.
 Use the independent filesystem/checksum and mirror checks between mounts.
+
+zstd_cow.py uses seed/exercise/verify with `--compress zstd` imports. It covers
+sector splits at nonzero decoded offsets, concurrent overwrites, partial shrink
+and growth, live read mappings, hard links, repeated reference splitting and
+final drops, and ordered replacement. Run restore on host `btrfs restore`
+output. Its capacity phase on a fresh small-data-group fixture checks atomic
+ENOSPC for overwrites and partial EOF COW, then successful aligned shrinking.
+Repeat with both metadata node sizes and explicit holes, checking all metadata
+copies, data checksums, and writable/read-only remounts.
 
 holes.py uses seed/write/verify to test splitting stored holes at their start,
 middle, and end, repeated splits, writes across mapping boundaries, and sparse

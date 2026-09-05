@@ -27,7 +27,7 @@ def seed():
     os.link("zero-65539", "alias")
 
 
-def exercise():
+def exercise(zstd=False):
     for size in SIZES:
         name = f"zero-{size}"
         ino = os.stat(name).st_ino
@@ -47,8 +47,15 @@ def exercise():
             # Failure must leave unrelated pending work committable.
             put(f"survivor-{size}-{length}", b"pending")
             before = os.stat(name)
-            expect_error(errno.EOPNOTSUPP, os.truncate, name, length)
-            assert os.stat(name) == before
+            if zstd:
+                os.truncate(name, length)
+                os.truncate(name, size)
+                fd = os.open(name, os.O_WRONLY)
+                os.pwrite(fd, original(size), 0)
+                os.close(fd)
+            else:
+                expect_error(errno.EOPNOTSUPP, os.truncate, name, length)
+                assert os.stat(name) == before
             assert not os.statvfs(".").f_flag & os.ST_RDONLY
             os.sync()
     # Imported files have 128 KiB compressed mappings. Retain the first
@@ -64,6 +71,10 @@ def exercise():
     os.close(fd)
     os.sync()
     verify_metadata()
+
+
+def exercise_zstd():
+    exercise(zstd=True)
 
 
 def verify_metadata():

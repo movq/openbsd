@@ -934,7 +934,8 @@ btrfs_check_file_extend(struct btrfs_node *node, uint64_t size,
 		if (error != 0)
 			goto out;
 		sector_end = extent.bfe_logical + extent.bfe_length;
-		if (extent.bfe_compression != BTRFS_COMPRESS_NONE ||
+		if ((extent.bfe_compression != BTRFS_COMPRESS_NONE &&
+		    extent.bfe_compression != BTRFS_COMPRESS_ZSTD) ||
 		    extent.bfe_encryption != 0 || extent.bfe_other_encoding != 0 ||
 		    (extent.bfe_logical & (sectorsize - 1)) != 0 ||
 		    (extent.bfe_length & (sectorsize - 1)) != 0) {
@@ -1079,10 +1080,11 @@ btrfs_file_shrink(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		} else {
 			/*
 			 * Whole compressed mappings need only a reference drop.
-			 * Retaining any of the affected mapping still requires
-			 * compressed range replacement and EOF zeroing.
+			 * Zstd mappings can also retain a prefix: the caller
+			 * COWs partial EOF data before we shorten the mapping.
 			 */
 			if ((extent.bfe_compression != BTRFS_COMPRESS_NONE &&
+			    extent.bfe_compression != BTRFS_COMPRESS_ZSTD &&
 			    extent.bfe_logical < size) ||
 			    extent.bfe_encryption != 0 ||
 			    extent.bfe_other_encoding != 0 ||
@@ -1295,7 +1297,8 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	    (old.bfe_logical & (sectorsize - 1)) != 0 ||
 	    (old.bfe_length & (sectorsize - 1)) != 0 ||
 	    old.bfe_encryption != 0 || old.bfe_other_encoding != 0 ||
-	    old.bfe_compression != BTRFS_COMPRESS_NONE)
+	    (old.bfe_compression != BTRFS_COMPRESS_NONE &&
+	    old.bfe_compression != BTRFS_COMPRESS_ZSTD))
 		return (EOPNOTSUPP);
 	if (old.bfe_type != BTRFS_FILE_EXTENT_REG &&
 	    old.bfe_type != BTRFS_FILE_EXTENT_PREALLOC &&
