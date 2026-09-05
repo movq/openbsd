@@ -22,6 +22,8 @@ loading rejects majors above OpenBSD's 8-bit range with `EOVERFLOW`.
 `stat` and `chflags` map btrfs nodump, immutable, and append flags to
 `UF_NODUMP`, `UF_IMMUTABLE`, and `UF_APPEND`. Owners may change these flags,
 including clearing immutable/append. Other btrfs inode flags are preserved.
+New writable opens of append-only regular files require `O_APPEND`; writes
+through existing descriptors must start at EOF, as on FFS.
 System flags and opaque directories are unsupported: btrfs has no separate
 system immutable/append state to enforce OpenBSD securelevel semantics.
 
