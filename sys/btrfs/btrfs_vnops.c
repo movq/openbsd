@@ -54,6 +54,7 @@ static int	btrfs_symlink(void *);
 static int	btrfs_link(void *);
 static int	btrfs_remove(void *);
 static int	btrfs_rmdir(void *);
+static int	btrfs_rename(void *);
 static int	btrfs_makeinode(struct vnode *, struct vnode **,
 		    struct componentname *, struct vattr *, const char *);
 static int	btrfs_open(void *);
@@ -103,7 +104,7 @@ const struct vops btrfs_vops = {
 	.vop_fsync	= btrfs_fsync,
 	.vop_remove	= btrfs_remove,
 	.vop_link	= btrfs_link,
-	.vop_rename	= eopnotsupp,
+	.vop_rename	= btrfs_rename,
 	.vop_mkdir	= btrfs_mkdir,
 	.vop_rmdir	= btrfs_rmdir,
 	.vop_symlink	= btrfs_symlink,
@@ -281,9 +282,8 @@ btrfs_lookup(void *v)
 	error = VOP_ACCESS(dvp, VEXEC, cnp->cn_cred, cnp->cn_proc);
 	if (error != 0)
 		return (error);
-	if (lastcn && cnp->cn_nameiop == RENAME)
-		return (EROFS);
-	if (lastcn && cnp->cn_nameiop == DELETE) {
+	if (lastcn && (cnp->cn_nameiop == DELETE ||
+	    cnp->cn_nameiop == RENAME)) {
 		error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred, cnp->cn_proc);
 		if (error != 0)
 			return (error);
@@ -355,7 +355,7 @@ btrfs_lookup(void *v)
 		error = ENOENT;
 	if (error != 0) {
 		if (error == ENOENT && lastcn &&
-		    cnp->cn_nameiop == CREATE) {
+		    (cnp->cn_nameiop == CREATE || cnp->cn_nameiop == RENAME)) {
 			error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred,
 			    cnp->cn_proc);
 			if (error == 0) {
@@ -684,6 +684,273 @@ btrfs_rmdir(void *v)
 	error = btrfs_remove_name(ap->a_dvp, ap->a_vp, ap->a_cnp, 1);
 	vput(ap->a_vp);
 	vput(ap->a_dvp);
+	return (error);
+}
+
+/*
+ * Revalidate directly under the parent lock, without the name cache or
+ * acquiring a child lock. A rename may have dropped all incoming locks.
+ */
+static int
+btrfs_rename_lookup(struct vnode *dvp, struct componentname *cnp,
+    uint64_t *inop)
+{
+	struct btrfs_node *dir = VTOBTRFS(dvp);
+	struct btrfs_lookup_ctx ctx = { 0 };
+	int error;
+
+	*inop = 0;
+	if (dir->bn_inode.bi_nlink == 0)
+		return (ENOENT);
+	error = VOP_ACCESS(dvp, VEXEC | VWRITE, cnp->cn_cred, cnp->cn_proc);
+	if (error != 0)
+		return (error);
+	ctx.blc_name = cnp->cn_nameptr;
+	ctx.blc_namelen = cnp->cn_namelen;
+	error = btrfs_lookup_directory(dir->bn_root, dir->bn_ino,
+	    ctx.blc_name, ctx.blc_namelen, btrfs_lookup_entry, &ctx);
+	if (error == BTRFS_LOOKUP_FOUND) {
+		if (ctx.blc_subvolume)
+			return (EBUSY);
+		*inop = ctx.blc_objectid;
+		return (0);
+	}
+	return (error == 0 ? ENOENT : error);
+}
+
+static int
+btrfs_rename_permitted(struct vnode *dvp, struct vnode *vp,
+    struct componentname *cnp)
+{
+	struct btrfs_node *dir = VTOBTRFS(dvp), *node = VTOBTRFS(vp);
+
+	if (btrfs_node_readonly(node) || btrfs_node_readonly(dir))
+		return (EROFS);
+	if ((node->bn_inode.bi_flags &
+	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) ||
+	    (dir->bn_inode.bi_flags &
+	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)))
+		return (EPERM);
+	if ((dir->bn_inode.bi_mode & S_ISTXT) &&
+	    cnp->cn_cred->cr_uid != 0 &&
+	    cnp->cn_cred->cr_uid != dir->bn_inode.bi_uid &&
+	    cnp->cn_cred->cr_uid != node->bn_inode.bi_uid && !vnoperm(dvp))
+		return (EPERM);
+	return (0);
+}
+
+/*
+ * Only rename can move a linked directory's ancestry. The rename lock and
+ * locked destination therefore stabilize this walk. Detect corrupt cycles
+ * with a second cursor rather than imposing a filesystem depth limit.
+ */
+static int
+btrfs_rename_ancestry(struct btrfs_node *node, struct btrfs_node *dir)
+{
+	uint64_t slow = dir->bn_ino, fast = slow;
+	int error, i;
+
+	while (slow != BTRFS_FIRST_FREE_OBJECTID) {
+		if (slow == node->bn_ino)
+			return (EINVAL);
+		error = btrfs_find_dir_parent(dir->bn_root, slow, &slow);
+		if (error != 0)
+			return (error);
+		for (i = 0; i < 2 && fast != BTRFS_FIRST_FREE_OBJECTID; i++) {
+			error = btrfs_find_dir_parent(dir->bn_root, fast, &fast);
+			if (error != 0)
+				return (error);
+		}
+		if (slow == fast && slow != BTRFS_FIRST_FREE_OBJECTID)
+			return (EINVAL);
+	}
+	return (0);
+}
+
+static int
+btrfs_rename(void *v)
+{
+	struct vop_rename_args *ap = v;
+	struct vnode *fdvp = ap->a_fdvp, *fvp = ap->a_fvp;
+	struct vnode *tdvp = ap->a_tdvp, *tvp = ap->a_tvp;
+	struct componentname *fcnp = ap->a_fcnp, *tcnp = ap->a_tcnp;
+	struct vnode *vps[4], *locked[4], *newvp, *waitvp;
+	struct btrfs_fs *bmp;
+	struct btrfs_node *fdir, *tdir, *node, *target;
+	uint64_t fino, tino;
+	unsigned int i, j, nlocked = 0;
+	int error, sync = 0;
+
+	/* VFS passes referenced sources and locked destinations. */
+	VOP_UNLOCK(tdvp);
+	if (tvp != NULL && tvp != tdvp)
+		VOP_UNLOCK(tvp);
+	if (fdvp->v_mount != tdvp->v_mount ||
+	    fvp->v_mount != fdvp->v_mount ||
+	    (tvp != NULL && tvp->v_mount != fdvp->v_mount)) {
+		error = EXDEV;
+		goto out;
+	}
+	if ((fcnp->cn_flags & ISDOTDOT) || (tcnp->cn_flags & ISDOTDOT) ||
+	    (fcnp->cn_namelen == 1 && fcnp->cn_nameptr[0] == '.') ||
+	    (tcnp->cn_namelen == 1 && tcnp->cn_nameptr[0] == '.')) {
+		error = EINVAL;
+		goto out;
+	}
+	fdir = VTOBTRFS(fdvp);
+	tdir = VTOBTRFS(tdvp);
+	bmp = fdir->bn_mount;
+	if (fdir->bn_treeid != tdir->bn_treeid) {
+		error = EXDEV;
+		goto out;
+	}
+	rw_enter_write(&bmp->bm_rename_lock);
+retry:
+	/*
+	 * Never wait for a vnode while holding any other vnode lock.
+	 * Ordinary lookup locks parents before children, including "..";
+	 * inode-number ordering alone cannot prevent those inversions.
+	 */
+	vps[0] = fdvp;
+	vps[1] = tdvp;
+	vps[2] = fvp;
+	vps[3] = tvp;
+	for (i = 0; i < nitems(vps); i++) {
+		if (vps[i] == NULL)
+			continue;
+		for (j = 0; j < nlocked; j++)
+			if (locked[j] == vps[i])
+				break;
+		if (j != nlocked)
+			continue;
+		error = vn_lock(vps[i], LK_EXCLUSIVE | LK_NOWAIT);
+		if (error != 0) {
+			waitvp = vps[i];
+			while (nlocked != 0)
+				VOP_UNLOCK(locked[--nlocked]);
+			error = vn_lock(waitvp, LK_EXCLUSIVE | LK_RETRY);
+			if (error != 0)
+				goto done;
+			VOP_UNLOCK(waitvp);
+			goto retry;
+		}
+		locked[nlocked++] = vps[i];
+	}
+	error = btrfs_rename_lookup(fdvp, fcnp, &fino);
+	if (error != 0)
+		goto done;
+	error = btrfs_rename_lookup(tdvp, tcnp, &tino);
+	if (error == ENOENT && tdir->bn_inode.bi_nlink != 0)
+		error = 0;
+	if (error != 0)
+		goto done;
+	if (fino != VTOBTRFS(fvp)->bn_ino ||
+	    VTOBTRFS(fvp)->bn_treeid != fdir->bn_treeid ||
+	    (tvp == NULL ? tino != 0 :
+	    tino != VTOBTRFS(tvp)->bn_ino ||
+	    VTOBTRFS(tvp)->bn_treeid != tdir->bn_treeid)) {
+		while (nlocked != 0)
+			VOP_UNLOCK(locked[--nlocked]);
+		/* Obtain refreshed children alone, then recheck both names. */
+		error = btrfs_vget_tree(fdvp->v_mount, fdir->bn_treeid,
+		    fino, &newvp);
+		if (error == ENOENT)
+			goto retry;
+		if (error != 0)
+			goto done;
+		VOP_UNLOCK(newvp);
+		vrele(fvp);
+		fvp = newvp;
+		if (tino != 0) {
+			error = btrfs_vget_tree(tdvp->v_mount, tdir->bn_treeid,
+			    tino, &newvp);
+			if (error == ENOENT)
+				goto retry;
+			if (error != 0)
+				goto done;
+			VOP_UNLOCK(newvp);
+		} else
+			newvp = NULL;
+		if (tvp != NULL)
+			vrele(tvp);
+		tvp = newvp;
+		goto retry;
+	}
+	if (fvp == tvp) {
+		error = 0;
+		goto done;
+	}
+	if (tvp != NULL && (fvp->v_type == VDIR) != (tvp->v_type == VDIR)) {
+		error = fvp->v_type == VDIR ? ENOTDIR : EISDIR;
+		goto done;
+	}
+	if (tvp == fdvp) {
+		/* The destination contains the source and cannot be empty. */
+		error = ENOTEMPTY;
+		goto done;
+	}
+	if (fvp == fdvp || fvp == tdvp || tvp == tdvp) {
+		error = EINVAL;
+		goto done;
+	}
+	node = VTOBTRFS(fvp);
+	target = tvp != NULL ? VTOBTRFS(tvp) : NULL;
+	if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID ||
+	    (target != NULL && target->bn_ino == BTRFS_FIRST_FREE_OBJECTID)) {
+		error = EBUSY;
+		goto done;
+	}
+	error = btrfs_rename_permitted(fdvp, fvp, fcnp);
+	if (error == 0 && tvp != NULL)
+		error = btrfs_rename_permitted(tdvp, tvp, tcnp);
+	if (error != 0)
+		goto done;
+	if (fvp->v_type == VDIR) {
+		error = VOP_ACCESS(fvp, VWRITE, fcnp->cn_cred, fcnp->cn_proc);
+		if (error == 0 && tvp != NULL)
+			error = VOP_ACCESS(tvp, VWRITE, tcnp->cn_cred, tcnp->cn_proc);
+		if (error != 0) {
+			error = EACCES;
+			goto done;
+		}
+		if (fdvp != tdvp)
+			error = btrfs_rename_ancestry(node, tdir);
+		if (error != 0)
+			goto done;
+	}
+	error = btrfs_rename_inode(fdir, node, fcnp->cn_nameptr,
+	    fcnp->cn_namelen, tdir, target, tcnp->cn_nameptr, tcnp->cn_namelen);
+	if (error != 0)
+		goto done;
+	for (i = 0; i < nlocked; i++) {
+		struct btrfs_node *n = VTOBTRFS(locked[i]);
+
+		cache_purge(locked[i]);
+		if (n->bn_inode.bi_flags & (BTRFS_INODE_SYNC |
+		    (locked[i]->v_type == VDIR ? BTRFS_INODE_DIRSYNC : 0)))
+			sync = 1;
+	}
+	VN_KNOTE(fdvp, NOTE_WRITE);
+	if (tdvp != fdvp)
+		VN_KNOTE(tdvp, NOTE_WRITE);
+	VN_KNOTE(fvp, NOTE_RENAME);
+	if (tvp != NULL)
+		VN_KNOTE(tvp, NOTE_DELETE);
+	if (sync || (fdvp->v_mount->mnt_flag & MNT_SYNCHRONOUS))
+		error = btrfs_trans_commit(bmp,
+		    node->bn_inode.bi_last_dirty_transid, fcnp->cn_proc);
+done:
+	while (nlocked != 0)
+		VOP_UNLOCK(locked[--nlocked]);
+	rw_exit_write(&bmp->bm_rename_lock);
+out:
+	VOP_ABORTOP(fdvp, fcnp);
+	VOP_ABORTOP(tdvp, tcnp);
+	vrele(fdvp);
+	vrele(tdvp);
+	vrele(fvp);
+	if (tvp != NULL)
+		vrele(tvp);
 	return (error);
 }
 

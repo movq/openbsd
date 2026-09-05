@@ -304,6 +304,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	LIST_INIT(&bmp->bm_nodes);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
 	rw_init(&bmp->bm_namespace_lock, "btrfsns");
+	rw_init(&bmp->bm_rename_lock, "btrfsrename");
 	stage = "building free-space index";
 	error = btrfs_space_init(bmp);
 	if (error != 0)

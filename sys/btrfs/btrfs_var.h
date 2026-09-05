@@ -524,6 +524,8 @@ struct btrfs_fs {
 	struct mutex			 bm_nodemtx;
 	/* Serializes namespace allocation across parent directories. */
 	struct rwlock			 bm_namespace_lock;
+	/* Directory ancestry; acquire with no vnode locks held. */
+	struct rwlock			 bm_rename_lock;
 };
 
 struct btrfs_node {
@@ -649,6 +651,9 @@ int	btrfs_create_inode(struct btrfs_node *, const char *, size_t,
 int	btrfs_link_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
 int	btrfs_unlink_inode(struct btrfs_node *, struct btrfs_node *,
+	    const char *, size_t);
+int	btrfs_rename_inode(struct btrfs_node *, struct btrfs_node *,
+	    const char *, size_t, struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
 int	btrfs_check_orphan(struct btrfs_root *, uint64_t);
 int	btrfs_reap_inode(struct btrfs_root *, uint64_t);
