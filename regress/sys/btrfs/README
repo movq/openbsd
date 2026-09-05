@@ -46,6 +46,16 @@ writable and read-only remounts. Repeat with both metadata node sizes.
 It covers small buffers, EOF, every saved cookie, seeks into gaps, multiple
 leaves, file types and inode numbers, and creation after a reader reaches EOF.
 
+statfs.py's `disk image` phase writes expected space counters as JSON using
+the unmounted chunk and extent trees. Copy this output to the VM and use
+`check mountpoint expected.json` before mutation and after remounts.
+On a fixture with at most 32 MiB of free data space, run `exercise new-directory`
+and `capacity same-directory`. These check live allocation, COW, truncate,
+pending-sector cancellation, exact data exhaustion, ENOSPC, and reuse.
+Unmount, run both independent checks, regenerate the expected JSON, then run
+check and `verify same-directory` after writable and read-only remounts.
+Repeat with both metadata node sizes and explicit holes.
+
 idle.py takes a new test directory and checks repeated fsync and mount sync
 without pending changes, followed by further namespace and data mutation.
 Run after writable remount of both a fresh image and one with a large extent
