@@ -69,7 +69,9 @@ Current limits:
   rounded EOF; preallocation remains zero-filled. Shrinking reserves the
   entire range deletion in one transaction and may return `ENOSPC` for highly
   fragmented files. Unlink preserves open descriptors and mappings and reclaims
-  the inode after its last vnode reference. Rmdir and rename are unsupported.
+  the inode after its last vnode reference. Rmdir validates empty directories
+  and uses the same orphan lifecycle. Removed directory descriptors report
+  zero links and EOF; new child lookup and creation fail. Rename is unsupported.
 * Writes and growth convert uncompressed or Zstd inline files of at most one
   decoded sector to regular extents. Larger inline files, other compression
   codecs, and encoded mappings remain unsupported. Uncompressed and Zstd
