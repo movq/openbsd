@@ -37,6 +37,7 @@
 #include <sys/namei.h>
 #include <sys/pool.h>
 #include <sys/proc.h>
+#include <sys/specdev.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
 #include <sys/vnode.h>
@@ -61,6 +62,7 @@ static int	btrfs_setattr(void *);
 static int	btrfs_read(void *);
 static int	btrfs_write(void *);
 static int	btrfs_fsync(void *);
+static int	btrfs_spec_fsync(void *);
 static int	btrfs_strategy(void *);
 static int	btrfs_ioctl(void *);
 static int	btrfs_readdir(void *);
@@ -116,6 +118,45 @@ const struct vops btrfs_vops = {
 	.vop_islocked	= btrfs_islocked,
 	.vop_pathconf	= btrfs_pathconf,
 	.vop_advlock	= btrfs_advlock,
+	.vop_bwrite	= vop_generic_bwrite,
+};
+
+const struct vops btrfs_spec_vops = {
+	.vop_access	= btrfs_access,
+	.vop_getattr	= btrfs_getattr,
+	.vop_setattr	= btrfs_setattr,
+	.vop_fsync	= btrfs_spec_fsync,
+	.vop_inactive	= btrfs_inactive,
+	.vop_reclaim	= btrfs_reclaim,
+	.vop_lock	= btrfs_lock,
+	.vop_unlock	= btrfs_unlock,
+	.vop_print	= btrfs_print,
+	.vop_islocked	= btrfs_islocked,
+
+	/* Keep in sync with spec_vops. */
+	.vop_lookup	= vop_generic_lookup,
+	.vop_create	= vop_generic_badop,
+	.vop_mknod	= vop_generic_badop,
+	.vop_open	= spec_open,
+	.vop_close	= spec_close,
+	.vop_read	= spec_read,
+	.vop_write	= spec_write,
+	.vop_ioctl	= spec_ioctl,
+	.vop_kqfilter	= spec_kqfilter,
+	.vop_revoke	= vop_generic_revoke,
+	.vop_remove	= vop_generic_badop,
+	.vop_link	= vop_generic_badop,
+	.vop_rename	= vop_generic_badop,
+	.vop_mkdir	= vop_generic_badop,
+	.vop_rmdir	= vop_generic_badop,
+	.vop_symlink	= vop_generic_badop,
+	.vop_readdir	= vop_generic_badop,
+	.vop_readlink	= vop_generic_badop,
+	.vop_abortop	= vop_generic_badop,
+	.vop_bmap	= vop_generic_bmap,
+	.vop_strategy	= spec_strategy,
+	.vop_pathconf	= spec_pathconf,
+	.vop_advlock	= spec_advlock,
 	.vop_bwrite	= vop_generic_bwrite,
 };
 
@@ -384,7 +425,8 @@ btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
 	KASSERT(cnp->cn_flags & HASBUF);
 	*vpp = NULL;
 	if (vap->va_type != VREG && vap->va_type != VDIR &&
-	    vap->va_type != VLNK && vap->va_type != VSOCK
+	    vap->va_type != VLNK && vap->va_type != VSOCK &&
+	    vap->va_type != VCHR && vap->va_type != VBLK
 #ifdef FIFO
 	    && vap->va_type != VFIFO
 #endif
@@ -401,7 +443,8 @@ btrfs_makeinode(struct vnode *dvp, struct vnode **vpp,
 	    !vnoperm(dvp) && suser_ucred(cnp->cn_cred))
 		mode &= ~S_ISGID;
 	error = btrfs_create_inode(dir, cnp->cn_nameptr, cnp->cn_namelen,
-	    mode, cnp->cn_cred->cr_uid, dir->bn_inode.bi_gid, link, vpp);
+	    mode, cnp->cn_cred->cr_uid, dir->bn_inode.bi_gid, vap->va_rdev,
+	    link, vpp);
 	if (error != 0)
 		goto out;
 	cache_purge(dvp);
@@ -582,6 +625,8 @@ btrfs_access(void *v)
 	if (ap->a_mode & VWRITE) {
 		if (ap->a_vp->v_type != VFIFO &&
 		    ap->a_vp->v_type != VSOCK &&
+		    ap->a_vp->v_type != VCHR &&
+		    ap->a_vp->v_type != VBLK &&
 		    btrfs_node_readonly(node))
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
@@ -612,7 +657,8 @@ btrfs_getattr(void *v)
 	vap->va_atime = inode->bi_atime;
 	vap->va_mtime = inode->bi_mtime;
 	vap->va_ctime = inode->bi_ctime;
-	vap->va_rdev = inode->bi_rdev;
+	vap->va_rdev = (vp->v_type == VCHR || vp->v_type == VBLK) ?
+	    vp->v_rdev : 0;
 	vap->va_size = inode->bi_size;
 	vap->va_flags = 0;
 	if (inode->bi_flags & BTRFS_INODE_NODUMP)
@@ -1321,6 +1367,17 @@ btrfs_fsync(void *v)
 	if (error != 0 || generation == 0)
 		return (error);
 	return (btrfs_trans_commit(bmp, generation, ap->a_p));
+}
+
+static int
+btrfs_spec_fsync(void *v)
+{
+	int error;
+
+	error = spec_fsync(v);
+	if (error != 0)
+		return (error);
+	return (btrfs_fsync(v));
 }
 
 static int

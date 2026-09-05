@@ -90,9 +90,6 @@ def create():
         os.fsync(fd)
         os.close(fd)
     expect_error(errno.EEXIST, os.mkfifo, "pipe")
-    expect_error(errno.EOPNOTSUPP, os.mknod, "device",
-                 stat.S_IFCHR | 0o600, os.makedev(2, 2))
-    expect_error(errno.ENOENT, os.stat, "device")
     os.mkdir("denied", 0o700)
 
     def denied():

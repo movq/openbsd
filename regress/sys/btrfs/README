@@ -131,8 +131,21 @@ when changing kernels: its mount arguments now include the selected tree ID.
 ipc.py uses create/verify phases and a readonly phase after a read-only
 remount. It covers FIFO and Unix-domain socket creation, hard-link aliases,
 blocking/nonblocking pipe I/O, EOF, kqueue readiness, socket connections,
-permissions, hash collisions, directory accounting, and unsupported device
-creation. Run the independent checks between mounts as above.
+permissions, hash collisions, and directory accounting. Run the independent
+checks between mounts as above.
+
+devices.py uses create/verify, readonly, and nodev phases for character/block
+device creation, device-number persistence, hard links, attributes, permissions,
+null/zero I/O, kqueue, advisory locks, BPF clones, mounted-device aliases, and
+unknown device numbers. It uses OpenBSD/amd64 device assignments and never
+writes disk devices. Its `reclaim mountpoint` phase forcibly unmounts with
+open null/BPF descriptors and checks device-vnode survival and cleanup.
+Import its seed fixture (created as root on the host)
+with --rootdir, then run `fix-seed image` on the unmounted image: mkfs.btrfs 7.0
+sets imported rdev fields to zero, so this phase uses btrfs-corrupt-block to
+install known device numbers. Use seed-verify to check device-number decoding
+and rejection of majors outside OpenBSD's range. Run with 4 KiB and 16 KiB
+metadata, with independent checks between mounts.
 
 inline.py uses seed on the host to prepare a rootdir fixture, write in the VM,
 then verify after unmount/check/remount. It covers conversion of imported
