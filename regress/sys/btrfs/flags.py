@@ -35,14 +35,22 @@ def enforcement():
     os.chflags("alias", stat.UF_APPEND)
     denied("file", errno.EPERM, os.pwrite, fd, b"X", 0)
     denied("file", errno.EPERM, os.link, "file", "forbidden")
+    for mode in (os.O_WRONLY, os.O_RDWR, os.O_WRONLY | os.O_CREAT,
+                 os.O_WRONLY | os.O_TRUNC):
+        denied("file", errno.EPERM, os.open, "alias", mode)
+    reader = os.open("alias", os.O_RDONLY)
+    assert os.read(reader, 100) == b"data"
+    os.close(reader)
+    # Descriptors opened before chflags retain FFS's position-based policy.
+    assert os.pwrite(fd, b"tail", 4) == 4
     append = os.open("file", os.O_WRONLY | os.O_APPEND)
-    assert os.write(append, b"tail") == 4
+    assert os.write(append, b"more") == 4
     os.close(append)
     os.chflags("file", 0)
     assert os.pwrite(fd, b"D", 0) == 1
     os.fsync(fd)
     os.close(fd)
-    assert Path("file").read_bytes() == b"Datatail"
+    assert Path("file").read_bytes() == b"Datatailmore"
 
     os.mkdir("directory")
     os.chflags("directory", stat.UF_IMMUTABLE)
@@ -107,7 +115,7 @@ def create():
 
 
 def verify():
-    assert Path("file").read_bytes() == b"Datatail"
+    assert Path("file").read_bytes() == b"Datatailmore"
     assert os.stat("file").st_flags == stat.UF_NODUMP
     assert os.stat("alias").st_flags == stat.UF_NODUMP
     assert os.stat("fifo").st_flags == stat.UF_NODUMP

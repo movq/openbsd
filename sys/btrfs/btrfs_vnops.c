@@ -605,6 +605,9 @@ btrfs_open(void *v)
 			return (EROFS);
 		if (node->bn_inode.bi_flags & BTRFS_INODE_IMMUTABLE)
 			return (EPERM);
+		if ((node->bn_inode.bi_flags & BTRFS_INODE_APPEND) &&
+		    (ap->a_mode & O_APPEND) == 0)
+			return (EPERM);
 	}
 	return (0);
 }

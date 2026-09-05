@@ -23,7 +23,8 @@ Then in the VM:
 
 flags.py uses create/verify phases and readonly after a read-only remount.
 It covers nodump/immutable/append round trips, owner and nonowner permissions,
-clearing flags, writes through existing descriptors, append writes, hard-link
+clearing flags, writes through existing descriptors, append-open policy and
+append writes, hard-link
 aliases, directory policy, FIFO metadata, rejected flag masks, and kqueue
 attribute notifications. Run the independent checks between mounts.
 
