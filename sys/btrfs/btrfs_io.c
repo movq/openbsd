@@ -35,6 +35,12 @@ static int	btrfs_read_mapped(struct vnode *, const struct btrfs_io_map *,
 		    struct btrfs_io_result *, struct buf **);
 static int	btrfs_validate_data_csum(const void *, size_t, void *);
 
+struct btrfs_data_csum {
+	const uint32_t	*expected;
+	uint32_t	 offset;
+	uint32_t	 sectorsize;
+};
+
 static int
 btrfs_map_logical(const struct btrfs_chunk_map *chunk, uint64_t logical,
     uint32_t length, struct btrfs_io_map *map)
@@ -144,8 +150,17 @@ btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
 
 	error = EIO;
 	for (i = 0; i < map->nmirrors; i++) {
-		bp = NULL;
-		error = bread(devvp, map->physical[i] / DEV_BSIZE, length, &bp);
+		for (;;) {
+			bp = NULL;
+			error = bread(devvp, map->physical[i] / DEV_BSIZE,
+			    length, &bp);
+			if (bp == NULL || bp->b_bcount == length)
+				break;
+			/* getblk keys by start only and does not resize hits. */
+			KASSERT(!ISSET(bp->b_flags, B_DELWRI));
+			SET(bp->b_flags, B_INVAL);
+			brelse(bp);
+		}
 		if (error == 0 && bp->b_resid != 0)
 			error = EIO;
 		if (error == 0 && validate != NULL)
@@ -197,7 +212,6 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 	struct btrfs_io_map map;
 	struct buf *bp;
 	void *copy;
-	uint32_t sectorsize;
 	unsigned int i;
 	int error, first_error = 0;
 
@@ -228,19 +242,24 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 	 */
 	copy = malloc(length, M_BTRFS, M_WAITOK);
 	memcpy(copy, data, length);
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	for (i = 0; i < map.nmirrors; i++) {
 		/*
 		 * Device buffers are keyed only by their starting block.
-		 * A clustered data write must evict every cached sector,
-		 * including a smaller buffer at the request's first block.
-		 * Data reads use sector buffers; writes are always NOCACHE.
+		 * Reused data can have cached read windows of a different
+		 * size. Evict all starts covered by even a sector write.
+		 * Writes are always NOCACHE.
 		 */
-		if ((type_mask & BTRFS_BLOCK_GROUP_DATA) &&
-		    length > sectorsize)
+		if (type_mask & BTRFS_BLOCK_GROUP_DATA)
 			btrfs_invalidate_physical(bmp, map.physical[i], length);
-		bp = getblk(devvp, map.physical[i] / DEV_BSIZE, length, 0,
-		    INFSLP);
+		for (;;) {
+			bp = getblk(devvp, map.physical[i] / DEV_BSIZE,
+			    length, 0, INFSLP);
+			if (bp->b_bcount == length)
+				break;
+			KASSERT(!ISSET(bp->b_flags, B_DELWRI));
+			SET(bp->b_flags, B_INVAL);
+			brelse(bp);
+		}
 		memcpy(bp->b_data, copy, length);
 		/*
 		 * B_NOCACHE prevents bwrite() from becoming a delayed write
@@ -261,33 +280,68 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 static int
 btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 {
-	const uint32_t *expected = arg;
+	const struct btrfs_data_csum *csum = arg;
 
-	if (crc32c(0, data, length) != *expected)
+	if (csum->offset > length || csum->sectorsize > length - csum->offset)
+		return (EINVAL);
+	if (crc32c(0, (const uint8_t *)data + csum->offset,
+	    csum->sectorsize) != *csum->expected)
 		return (EIO);
 	return (0);
 }
 
 int
-btrfs_read_data_block(struct btrfs_fs *bmp, uint64_t logical,
-    const uint32_t *expected_csum, struct buf **bpp)
+btrfs_read_data_sector(struct btrfs_fs *bmp,
+    const struct btrfs_file_extent *extent, uint64_t logical,
+    const uint32_t *expected_csum, struct buf **bpp, uint32_t *offsetp)
 {
 	btrfs_io_validate_fn validate = NULL;
+	struct btrfs_data_csum csum;
 	struct btrfs_io_map map;
-	uint32_t sectorsize;
+	uint64_t start = extent->bfe_disk_bytenr;
+	uint64_t bytes = extent->bfe_disk_num_bytes, relative, window;
+	uint32_t length, sectorsize;
 	int error;
 
 	*bpp = NULL;
+	*offsetp = 0;
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	if ((logical & (sectorsize - 1)) != 0)
+	if (bytes < sectorsize || start > UINT64_MAX - bytes ||
+	    (start & (sectorsize - 1)) != 0 ||
+	    (bytes & (sectorsize - 1)) != 0 ||
+	    (logical & (sectorsize - 1)) != 0 ||
+	    logical < start || logical - start > bytes - sectorsize)
 		return (EINVAL);
+	/*
+	 * Windows belong to the allocation, so split mappings and different
+	 * inode references use the same physical cache keys and sizes.
+	 * Validate only the requested sector: different DUP copies may supply
+	 * the healthy sectors of a window with damage on both mirrors.
+	 */
+	relative = logical - start;
+	window = relative & ~((uint64_t)MAXBSIZE - 1);
+	length = MIN((uint64_t)MAXBSIZE, bytes - window);
+	start += window;
+	csum.offset = logical - start;
+	csum.sectorsize = sectorsize;
+	csum.expected = expected_csum;
 	if (expected_csum != NULL)
 		validate = btrfs_validate_data_csum;
-	error = btrfs_lookup_fs_logical(bmp, logical, sectorsize, &map);
+retry:
+	error = btrfs_lookup_fs_logical(bmp, start, length, &map);
 	if (error == 0)
-		error = btrfs_read_mapped(bmp->bm_devvp, &map, sectorsize,
-		    BTRFS_BLOCK_GROUP_DATA, validate, (void *)expected_csum,
+		error = btrfs_read_mapped(bmp->bm_devvp, &map, length,
+		    BTRFS_BLOCK_GROUP_DATA, validate, &csum,
 		    NULL, bpp);
+	if (error != 0 && length != sectorsize) {
+		/* A neighboring media error must not prevent a sector retry. */
+		start = logical;
+		length = sectorsize;
+		csum.offset = 0;
+		goto retry;
+	}
+	if (error == 0)
+		*offsetp = csum.offset;
 	if (error == ENOENT)
 		error = EINVAL;
 	return (error);

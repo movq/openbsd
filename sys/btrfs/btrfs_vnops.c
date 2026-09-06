@@ -1341,7 +1341,7 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 	uint64_t csum_length, csum_start;
 	uint64_t inode_flags;
 	const uint32_t *expectedp;
-	uint32_t sectorsize;
+	uint32_t buffer_offset, sectorsize;
 	size_t chunk, nsectors, offset;
 	int error = 0;
 
@@ -1381,10 +1381,12 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 		expectedp = NULL;
 		if (csums != NULL)
 			expectedp = &csums[(block - csum_start) / sectorsize];
-		error = btrfs_read_data_block(bmp, block, expectedp, &bp);
+		error = btrfs_read_data_sector(bmp, extent, block, expectedp,
+		    &bp, &buffer_offset);
 		if (error != 0)
 			break;
-		memcpy(destination, (uint8_t *)bp->b_data + offset, chunk);
+		memcpy(destination, (uint8_t *)bp->b_data + buffer_offset +
+		    offset, chunk);
 		brelse(bp);
 		bp = NULL;
 		destination += chunk;
