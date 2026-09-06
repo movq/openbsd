@@ -5,7 +5,8 @@ MAN=	btrfs.8
 .PATH:	${.CURDIR}/..
 
 SRCS=	btrfs.c inspect.c inspect-dump-super.c inspect-dump-tree.c \
-	inspect-tree-stats.c stubs.c subvolume-openbsd.c
+	inspect-tree-stats.c stubs.c subvolume-openbsd.c \
+	stream-openbsd.c send-openbsd.c receive-openbsd.c
 
 CPPFLAGS+=	-DBTRFS_FLAT_INCLUDES -I${.CURDIR}/.. \
 	-I${.CURDIR}/../include -include ${.CURDIR}/../include/config.h

@@ -30,6 +30,11 @@ The executables are written to `mkfs/mkfs.btrfs` and `cmds/btrfs`.
   checksum output
 - Offline `btrfs inspect-internal tree-stats` for basic node, level, inline
   data, size, and disk-spread statistics
+- Native subvolume list/create/delete and writable/read-only snapshots
+- Linux version 1 full and incremental send/receive, including hard links,
+  special files, timestamps, and opaque extended attributes. Commands select
+  a filesystem by mountpoint and interpret subvolume paths from tree 5;
+  see `btrfs(8)` for syntax and limits.
 
 ## Not Supported
 
@@ -40,6 +45,8 @@ The executables are written to `mkfs/mkfs.btrfs` and `cmds/btrfs`.
 - Scanning or registering devices through Linux sysfs or
   `/dev/btrfs-control`
 - Operations on mounted Btrfs filesystems through Linux Btrfs ioctls
+- Version 2/3 send streams, no-data streams, send clone-source selection,
+  recursive subvolume send, and receive reflink-range sharing
 - The ioctl-based `inspect-internal` commands: `inode-resolve`,
   `logical-resolve`, `subvolid-resolve`, `rootid`, `min-dev-size`,
   `list-chunks`, and `map-swapfile`
