@@ -87,7 +87,7 @@ def notifications():
         event(queue, fd, VNODE, select.KQ_NOTE_ATTRIB)
         quiet(queue)
         # A failed operation must not generate a mutation event.
-        expect_error(errno.EOPNOTSUPP, os.ftruncate, fd, 0)
+        expect_error(errno.EINVAL, os.ftruncate, fd, -1)
         quiet(queue)
         # A subscription to ATTRIB alone ignores data-write hints.
         register(queue, fd, VNODE, select.KQ_NOTE_ATTRIB)
