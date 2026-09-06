@@ -215,7 +215,7 @@ struct btrfs_delayed_data_ref {
 TAILQ_HEAD(btrfs_delayed_data_ref_list, btrfs_delayed_data_ref);
 
 struct btrfs_ordered_extent {
-	TAILQ_ENTRY(btrfs_ordered_extent) boe_entry;
+	RBT_ENTRY(btrfs_ordered_extent) boe_entry;
 	RBT_ENTRY(btrfs_ordered_extent) boe_io_entry;
 	/* Commit-only association with the unmaterialized allocation add. */
 	struct btrfs_delayed_data_ref *boe_ref;
@@ -227,7 +227,9 @@ struct btrfs_ordered_extent {
 	uint32_t			 boe_length;
 	uint8_t				 boe_written;
 };
-TAILQ_HEAD(btrfs_ordered_extent_list, btrfs_ordered_extent);
+RBT_HEAD(btrfs_ordered_tree, btrfs_ordered_extent);
+RBT_PROTOTYPE(btrfs_ordered_tree, btrfs_ordered_extent, boe_entry,
+    btrfs_ordered_file_compare);
 
 struct btrfs_dirty_root {
 	TAILQ_ENTRY(btrfs_dirty_root)	 bdr_entry;
@@ -319,7 +321,8 @@ struct btrfs_transaction {
 					 bt_delayed_tree_refs;
 	struct btrfs_delayed_data_ref_list
 					 bt_delayed_data_refs;
-	struct btrfs_ordered_extent_list bt_ordered_extents;
+	/* Indexed by (tree, inode, sector offset), protected by bt_lock. */
+	struct btrfs_ordered_tree	 bt_ordered_extents;
 	struct btrfs_dirty_root_list	 bt_dirty_roots;
 	uint64_t			 bt_generation;
 	uint64_t			 bt_commit_reserve_target;
