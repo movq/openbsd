@@ -44,7 +44,7 @@ The free-space-tree (with VALID set) and block-group-tree compat-ro features
 are writable, including extent and bitmap free-space records.
 Mount requires the newest valid superblock,
 no pending log, no seeding device or read-only selected tree, and an extent tree
-without legacy extent items, shared references, snapshots, or simple-quota owner refs.
+without legacy extent items or simple-quota owner refs.
 Writable mount recovers zero-link file-tree orphans and linked regular-file
 truncate markers before exposing any view. Root-tree orphans and cleanup
 markers on other linked inode types still reject writable mount.
@@ -58,7 +58,19 @@ Current limits:
   Nested subvolumes remain traversable, subject to each tree's read-only flag.
   A read-only view may join a writable filesystem; a filesystem first opened
   read-only cannot gain writable views until all views have been unmounted.
-  Remount updates and subvolume creation/property changes are unsupported.
+  Remount updates and subvolume property changes are unsupported.
+* `/dev/btrfs-control` provides privileged subvolume list/create/delete and
+  writable or read-only snapshot ioctls. The `btrfs subvolume` commands select
+  a filesystem by mountpoint; all paths start at tree 5, including parents
+  outside the selected view. Paths do not follow symlinks or `..`.
+  Snapshots copy only the root block, sharing lower metadata and file data.
+  Nested subvolumes appear as empty, immutable boundary directories in a
+  snapshot; they are not recursively snapshotted.
+  Deletion rejects mounted hierarchies, active vnodes, and nested subvolumes.
+  It reserves the complete metadata/reference operation and publishes the
+  namespace removal and final reference drops atomically. Large deletions
+  can return `ENOSPC` before mutation; bounded deletion and recovery remain
+  future work.
 * Regular-file `truncate`/`ftruncate` and `O_TRUNC` support shrinking
   uncompressed or Zstd regular mappings, preallocation, and supported inline
   files, unchanged sizes, and sparse growth.
@@ -121,7 +133,8 @@ and unmount behavior. Trees have distinct anonymous device IDs for `stat`, with
 on-disk inode numbers; these IDs persist until the last view detaches, not across
 filesystem lifetimes. A filesystem-local lock serializes view attachment and
 detachment; vnode/transaction paths never take it. Root backreferences define
-immutable ancestry, and traversal checks directory entries against it.
+ancestry, and traversal checks directory entries against it. A copied
+subvolume entry without a matching backreference denotes a snapshot boundary.
 Unmount flushes only that view's vnodes; the last view closes the device and
 destroys filesystem services. Sync or unmount of any view can commit all views.
 
@@ -164,6 +177,25 @@ identity, validation, locks, and transaction ownership. COW uses private storage
 and transaction-aware B-tree APIs. Roots are persistent filesystem-owned objects:
 readers snapshot their locations; writers retain root locks and COW paths from
 the root downward. Validate against the path's view generation.
+
+File-tree blocks may retain another subvolume's on-disk owner. Cache identity
+uses logical address, generation, and level; owner validation allows sharing
+only between file trees. New COW blocks have implicit references owned by the
+writing root. If an owner leaves a shared block, preserve that block's outgoing
+edges as full backreferences. Other writers add their own implicit edges; the
+last COW of a full-reference block drops its old outgoing edges. Delayed adds
+and full-reference conversions precede final drops. Data backreferences support
+both `(root, inode, file-base)` and leaf-address ownership.
+
+Administration pins the mount views and serializes directory ancestry. It
+locks a visible parent vnode before the namespace lock, closes transaction
+joins, drains existing handles, and commits the source generation. The
+administrating thread can then reserve and mutate while other joins wait.
+It refreshes parent inode and name caches before reopening joins. Deletion
+first converts outgoing references owned by the disappearing tree, then drops
+edges recursively only when a block loses its last reference. Deleted root
+cache entries remain tombstones until filesystem teardown, and root IDs are
+not reused during that lifetime.
 
 Live I/O copies physical mappings under a short filesystem mapping lock,
 released before device access. Only bootstrap roots use fixed chunk tables.

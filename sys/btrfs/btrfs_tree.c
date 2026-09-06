@@ -306,6 +306,8 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	*rootp = NULL;
 	root = btrfs_root_lookup(bmp, owner);
 	if (root != NULL) {
+		if (root->br_deleted)
+			return (ENOENT);
 		*rootp = root;
 		return (0);
 	}
@@ -313,7 +315,7 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	root_tree = btrfs_root_lookup(bmp, BTRFS_ROOT_TREE_OBJECTID);
 	KASSERT(root_tree != NULL);
 	error = btrfs_find_root_item(root_tree, owner,
-	    BTRFS_FIRST_FREE_OBJECTID, &item);
+	    btrfs_file_tree(owner) ? BTRFS_FIRST_FREE_OBJECTID : 0, &item);
 	if (error != 0)
 		return (error);
 	location.brl_bytenr = letoh64(item.bytenr);
@@ -340,6 +342,274 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	if (new != NULL)
 		free(new, M_BTRFS, sizeof(*new));
 	*rootp = root;
+	return (0);
+}
+
+void
+btrfs_forget_root(struct btrfs_fs *bmp, uint64_t owner)
+{
+	struct btrfs_root_entry *entry;
+
+	mtx_enter(&bmp->bm_rootmtx);
+	LIST_FOREACH(entry, &bmp->bm_roots, bre_entry)
+		if (entry->bre_root.br_owner == owner)
+			break;
+	if (entry != NULL)
+		entry->bre_root.br_deleted = 1;
+	mtx_leave(&bmp->bm_rootmtx);
+}
+
+/* Change the references carried by one block, without traversing children. */
+int
+btrfs_block_children(struct btrfs_trans_handle *handle,
+    const struct btrfs_extent_buffer *eb, uint64_t owner, int full, int delta)
+{
+	const struct btrfs_header *header = btrfs_extent_buffer_data(eb);
+	const struct btrfs_key_ptr *ptr;
+	const struct btrfs_item *items;
+	const struct btrfs_file_extent_item *fi;
+	const uint8_t *data;
+	uint64_t disk, base;
+	uint32_t i, n = letoh32(header->nritems), size;
+	int error = 0;
+
+	if (eb->eb_level != 0) {
+		ptr = (const struct btrfs_key_ptr *)(header + 1);
+		for (i = 0; i < n; i++) {
+			error = btrfs_delayed_ref_add(handle,
+			    letoh64(ptr[i].blockptr), full ? eb->eb_bytenr : 0,
+			    owner, eb->eb_level - 1, delta);
+			if (error != 0)
+				return (error);
+		}
+	} else {
+		items = (const struct btrfs_item *)(header + 1);
+		for (i = 0; i < n; i++) {
+			size = letoh32(items[i].size);
+			data = (const uint8_t *)(header + 1) +
+			    letoh32(items[i].offset);
+			if (items[i].key.type != BTRFS_EXTENT_DATA_KEY)
+				continue;
+			if (size < offsetof(struct btrfs_file_extent_item,
+			    disk_bytenr)) {
+				return (EINVAL);
+			}
+			fi = (const struct btrfs_file_extent_item *)data;
+			if (fi->type == BTRFS_FILE_EXTENT_INLINE)
+				continue;
+			if (size != sizeof(*fi) ||
+			    (fi->type != BTRFS_FILE_EXTENT_REG &&
+			    fi->type != BTRFS_FILE_EXTENT_PREALLOC)) {
+				return (EINVAL);
+			}
+			disk = letoh64(fi->disk_bytenr);
+			if (disk == 0)
+				continue;
+			base = letoh64(items[i].key.offset) -
+			    letoh64(fi->offset);
+			error = btrfs_delayed_data_ref_add(handle, disk,
+			    letoh64(fi->disk_num_bytes), full ? 0 : owner,
+			    full ? eb->eb_bytenr : letoh64(items[i].key.objectid),
+			    full ? 0 : base, delta);
+			if (error != 0)
+				return (error);
+		}
+	}
+	return (0);
+}
+
+/*
+ * Deletion first converts outgoing references belonging to the disappearing
+ * owner to full references. Then it drops only edges whose parent actually
+ * dies. Shared subtrees retain their children and data references.
+ */
+static int
+btrfs_walk_drop(struct btrfs_root *root, uint64_t bytenr, uint64_t gen,
+    uint8_t level, struct btrfs_trans_handle *handle, uint64_t parent,
+    int operation, uint64_t *blocks, uint64_t *nrefs)
+{
+	struct btrfs_extent_buffer *eb;
+	const struct btrfs_header *header;
+	const struct btrfs_key_ptr *ptr;
+	const struct btrfs_item *items;
+	const struct btrfs_file_extent_item *fi;
+	uint64_t refs = 1, flags = 0;
+	uint32_t i, n;
+	int error, full;
+
+	error = btrfs_extent_buffer_read(root, bytenr, gen,
+	    root->br_view_generation, level, &eb);
+	if (error != 0)
+		return (error);
+	header = btrfs_extent_buffer_data(eb);
+	n = letoh32(header->nritems);
+	(*blocks)++;
+	if (level != 0)
+		*nrefs += n;
+	else {
+		items = (const struct btrfs_item *)(header + 1);
+		for (i = 0; i < n; i++) {
+			if (items[i].key.type != BTRFS_EXTENT_DATA_KEY)
+				continue;
+			if (letoh32(items[i].size) <
+			    offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
+				error = EINVAL;
+				goto out;
+			}
+			fi = (const struct btrfs_file_extent_item *)
+			    ((const uint8_t *)(header + 1) +
+			    letoh32(items[i].offset));
+			if (fi->type == BTRFS_FILE_EXTENT_INLINE)
+				continue;
+			if (letoh32(items[i].size) != sizeof(*fi)) {
+				error = EINVAL;
+				goto out;
+			}
+			if (fi->disk_bytenr != 0)
+				(*nrefs)++;
+		}
+	}
+	if (handle != NULL) {
+		error = btrfs_block_refs(handle, eb, &refs, &flags);
+		if (error != 0)
+			goto out;
+		full = (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF) != 0;
+		if (operation == 1 && eb->eb_owner == root->br_owner &&
+		    !full) {
+			error = btrfs_block_children(handle, eb, root->br_owner,
+			    1, 1);
+			if (error == 0)
+				error = btrfs_block_children(handle, eb,
+				    root->br_owner, 0, -1);
+			if (error == 0)
+				error = btrfs_block_full(handle, eb);
+			if (error != 0)
+				goto out;
+			flags |= BTRFS_BLOCK_FLAG_FULL_BACKREF;
+		}
+		if (operation == -1 && refs > 1)
+			goto drop;
+	}
+	if (level != 0) {
+		ptr = (const struct btrfs_key_ptr *)(header + 1);
+		for (i = 0; i < n; i++) {
+			error = btrfs_walk_drop(root, letoh64(ptr[i].blockptr),
+			    letoh64(ptr[i].generation), level - 1, handle,
+			    flags & BTRFS_BLOCK_FLAG_FULL_BACKREF ? bytenr : 0,
+			    operation, blocks, nrefs);
+			if (error != 0)
+				goto out;
+		}
+	} else if (operation == -1) {
+		error = btrfs_block_children(handle, eb, root->br_owner,
+		    (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF) != 0, -1);
+		if (error != 0)
+			goto out;
+	}
+drop:
+	if (operation == -1)
+		error = btrfs_delayed_ref_add(handle, bytenr, parent,
+		    root->br_owner, level, -1);
+out:
+	btrfs_extent_buffer_put(eb);
+	return (error);
+}
+
+int
+btrfs_count_tree(struct btrfs_root *root, uint64_t *blocks, uint64_t *refs)
+{
+	*blocks = *refs = 0;
+	return (btrfs_walk_drop(root, root->br_bytenr, root->br_generation,
+	    root->br_level, NULL, 0, 0, blocks, refs));
+}
+
+int
+btrfs_drop_subvolume_tree(struct btrfs_trans_handle *handle,
+    struct btrfs_root *root)
+{
+	uint64_t blocks = 0, refs = 0;
+	int error;
+
+	error = btrfs_walk_drop(root, root->br_bytenr, root->br_generation,
+	    root->br_level, handle, 0, 1, &blocks, &refs);
+	if (error == 0)
+		error = btrfs_walk_drop(root, root->br_bytenr,
+		    root->br_generation, root->br_level, handle, 0,
+		    -1, &blocks, &refs);
+	return (error);
+}
+
+/* As on Linux, a snapshot gets a new root block and shares everything below. */
+int
+btrfs_new_subvolume_root(struct btrfs_trans_handle *handle,
+    struct btrfs_root *root, uint64_t owner, struct btrfs_root_item *item,
+    int snapshot)
+{
+	struct btrfs_extent_buffer *eb, *copy;
+	struct btrfs_header *header;
+	struct btrfs_item *items;
+	struct btrfs_inode_ref *ref;
+	uint64_t bytenr;
+	uint32_t end, nodesize = letoh32(root->br_super->nodesize);
+	int error;
+
+	error = btrfs_extent_buffer_read(root, root->br_bytenr,
+	    root->br_generation, root->br_view_generation,
+	    root->br_level, &eb);
+	if (error != 0)
+		return (error);
+	rw_exit_read(&eb->eb_lock);
+	rw_enter_write(&eb->eb_lock);
+	error = btrfs_extent_buffer_clone(handle, eb, &copy);
+	btrfs_extent_buffer_put(eb);
+	if (error != 0)
+		return (error);
+	header = btrfs_extent_buffer_data_mutable(handle, copy);
+	header->owner = htole64(owner);
+	copy->eb_owner = owner;
+	bytenr = copy->eb_bytenr;
+	if (snapshot) {
+		error = btrfs_block_children(handle, copy, owner, 0, 1);
+		if (error == 0)
+			error = btrfs_delayed_ref_add(handle, bytenr, 0,
+			    owner, copy->eb_level, 1);
+		item->level = copy->eb_level;
+		btrfs_extent_buffer_put(copy);
+		if (error != 0)
+			return (error);
+		goto done;
+	}
+	memset(header + 1, 0, nodesize - sizeof(*header));
+	header->level = 0;
+	header->nritems = htole32(2);
+	copy->eb_level = 0;
+	items = (struct btrfs_item *)(header + 1);
+	end = nodesize - sizeof(*header) - sizeof(item->inode);
+	items[0].key.objectid = htole64(BTRFS_FIRST_FREE_OBJECTID);
+	items[0].key.type = BTRFS_INODE_ITEM_KEY;
+	items[0].offset = htole32(end);
+	items[0].size = htole32(sizeof(item->inode));
+	memcpy((uint8_t *)(header + 1) + end, &item->inode,
+	    sizeof(item->inode));
+	end -= sizeof(*ref) + 2;
+	items[1].key.objectid = items[0].key.objectid;
+	items[1].key.type = BTRFS_INODE_REF_KEY;
+	items[1].key.offset = items[0].key.objectid;
+	items[1].offset = htole32(end);
+	items[1].size = htole32(sizeof(*ref) + 2);
+	ref = (struct btrfs_inode_ref *)((uint8_t *)(header + 1) + end);
+	ref->name_len = htole16(2);
+	memcpy(ref + 1, "..", 2);
+	error = btrfs_delayed_ref_add(handle, bytenr, 0, owner, 0, 1);
+	btrfs_extent_buffer_put(copy);
+	if (error != 0)
+		return (error);
+	item->level = 0;
+	item->bytes_used = htole64(nodesize);
+done:
+	item->bytenr = htole64(bytenr);
+	item->generation = item->generation_v2 =
+	    htole64(handle->bth_transaction->bt_generation);
 	return (0);
 }
 
@@ -464,6 +734,7 @@ btrfs_cow_block(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 	struct btrfs_extent_buffer *source, *cow;
 	struct btrfs_header *parent_header;
 	struct btrfs_key_ptr *ptrs;
+	uint64_t refs, flags;
 	uint32_t nritems;
 	int error;
 
@@ -474,7 +745,9 @@ btrfs_cow_block(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 	source = *ebp;
 	if (trans == NULL || root->br_mount != trans->bt_mount ||
 	    source->eb_mount != trans->bt_mount ||
-	    source->eb_owner != root->br_owner)
+	    (source->eb_owner != root->br_owner &&
+	    !(btrfs_file_tree(root->br_owner) &&
+	    btrfs_file_tree(source->eb_owner))))
 		return (EINVAL);
 	rw_assert_wrlock(root->br_lock);
 	rw_assert_wrlock(&source->eb_lock);
@@ -521,13 +794,38 @@ btrfs_cow_block(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 		return (error);
 
 	/*
-	 * Writable trees use implicit references keyed by root, regardless of
-	 * the block's parent or level.  Parent COW and sibling moves do not
-	 * change these references.  Full/shared backrefs are gated at mount.
-	 * A drop only frees source once its total reference count reaches zero.
+	 * New blocks use implicit references owned by this root. When the
+	 * original owner leaves a shared block, preserve its outgoing edges
+	 * as full backreferences; its implicit edges now belong to the copy.
+	 * Other owners add their own edges. A final full block transfers its
+	 * outgoing edges back to the new owner's implicit representation.
 	 */
-	error = btrfs_delayed_ref_add(handle, cow->eb_bytenr, 0,
-	    root->br_owner, cow->eb_level, 1);
+	if (btrfs_file_tree(root->br_owner)) {
+		error = btrfs_block_refs(handle, source, &refs, &flags);
+		if (error == 0 && refs > 1 &&
+		    source->eb_owner == root->br_owner &&
+		    !(flags & BTRFS_BLOCK_FLAG_FULL_BACKREF)) {
+			error = btrfs_block_children(handle, source,
+			    root->br_owner, 1, 1);
+			if (error == 0)
+				error = btrfs_block_full(handle, source);
+		} else if (error == 0 && (refs > 1 ||
+		    (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF))) {
+			error = btrfs_block_children(handle, cow,
+			    root->br_owner, 0, 1);
+			if (error == 0 && refs == 1)
+				error = btrfs_block_children(handle, source,
+				    root->br_owner, 1, -1);
+		}
+	}
+	if (error == 0) {
+		struct btrfs_header *header =
+		    btrfs_extent_buffer_data_mutable(handle, cow);
+		header->owner = htole64(root->br_owner);
+		cow->eb_owner = root->br_owner;
+		error = btrfs_delayed_ref_add(handle, cow->eb_bytenr, 0,
+		    root->br_owner, cow->eb_level, 1);
+	}
 	if (error == 0)
 		error = btrfs_delayed_ref_add(handle, source->eb_bytenr,
 		    0, root->br_owner, source->eb_level, -1);

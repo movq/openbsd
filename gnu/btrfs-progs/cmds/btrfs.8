@@ -1,0 +1,86 @@
+.\" $OpenBSD$
+.\" Public domain.
+.Dd $Mdocdate: September 6 2026 $
+.Dt BTRFS 8
+.Os
+.Sh NAME
+.Nm btrfs
+.Nd inspect and administer Btrfs filesystems
+.Sh SYNOPSIS
+.Nm
+.Cm subvolume list
+.Ar mountpoint
+.Nm
+.Cm subvolume create
+.Ar mountpoint path
+.Nm
+.Cm subvolume delete
+.Ar mountpoint path
+.Nm
+.Cm subvolume snapshot
+.Op Fl r
+.Ar mountpoint source path
+.Nm
+.Cm inspect-internal
+.Ar command ...
+.Sh DESCRIPTION
+The
+.Nm
+utility inspects Btrfs filesystems and administers their subvolumes.
+Use
+.Fl Fl help
+after a command to display its usage.
+.Pp
+For subvolume commands,
+.Ar mountpoint
+selects a mounted Btrfs filesystem.
+All source and destination paths start at the top-level subvolume (ID 5),
+regardless of which subvolume is mounted there.
+A leading slash is optional.
+Parent components
+.Pq Sq ..
+and symbolic links are not followed.
+The destination parent directory must already exist.
+These commands require superuser privileges and use
+.Pa /dev/btrfs-control .
+.Bl -tag -width "subvolume snapshot"
+.It Cm subvolume list
+List all linked subvolumes in the filesystem, including their IDs,
+parent subvolume IDs, read-only state, and filesystem-relative paths.
+The top-level subvolume is implicit and is not listed.
+.It Cm subvolume create
+Create an empty writable subvolume.
+.It Cm subvolume delete
+Remove the named subvolume and its contents.
+A subvolume with nested subvolumes must have those removed first.
+Mounted subvolumes and subvolumes with active vnodes cannot be deleted.
+.It Cm subvolume snapshot
+Create a writable snapshot of the exact source subvolume.
+The
+.Fl r
+option creates a read-only snapshot.
+Snapshots share metadata and file-data extents with their source;
+later modifications use copy-on-write.
+.El
+.Pp
+For example, if subvolume
+.Pa home
+is mounted at
+.Pa /home ,
+the following creates its sibling snapshot without mounting ID 5:
+.Bd -literal -offset indent
+btrfs subvolume snapshot -r /home home home@monday
+.Ed
+.Sh FILES
+.Bl -tag -width "/dev/btrfs-control"
+.It Pa /dev/btrfs-control
+Filesystem administration device.
+.El
+.Sh SEE ALSO
+.Xr mount_btrfs 8
+.Sh CAVEATS
+Subvolume deletion currently reserves metadata for the complete operation.
+It may fail for lack of metadata space even when deleting the subvolume
+would eventually free enough space.
+Listing is ordered by subvolume ID; concurrent commands can change the
+list between calls.

@@ -39,4 +39,3 @@ DEFINE_UNSUPPORTED(rescue, "rescue");
 DEFINE_UNSUPPORTED(restore, "restore");
 DEFINE_UNSUPPORTED(scrub, "scrub");
 DEFINE_UNSUPPORTED(send, "send");
-DEFINE_UNSUPPORTED(subvolume, "subvolume");

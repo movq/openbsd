@@ -434,6 +434,8 @@ _mkdev(vi, video*, {-M video$U  c major_vi_c $U 600
 __devitem(asc, asc*, ASC Audio device)dnl
 _mkdev(asc, asc*, {-M asc$U major_asc_c 0-})dnl
 __devitem(bio, bio, {-ioctl tunnel pseudo-device-})dnl
+__devitem(btrfs, btrfs-control, Btrfs filesystem control)dnl
+_mkdev(btrfs, btrfs-control, {-M btrfs-control c major_btrfs_c 0 600-})dnl
 _mkdev(bio, bio, {-M bio c major_bio_c 0 600-})dnl
 __devitem(radio, radio*, FM tuner devices)dnl
 _mkdev(radio, radio*, {-M radio$U	c major_radio_c $U

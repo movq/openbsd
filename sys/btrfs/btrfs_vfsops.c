@@ -36,6 +36,7 @@
 #include <sys/specdev.h>
 #include <sys/stat.h>
 #include <sys/vnode.h>
+#include <sys/btrfsio.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -44,11 +45,10 @@ static int	btrfs_mount(struct mount *, const char *, void *,
 static int	btrfs_mountfs(struct vnode *, struct mount *, uint64_t,
 		    struct proc *);
 static int	btrfs_attach_view(struct btrfs_fs *, struct mount *, uint64_t);
+static int	btrfs_ancestor(struct btrfs_fs *, uint64_t, uint64_t, int *);
 static int	btrfs_root_device(struct mount *, struct btrfs_root *);
 static int	btrfs_write_extent_valid(
 		    const struct btrfs_extent_record *, void *);
-static int	btrfs_write_backref_valid(
-		    const struct btrfs_backref_record *, void *);
 static int	btrfs_validate_writable(struct btrfs_fs *);
 static int	btrfs_check_write_orphans(struct btrfs_fs *, int);
 static int	btrfs_start(struct mount *, int, struct proc *);
@@ -81,6 +81,84 @@ static LIST_HEAD(, btrfs_fs) btrfs_filesystems =
     LIST_HEAD_INITIALIZER(btrfs_filesystems);
 static struct mutex btrfs_device_mtx = MUTEX_INITIALIZER(IPL_NONE);
 static unsigned int btrfs_device_minor;
+
+/*
+ * The mount lock pins every view for filesystem-wide administration. Rename
+ * stabilizes path ancestry. The operation locks a visible parent before
+ * closing transaction joins; commit never needs vnode locks.
+ */
+int
+btrfs_control(struct mount *mp, u_long cmd,
+    struct btrfs_ioctl_subvolume *args, struct proc *p)
+{
+	struct btrfs_fs *bmp;
+	int error;
+
+	rw_enter_write(&btrfs_mount_lock);
+	bmp = VFSTOBTRFS(mp);
+	if (cmd != BTRFSIOC_LIST &&
+	    ((mp->mnt_flag & MNT_RDONLY) || bmp->bm_readonly)) {
+		rw_exit_write(&btrfs_mount_lock);
+		return (EROFS);
+	}
+	rw_enter_write(&bmp->bm_rename_lock);
+	error = btrfs_subvolume(bmp, cmd, args, p);
+	rw_exit_write(&bmp->bm_rename_lock);
+	rw_exit_write(&btrfs_mount_lock);
+	return (error);
+}
+
+int
+btrfs_control_parent(struct btrfs_fs *bmp, uint64_t treeid, uint64_t ino,
+    struct vnode **vpp)
+{
+	struct btrfs_mount *view;
+	int error, found;
+
+	*vpp = NULL;
+	LIST_FOREACH(view, &bmp->bm_mounts, bmv_entry) {
+		error = btrfs_ancestor(bmp, treeid, view->bmv_treeid, &found);
+		if (error != 0)
+			return (error);
+		if (!found)
+			continue;
+		if (view->bmv_mount->mnt_flag & MNT_RDONLY)
+			return (EROFS);
+		return (btrfs_vget_tree(view->bmv_mount, treeid, ino, vpp));
+	}
+	return (0);
+}
+
+int
+btrfs_control_busy(struct btrfs_fs *bmp, uint64_t treeid)
+{
+	struct btrfs_mount *view;
+	struct btrfs_node *node;
+	struct vnode *vp;
+	int error, found;
+
+	LIST_FOREACH(view, &bmp->bm_mounts, bmv_entry) {
+		error = btrfs_ancestor(bmp, view->bmv_treeid, treeid, &found);
+		if (error != 0 || found)
+			return (error != 0 ? error : EBUSY);
+	}
+restart:
+	mtx_enter(&bmp->bm_nodemtx);
+	LIST_FOREACH(node, &bmp->bm_nodes, bn_entry) {
+		if (node->bn_treeid != treeid)
+			continue;
+		vp = node->bn_vnode;
+		if (vp->v_usecount != 0 || VOP_ISLOCKED(vp)) {
+			mtx_leave(&bmp->bm_nodemtx);
+			return (EBUSY);
+		}
+		mtx_leave(&bmp->bm_nodemtx);
+		vgone(vp);
+		goto restart;
+	}
+	mtx_leave(&bmp->bm_nodemtx);
+	return (0);
+}
 
 const struct vfsops btrfs_vfsops = {
 	.vfs_mount	= btrfs_mount,
@@ -485,6 +563,11 @@ btrfs_attach_view(struct btrfs_fs *bmp, struct mount *mp, uint64_t treeid)
 static int
 btrfs_write_extent_valid(const struct btrfs_extent_record *extent, void *arg)
 {
+	struct btrfs_fs *bmp = arg;
+	struct btrfs_root *root;
+	struct btrfs_extent_buffer *eb;
+	int error;
+
 	if (extent->ber_legacy) {
 		printf("btrfs: legacy extents are not writable\n");
 		return (EOPNOTSUPP);
@@ -493,19 +576,17 @@ btrfs_write_extent_valid(const struct btrfs_extent_record *extent, void *arg)
 		printf("btrfs: simple-quota owner refs are not writable\n");
 		return (EOPNOTSUPP);
 	}
-	return (0);
-}
-
-static int
-btrfs_write_backref_valid(const struct btrfs_backref_record *backref,
-    void *arg)
-{
-	(void)arg;
-
-	if (backref->bbr_type == BTRFS_SHARED_BLOCK_REF_KEY ||
-	    backref->bbr_type == BTRFS_SHARED_DATA_REF_KEY) {
-		printf("btrfs: shared extents are not writable\n");
-		return (EOPNOTSUPP);
+	/* Only file trees implement the full-reference COW transition. */
+	if (extent->ber_flags & BTRFS_BLOCK_FLAG_FULL_BACKREF) {
+		error = btrfs_get_root(bmp, BTRFS_FS_TREE_OBJECTID, &root);
+		if (error != 0)
+			return (error);
+		error = btrfs_extent_buffer_read(root, extent->ber_bytenr,
+		    extent->ber_generation, letoh64(bmp->bm_super.generation),
+		    extent->ber_level, &eb);
+		if (error != 0)
+			return (error);
+		btrfs_extent_buffer_put(eb);
 	}
 	return (0);
 }
@@ -617,7 +698,7 @@ btrfs_validate_writable(struct btrfs_fs *bmp)
 			return (EOPNOTSUPP);
 	}
 	error = btrfs_iterate_extent_items(bmp,
-	    btrfs_write_extent_valid, btrfs_write_backref_valid, bmp);
+	    btrfs_write_extent_valid, NULL, bmp);
 	if (error != 0)
 		return (error);
 	error = btrfs_iterate_device_extents(bmp, NULL, NULL);
@@ -800,6 +881,8 @@ btrfs_vptofh(struct vnode *vp, struct fid *fhp)
 	struct btrfs_fid *fid = (struct btrfs_fid *)fhp;
 
 	KASSERT(VOP_ISLOCKED(vp));
+	if (node->bn_stub_parent != 0)
+		return (EOPNOTSUPP);
 	if (node->bn_inode.bi_nlink == 0)
 		return (ESTALE);
 	if (node->bn_treeid > UINT32_MAX ||
@@ -861,10 +944,16 @@ btrfs_node_insert(struct btrfs_node *node)
 	mtx_enter(&bmp->bm_nodemtx);
 	LIST_FOREACH(other, &bmp->bm_nodes, bn_entry) {
 		if (other->bn_treeid == node->bn_treeid &&
-		    other->bn_ino == node->bn_ino) {
+		    other->bn_ino == node->bn_ino &&
+		    other->bn_stub_parent == node->bn_stub_parent &&
+		    other->bn_stub_id == node->bn_stub_id) {
 			mtx_leave(&bmp->bm_nodemtx);
 			return (EEXIST);
 		}
+	}
+	if (node->bn_root->br_deleted) {
+		mtx_leave(&bmp->bm_nodemtx);
+		return (ENOENT);
 	}
 	LIST_INSERT_HEAD(&bmp->bm_nodes, node, bn_entry);
 	node->bn_hashed = 1;
@@ -878,6 +967,62 @@ btrfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 	struct btrfs_mount *view = VFSTOBTRFSVIEW(mp);
 
 	return (btrfs_vget_tree(mp, view->bmv_treeid, ino, vpp));
+}
+
+int
+btrfs_vget_stub(struct btrfs_node *dir, uint64_t id, struct vnode **vpp)
+{
+	struct btrfs_fs *bmp = dir->bn_mount;
+	struct btrfs_node *node;
+	struct btrfs_inode inode = { 0 };
+	struct vnode *vp;
+	u_int vpid;
+	int error;
+
+again:
+	mtx_enter(&bmp->bm_nodemtx);
+	LIST_FOREACH(node, &bmp->bm_nodes, bn_entry)
+		if (node->bn_treeid == dir->bn_treeid &&
+		    node->bn_stub_parent == dir->bn_ino && node->bn_stub_id == id)
+			break;
+	if (node != NULL) {
+		vp = node->bn_vnode;
+		vpid = vp->v_id;
+		mtx_leave(&bmp->bm_nodemtx);
+		error = vget(vp, LK_EXCLUSIVE);
+		if (error == ENOENT)
+			goto again;
+		if (error != 0)
+			return (error);
+		if (vp->v_id != vpid) {
+			vput(vp);
+			goto again;
+		}
+		*vpp = vp;
+		return (0);
+	}
+	mtx_leave(&bmp->bm_nodemtx);
+	inode.bi_mode = S_IFDIR | 0555;
+	inode.bi_nlink = 1;
+	inode.bi_flags = BTRFS_INODE_READONLY;
+	inode.bi_generation = dir->bn_root->br_generation;
+	error = btrfs_alloc_node(dir->bn_vnode->v_mount, dir->bn_root, 2,
+	    &inode, &vp);
+	if (error != 0)
+		return (error);
+	node = VTOBTRFS(vp);
+	node->bn_stub_parent = dir->bn_ino;
+	node->bn_stub_id = id;
+	error = btrfs_init_node(&vp);
+	if (error != 0) {
+		vput(vp);
+		vgone(vp);
+		if (error == EEXIST)
+			goto again;
+		return (error);
+	}
+	*vpp = vp;
+	return (0);
 }
 
 int

@@ -354,6 +354,51 @@ def subvol(r):
     finish(r, "subvol")
 
 
+def subvolume(r):
+    r.format()
+    r.mount()
+    r.test("subvolume", "create")
+    r.unmount()
+    r.checks()
+    for mode in ("ro", "rw"):
+        r.mount(mode)
+        r.test("subvolume", "verify")
+        listing = r.vm("btrfs", "subvolume", "list", r.mountpoint, capture=True)
+        latest = re.findall(r"^ID (\d+) top level 5 rw path latest$",
+                            listing, re.MULTILINE)
+        assert len(latest) == 1, listing
+        r.unmount()
+    r.checks()
+    r.mount(tree=int(latest[0]))
+    r.test("subvolume", "child")
+    r.unmount()
+    r.checks()
+    r.mount()
+    for phase in ("final", "boundaries", "race", "abi"):
+        r.test("subvolume", phase)
+    finish(r, verify=None)
+
+
+def subvolume_orphans(r):
+    r.format()
+    r.mount()
+    r.test("subvolume", "orphans")
+    r.unmount()
+    r.checks()
+    r.mount()
+    r.test("subvolume", "orphan_verify")
+    finish(r, verify=None)
+
+
+def subvolume_capacity(r):
+    # The fixed file count must exceed the complete deletion reservation.
+    r.format(size="128M", nodesize=16384, data="single",
+             free_space="extent", block_groups=False)
+    r.mount()
+    r.test("subvolume", "capacity")
+    finish(r, verify=None)
+
+
 def orphan_reject(r, directory=False):
     subvol_seed(r, directory)
     if directory:
@@ -611,6 +656,13 @@ def cases():
         "read-compressed": partial(read_import, compressed=True),
         "read-faults": read_faults,
         "lookup": lookup, "readdir": readdir, "subvol": subvol,
+        "subvolume": subvolume,
+        "subvolume-orphans": subvolume_orphans,
+        "subvolume-zstd": partial(imported, script="subvolume",
+                                  exercise="compressed",
+                                  verify="compressed_verify", compress="zstd",
+                                  subvols=("rw:imported",)),
+        "subvolume-capacity": subvolume_capacity,
         "inline": partial(imported, script="inline", exercise="write"),
         "inline-zstd": partial(imported, script="inline", seed_phase="seed-zstd",
                                exercise="write-zstd", verify="verify-zstd",
