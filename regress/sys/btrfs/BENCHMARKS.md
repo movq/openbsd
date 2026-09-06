@@ -41,3 +41,39 @@ FFS2 passes passed `fsck_ffs -fn`.
 
 Raw timings, output comparisons, and independent filesystem checks are in
 `/home/mike/obj/btrfs-bench-metadata-baseline`.
+
+## Deletion transaction batching
+
+A smaller `bin` + `sbin` archive was measured before and after removing
+unconditional commits from last-close cleanup, starting at `93bca8578a2`.
+It contains 1,003 files and 221 directories, with 14,187,356 bytes of file data.
+Each of three passes per kernel reformatted the 100 GiB scratch disk with
+16 KiB nodes, SINGLE data, DUP metadata, an extent-format free-space tree,
+NO_HOLES, and no separate block-group tree. Extraction and deletion used
+separate `noatime` mounts. Times include deletion's unmount.
+
+| Kernel | Delete seconds, three passes | Median seconds | Generation advances per pass |
+| --- | ---: | ---: | ---: |
+| Before | 10.063 / 10.748 / 10.960 | 10.748 | 2,451 |
+| Batched cleanup | 0.411 / 0.464 / 0.436 | 0.436 | 21 |
+
+The median improves **24.7x**. Previously, every final unlink/rmdir committed
+before cleanup and again after each cleanup batch. Cleanup now commits first
+only when the inode has pending ordered data, and a completed deletion can
+remain in the shared transaction. Intermediate batches and minimum-reserve
+cleanup still commit. Reservation pressure also limits transaction size.
+This result applies to the small corpus; the full source tree has not been
+remeasured.
+
+Every pass passed unmounted `btrfs check --readonly --check-data-csum`,
+metadata-mirror checks, and a read-only remount confirming deletion.
+The archive, raw timings, superblock generations, and check logs
+are in `/home/mike/obj/btrfs-delete-performance`; the host runner is
+`/home/mike/obj/btrfs-delete-bench.py`.
+
+For a short repeat using `benchmark.py`, create an archive with
+`tar -cf small.tar bin sbin`, copy it to the guest, and supply `--delete-only`
+alongside the usual device, mountpoint, `--type`, `--archive`, and `--out`
+arguments. This measures extraction and deletion and skips the other workloads.
+Format the unmounted scratch filesystem before each pass and run independent
+checks afterward, as for the baseline.

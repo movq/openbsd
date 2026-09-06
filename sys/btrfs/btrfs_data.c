@@ -1223,6 +1223,49 @@ btrfs_ordered_extents_finish(struct btrfs_transaction *trans, int committed)
 	return (0);
 }
 
+/*
+ * Raw inode cleanup must not race ordered extent coalescing or leave payloads
+ * referring to deleted mappings. The locked vnode excludes new writes to this
+ * inode; unrelated ordered data does not require a commit before cleanup.
+ */
+int
+btrfs_commit_inode_data(struct btrfs_node *node, struct proc *p)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_transaction *trans;
+	struct btrfs_ordered_extent key = { 0 }, *ordered;
+	uint64_t generation = 0;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	key.boe_treeid = node->bn_treeid;
+	key.boe_objectid = node->bn_ino;
+	mtx_enter(&bmp->bm_trans_mtx);
+	trans = bmp->bm_transaction;
+	if (trans != NULL) {
+		/*
+		 * A committer may already have retired the payloads, but its
+		 * metadata changes and publication must finish before cleanup.
+		 * Commit also reports an aborted transaction's error.
+		 */
+		if (trans->bt_state != BTRFS_TRANS_OPEN)
+			generation = trans->bt_generation;
+		else {
+			mtx_enter(&trans->bt_lock);
+			ordered = RBT_NFIND(btrfs_ordered_tree,
+			    &trans->bt_ordered_extents, &key);
+			if (ordered != NULL &&
+			    ordered->boe_treeid == key.boe_treeid &&
+			    ordered->boe_objectid == key.boe_objectid)
+				generation = trans->bt_generation;
+			mtx_leave(&trans->bt_lock);
+		}
+	}
+	mtx_leave(&bmp->bm_trans_mtx);
+	if (generation == 0)
+		return (0);
+	return (btrfs_trans_commit(bmp, generation, p));
+}
+
 int
 btrfs_read_ordered_sector(struct btrfs_node *node, uint64_t file_offset,
     void *data)

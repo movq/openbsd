@@ -41,8 +41,12 @@ def create(base):
     name.write_bytes(b"new name\n")
     assert name.stat().st_ino != old.st_ino
     os.close(fd)
+    # Final cleanup can remain in the open transaction. Freed allocations
+    # become available only after delayed references and pins are published.
+    os.sync()
     assert os.statvfs(base).f_bavail == available - 1
     os.unlink(name)
+    os.sync()
     assert os.statvfs(base).f_bavail == available
 
     # Inode IDs cannot be reused in the same mount after last-close cleanup.
@@ -70,6 +74,23 @@ def create(base):
     os.close(fd)
     os.mknod(name, stat.S_IFCHR | 0o600, os.makedev(2, 2))
     os.unlink(name)
+
+    # Cleanup of committed mappings alongside unrelated pending writes must
+    # preserve those writes. Pending mappings in the removed inode may start
+    # beyond sector zero; retire them before raw cleanup/coalescing.
+    name.write_bytes(b"C" * 12288)
+    os.sync()
+    other = base / "pending"
+    other.write_bytes(b"P" * 16384)
+    os.unlink(name)
+    fd = os.open(name, os.O_CREAT | os.O_RDWR, 0o600)
+    os.pwrite(fd, b"D" * 12288, 65536)
+    os.unlink(name)
+    assert os.pread(fd, 12288, 65536) == b"D" * 12288
+    os.close(fd)
+    os.sync()
+    assert other.read_bytes() == b"P" * 16384
+    os.unlink(other)
     name.write_bytes(b"survivor\n")
     os.sync()
     assert not os.statvfs(base).f_flag & os.ST_RDONLY

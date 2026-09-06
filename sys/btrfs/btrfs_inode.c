@@ -1799,7 +1799,15 @@ btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
 		end_error = btrfs_trans_end(handle);
 		if (error == 0)
 			error = end_error;
-		if (error == 0)
+		/*
+		 * Publish intermediate batches to bound reservations and
+		 * release pinned space. A completed unlink can share the open
+		 * transaction with later namespace operations; the inode and
+		 * marker disappear atomically when that transaction commits.
+		 * Publish protected-reserve cleanup promptly to replenish it.
+		 */
+		if (error == 0 && (!finished || truncate ||
+		    reservation.btr_reclaim))
 			error = btrfs_trans_commit(bmp, generation, curproc);
 		if (error != 0)
 			return (error);
