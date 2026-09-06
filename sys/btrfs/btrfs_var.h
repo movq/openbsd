@@ -247,6 +247,7 @@ struct btrfs_block_group {
 	uint64_t			 bbg_pinned_bytes;
 	uint64_t			 bbg_excluded_bytes;
 	uint64_t			 bbg_flags;
+	uint8_t				 bbg_removing;
 	/* Scratch fields used only while constructing the mount-time index. */
 	uint64_t			 bbg_build_cursor;
 	uint64_t			 bbg_build_used;
@@ -267,6 +268,7 @@ struct btrfs_pending_chunk {
 	struct btrfs_chunk_map	*chunks;
 	struct btrfs_block_group	**groups;
 	unsigned int		count;
+	struct btrfs_block_group	*removed;
 	uint32_t		system_size;
 	uint8_t			system[sizeof(struct btrfs_key) +
 	    offsetof(struct btrfs_chunk, stripe) +
@@ -323,6 +325,7 @@ struct btrfs_transaction {
 	uint64_t			 bt_pinned_bytes;
 	uint64_t			 bt_bytes_used;
 	uint64_t			 bt_dev_bytes_added;
+	uint64_t			 bt_dev_bytes_removed;
 	struct btrfs_pending_chunk	*bt_new_chunk;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
@@ -532,9 +535,10 @@ struct btrfs_fs {
 	struct rwlock			 bm_chunk_alloc_lock;
 	struct btrfs_chunk_map		*bm_chunks;
 	unsigned int			 bm_nchunks;
-	/* Group objects and their indexes remain stable until teardown. */
+	/* Publication drains handles before removing groups and their indexes. */
 	struct btrfs_block_group		**bm_block_groups;
 	unsigned int			 bm_nblock_groups;
+	uint64_t			 bm_chunk_logical_end;
 	struct btrfs_transaction	*bm_transaction;
 	struct mutex			 bm_trans_mtx;
 	uint64_t			 bm_last_transid;
@@ -603,6 +607,7 @@ int	btrfs_read_logical(const struct btrfs_root *, uint64_t, uint32_t,
 	    struct buf **);
 int	btrfs_write_logical(struct btrfs_fs *, uint64_t, uint32_t, uint64_t,
 	    const void *, struct btrfs_io_result *);
+void	btrfs_invalidate_physical(struct btrfs_fs *, uint64_t, uint64_t);
 int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);

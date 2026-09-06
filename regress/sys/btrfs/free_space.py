@@ -63,7 +63,7 @@ def rewrite(image, mode):
                 "<QBQII", block, 101 + i * 25)
             records.append((start, kind, length,
                             bytes(block[101 + offset:101 + offset + size])))
-        if mode == "bitmap":
+        if mode in ("bitmap", "bitmap-groups"):
             converted = []
             for i, (start, kind, length, payload) in enumerate(records):
                 if kind != 198:
@@ -192,11 +192,12 @@ def reject(device, mountpoint):
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] in ("seed", "exercise"):
         globals()[sys.argv[1]](Path(sys.argv[2]))
-    elif len(sys.argv) == 3 and sys.argv[1] in ("bitmap", "bad-count", "bad-bit"):
+    elif len(sys.argv) == 3 and sys.argv[1] in (
+            "bitmap", "bitmap-groups", "bad-count", "bad-bit"):
         rewrite(sys.argv[2], sys.argv[1])
     elif len(sys.argv) == 4 and sys.argv[1] == "reject":
         reject(*sys.argv[2:])
     else:
         sys.exit(f"usage: {sys.argv[0]} seed|exercise directory\n"
-                 f"       {sys.argv[0]} bitmap|bad-count|bad-bit image\n"
+                 f"       {sys.argv[0]} bitmap|bitmap-groups|bad-count|bad-bit image\n"
                  f"       {sys.argv[0]} reject device mountpoint")

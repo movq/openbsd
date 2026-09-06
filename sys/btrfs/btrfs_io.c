@@ -165,6 +165,29 @@ btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
 	return (error);
 }
 
+void
+btrfs_invalidate_physical(struct btrfs_fs *bmp, uint64_t physical,
+    uint64_t length)
+{
+	struct buf *bp;
+	uint64_t offset;
+	uint32_t sectorsize = letoh32(bmp->bm_super.sectorsize);
+	daddr_t block;
+
+	KASSERT((physical & (sectorsize - 1)) == 0);
+	KASSERT((length & (sectorsize - 1)) == 0);
+	KASSERT(physical <= UINT64_MAX - length);
+	for (offset = 0; offset < length; offset += sectorsize) {
+		block = (physical + offset) / DEV_BSIZE;
+		if (incore(bmp->bm_devvp, block) == NULL)
+			continue;
+		bp = getblk(bmp->bm_devvp, block, sectorsize, 0, INFSLP);
+		KASSERT(!ISSET(bp->b_flags, B_DELWRI));
+		SET(bp->b_flags, B_INVAL);
+		brelse(bp);
+	}
+}
+
 int
 btrfs_write_logical(struct btrfs_fs *bmp,
     uint64_t logical, uint32_t length, uint64_t type_mask,
@@ -174,8 +197,7 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 	struct btrfs_io_map map;
 	struct buf *bp;
 	void *copy;
-	daddr_t block;
-	uint32_t offset, sectorsize;
+	uint32_t sectorsize;
 	unsigned int i;
 	int error, first_error = 0;
 
@@ -215,17 +237,8 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		 * Data reads use sector buffers; writes are always NOCACHE.
 		 */
 		if ((type_mask & BTRFS_BLOCK_GROUP_DATA) &&
-		    length > sectorsize) {
-			for (offset = 0; offset < length; offset += sectorsize) {
-				block = (map.physical[i] + offset) / DEV_BSIZE;
-				if (incore(devvp, block) == NULL)
-					continue;
-				bp = getblk(devvp, block, sectorsize, 0, INFSLP);
-				KASSERT(!ISSET(bp->b_flags, B_DELWRI));
-				SET(bp->b_flags, B_INVAL);
-				brelse(bp);
-			}
-		}
+		    length > sectorsize)
+			btrfs_invalidate_physical(bmp, map.physical[i], length);
 		bp = getblk(devvp, map.physical[i] / DEV_BSIZE, length, 0,
 		    INFSLP);
 		memcpy(bp->b_data, copy, length);

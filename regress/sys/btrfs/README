@@ -79,6 +79,26 @@ Run hold, wait for /tmp/btrfs-chunks-ready, and
 reset the VM to test durability of newly allocated mappings; verify after
 mounting again. Run both independent checkers while unmounted.
 
+reclaim_chunks.py exercises reassignment on a small disposable image (128 MiB
+for SINGLE data, 256 MiB for DUP).
+Run prepare in the VM, unmount, then snapshot image json on the host. Mount and
+run free_data followed by metadata, unmount, check independently, and run
+reassigned image json DATA METADATA to verify returned logical groups and reused
+physical stripes. Use verify_metadata after writable and read-only remounts.
+For the reverse direction use metadata_bounded on a fresh prepared fixture,
+which leaves namespace-removal headroom; snapshot its unmounted layout, then
+run free_metadata and data_again in the VM. Check independently and run
+reassigned image json METADATA DATA, then verify_data after both remount modes.
+The metadata phases sample statfs concurrently with group removal. Repeat with
+4/16 KiB nodes, SINGLE/DUP data, legacy/separate block groups, and bitmap imports.
+For bitmap retirement, unmount after free_data and use free_space.py bitmap-groups
+image to convert a single free-space leaf containing the grown empty groups;
+check independently before continuing. This exercises additional deletion
+reservations for groups containing several bitmap records.
+To check durable retirement before in-memory publication, break first at
+btrfs_free_chunk_items, switch to btrfs_space_publish_chunk, and reset when the
+removal commit stops there. Independently check before remounting.
+
 free_space.py's host `seed directory` phase prepares imported data. Format
 with `mkfs.btrfs --rootdir directory`, then run `bitmap image` while unmounted
 to encode the fresh free-space leaf as bitmaps. Short first bitmaps ensure
