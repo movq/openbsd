@@ -101,7 +101,7 @@ file exceed guest RAM. These are single-process workloads, not concurrency
 or scaling tests, and the two filesystems provide different features and
 durability machinery.
 
-## Interpretation
+## Baseline interpretation
 
 The large-tree results point to substantial kernel CPU overhead. Extraction
 used 146.7 seconds of child system CPU; the first and repeated greps used
@@ -120,7 +120,46 @@ lookups and metadata validation in the sector-sized read path.
 `btrfs_extent_buffer_put()` frees the logical metadata object on its last
 reference; a later lookup can repeat validation of physically cached bytes.
 These observations identify places to investigate, not measured attribution
-of the total runtime. No driver code was changed for this benchmark.
+of the total runtime. No driver code was changed for the baseline.
+
+## Metadata follow-up
+
+After stopping the original run, three changes were measured individually
+on the retained corpus, still with 1 GiB RAM and a remount before each test:
+
+| Cumulative changes | Full-tree chown, including unmount |
+| --- | ---: |
+| Baseline | 265.785 s |
+| Index inode identities with an RB tree | 11.06 s |
+| Also index extent buffers and retain an 8 MiB LRU of validated metadata | 5.27 s |
+| Also replace equal-size item payloads directly in private COW leaves | 3.223 s |
+
+The first short kernel profile showed substantial allocation/free and
+cross-CPU TLB shootdown cost from rebuilding a complete 16 KiB leaf for each
+inode update. The last change avoids that work when the item size is unchanged,
+without changing keys, packed layout, or COW ownership.
+
+Final GENERIC.MP #120 measurements were **3.223 s chown** and **3.348 s chmod**,
+about 82x and 86x faster than the baseline. Their command system CPU times
+were 2.61 s and 2.66 s; final unmounts took 0.121 s and 0.091 s.
+Final chmod changed the modes to 0600/0700; the baseline changed them to
+0644/0755. Both traversals changed the modes of all archive entries.
+All 86,160 files and 7,261 directories were then checked after remount for
+ownership, modes, sizes and executable-file count, outside the timed interval.
+
+These remain approximately 4.1x and 4.4x the baseline FFS2 elapsed times.
+The follow-up profile had 672 of 1,287 chown samples inside transaction commit,
+primarily reached through reservation retry. Further reservation/writeback
+changes were deferred at the user's request to keep this optimization pass
+bounded. Extraction, grep, deletion and sequential I/O were not rebenchmarked.
+
+Validation passed `4k/namespace`, `4k/subvolume`, `16k/subvolume`, and
+`16k/reclaim`, including the runner's independent checks and DUP mirror
+verification. The populated corpus also passed a final
+`btrfs check --readonly --check-data-csum` and verification of all 8,383
+metadata blocks' copies. Temporary dynamic-tracing configuration was removed.
+Profiles, intermediate timings, final results and targeted test logs are
+alongside the baseline artifacts in `/home/mike/obj/btrfs-bench-20260906`.
 
 ## Reproduction
 

@@ -82,6 +82,23 @@ static LIST_HEAD(, btrfs_fs) btrfs_filesystems =
 static struct mutex btrfs_device_mtx = MUTEX_INITIALIZER(IPL_NONE);
 static unsigned int btrfs_device_minor;
 
+static inline int
+btrfs_node_compare(const struct btrfs_node *a, const struct btrfs_node *b)
+{
+	if (a->bn_treeid != b->bn_treeid)
+		return (a->bn_treeid < b->bn_treeid ? -1 : 1);
+	if (a->bn_ino != b->bn_ino)
+		return (a->bn_ino < b->bn_ino ? -1 : 1);
+	if (a->bn_stub_parent != b->bn_stub_parent)
+		return (a->bn_stub_parent < b->bn_stub_parent ? -1 : 1);
+	if (a->bn_stub_id != b->bn_stub_id)
+		return (a->bn_stub_id < b->bn_stub_id ? -1 : 1);
+	return (0);
+}
+
+RBT_GENERATE(btrfs_node_tree, btrfs_node, bn_tree_entry,
+    btrfs_node_compare);
+
 /*
  * The mount lock pins every view for filesystem-wide administration. Rename
  * stabilizes path ancestry. The operation locks a visible parent before
@@ -475,9 +492,11 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
 	    sizeof(bmp->bm_chunk_tree_uuid));
 	btrfs_init_roots(bmp, &bootstrap);
-	LIST_INIT(&bmp->bm_extent_buffers);
+	RBT_INIT(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers);
+	TAILQ_INIT(&bmp->bm_eb_lru);
 	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
 	LIST_INIT(&bmp->bm_nodes);
+	RBT_INIT(btrfs_node_tree, &bmp->bm_node_tree);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);
 	rw_init(&bmp->bm_namespace_lock, "btrfsns");
 	rw_init(&bmp->bm_rename_lock, "btrfsrename");
@@ -523,7 +542,7 @@ out:
 		if (bmp != NULL) {
 			btrfs_trans_destroy(bmp);
 			btrfs_space_destroy(bmp);
-			KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
+			btrfs_extent_buffers_purge(bmp);
 			btrfs_free_roots(bmp);
 			free(bmp->bm_chunks, M_BTRFS,
 			    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
@@ -865,8 +884,9 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	mtx_leave(&bmp->bm_trans_mtx);
 	LIST_REMOVE(bmp, bm_entry);
 	KASSERT(LIST_EMPTY(&bmp->bm_nodes));
+	KASSERT(RBT_EMPTY(btrfs_node_tree, &bmp->bm_node_tree));
 	btrfs_trans_destroy(bmp);
-	KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers));
+	btrfs_extent_buffers_purge(bmp);
 	btrfs_space_destroy(bmp);
 	btrfs_free_roots(bmp);
 
@@ -996,18 +1016,17 @@ static int
 btrfs_node_lookup(struct btrfs_fs *bmp, uint64_t treeid, uint64_t ino,
     struct vnode **vpp)
 {
-	struct btrfs_node *node;
+	struct btrfs_node *node, key = { 0 };
 	struct vnode *vp;
 	u_int vpid;
 	int error;
 
 	*vpp = NULL;
+	key.bn_treeid = treeid;
+	key.bn_ino = ino;
 again:
 	mtx_enter(&bmp->bm_nodemtx);
-	LIST_FOREACH(node, &bmp->bm_nodes, bn_entry) {
-		if (node->bn_treeid == treeid && node->bn_ino == ino)
-			break;
-	}
+	node = RBT_FIND(btrfs_node_tree, &bmp->bm_node_tree, &key);
 	if (node == NULL) {
 		mtx_leave(&bmp->bm_nodemtx);
 		return (0);
@@ -1042,22 +1061,16 @@ static int
 btrfs_node_insert(struct btrfs_node *node)
 {
 	struct btrfs_fs *bmp = node->bn_mount;
-	struct btrfs_node *other;
 
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
 	mtx_enter(&bmp->bm_nodemtx);
-	LIST_FOREACH(other, &bmp->bm_nodes, bn_entry) {
-		if (other->bn_treeid == node->bn_treeid &&
-		    other->bn_ino == node->bn_ino &&
-		    other->bn_stub_parent == node->bn_stub_parent &&
-		    other->bn_stub_id == node->bn_stub_id) {
-			mtx_leave(&bmp->bm_nodemtx);
-			return (EEXIST);
-		}
-	}
 	if (node->bn_root->br_deleted || node->bn_root->br_finalizing) {
 		mtx_leave(&bmp->bm_nodemtx);
 		return (ENOENT);
+	}
+	if (RBT_INSERT(btrfs_node_tree, &bmp->bm_node_tree, node) != NULL) {
+		mtx_leave(&bmp->bm_nodemtx);
+		return (EEXIST);
 	}
 	LIST_INSERT_HEAD(&bmp->bm_nodes, node, bn_entry);
 	node->bn_hashed = 1;
@@ -1077,18 +1090,19 @@ int
 btrfs_vget_stub(struct btrfs_node *dir, uint64_t id, struct vnode **vpp)
 {
 	struct btrfs_fs *bmp = dir->bn_mount;
-	struct btrfs_node *node;
+	struct btrfs_node *node, key = { 0 };
 	struct btrfs_inode inode = { 0 };
 	struct vnode *vp;
 	u_int vpid;
 	int error;
 
+	key.bn_treeid = dir->bn_treeid;
+	key.bn_ino = 2;
+	key.bn_stub_parent = dir->bn_ino;
+	key.bn_stub_id = id;
 again:
 	mtx_enter(&bmp->bm_nodemtx);
-	LIST_FOREACH(node, &bmp->bm_nodes, bn_entry)
-		if (node->bn_treeid == dir->bn_treeid &&
-		    node->bn_stub_parent == dir->bn_ino && node->bn_stub_id == id)
-			break;
+	node = RBT_FIND(btrfs_node_tree, &bmp->bm_node_tree, &key);
 	if (node != NULL) {
 		vp = node->bn_vnode;
 		vpid = vp->v_id;

@@ -214,6 +214,15 @@ and transaction-aware B-tree APIs. Roots are persistent filesystem-owned objects
 readers snapshot their locations; writers retain root locks and COW paths from
 the root downward. Validate against the path's view generation.
 
+Idle validated metadata retains private bytes in a bounded 8 MiB LRU; device
+buffers are released after loading. An address index finds active and cached
+blocks. Hits must match generation, level, and permitted owner, and their
+validated child generations must fit the caller's view. Allocator-authorized
+reuse can evict an idle old generation, never an active reference. Aborted
+blocks are discarded; last-view teardown purges the cache after transactions.
+Inodes use a separate index by tree, inode, and snapshot-boundary identity,
+with publication and removal serialized by the node-cache mutex.
+
 File-tree blocks may retain another subvolume's on-disk owner. Cache identity
 uses logical address, generation, and level; owner validation allows sharing
 only between file trees. New COW blocks have implicit references owned by the
