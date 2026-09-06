@@ -49,6 +49,12 @@ def prepare(base):
 
 
 def free_data(base):
+    # prepare is followed by a remount for the host chunk snapshot. Populate
+    # physical read windows again in the mount that reassigns the allocation.
+    with (base / "data").open("rb") as stream:
+        count = (base / "data").stat().st_size // SECTOR
+        for sector in range(count):
+            assert stream.read(SECTOR) == payload(8, sector)
     os.truncate(base / "data", 0)
     os.sync()
     assert (base / "data").stat().st_blocks == 0

@@ -51,6 +51,27 @@ Run SINGLE/DUP data, then check independently and verify
 after both remount modes. checksums.py also covers clustered submission from
 concurrent vnodes and canceled sectors; chunks.py covers chunk boundaries.
 
+read_cluster.py uses create in a new VM directory, then measure after a cold
+remount to check physical read clustering. OpenBSD input-operation accounting
+also includes one logical file-buffer read per sector. Run small, check
+independently, then verify_small and again after remount to exercise reuse
+between large read windows and sector allocations; use verify_again after
+both remount modes. Repeat with 4/16 KiB nodes, SINGLE/DUP data and bitmap
+free space. Run reclaim_chunks.py too, to exercise cached windows during
+physical data/metadata reassignment.
+For imported allocations larger than MAXBSIZE, use `seed directory` on the
+host and import with --rootdir. Run measure and split at the mountpoint,
+check independently, then verify_split after both remount modes.
+Use seed_compressed with --compress zstd, check disk_compressed while
+unmounted, and run compressed after cold remounts to check multi-sector
+compressed allocations.
+For mirror recovery, use a fresh create fixture with DUP data. Unmount,
+run `damage image journal` on the host, then mount read-only and run faults
+in the VM. It checks recovery from different mirrors of the same window,
+EIO when both copies of a sector are damaged, and buffer-size recovery after
+the sector retry. Unmount and run `repair image journal` before independent
+checks or further clean remounts; measure must pass again afterward.
+
 coalesce.py uses create on a fresh image, then disk while unmounted to verify
 that sequential sectors became larger regular extents. Check independently,
 verify_original after remount, then mutate to exercise partial/interior COW,
