@@ -448,6 +448,37 @@ arrangement. With tree 5 mounted,
 commands/versions, and lexical/symlink escapes. Those phases leave incomplete
 writable test subvolumes intentionally.
 
+reflink.py checks the native range-clone ioctl. `create new-directory`,
+`disk unmounted-image`, `verify directory`, `mutate directory`, and
+`verify_mutated directory` cover ordered source/destination writes, full and
+partial allocation sharing, same-inode clones, explicit and implicit holes,
+partial EOF, cached reads, reference splits, COW, truncation and source removal.
+The runner's `reflink` case performs these phases with independent filesystem,
+checksum and mirror checks and both remount modes. `race new-directory`
+checks reciprocal clones against writes, truncate, sync and rename.
+`views source-root destination-root` uses a read-only source containing
+`source` (created by `stream_seed`) and a writable destination on disjoint
+mounts of the same filesystem; it also checks immutable and append flags.
+
+For imported extent coverage, mount a Linux scratch filesystem with
+`compress=zstd` and run `seed_imported new-directory`, then unmount. This creates
+compressed and inline files, preallocation, NODATASUM files, and a 10 GiB
+regular file sharing 128 MiB of source data. On OpenBSD run `imported directory`;
+unmount and run `disk_imported image` as well as the independent checks.
+`verify_imported directory` works in either VM after remounting.
+`mutate_imported directory` overwrites compressed/NODATASUM source data and
+removes the original sources, including the 10 GiB file; repeat verification
+and independent checks afterward.
+
+For a compact Linux send fixture, create a writable subvolume, run `stream_seed`,
+snapshot it read-only as `full`, run `stream_mutate` on the writable source,
+and snapshot that as `next`. Send `full` and `next` relative to `full`, then
+receive both on OpenBSD. `verify_stream next-directory` checks contents;
+`disk_stream unmounted-image next-tree-id` proves that both parent and
+same-root CLONE commands created shared allocations, including partial EOF.
+Use the four scratch images and their corresponding guest disks explicitly;
+never mount one filesystem in both VMs at once.
+
 send_metadata.py checks metadata-based send without hashing a huge sparse file.
 On a Linux scratch filesystem (4 KiB or 16 KiB nodes, compress=zstd), create
 `work`, run `seed work`, sync, and snapshot it read-only as `full`. Run

@@ -52,6 +52,21 @@ def coalesce(r):
     finish(r, "coalesce", directory)
 
 
+def reflink(r):
+    r.format()
+    directory = r.path("test")
+    r.mount()
+    r.test("reflink", "create", directory)
+    r.unmount()
+    r.checks()
+    r.host_test("reflink", "disk", r.image)
+    r.mount()
+    r.test("reflink", "verify", directory)
+    r.test("reflink", "mutate", directory)
+    r.test("reflink", "race", r.path("race"))
+    finish(r, "reflink", directory, "verify_mutated")
+
+
 def read_cluster(r):
     r.format()
     directory = r.path("test")
@@ -651,6 +666,7 @@ def cases():
         "rename-packed": partial(basic, script="rename", create="packed",
                                   verify=None, extref=False),
         "checksums": checksums, "cluster": cluster, "coalesce": coalesce,
+        "reflink": reflink,
         "read-cluster": read_cluster,
         "read-import": read_import,
         "read-compressed": partial(read_import, compressed=True),

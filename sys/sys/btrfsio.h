@@ -107,4 +107,21 @@ struct btrfs_ioctl_tree {
 };
 #define BTRFSIOC_TREE	_IOWR('B', 10, struct btrfs_ioctl_tree)
 
+/*
+ * Share file data on one filesystem, including across mounted views.
+ * src_fd must be readable and dst_fd writable. Offsets must be sector aligned;
+ * a partial final sector must end at source EOF and at or beyond destination
+ * EOF. Zero length is a no-op. Overlapping ranges of one inode are rejected.
+ * Each extent replacement is atomic; an error may leave a completed prefix
+ * (and sparse growth to dst_offset). Inline source data is copied.
+ */
+struct btrfs_ioctl_clone {
+	int32_t		src_fd;
+	int32_t		dst_fd;
+	uint64_t	src_offset;
+	uint64_t	dst_offset;
+	uint64_t	length;
+};
+#define BTRFSIOC_CLONE	_IOW('B', 11, struct btrfs_ioctl_clone)
+
 #endif

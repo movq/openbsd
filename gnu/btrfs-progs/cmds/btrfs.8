@@ -135,8 +135,10 @@ their extent records rather than their logical size.
 Pathname inventories still require memory proportional to the namespace.
 Clone sources are limited to matching inode identities and file offsets in
 the parent; equal contents in unrelated allocations are sent again.
-CLONE commands are received by copying their contents through ordinary writes;
-they do not yet create shared extents.
+CLONE commands share source data extents, including compressed extent slices.
+Inline source data is copied because it has no separate data allocation.
+Source and destination offsets must be sector aligned; a partial final sector
+must end at source EOF and at or beyond destination EOF.
 Sparse contents are preserved, but some holes may become allocated zero data.
 Linux extended attributes are opaque data on OpenBSD; Linux ACLs and security
 labels do not establish OpenBSD access-control policy.
