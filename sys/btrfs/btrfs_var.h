@@ -431,6 +431,8 @@ struct btrfs_root {
 	/* Maximum metadata generation visible through this root. */
 	uint64_t			 br_view_generation;
 	uint64_t			 br_owner;
+	/* Linux snapshots can retain a nonzero ROOT_ITEM key offset. */
+	uint64_t			 br_root_offset;
 	/* Inode allocation high-water mark; protected by bm_namespace_lock. */
 	uint64_t			 br_last_ino;
 	/* Receive finalization changes flags only with vnode users fenced out. */
@@ -600,6 +602,11 @@ extern const struct vops btrfs_vops;
 struct btrfs_ioctl_subvolume;
 struct btrfs_ioctl_identity;
 struct btrfs_ioctl_xattr;
+struct btrfs_ioctl_tree;
+int	btrfs_tree_control(struct vnode *, struct vnode *,
+	    struct btrfs_ioctl_tree *);
+int	btrfs_read_tree_items(struct btrfs_root *, struct btrfs_root *,
+	    struct btrfs_ioctl_tree *, void *);
 int	btrfs_control_xattr(struct vnode *, u_long,
 	    struct btrfs_ioctl_xattr *, struct proc *);
 int	btrfs_identity_control(struct mount *, u_long,
@@ -648,7 +655,7 @@ void	btrfs_init_roots(struct btrfs_fs *, const struct btrfs_bootstrap *);
 void	btrfs_free_roots(struct btrfs_fs *);
 int	btrfs_get_root(struct btrfs_fs *, uint64_t, struct btrfs_root **);
 int	btrfs_find_root_item(struct btrfs_root *, uint64_t, uint64_t,
-	    struct btrfs_root_item *);
+	    struct btrfs_root_item *, uint64_t *);
 int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 	    uint64_t, uint32_t, struct btrfs_io_map *);
 int	btrfs_lookup_fs_logical(struct btrfs_fs *, uint64_t, uint32_t,

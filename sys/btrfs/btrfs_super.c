@@ -292,7 +292,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	root_tree.br_owner = BTRFS_ROOT_TREE_OBJECTID;
 	root_tree.br_level = sb->root_level;
 	error = btrfs_find_root_item(&root_tree, BTRFS_FS_TREE_OBJECTID,
-	    BTRFS_FIRST_FREE_OBJECTID, &fs_root_item);
+	    BTRFS_FIRST_FREE_OBJECTID, &fs_root_item, NULL);
 	if (error != 0)
 		goto out;
 	error = btrfs_load_root_location(&root_tree,
@@ -1017,7 +1017,7 @@ btrfs_load_root_location(struct btrfs_root *root_tree, uint64_t objectid,
 	int error;
 
 	memset(location, 0, sizeof(*location));
-	error = btrfs_find_root_item(root_tree, objectid, 0, &item);
+	error = btrfs_find_root_item(root_tree, objectid, 0, &item, NULL);
 	if (error != 0)
 		return (error);
 	location->brl_bytenr = letoh64(item.bytenr);
@@ -1028,13 +1028,14 @@ btrfs_load_root_location(struct btrfs_root *root_tree, uint64_t objectid,
 
 int
 btrfs_find_root_item(struct btrfs_root *root, uint64_t objectid,
-    uint64_t root_dirid, struct btrfs_root_item *result)
+    uint64_t root_dirid, struct btrfs_root_item *result, uint64_t *offset)
 {
 	const uint8_t *data;
 	const struct btrfs_root_item *root_item;
 	const struct btrfs_super_block *sb = root->br_super;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key target;
+	const struct btrfs_key *key;
 	uint64_t bytenr, generation;
 	uint32_t refs, sectorsize, size;
 	int error;
@@ -1042,12 +1043,17 @@ btrfs_find_root_item(struct btrfs_root *root, uint64_t objectid,
 	memset(&target, 0, sizeof(target));
 	target.objectid = htole64(objectid);
 	target.type = BTRFS_ROOT_ITEM_KEY;
-	error = btrfs_search_slot(root, &target, &path);
+	target.offset = htole64(UINT64_MAX);
+	error = btrfs_search_predecessor(root, &target, &path);
 	if (error != 0)
 		goto out;
-	error = btrfs_path_item(&path, NULL, &data, &size);
+	error = btrfs_path_item(&path, &key, &data, &size);
 	if (error != 0)
 		goto out;
+	if (key->objectid != target.objectid || key->type != target.type) {
+		error = ENOENT;
+		goto out;
+	}
 	if (size < offsetof(struct btrfs_root_item, generation_v2))
 		goto invalid;
 	root_item = (const struct btrfs_root_item *)data;
@@ -1064,6 +1070,8 @@ btrfs_find_root_item(struct btrfs_root *root, uint64_t objectid,
 
 	memset(result, 0, sizeof(*result));
 	memcpy(result, root_item, MIN(size, sizeof(*result)));
+	if (offset != NULL)
+		*offset = letoh64(key->offset);
 	error = 0;
 	goto out;
 invalid:

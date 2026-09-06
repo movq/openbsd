@@ -27,6 +27,7 @@
 #include <sys/errno.h>
 #include <sys/malloc.h>
 #include <sys/vnode.h>
+#include <sys/btrfsio.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -65,6 +66,224 @@ static int	btrfs_mutate_item(struct btrfs_trans_handle *,
 #define BTRFS_LEAF_REPLACE	2
 #define BTRFS_LEAF_DELETE	3
 #define BTRFS_SPLIT_MAX_RIGHTS	2
+
+/*
+ * Snapshot inspection uses immutable roots pinned by directory descriptors.
+ * The control mount lock excludes deletion/finalization. No transaction,
+ * vnode lock, or tree buffer survives an ioctl or a userspace write.
+ */
+struct btrfs_tree_reader {
+	struct btrfs_ioctl_tree *args;
+	struct btrfs_root *parent;
+	struct btrfs_key min, max;
+	uint8_t *buffer;
+	uint32_t capacity;
+};
+
+static void
+btrfs_tree_export_key(struct btrfs_tree_key *to, const struct btrfs_key *from)
+{
+	memset(to, 0, sizeof(*to));
+	to->objectid = letoh64(from->objectid);
+	to->type = from->type;
+	to->offset = letoh64(from->offset);
+}
+
+/*
+ * Find the corresponding parent pointer at this level, even when root
+ * heights or child slot numbers differ. Compare addresses AND generations
+ * before reading the shared child. Paths validate child key boundaries.
+ */
+static int
+btrfs_tree_shared(struct btrfs_tree_reader *r, const struct btrfs_key *key,
+    uint64_t bytenr, uint64_t gen, uint8_t level, int *shared)
+{
+	struct btrfs_root *root = r->parent;
+	struct btrfs_path path = { 0 };
+	const struct btrfs_header *header;
+	const struct btrfs_key_ptr *ptr;
+	uint32_t lo, hi, mid, slot;
+	uint8_t l;
+	int error = 0;
+
+	*shared = 0;
+	if (root == NULL || root->br_level < level)
+		return (0);
+	if (root->br_level == level) {
+		*shared = root->br_bytenr == bytenr &&
+		    root->br_generation == gen;
+		return (0);
+	}
+	path.bp_root = root;
+	path.bp_level = l = root->br_level;
+	path.bp_view_generation = root->br_view_generation;
+	r->args->blocks++;
+	error = btrfs_extent_buffer_read(root, root->br_bytenr,
+	    root->br_generation, root->br_view_generation, l, &path.bp_eb[l]);
+	if (error != 0)
+		goto out;
+	while (l > level) {
+		header = btrfs_extent_buffer_data(path.bp_eb[l]);
+		ptr = (const struct btrfs_key_ptr *)(header + 1);
+		lo = 0;
+		hi = letoh32(header->nritems);
+		if (hi == 0) {
+			error = EINVAL;
+			goto out;
+		}
+		while (lo < hi) {
+			mid = lo + (hi - lo) / 2;
+			if (btrfs_key_cmp(&ptr[mid].key, key) <= 0)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		slot = lo ? lo - 1 : 0;
+		path.bp_slot[l] = slot;
+		if (l == level + 1) {
+			*shared = letoh64(ptr[slot].blockptr) == bytenr &&
+			    letoh64(ptr[slot].generation) == gen;
+			break;
+		}
+		r->args->blocks++;
+		error = btrfs_read_child(&path, l, slot, &path.bp_eb[l - 1]);
+		if (error != 0)
+			break;
+		l--;
+	}
+out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+static int
+btrfs_tree_read_block(struct btrfs_tree_reader *r, struct btrfs_path *path,
+    uint8_t level)
+{
+	struct btrfs_ioctl_tree *args = r->args;
+	struct btrfs_path old = { 0 };
+	const struct btrfs_header *header;
+	const struct btrfs_key_ptr *ptr;
+	const struct btrfs_item *items;
+	const struct btrfs_key *key;
+	const uint8_t *data, *previous;
+	struct btrfs_tree_item record;
+	uint32_t i, n, size, oldsize, bytes;
+	int error = 0, shared;
+
+	header = btrfs_extent_buffer_data(path->bp_eb[level]);
+	n = letoh32(header->nritems);
+	ptr = (const struct btrfs_key_ptr *)(header + 1);
+	items = (const struct btrfs_item *)(header + 1);
+	for (i = 0; i < n; i++) {
+		key = btrfs_block_key(header, i);
+		if (btrfs_key_cmp(key, &r->max) > 0)
+			break;
+		if (level != 0) {
+			if (i + 1 < n &&
+			    btrfs_key_cmp(&ptr[i + 1].key, &r->min) <= 0)
+				continue;
+			error = btrfs_tree_shared(r, key,
+			    letoh64(ptr[i].blockptr), letoh64(ptr[i].generation),
+			    level - 1, &shared);
+			if (error != 0)
+				break;
+			if (shared) {
+				args->shared++;
+				continue;
+			}
+			path->bp_slot[level] = i;
+			args->blocks++;
+			error = btrfs_read_child(path, level, i,
+			    &path->bp_eb[level - 1]);
+			if (error != 0)
+				break;
+			error = btrfs_tree_read_block(r, path, level - 1);
+			btrfs_extent_buffer_put(path->bp_eb[level - 1]);
+			path->bp_eb[level - 1] = NULL;
+			if (error != 0)
+				break;
+			continue;
+		}
+		if (btrfs_key_cmp(key, &r->min) < 0)
+			continue;
+		args->items++;
+		size = letoh32(items[i].size);
+		data = (const uint8_t *)(header + 1) +
+		    letoh32(items[i].offset);
+		if (r->parent != NULL) {
+			error = btrfs_search_slot(r->parent, key, &old);
+			args->blocks += r->parent->br_level + 1;
+			shared = 0;
+			if (error == 0) {
+				error = btrfs_path_item(&old, NULL, &previous,
+				    &oldsize);
+				if (error == 0)
+					shared = size == oldsize &&
+					    memcmp(data, previous, size) == 0;
+			} else if (error == ENOENT)
+				error = 0;
+			btrfs_release_path(&old);
+			if (error != 0)
+				break;
+			if (shared)
+				continue;
+		}
+		memset(&record, 0, sizeof(record));
+		btrfs_tree_export_key(&record.key, key);
+		record.size = args->flags & BTRFS_TREE_KEYS ? 0 : size;
+		bytes = roundup(sizeof(record) + record.size, 8);
+		if (bytes > r->capacity - args->size) {
+			args->min = record.key;
+			args->done = 0;
+			return (args->size == 0 ? ENOBUFS : EAGAIN);
+		}
+		memcpy(r->buffer + args->size, &record, sizeof(record));
+		memcpy(r->buffer + args->size + sizeof(record), data, record.size);
+		args->size += bytes;
+	}
+	return (error);
+}
+
+int
+btrfs_read_tree_items(struct btrfs_root *root, struct btrfs_root *parent,
+    struct btrfs_ioctl_tree *args, void *buffer)
+{
+	struct btrfs_tree_reader r = { .args = args, .parent = parent,
+	    .buffer = buffer, .capacity = args->size };
+	struct btrfs_path path = { 0 };
+	int error;
+
+	r.min.objectid = htole64(args->min.objectid);
+	r.min.type = args->min.type;
+	r.min.offset = htole64(args->min.offset);
+	r.max.objectid = htole64(args->max.objectid);
+	r.max.type = args->max.type;
+	r.max.offset = htole64(args->max.offset);
+	if (btrfs_key_cmp(&r.min, &r.max) > 0)
+		return (EINVAL);
+	args->size = 0;
+	args->blocks = args->shared = args->items = 0;
+	args->done = 1;
+	args->sectorsize = letoh32(root->br_super->sectorsize);
+	if (parent != NULL && root->br_level == parent->br_level &&
+	    root->br_bytenr == parent->br_bytenr &&
+	    root->br_generation == parent->br_generation) {
+		args->shared++;
+		return (0);
+	}
+	path.bp_root = root;
+	path.bp_level = root->br_level;
+	path.bp_view_generation = root->br_view_generation;
+	args->blocks++;
+	error = btrfs_extent_buffer_read(root, root->br_bytenr,
+	    root->br_generation, root->br_view_generation, root->br_level,
+	    &path.bp_eb[root->br_level]);
+	if (error == 0)
+		error = btrfs_tree_read_block(&r, &path, root->br_level);
+	btrfs_release_path(&path);
+	return (error == EAGAIN ? 0 : error);
+}
 
 static void
 btrfs_root_init(struct btrfs_fs *bmp, struct btrfs_root *root,
@@ -260,6 +479,7 @@ btrfs_update_dirty_root_items(struct btrfs_trans_handle *handle)
 		memset(&key, 0, sizeof(key));
 		key.objectid = htole64(root->br_owner);
 		key.type = BTRFS_ROOT_ITEM_KEY;
+		key.offset = htole64(root->br_root_offset);
 		error = btrfs_search_slot(root_tree, &key, &path);
 		if (error != 0)
 			goto out;
@@ -301,6 +521,7 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	struct btrfs_root_location location;
 	struct btrfs_root_entry *entry, *new;
 	struct btrfs_root *root, *root_tree;
+	uint64_t offset;
 	int error;
 
 	*rootp = NULL;
@@ -315,7 +536,7 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	root_tree = btrfs_root_lookup(bmp, BTRFS_ROOT_TREE_OBJECTID);
 	KASSERT(root_tree != NULL);
 	error = btrfs_find_root_item(root_tree, owner,
-	    btrfs_file_tree(owner) ? BTRFS_FIRST_FREE_OBJECTID : 0, &item);
+	    btrfs_file_tree(owner) ? BTRFS_FIRST_FREE_OBJECTID : 0, &item, &offset);
 	if (error != 0)
 		return (error);
 	location.brl_bytenr = letoh64(item.bytenr);
@@ -327,6 +548,7 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	btrfs_root_init(bmp, &new->bre_root, &new->bre_lock, owner,
 	    &location);
 	new->bre_root.br_flags = letoh64(item.flags);
+	new->bre_root.br_root_offset = offset;
 	mtx_enter(&bmp->bm_rootmtx);
 	LIST_FOREACH(entry, &bmp->bm_roots, bre_entry) {
 		if (entry->bre_root.br_owner == owner)

@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include "common/help.h"
 #include "common/messages.h"
+#include "common/send-stream.h"
 #include "crypto/crc32c.h"
 #include "kernel-shared/send.h"
 #include "cmds/commands.h"
@@ -20,6 +21,7 @@ struct entry {
 	char *path;
 	struct stat st;
 	int keep;
+	int changed;
 };
 struct inventory {
 	struct entry *entries;
@@ -36,6 +38,95 @@ struct sender {
 	int fd;
 	int error;
 };
+
+struct tree_reader {
+	struct btrfs_ioctl_tree args;
+	unsigned char buffer[BTRFS_TREE_BUFSIZE];
+	size_t pos;
+};
+
+static void
+tree_reader_init(struct tree_reader *r, int fd, int parent, uint64_t ino)
+{
+	memset(r, 0, sizeof(*r));
+	r->args.fd = fd;
+	r->args.parent_fd = parent;
+	r->args.buffer = r->buffer;
+	r->args.max.objectid = UINT64_MAX;
+	r->args.max.type = 255;
+	r->args.max.offset = UINT64_MAX;
+	if (ino) {
+		r->args.min.objectid = r->args.max.objectid = ino;
+		r->args.min.type = r->args.max.type = BTRFS_EXTENT_DATA_KEY;
+	}
+}
+
+/* Returned storage remains valid until the next call. */
+static int
+tree_reader_next(struct sender *s, struct tree_reader *r,
+    struct btrfs_tree_item **item)
+{
+	size_t bytes;
+	if (btrfs_send_stream_cancelled)
+		return -EINTR;
+	while (r->pos == r->args.size) {
+		if (r->args.done)
+			return 0;
+		r->args.size = sizeof(r->buffer);
+		if (ioctl(s->fs->control, BTRFSIOC_TREE, &r->args) == -1)
+			return -errno;
+		r->pos = 0;
+	}
+	if (r->args.size - r->pos < sizeof(**item))
+		return -EIO;
+	*item = (void *)(r->buffer + r->pos);
+	bytes = (sizeof(**item) + (*item)->size + 7) & ~(size_t)7;
+	if (bytes > r->args.size - r->pos)
+		return -EIO;
+	r->pos += bytes;
+	return 1;
+}
+
+/*
+ * Mark both additions/changes and deletions. Names still use the namespace
+ * inventory, but unchanged inodes need no extent or xattr enumeration.
+ */
+static int
+inventory_changes(struct sender *s)
+{
+	struct tree_reader *r;
+	struct btrfs_tree_item *item;
+	size_t lo, hi, mid;
+	int pass, ret = 0;
+
+	r = malloc(sizeof(*r));
+	if (!r)
+		return -ENOMEM;
+	for (pass = 0; pass < 2; pass++) {
+		tree_reader_init(r, pass ? s->parent.fd : s->root.fd,
+		    pass ? s->root.fd : s->parent.fd, 0);
+		r->args.flags = BTRFS_TREE_KEYS;
+		while ((ret = tree_reader_next(s, r, &item)) > 0) {
+			lo = 0;
+			hi = s->current.count;
+			while (lo < hi) {
+				mid = lo + (hi - lo) / 2;
+				if (s->current.inodes[mid]->st.st_ino <
+				    item->key.objectid)
+					lo = mid + 1;
+				else
+					hi = mid;
+			}
+			while (lo < s->current.count &&
+			    s->current.inodes[lo]->st.st_ino == item->key.objectid)
+				s->current.inodes[lo++]->changed = 1;
+		}
+		if (ret < 0)
+			break;
+	}
+	free(r);
+	return ret;
+}
 
 static int
 entry_path_cmp(const void *a, const void *b)
@@ -359,48 +450,155 @@ send_xattrs(struct sender *s, struct entry *entry)
 	return 0;
 }
 
+struct extent_reader {
+	struct tree_reader tree;
+	struct btrfs_tree_item *item;
+	struct btrfs_file_extent_item *fi;
+	uint64_t start, end, size;
+};
+
+/*
+ * Return a data mapping or a hole and its next boundary. Preallocation,
+ * explicit holes, absent NO_HOLES items, and space past EOF all read as zero.
+ * Iterators retain only one bounded batch each, even for fragmented files.
+ */
+static int
+extent_at(struct sender *s, struct extent_reader *r, uint64_t pos,
+    uint64_t *end, int *hole)
+{
+	uint64_t length;
+	int ret;
+
+	*hole = 1;
+	*end = UINT64_MAX;
+	if (pos >= r->size)
+		return 0;
+	while (r->end <= pos) {
+		ret = tree_reader_next(s, &r->tree, &r->item);
+		if (ret < 0)
+			return ret;
+		if (!ret) {
+			r->fi = NULL;
+			r->end = UINT64_MAX;
+			break;
+		}
+		if (r->item->size < offsetof(struct btrfs_file_extent_item,
+		    disk_bytenr))
+			return -EIO;
+		r->fi = (void *)(r->item + 1);
+		r->start = r->item->key.offset;
+		if (r->start < r->end)
+			return -EIO;
+		if (r->fi->type == BTRFS_FILE_EXTENT_INLINE) {
+			if (r->start != 0)
+				return -EIO;
+			length = le64_to_cpu(r->fi->ram_bytes);
+		} else {
+			if (r->item->size != sizeof(*r->fi) ||
+			    (r->fi->type != BTRFS_FILE_EXTENT_REG &&
+			    r->fi->type != BTRFS_FILE_EXTENT_PREALLOC))
+				return -EIO;
+			length = le64_to_cpu(r->fi->num_bytes);
+			if (le64_to_cpu(r->fi->offset) > UINT64_MAX - length)
+				return -EIO;
+		}
+		if (!length || length > UINT64_MAX - r->start)
+			return -EIO;
+		r->end = r->start + length;
+	}
+	*end = MIN(r->end, r->size);
+	if (r->fi && pos < r->start)
+		*end = MIN(r->start, r->size);
+	else if (r->fi)
+		*hole = r->fi->type == BTRFS_FILE_EXTENT_PREALLOC ||
+		    (r->fi->type == BTRFS_FILE_EXTENT_REG &&
+		    r->fi->disk_bytenr == 0);
+	return 0;
+}
+
+static int
+extent_equal(struct extent_reader *a, struct extent_reader *b, uint64_t pos)
+{
+	struct btrfs_file_extent_item *x = a->fi, *y = b->fi;
+	if (x->type != y->type)
+		return 0;
+	if (x->type == BTRFS_FILE_EXTENT_INLINE)
+		return a->item->size == b->item->size &&
+		    !memcmp(x, y, a->item->size);
+	return x->disk_bytenr == y->disk_bytenr &&
+	    x->disk_num_bytes == y->disk_num_bytes &&
+	    x->ram_bytes == y->ram_bytes &&
+	    x->compression == y->compression && x->encryption == y->encryption &&
+	    x->other_encoding == y->other_encoding &&
+	    le64_to_cpu(x->offset) + pos - a->start ==
+	    le64_to_cpu(y->offset) + pos - b->start;
+}
+
 static int
 send_data(struct sender *s, struct entry *entry)
 {
 	struct entry *old = find_inode(&s->old, entry);
-	unsigned char data[32768], previous[32768], zeros[32768] = { 0 };
-	uint64_t offset, size = entry->st.st_size;
-	size_t len;
-	int fd, parent = -1, ret = 0, equal;
+	struct extent_reader *a, *b;
+	unsigned char data[32768];
+	uint64_t offset, end, oldend, len, sector, size = entry->st.st_size;
+	int fd = -1, ret = 0, hole, oldhole, equal;
 
-	fd = stream_open_file(s->root.fd, entry->path, O_RDONLY);
-	if (fd < 0)
-		return fd;
-	if (old && S_ISREG(old->st.st_mode)) {
-		parent = stream_open_file(s->parent.fd, old->path, O_RDONLY);
-		if (parent < 0) {
-			ret = parent;
-			goto out;
-		}
+	if (entry->keep && !entry->changed && s->parent.fd != -1)
+		return 0;
+	if (old && !S_ISREG(old->st.st_mode))
+		old = NULL;
+	a = calloc(2, sizeof(*a));
+	if (!a)
+		return -ENOMEM;
+	b = a + 1;
+	tree_reader_init(&a->tree, s->root.fd, -1, entry->st.st_ino);
+	a->size = size;
+	if (old) {
+		tree_reader_init(&b->tree, s->parent.fd, -1, old->st.st_ino);
+		b->size = old->st.st_size;
 	}
 	for (offset = 0; offset < size; offset += len) {
-		len = MIN(sizeof(data), size - offset);
-		ret = stream_pread(fd, data, len, offset);
+		ret = extent_at(s, a, offset, &end, &hole);
+		if (!ret)
+			ret = extent_at(s, b, offset, &oldend, &oldhole);
 		if (ret)
 			break;
-		equal = 0;
-		if (parent >= 0) {
-			size_t available = offset < (uint64_t)old->st.st_size ?
-			    MIN(len, (uint64_t)old->st.st_size - offset) : 0;
-			memset(previous, 0, len);
-			ret = stream_pread(parent, previous, available, offset);
-			if (ret)
-				break;
-			equal = !memcmp(data, previous, len);
-		}
-		if ((equal && entry->keep) ||
-		    (!entry->keep && !memcmp(data, zeros, len)))
+		sector = a->tree.args.sectorsize;
+		len = MIN(end, oldend) - offset;
+		equal = hole ? oldhole :
+		    (!oldhole && extent_equal(a, b, offset));
+		if ((equal && entry->keep) || (hole && !entry->keep))
 			continue;
-		/* Linux clone ranges must be sector aligned, except source EOF.
-		 * WRITE handles a shortened target's final partial sector. */
-		if (equal && (offset + len > (uint64_t)old->st.st_size ||
-		    (len % 4096 && offset + len != (uint64_t)old->st.st_size)))
-			equal = 0;
+		/*
+		 * Linux requires aligned clone starts and lengths, except source
+		 * EOF. Inline data cannot be reflinked. Split off a partial tail
+		 * and WRITE it if the target is shorter than the clone source.
+		 */
+		equal = equal && !hole && a->fi->type == BTRFS_FILE_EXTENT_REG &&
+		    offset % sector == 0;
+		if (equal && len % sector && offset + len != b->size) {
+			if (len >= sector)
+				len -= len % sector;
+			else
+				equal = 0;
+		}
+		if (!equal) {
+			len = MIN(len, sizeof(data));
+			if (hole)
+				memset(data, 0, len);
+			else {
+				if (fd == -1)
+					fd = stream_open_file(s->root.fd,
+					    entry->path, O_RDONLY);
+				if (fd < 0) {
+					ret = fd;
+					break;
+				}
+				ret = stream_pread(fd, data, len, offset);
+				if (ret)
+					break;
+			}
+		}
 		start_cmd(s, equal ? BTRFS_SEND_C_CLONE : BTRFS_SEND_C_WRITE);
 		attr_path(s, BTRFS_SEND_A_PATH, entry->path);
 		attr_u64(s, BTRFS_SEND_A_FILE_OFFSET, offset);
@@ -423,10 +621,9 @@ send_data(struct sender *s, struct entry *entry)
 		    BTRFS_SEND_A_SIZE, size);
 		ret = s->error;
 	}
-out:
-	close(fd);
-	if (parent >= 0)
-		close(parent);
+	if (fd != -1)
+		close(fd);
+	free(a);
 	return ret;
 }
 
@@ -535,6 +732,8 @@ send_changes(struct sender *s)
 			if (ret)
 				return ret;
 		}
+		if (canonical->keep && !canonical->changed && s->parent.fd != -1)
+			continue;
 		ret = send_xattrs(s, canonical);
 		if (ret)
 			return ret;
@@ -616,6 +815,11 @@ cmd_send(const struct cmd_struct *cmd, int argc, char **argv)
 	ret = inventory_load(&s.current, s.root.fd);
 	if (ret)
 		goto out;
+	if (parent) {
+		ret = inventory_changes(&s);
+		if (ret)
+			goto out;
+	}
 	if (file) {
 		s.fd = open(file, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 		if (s.fd == -1) {
