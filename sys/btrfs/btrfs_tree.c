@@ -1423,9 +1423,8 @@ fail:
 }
 
 /*
- * Rebuild the leaf rather than moving packed payloads in place.  Besides
- * making overlap impossible, this compacts all payloads and zeros unused
- * bytes before the metadata block is written.
+ * Size changes rebuild and compact the leaf, zeroing unused bytes. Equal-size
+ * replacements preserve its layout and update only the private COW payload.
  */
 static int
 btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
@@ -1470,6 +1469,18 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 
 	items = (struct btrfs_item *)(header + 1);
 	base = (uint8_t *)(header + 1);
+	if (operation == BTRFS_LEAF_REPLACE && slot < nritems &&
+	    letoh32(items[slot].size) == size) {
+		if (btrfs_key_cmp(&items[slot].key, key) != 0)
+			return (ENOENT);
+		offset = letoh32(items[slot].offset);
+		if (offset < nritems * sizeof(*items) ||
+		    offset > capacity || size > capacity - offset)
+			return (EINVAL);
+		if (size != 0)
+			memmove(base + offset, data, size);
+		return (0);
+	}
 	payload_bytes = 0;
 	payload_end = capacity;
 	for (i = 0; i < nritems; i++) {

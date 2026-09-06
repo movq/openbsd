@@ -2311,6 +2311,7 @@ btrfs_reclaim(void *v)
 
 	if (node->bn_hashed) {
 		mtx_enter(&bmp->bm_nodemtx);
+		RBT_REMOVE(btrfs_node_tree, &bmp->bm_node_tree, node);
 		LIST_REMOVE(node, bn_entry);
 		node->bn_hashed = 0;
 		mtx_leave(&bmp->bm_nodemtx);

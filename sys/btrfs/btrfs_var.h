@@ -414,8 +414,10 @@ struct btrfs_root_entry;
 struct proc;
 struct statfs;
 struct vnode;
-LIST_HEAD(btrfs_extent_buffer_list, btrfs_extent_buffer);
+RBT_HEAD(btrfs_extent_buffer_tree, btrfs_extent_buffer);
+TAILQ_HEAD(btrfs_extent_buffer_lru, btrfs_extent_buffer);
 LIST_HEAD(btrfs_node_list, btrfs_node);
+RBT_HEAD(btrfs_node_tree, btrfs_node);
 LIST_HEAD(btrfs_root_list, btrfs_root_entry);
 
 struct btrfs_root {
@@ -452,7 +454,8 @@ struct btrfs_root_entry {
 };
 
 struct btrfs_extent_buffer {
-	LIST_ENTRY(btrfs_extent_buffer)	 eb_entry;
+	RBT_ENTRY(btrfs_extent_buffer)	 eb_entry;
+	TAILQ_ENTRY(btrfs_extent_buffer)	 eb_lru;
 	TAILQ_ENTRY(btrfs_extent_buffer) eb_dirty_entry;
 	struct btrfs_fs			*eb_mount;
 	struct btrfs_transaction	*eb_transaction;
@@ -461,6 +464,8 @@ struct btrfs_extent_buffer {
 	struct rwlock			 eb_lock;
 	uint64_t			 eb_bytenr;
 	uint64_t			 eb_generation;
+	/* Largest generation validated in this block or its child pointers. */
+	uint64_t			 eb_max_generation;
 	uint64_t			 eb_owner;
 	unsigned int			 eb_refs;
 	int				 eb_error;
@@ -471,6 +476,8 @@ struct btrfs_extent_buffer {
 	uint8_t				 eb_written;
 	uint8_t				 eb_stale;
 };
+RBT_PROTOTYPE(btrfs_extent_buffer_tree, btrfs_extent_buffer, eb_entry,
+    btrfs_extent_buffer_compare);
 
 struct btrfs_path {
 	struct btrfs_root	*bp_root;
@@ -568,9 +575,13 @@ struct btrfs_fs {
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
 	struct btrfs_root_list		 bm_roots;
 	struct mutex			 bm_rootmtx;
-	struct btrfs_extent_buffer_list	 bm_extent_buffers;
+	struct btrfs_extent_buffer_tree	 bm_extent_buffers;
+	/* Idle, validated metadata owns private bytes, never busy device buffers. */
+	struct btrfs_extent_buffer_lru	 bm_eb_lru;
+	unsigned int			 bm_eb_cached;
 	struct mutex			 bm_ebmtx;
 	struct btrfs_node_list		 bm_nodes;
+	struct btrfs_node_tree		 bm_node_tree;
 	struct mutex			 bm_nodemtx;
 	/* Serializes namespace allocation across parent directories. */
 	struct rwlock			 bm_namespace_lock;
@@ -580,6 +591,7 @@ struct btrfs_fs {
 
 struct btrfs_node {
 	LIST_ENTRY(btrfs_node)		 bn_entry;
+	RBT_ENTRY(btrfs_node)		 bn_tree_entry;
 	struct vnode			*bn_vnode;
 	struct btrfs_fs			*bn_mount;
 	struct btrfs_root		*bn_root;
@@ -593,6 +605,8 @@ struct btrfs_node {
 	int				 bn_hashed;
 	struct btrfs_inode		 bn_inode;
 };
+RBT_PROTOTYPE(btrfs_node_tree, btrfs_node, bn_tree_entry,
+    btrfs_node_compare);
 
 #define VFSTOBTRFSVIEW(mp) ((struct btrfs_mount *)(mp)->mnt_data)
 #define VFSTOBTRFS(mp)	(VFSTOBTRFSVIEW(mp)->bmv_fs)
@@ -682,6 +696,7 @@ const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
 void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
 	    struct btrfs_extent_buffer *);
 void	btrfs_extent_buffer_put(struct btrfs_extent_buffer *);
+void	btrfs_extent_buffers_purge(struct btrfs_fs *);
 int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
 int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_ref_add(struct btrfs_trans_handle *, uint64_t,
