@@ -261,7 +261,8 @@ struct btrfs_trans_reservation {
 	int		btr_chunk;
 };
 
-#define BTRFS_RECLAIM_METADATA_BLOCKS	128
+/* Covers namespace removal as well as a minimum range-cleanup batch. */
+#define BTRFS_RECLAIM_METADATA_BLOCKS	160
 #define BTRFS_CHUNK_SYSTEM_BLOCKS		64
 
 struct btrfs_pending_chunk {

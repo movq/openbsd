@@ -154,10 +154,11 @@ def capacity(base):
     (base / "empty").mkdir()
     sync(base)
     enospc.main(str(base / "full"))
-    denied(errno.ENOSPC, base / "empty")
+    os.rmdir(base / "empty")
+    assert not (base / "empty").exists()
     sync(base)
     assert not os.statvfs(base).f_flag & os.ST_RDONLY
-    print("rmdir reservation exhaustion passed", flush=True)
+    print("protected rmdir at metadata exhaustion passed", flush=True)
 
 
 if __name__ == "__main__":

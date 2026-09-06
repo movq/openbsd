@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Remove nonfinal links, preserving inode identity and packed neighbors."""
 import errno
+import mmap
 import os
 from pathlib import Path
 import select
@@ -179,19 +180,69 @@ def capacity(base):
     base.mkdir()
     (base / "keep").write_bytes(b"capacity\n")
     os.link(base / "keep", base / "alias")
+    for name in COLLISIONS:
+        os.link(base / "keep", base / name)
+    names = [f"{i:04d}-" + "n" * 240 for i in range(260)]
+    for name in names:
+        os.link(base / "keep", base / name)
+    data = b"open after removal\n" * 4096
+    (base / "final").write_bytes(data)
+    (base / "pressure").touch()
+    (base / "empty").mkdir()
+    fd = os.open(base / "final", os.O_RDONLY)
+    mapped = mmap.mmap(fd, len(data), access=mmap.ACCESS_READ)
     sync(base)
     enospc.main(str(base / "full"))
-    # Creation and deletion use the same metadata reservation. Exhaustion
-    # must reject the deletion before any namespace or inode mutation.
-    denied(errno.ENOSPC, base / "alias")
-    assert os.stat(base / "keep").st_nlink == 2
+    # Consume the smaller write reservation margin as well.
+    with (base / "pressure").open("r+b", buffering=0) as stream:
+        for i in range(8192):
+            try:
+                assert stream.write(bytes(4096)) == 4096
+            except OSError as error:
+                assert error.errno == errno.ENOSPC, error
+                break
+            if i % 128 == 127:
+                os.fsync(stream.fileno())
+        else:
+            raise AssertionError("use a small disposable image")
+        os.fsync(stream.fileno())
+    print(f"write margin exhausted after {i} sectors", flush=True)
+    os.unlink(base / "alias")
+    for name in [*COLLISIONS, *names]:
+        os.unlink(base / name)
+    assert os.stat(base / "keep").st_nlink == 1
+    os.unlink(base / "final")
+    assert os.fstat(fd).st_nlink == 0
+    assert os.pread(fd, len(data), 0) == mapped[:] == data
+    os.rmdir(base / "empty")
+    mapped.close()
+    os.close(fd)
+    print("packed links and open final-link cleanup passed", flush=True)
+    # Free namespace storage and prove the ordinary allocator can reuse it.
+    for directory in sorted((base / "full").iterdir())[:16]:
+        for path in directory.iterdir():
+            path.unlink()
+        directory.rmdir()
     sync(base)
+    (base / "reused").write_bytes(b"reused\n")
+    sync(base)
+    capacity_verify(base)
     assert not os.statvfs(base).f_flag & os.ST_RDONLY
-    print("unlink reservation exhaustion passed", flush=True)
+    print("protected unlink at metadata exhaustion passed", flush=True)
+
+
+def capacity_verify(base):
+    assert (base / "keep").read_bytes() == b"capacity\n"
+    assert (base / "keep").stat().st_nlink == 1
+    assert (base / "reused").read_bytes() == b"reused\n"
+    assert {p.name for p in base.iterdir()} == {
+        "keep", "pressure", "full", "reused"}
+    print("capacity namespace verified", flush=True)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3 or sys.argv[1] not in (
-            "create", "verify", "readonly", "capacity"):
-        sys.exit(f"usage: {sys.argv[0]} create|verify|readonly|capacity directory")
+            "create", "verify", "readonly", "capacity", "capacity_verify"):
+        sys.exit(f"usage: {sys.argv[0]} "
+                 "create|verify|readonly|capacity|capacity_verify directory")
     globals()[sys.argv[1]](Path(sys.argv[2]).absolute())
