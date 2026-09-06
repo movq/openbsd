@@ -45,8 +45,9 @@ are writable, including extent and bitmap free-space records.
 Mount requires the newest valid superblock,
 no pending log, no seeding device or read-only selected tree, and an extent tree
 without legacy extent items, shared references, snapshots, or simple-quota owner refs.
-Writable mount recovers zero-link file-tree orphans before exposing any view.
-Root-tree orphans and linked-inode cleanup markers still reject writable mount.
+Writable mount recovers zero-link file-tree orphans and linked regular-file
+truncate markers before exposing any view. Root-tree orphans and cleanup
+markers on other linked inode types still reject writable mount.
 Keep read and write feature masks separate: parsing does not imply maintenance.
 
 Current limits:
@@ -66,9 +67,10 @@ Current limits:
   Growth converts supported inline data and COWs partial data sectors with zero
   tails before exposing the new size. It rejects
   other compressed/encoded overlap and regular mappings beyond the old
-  rounded EOF; preallocation remains zero-filled. Shrinking reserves the
-  entire range deletion in one transaction and may return `ENOSPC` for highly
-  fragmented files. Unlink preserves open descriptors and mappings and reclaims
+  rounded EOF; preallocation remains zero-filled. Fragmented shrinking deletes
+  mappings in bounded transactions, with a durable target size and recovery
+  marker. Partial EOF COW still requires ordinary data and metadata space.
+  Unlink preserves open descriptors and mappings and reclaims
   the inode after its last vnode reference. Rmdir validates empty directories
   and uses the same orphan lifecycle. Removed directory descriptors report
   zero links and EOF; new child lookup and creation fail.
@@ -239,7 +241,7 @@ mapping and group indexes before establishing the next generation's reserves.
 Aborted growth frees the private group and exposes no new allocation space.
 
 An emergency metadata reserve covers commit and is excluded from ordinary
-handles. A second reserve protects a minimum orphan-cleanup batch or chunk
+handles. A second reserve protects a minimum truncate/orphan-cleanup batch or chunk
 allocation, with system space for chunk-tree COW. Either operation can borrow
 this promise when ordinary space is unavailable; its unused portion follows
 delayed references to commit and is replenished at publication.
@@ -258,6 +260,14 @@ Shrinking COWs a retained partial data sector with a zero tail, removes mappings
 through the last extent (including preallocation beyond EOF), and invalidates
 vnode buffers and mapped pages. Pending sectors that are removed cancel their
 delayed adds, checksums, payloads, and unpublished allocations together.
+Small shrinks fit one handle. Larger deletions first persist the target size
+and an orphan marker, then commit ordered data and delete in reserved batches,
+reducing the batch to one item under space pressure. Each batch re-searches
+from rounded target EOF and updates remaining byte accounting. The final batch
+removes a linked inode's marker; open unlinked inodes retain theirs for last
+close. The vnode stays locked through cleanup. Mount recovery uses the same
+engine before exposing any view. Failure after publishing the target leaves
+the marker recoverable and makes the filesystem read-only.
 
 Final-link removal persists a zero-link inode and an orphan marker in the same
 handle as namespace removal. Last-close cleanup first commits ordered data, then
@@ -270,9 +280,9 @@ while deleted vnodes or file handles can still exist.
 
 ## Dependencies for further work
 
-Linked-inode truncate recovery needs a bounded range-deletion cursor and partial
-EOF handling. Namespace removal still needs an ordinary reservation; protected
-cleanup space guarantees progress only for already detached inodes.
+Namespace removal and partial EOF COW still need ordinary reservations.
+Protected cleanup space permits metadata-only shrinking and already detached
+inode cleanup under space pressure.
 
 Allocation still needs existing free space to establish mount-time reserves.
 Deleting empty block groups and rebalancing space between allocation types

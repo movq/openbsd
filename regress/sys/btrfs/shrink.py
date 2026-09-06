@@ -132,7 +132,7 @@ def exercise():
     # Parallel inode mutations and commits share allocation/checksum trees.
     for size in SIZES:
         if size == max(SIZES):
-            # Whole-range reservations grow with fragmentation and node size.
+            # Exercise fragmented shrinking alongside imported mappings.
             for kind in ("import", "created"):
                 for style in ("zero", "partial", "aligned"):
                     case(f"{kind}-{size}-{style}", size, style)
@@ -211,10 +211,9 @@ def capacity():
         raise AssertionError("use a small existing data block group")
     os.fsync(fd)
     os.close(fd)
-    # Partial-sector shrink needs data space; deleting a fragmented file
-    # can exceed the whole-operation metadata reservation.
+    # Partial-sector shrink still needs data space.
     for name, length in (("import-100-partial", 17),
-                         ("import-6003-partial", 4103), ("filler", 0)):
+                         ("import-6003-partial", 4103)):
         before = os.stat(name)
         data = Path(name).read_bytes()
         expect_error(errno.ENOSPC, os.truncate, name, length)
@@ -224,6 +223,8 @@ def capacity():
     os.truncate("sparse", 1)
     os.truncate("import-98311-zero", 0)
     assert os.stat("import-98311-zero").st_blocks == 0
+    os.truncate("filler", 0)
+    assert os.stat("filler").st_blocks == 0
     os.sync()
 
 
