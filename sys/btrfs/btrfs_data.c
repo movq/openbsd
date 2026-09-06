@@ -810,6 +810,152 @@ out:
 	return (error);
 }
 
+/*
+ * Replace a run of private sector mappings and their unmaterialized adds with
+ * one durable allocation. The allocator may retain separate sector accounting
+ * records: their disjoint union is unchanged, and commit releases them.
+ * No writer or cancellation can run after this transformation.
+ */
+static int
+btrfs_coalesce_ordered_run(struct btrfs_trans_handle *handle,
+    struct btrfs_ordered_extent *first, struct btrfs_ordered_extent *end,
+    uint32_t length)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_ordered_extent *ordered;
+	struct btrfs_delayed_data_ref *ref;
+	struct btrfs_file_extent_item item = { 0 };
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	const uint8_t *data;
+	uint32_t size, sectorsize = first->boe_length;
+	int error;
+
+	error = btrfs_get_root(trans->bt_mount, first->boe_treeid, &root);
+	if (error != 0)
+		return (error);
+	key.objectid = htole64(first->boe_objectid);
+	key.type = BTRFS_EXTENT_DATA_KEY;
+	item.generation = htole64(trans->bt_generation);
+	item.ram_bytes = item.disk_num_bytes = item.num_bytes =
+	    htole64(sectorsize);
+	item.type = BTRFS_FILE_EXTENT_REG;
+	/* Validate every private mapping before changing any of them. */
+	for (ordered = first; ordered != end;
+	    ordered = RBT_NEXT(btrfs_ordered_io, ordered)) {
+		key.offset = htole64(ordered->boe_file_offset);
+		item.disk_bytenr = htole64(ordered->boe_bytenr);
+		error = btrfs_search_slot(root, &key, &path);
+		if (error == 0)
+			error = btrfs_path_item(&path, NULL, &data, &size);
+		if (error == 0 && (size != sizeof(item) ||
+		    memcmp(data, &item, sizeof(item)) != 0))
+			error = EINVAL;
+		btrfs_release_path(&path);
+		if (error != 0)
+			return (error);
+	}
+
+	key.offset = htole64(first->boe_file_offset);
+	item.disk_bytenr = htole64(first->boe_bytenr);
+	item.ram_bytes = item.disk_num_bytes = item.num_bytes = htole64(length);
+	error = btrfs_replace_item(handle, root, &key, &item, sizeof(item));
+	for (ordered = RBT_NEXT(btrfs_ordered_io, first);
+	    error == 0 && ordered != end;
+	    ordered = RBT_NEXT(btrfs_ordered_io, ordered)) {
+		key.offset = htole64(ordered->boe_file_offset);
+		error = btrfs_delete_item(handle, root, &key);
+	}
+	if (error != 0)
+		return (error);
+
+	first->boe_ref->bdr_length = length;
+	first->boe_ref = NULL;
+	for (ordered = RBT_NEXT(btrfs_ordered_io, first); ordered != end;
+	    ordered = RBT_NEXT(btrfs_ordered_io, ordered)) {
+		ref = ordered->boe_ref;
+		TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref, bdr_entry);
+		ordered->boe_ref = NULL;
+		free(ref, M_BTRFS, sizeof(*ref));
+	}
+	return (0);
+}
+
+int
+btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_ordered_io io = RBT_INITIALIZER(&io);
+	struct btrfs_ordered_extent probe = { 0 }, *ordered, *first, *next;
+	struct btrfs_delayed_data_ref *ref;
+	struct btrfs_io_map map;
+	struct btrfs_fs *bmp = trans->bt_mount;
+	uint32_t length, sectorsize = letoh32(bmp->bm_super.sectorsize);
+	int error;
+
+	KASSERT(handle->bth_commit);
+	KASSERT(trans->bt_writers == 0);
+	TAILQ_FOREACH(ordered, &trans->bt_ordered_extents, boe_entry) {
+		KASSERT(ordered->boe_written);
+		KASSERT(ordered->boe_length == sectorsize);
+		ordered->boe_ref = NULL;
+		if (RBT_INSERT(btrfs_ordered_io, &io, ordered) != NULL)
+			return (EINVAL);
+	}
+	/*
+	 * Match in one pass; repeatedly searching the delayed-reference list
+	 * would make a sequential transaction quadratic in its sector count.
+	 * Old allocation drops cannot overlap these still-private allocations.
+	 */
+	TAILQ_FOREACH(ref, &trans->bt_delayed_data_refs, bdr_entry) {
+		probe.boe_bytenr = ref->bdr_bytenr;
+		ordered = RBT_FIND(btrfs_ordered_io, &io, &probe);
+		if (ordered == NULL)
+			continue;
+		if (ordered->boe_ref != NULL || ref->bdr_length != sectorsize ||
+		    ref->bdr_root != ordered->boe_treeid ||
+		    ref->bdr_objectid != ordered->boe_objectid ||
+		    ref->bdr_offset != ordered->boe_file_offset ||
+		    ref->bdr_ref_mod != 1)
+			return (EINVAL);
+		ordered->boe_ref = ref;
+	}
+	TAILQ_FOREACH(ordered, &trans->bt_ordered_extents, boe_entry)
+		if (ordered->boe_ref == NULL)
+			return (EINVAL);
+
+	for (ordered = RBT_MIN(btrfs_ordered_io, &io); ordered != NULL;
+	    ordered = next) {
+		first = ordered;
+		length = sectorsize;
+		for (;;) {
+			next = RBT_NEXT(btrfs_ordered_io, ordered);
+			if (next == NULL || length > MAXBSIZE - sectorsize ||
+			    next->boe_bytenr != first->boe_bytenr + length ||
+			    next->boe_treeid != first->boe_treeid ||
+			    next->boe_objectid != first->boe_objectid ||
+			    next->boe_file_offset != first->boe_file_offset +
+			    length)
+				break;
+			error = btrfs_lookup_fs_logical(bmp, first->boe_bytenr,
+			    length + sectorsize, &map);
+			if (error == ENOENT)
+				break;
+			if (error != 0)
+				return (error);
+			length += sectorsize;
+			ordered = next;
+		}
+		if (length == sectorsize)
+			continue;
+		error = btrfs_coalesce_ordered_run(handle, first, next, length);
+		if (error != 0)
+			return (error);
+	}
+	return (0);
+}
+
 int
 btrfs_delayed_data_refs_finish(struct btrfs_transaction *trans, int committed)
 {

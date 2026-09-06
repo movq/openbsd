@@ -15,9 +15,12 @@ TARGET = 3 * SECTOR + 17
 
 
 def fill(fd):
-    for sector in range(COUNT):
+    # Keep neighboring file sectors apart in allocation order, even when
+    # commit can combine physically adjacent mappings of the same file.
+    order = [*range(0, COUNT, 2), *range(1, COUNT, 2)]
+    for number, sector in enumerate(order):
         assert os.pwrite(fd, payload(7, sector), sector * SECTOR) == SECTOR
-        if sector % 128 == 127:
+        if number % 128 == 127:
             os.fsync(fd)
     os.fsync(fd)
 
@@ -76,12 +79,16 @@ def capacity(base):
     os.link(base / "linked", base / "alias")
     output = os.open(base / "filler", os.O_CREAT | os.O_RDWR, 0o600)
     enospc.main(str(base / "full"))
+    offset = 0
     while True:
         try:
-            assert os.write(output, b"F" * SECTOR) == SECTOR
+            # Keep this filler fragmented even when commit coalesces adjacent
+            # writes, so metadata fails before the remaining data capacity.
+            assert os.pwrite(output, b"F" * SECTOR, offset) == SECTOR
         except OSError as error:
             assert error.errno == errno.ENOSPC
             break
+        offset += 2 * SECTOR
     os.fsync(output)
     before = os.statvfs(base).f_bavail
     assert before > 0, "data exhausted before the metadata reservation margin"
