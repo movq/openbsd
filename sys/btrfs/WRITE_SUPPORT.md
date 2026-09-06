@@ -93,6 +93,7 @@ Current limits:
   validates and removes the matching hash record, persistent directory index,
   and ordinary or extended reference in one reserved handle. Parent and target
   vnode locks protect the plan; removing a nonfinal name preserves data ownership.
+  Unlink and rmdir can borrow protected metadata space at ordinary exhaustion.
 * Rename supports same-tree moves and atomic replacement, including nonempty
   source directories and empty destination directories. It preserves source
   inode identity and open destination descriptors. Subvolume roots cannot be
@@ -253,9 +254,10 @@ metadata may use different buffer sizes. Empty-group return preserves one group
 of each exact profile as a growth template and retains all system mappings.
 
 An emergency metadata reserve covers commit and is excluded from ordinary
-handles. A second reserve protects a minimum truncate/orphan-cleanup batch or chunk
-allocation/removal, with system space for chunk-tree COW. These operations can borrow
-this promise when ordinary space is unavailable; its unused portion follows
+handles. A second reserve covers unlink/rmdir, a minimum truncate/orphan-cleanup
+batch, or chunk allocation/removal, with system space for chunk-tree COW.
+These operations can borrow this promise when ordinary space is unavailable;
+its unused portion follows
 delayed references to commit and is replenished at publication.
 Larger reclaim plans combine that promise with ordinary metadata space;
 failed reservations restore the protected promise. Groups with many imported
@@ -295,9 +297,9 @@ while deleted vnodes or file handles can still exist.
 
 ## Dependencies for further work
 
-Namespace removal and partial EOF COW still need ordinary reservations.
-Protected cleanup space permits metadata-only shrinking and already detached
-inode cleanup under space pressure.
+Partial EOF COW still needs ordinary data and metadata reservations.
+Protected cleanup space permits namespace removal, metadata-only shrinking,
+and detached inode cleanup under space pressure.
 
 Allocation still needs existing free space to establish mount-time reserves.
 Relocating live extents would allow reuse of groups that remain partly occupied.

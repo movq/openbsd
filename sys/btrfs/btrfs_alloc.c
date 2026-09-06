@@ -1502,7 +1502,7 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 	if (error == ENOSPC && request->btr_reclaim &&
 	    request->btr_data == 0) {
 		/*
-		 * Ordinary writers cannot spend the minimum orphan batch.
+		 * Ordinary writers cannot spend the protected reclaim promise.
 		 * Combine the protected promise with ordinary space for larger
 		 * reclaim plans. Keep it separate until the remainder succeeds,
 		 * so failure restores the promise instead of exposing it to
