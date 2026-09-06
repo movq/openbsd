@@ -117,7 +117,10 @@ It covers ordinary and extended packed references, hash collisions across
 commits, inode identity, open-descriptor writes, cache invalidation, concurrent
 removal, symlink/FIFO/device aliases, directory accounting, flags, sticky and
 ordinary permissions, and notifications. On a small fixture, `capacity new-directory` fills metadata and
-checks failed unlink atomicity and continued sync. Test both metadata sizes,
+checks protected namespace removal after exhausting creation and write
+reservations, packed reference/hash neighbors, open descriptors and mappings,
+last-close cleanup, and ordinary reuse. Use capacity_verify after remount.
+Test both metadata sizes,
 with and without free-space/block-group trees, and check the unmounted images
 before writable and read-only verification.
 
@@ -145,7 +148,7 @@ rmdir.py uses create/verify/readonly for directory removal, open descriptors
 and current directories, stale handles, rejection of new children in removed
 directories, emptiness/type checks, flags, sticky and ordinary permissions,
 hash collisions, concurrent removers, notifications, and recursive cleanup.
-Its capacity phase checks failed removal atomicity at metadata exhaustion.
+Its capacity phase checks protected removal at metadata exhaustion.
 Run with both metadata sizes and independently check before remount verification.
 
 rename.py uses create/verify/readonly for same-directory and cross-directory

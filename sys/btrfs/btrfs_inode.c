@@ -990,6 +990,7 @@ btrfs_unlink_inode(struct btrfs_node *dir, struct btrfs_node *node,
 
 	/* Three deletions/replacements and two inode updates, plus refs. */
 	reservation.btr_metadata = (uint64_t)nodesize * 160;
+	reservation.btr_reclaim = 1;
 	error = btrfs_trans_join(bmp, &reservation, &handle);
 	if (error != 0)
 		goto out;
