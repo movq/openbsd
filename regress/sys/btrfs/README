@@ -43,10 +43,27 @@ Cover both metadata node sizes and SINGLE/DUP data.
 
 cluster.py uses create/verify to measure commit output operations and exercise
 physical-sector cache eviction while repeatedly freeing and reusing data.
-It invalidates vnode buffers before checking data in the same mount. Run with
-both metadata sizes and SINGLE/DUP data, then check independently and verify
+It invalidates vnode buffers before checking data in the same mount. Use create
+on 4 KiB nodes with extent free-space records; its total-I/O bound includes
+metadata and superblock writes. Use measure on larger nodes or bitmap fixtures,
+where metadata can exceed that bound even with clustered data submission.
+Run SINGLE/DUP data, then check independently and verify
 after both remount modes. checksums.py also covers clustered submission from
 concurrent vnodes and canceled sectors; chunks.py covers chunk boundaries.
+
+coalesce.py uses create on a fresh image, then disk while unmounted to verify
+that sequential sectors became larger regular extents. Check independently,
+verify_original after remount, then mutate to exercise partial/interior COW,
+overwrites across extent boundaries, repeated pending replacement, mapped
+truncate retention, sparse regrowth, hard links, cancellation, and final drops.
+Use verify after writable and read-only remounts. Repeat with both node sizes,
+SINGLE/DUP data, explicit holes and bitmap free space; run the checksum,
+cluster, truncate, orphan and space-pressure suites against coalescing too.
+For publication tests use a fresh create fixture, break at
+btrfs_write_super_mirrors, run crash_write, and reset before the superblock
+write. Check independently and use verify_original after remount. Repeat
+crash_write with a breakpoint at btrfs_space_publish_chunk to reset after
+durable publication, then check independently and use verify_crash.
 
 Writable images must meet the feature restrictions in
 sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.

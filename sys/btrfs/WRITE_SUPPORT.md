@@ -185,7 +185,13 @@ Commit sorts ordered sectors by allocation address and combines adjacent
 payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries.
 Before each mirrored write it evicts overlapping device-sector buffers;
 device buffers are keyed by their starting block, not their covered range.
-File mappings and pending ownership still use separate sector extents.
+While handles are open, file mappings and pending ownership use separate
+sector extents. After ordered writes complete, commit combines adjacent sectors
+of the same file into regular extents of at most `MAXBSIZE`, within one chunk.
+It validates the private mappings and their allocation adds before replacing
+them with one mapping and one delayed reference. Sector allocation-accounting
+records retain the same disjoint byte ranges until publication. Later COW and
+truncation split the committed mappings using ordinary shared extent references.
 
 Without `NO_HOLES`, writes and growth count missing hole items under the vnode
 lock and reserve their insertion cost before joining. Fill gaps in the same
@@ -306,7 +312,7 @@ Relocating live extents would allow reuse of groups that remain partly occupied.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader
-writable formats, larger file extents, clustered reads, decompression caching,
+writable formats, larger write reservations, clustered reads, decompression caching,
 and the log tree.
 
 Validate each operation class with unmounted independent filesystem/data checks

@@ -621,6 +621,8 @@ btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
 		error = btrfs_trans_commit_handle(trans, &handle);
 	if (error == 0)
 		error = btrfs_write_ordered_extents(trans);
+	if (error == 0)
+		error = btrfs_coalesce_ordered_extents(handle);
 	if (error != 0 && handle != NULL)
 		btrfs_trans_abort(handle, error);
 	if (error == 0)
