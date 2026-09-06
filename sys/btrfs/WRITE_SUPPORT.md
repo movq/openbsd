@@ -98,14 +98,16 @@ Current limits:
   inode identity and open destination descriptors. Subvolume roots cannot be
   renamed or replaced; moving a directory below itself is rejected.
 * Allocation grows data, metadata, and system block groups within the recorded
-  device size, preserving each existing profile. There is no
+  device size, preserving each existing profile. When physical growth fails,
+  empty data/metadata groups can be returned for another allocation type.
+  One group per profile and all system groups are retained. There is no
   device resizing or management, relocation,
   log replay, qgroups, or zoned support.
 
 `statfs` reports the logical capacity of allocated block groups, counting DUP
 once. Free blocks include reservations but exclude pending allocations, pinned
 extents, and superblock stripes. Available blocks count only unreserved space
-in data-capable groups; capacity increases when chunks are allocated.
+in data-capable groups; capacity changes as chunks are allocated or returned.
 Metadata space and fragmentation can still limit writes.
 
 ## Transactions and durability
@@ -164,9 +166,10 @@ the root downward. Validate against the path's view generation.
 
 Live I/O copies physical mappings under a short filesystem mapping lock,
 released before device access. Only bootstrap roots use fixed chunk tables.
-The mapping lock also protects the block-group pointer index; each group has
-stable storage and an index number for the filesystem lifetime, so reservations
-and pending extents can retain group pointers across index replacement.
+The mapping lock also protects the block-group pointer index. Transaction
+handles, commit ownership, or the chunk-allocation lock protect group pointers;
+publication drains handles before replacing indexes and freeing removed groups.
+`statfs` holds the mapping lock throughout its group traversal.
 Mount-time disk validation runs before mutation begins.
 
 Regular-file buffers use logical sector offsets. Vnode-locked writes modify
@@ -230,8 +233,8 @@ Reservation failure first publishes pending work, then serializes chunk
 growth without retaining a handle. The physical planner avoids existing device
 extents and superblock stripes, selecting equal-length disjoint stripes for DUP.
 It starts with 32 MiB data/metadata or 8 MiB system chunks and halves the size
-down to 1 MiB when device gaps are smaller. Logical ranges append beyond the
-highest existing chunk. Low system space triggers system growth first.
+down to 1 MiB when device gaps are smaller. Logical ranges append beyond a
+mount-lifetime high-water mark. Low system space triggers system growth first.
 One reserved handle updates chunk and device trees, device usage, block-group
 records, and optional extent-format free-space records. Chunk-tree COW uses
 system space. System growth also appends a bootstrap mapping to the superblock
@@ -240,11 +243,23 @@ private until those records are durable; transaction completion publishes the
 mapping and group indexes before establishing the next generation's reserves.
 Aborted growth frees the private group and exposes no new allocation space.
 
+If physical growth fails, the allocator excludes an empty group of another
+type from new reservations, then atomically deletes its chunk, device extent,
+block-group, and optional free-space records and reduces device usage. Groups
+with disk usage, reservations, allocations, or pins remain ineligible.
+Publication returns the stripes to the physical planner; abort restores group
+eligibility. Physical buffers are evicted before reassignment because data and
+metadata may use different buffer sizes. Empty-group return preserves one group
+of each exact profile as a growth template and retains all system mappings.
+
 An emergency metadata reserve covers commit and is excluded from ordinary
 handles. A second reserve protects a minimum truncate/orphan-cleanup batch or chunk
-allocation, with system space for chunk-tree COW. Either operation can borrow
+allocation/removal, with system space for chunk-tree COW. These operations can borrow
 this promise when ordinary space is unavailable; its unused portion follows
 delayed references to commit and is replenished at publication.
+Larger reclaim plans combine that promise with ordinary metadata space;
+failed reservations restore the protected promise. Groups with many imported
+bitmap records can still exceed the available deletion reservation.
 Failure to establish the reserves rejects writable mount; failure to replenish
 after publication leaves that generation durable and the mount read-only.
 Operations with delayed work transfer unused reservations to commit. Reservation
@@ -285,8 +300,7 @@ Protected cleanup space permits metadata-only shrinking and already detached
 inode cleanup under space pressure.
 
 Allocation still needs existing free space to establish mount-time reserves.
-Deleting empty block groups and rebalancing space between allocation types
-would allow more complete reuse of fully allocated devices.
+Relocating live extents would allow reuse of groups that remain partly occupied.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader

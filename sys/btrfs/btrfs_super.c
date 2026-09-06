@@ -532,6 +532,10 @@ btrfs_build_super(struct btrfs_transaction *trans,
 	sb->chunk_root_generation = htole64(chunk.brl_generation);
 	sb->chunk_root_level = chunk.brl_level;
 	sb->bytes_used = htole64(trans->bt_bytes_used);
+	if (trans->bt_dev_bytes_removed > letoh64(sb->dev_item.bytes_used))
+		return (EINVAL);
+	sb->dev_item.bytes_used = htole64(letoh64(sb->dev_item.bytes_used) -
+	    trans->bt_dev_bytes_removed);
 	if (trans->bt_dev_bytes_added >
 	    letoh64(sb->dev_item.total_bytes) -
 	    letoh64(sb->dev_item.bytes_used))
