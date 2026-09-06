@@ -1,3 +1,80 @@
+Host orchestration
+------------------
+
+With the test VM already running a matching kernel and mount_btrfs, run:
+
+    ./regress/sys/btrfs/run-all.sh
+
+The runner REFORMATS /home/mike/obj/btrfs.img for each case. It assumes root SSH
+access to root@10.77.0.2, /dev/sd1c as the disposable VM disk, /mnt/btrfs as
+the mountpoint, /mnt/src as this source tree, and QEMU sockets /tmp/monitor.sock
+and /tmp/serial.sock. Override these with --image, --vm, --device, --mountpoint,
+--vm-source, --monitor and --serial. It never mounts the image on the host.
+Host requirements are Python 3, OpenSSH, timeout and current btrfs-progs with
+rootdir, compression and inode-flag support. Host root privileges are unnecessary.
+The VM needs root, Python 3 and mount_btrfs; breakpoint recovery cases use amd64
+DDB commands and need symbols in the running kernel. The runner does not build
+or install a kernel.
+
+The default matrix runs every recipe on four layouts:
+
+    4k           4 KiB nodes, SINGLE data, extent free space
+    16k          16 KiB nodes, SINGLE data, separate block-group tree, holes
+    4k-dup       4 KiB nodes, DUP data, no free-space tree
+    16k-bitmap   16 KiB nodes, DUP data, bitmap free space, holes
+
+All use CRC32C, 4 KiB sectors and DUP metadata. A recipe can override a format
+requirement, such as DUP for mirror faults or SINGLE for the small imported
+bitmap fixture. Exact mkfs options appear in its command log. Capacity recipes
+use small recorded device sizes while retaining the backing file's sparse size.
+statfs first fills physical growth capacity and releases a small data range,
+so its exact-capacity assertions remain meaningful with chunk growth enabled.
+
+List or select cases without editing the runner:
+
+    ./regress/sys/btrfs/run-all.sh --list
+    ./regress/sys/btrfs/run-all.sh --layouts 4k --select namespace
+    ./regress/sys/btrfs/run-all.sh --select 'read-*' --select 'recover-*'
+    ./regress/sys/btrfs/run-all.sh --exclude '*capacity' --exclude 'recover-*'
+
+--select and --exclude accept shell globs matching either a case name or a
+layout/case pair. Quote globs to prevent host shell expansion. The default
+includes pressure, deliberate corruption, forced unmount and VM reset tests.
+Reset tests launch the guest operation while holding the serial connection,
+confirm the requested breakpoint or ready marker, reset with CPUs paused,
+check the image independently, then boot and verify recovery.
+The debugger handler waits for secondary CPUs to stop and continues delayed
+debugger IPIs without counting them as filesystem breakpoint hits.
+
+Results default to a timestamped btrfs-regress directory beside the backing
+image; --results chooses another directory. config.json records the kernel,
+suite digest and selection. status.json records each case's outcome, duration
+and command-log path. Every attempt retains its seed, restore output, corruption
+journal and other host artifacts. Commands have bounded timeouts (900 seconds
+by default, configurable with --timeout); --boot-timeout bounds reboot polling.
+The runner stops at the first failure and preserves the image and VM state.
+Each attempt's serial.log continuously records UART output, including panics
+while SSH is blocked. commands.log also records monitor diagnostics on failure.
+
+To resume an interrupted run, use the same options and --results directory,
+adding --resume. Passed cases are skipped and incomplete cases start with new
+fixtures and logs. Resume requires the same kernel, suite contents and selection;
+after changing either, use a new results directory and select the desired cases.
+--start-at layout/case starts a new run at a chosen point in the selected plan.
+An image/VM lock prevents simultaneous runners. All views of the test disk must
+be unmounted before starting. Resume unmounts known runner views before restarting
+an incomplete case; an unresponsive VM must be recovered before resume.
+
+run_cases.py contains the explicit recipes. When adding a regression or phase,
+add its fixture, mutation, independent checks and appropriate remount verification
+there. The procedures below remain useful for running an individual phase while
+debugging. run_fixtures.py supplies the unprivileged device import fixture by
+replacing empty placeholder inodes, directory types and rdev fields in every
+metadata copy before the independent checks.
+
+Individual procedures
+---------------------
+
 These tests require a disposable btrfs image mounted writable, root, and
 Python 3. They leave their files in place for verification after remount.
 Use a new test directory for each run.  For example, inside the test VM:
