@@ -21,6 +21,15 @@
 .Op Fl r
 .Ar mountpoint source path
 .Nm
+.Cm send
+.Op Fl f Ar stream
+.Op Fl p Ar parent
+.Ar mountpoint path
+.Nm
+.Cm receive
+.Op Fl f Ar stream
+.Ar mountpoint path
+.Nm
 .Cm inspect-internal
 .Ar command ...
 .Sh DESCRIPTION
@@ -31,7 +40,7 @@ Use
 .Fl Fl help
 after a command to display its usage.
 .Pp
-For subvolume commands,
+For subvolume, send, and receive commands,
 .Ar mountpoint
 selects a mounted Btrfs filesystem.
 All source and destination paths start at the top-level subvolume (ID 5),
@@ -61,6 +70,29 @@ The
 option creates a read-only snapshot.
 Snapshots share metadata and file-data extents with their source;
 later modifications use copy-on-write.
+.It Cm send
+Write a Linux version 1 send stream for the named read-only subvolume.
+With
+.Fl p ,
+send changes relative to the named read-only parent.
+The receiver must already have a matching parent, identified by UUID and
+sender transaction ID.
+Parent and clone-source lookup rejects ambiguous read-only received identities.
+Without
+.Fl f ,
+write to standard output; terminal output is rejected.
+With
+.Fl f ,
+create a new stream file at the given host pathname.
+.It Cm receive
+Replay Linux version 1 streams below the given filesystem-relative directory.
+Read standard input or the host file named by
+.Fl f .
+Each stream names the new subvolume; an existing destination is never replaced.
+Concatenated complete streams are accepted.
+Successful completion records the received identity and makes the new tree
+read-only in one transaction.
+An error leaves an incomplete writable tree without a received identity.
 .El
 .Pp
 For example, if subvolume
@@ -70,6 +102,8 @@ is mounted at
 the following creates its sibling snapshot without mounting ID 5:
 .Bd -literal -offset indent
 btrfs subvolume snapshot -r /home home home@monday
+btrfs send -f monday.stream /home home@monday
+btrfs receive -f monday.stream /backup snapshots
 .Ed
 .Sh FILES
 .Bl -tag -width "/dev/btrfs-control"
@@ -84,3 +118,22 @@ It may fail for lack of metadata space even when deleting the subvolume
 would eventually free enough space.
 Listing is ordered by subvolume ID; concurrent commands can change the
 list between calls.
+.Pp
+Send and receive reuse a reachable mount view or mount a disjoint subvolume
+temporarily under
+.Pa /tmp .
+The receive destination must remain private during replay.
+Finalization rejects active vnodes and mounted descendant views.
+Normal errors and catchable termination signals remove temporary mounts;
+an uncatchable termination may require manual unmounting.
+.Pp
+The sender inventories names and compares file contents in userspace.
+Incremental streams omit unchanged data but currently scan all file data.
+CLONE commands are received by copying their contents through ordinary writes;
+they do not yet create shared extents.
+Sparse contents are preserved, but some holes may become allocated zero data.
+Linux extended attributes are opaque data on OpenBSD; Linux ACLs and security
+labels do not establish OpenBSD access-control policy.
+As with Linux receive, ctime is local and symlink permissions are not transmitted.
+Version 2/3 streams, no-data streams, nested subvolumes, and inode flags
+are not supported.

@@ -46,7 +46,7 @@ def fix_seed(image):
         if name == "..":
             continue
         _, major, minor = devices[name]
-        disk = (minor & 255) | (major << 8) | ((minor & ~255) << 12)
+        disk = (major << 20) | minor
         for offset, byte in enumerate(disk.to_bytes(8, "little"), 56):
             subprocess.run(
                 ["btrfs-corrupt-block", "-r", "5", "-I", f"{ino},1,0",

@@ -28,6 +28,8 @@ Size changes to devices, FIFOs, and sockets are no-ops, as on FFS.
 Device numbers retain their major/minor values using Linux's on-disk encoding;
 driver assignments are OS-specific. Creation rejects minors above 20 bits;
 loading rejects majors above OpenBSD's 8-bit range with `EOVERFLOW`.
+The disk inode uses `(major << 20) | minor`; send streams use Linux's
+separate userspace device encoding.
 
 `stat` and `chflags` map btrfs nodump, immutable, and append flags to
 `UF_NODUMP`, `UF_IMMUTABLE`, and `UF_APPEND`. Owners may change these flags,
@@ -64,6 +66,8 @@ Current limits:
   a filesystem by mountpoint; all paths start at tree 5, including parents
   outside the selected view. Paths do not follow symlinks or `..`.
   Snapshots copy only the root block, sharing lower metadata and file data.
+  Root items mark their flags initialized in the embedded inode, so Linux
+  retains their read-only state.
   Nested subvolumes appear as empty, immutable boundary directories in a
   snapshot; they are not recursively snapshotted.
   Deletion rejects mounted hierarchies, active vnodes, and nested subvolumes.
@@ -71,6 +75,25 @@ Current limits:
   namespace removal and final reference drops atomically. Large deletions
   can return `ENOSPC` before mutation; bounded deletion and recovery remain
   future work.
+* `btrfs send` and `receive` support Linux version 1 full and incremental
+  streams. A mountpoint selects the filesystem; subvolume and destination
+  paths start at tree 5. Tools use existing views or temporary disjoint mounts.
+  Send requires read-only roots, inventories their namespaces, and compares
+  file data to emit changes and parent clones. It currently scans all data
+  and holds pathname/inode inventories in userspace memory.
+  Receive uses ordinary vnode operations; CLONE is materialized with COW
+  writes rather than sharing extents. Opaque Linux xattrs use privileged
+  control operations, including for symlinks. Directory xattrs are deferred
+  until replay ends, avoiding inheritance while each child's metadata is
+  restored explicitly. Linux ACLs/security labels are preserved as data,
+  not enforced as OpenBSD policy.
+  Completion atomically publishes the received UUID, sender transaction ID,
+  and read-only root flag. Failed/interrupted receives remain incomplete
+  writable trees without a received identity. Finalization requires no active
+  vnodes or mounted descendant views; the destination must remain private
+  during replay. Version 2/3 commands, no-data streams, recursive subvolumes,
+  inode-flag preservation, and reflink-range receive remain unsupported.
+  As on Linux receive, ctime is local; symlink permissions are not transmitted.
 * Regular-file `truncate`/`ftruncate` and `O_TRUNC` support shrinking
   uncompressed or Zstd regular mappings, preallocation, and supported inline
   files, unchanged sizes, and sparse growth.

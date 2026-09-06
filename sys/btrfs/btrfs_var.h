@@ -433,9 +433,11 @@ struct btrfs_root {
 	uint64_t			 br_owner;
 	/* Inode allocation high-water mark; protected by bm_namespace_lock. */
 	uint64_t			 br_last_ino;
-	/* Root-item flags are immutable until subvolume property changes exist. */
+	/* Receive finalization changes flags only with vnode users fenced out. */
 	uint64_t			 br_flags;
 	int				 br_deleted;
+	/* Fence new vnode users during receive finalization, not tree reads. */
+	int				 br_finalizing;
 	dev_t				 br_dev;
 	struct btrfs_transaction	*br_transaction;
 	uint8_t				 br_level;
@@ -596,6 +598,15 @@ struct btrfs_node {
 
 extern const struct vops btrfs_vops;
 struct btrfs_ioctl_subvolume;
+struct btrfs_ioctl_identity;
+struct btrfs_ioctl_xattr;
+int	btrfs_control_xattr(struct vnode *, u_long,
+	    struct btrfs_ioctl_xattr *, struct proc *);
+int	btrfs_identity_control(struct mount *, u_long,
+	    struct btrfs_ioctl_identity *, struct proc *);
+int	btrfs_identity(struct btrfs_fs *, u_long,
+	    struct btrfs_ioctl_identity *, struct proc *);
+int	btrfs_subvol_path(struct btrfs_fs *, uint64_t, char *, size_t);
 int	btrfs_control(struct mount *, u_long, struct btrfs_ioctl_subvolume *,
 	    struct proc *);
 int	btrfs_subvolume(struct btrfs_fs *, u_long,

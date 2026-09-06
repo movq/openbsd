@@ -20,6 +20,10 @@
 #define __BTRFS_SEND_STREAM_H__
 
 #include "kerncompat.h"
+#include <signal.h>
+
+/* Native frontends set this from a signal handler to unwind and unmount. */
+extern volatile sig_atomic_t btrfs_send_stream_cancelled;
 
 struct timespec;
 
