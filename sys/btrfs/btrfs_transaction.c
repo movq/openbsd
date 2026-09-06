@@ -54,7 +54,7 @@ btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 	TAILQ_INIT(&trans->bt_dirty_extent_buffers);
 	TAILQ_INIT(&trans->bt_delayed_tree_refs);
 	TAILQ_INIT(&trans->bt_delayed_data_refs);
-	TAILQ_INIT(&trans->bt_ordered_extents);
+	RBT_INIT(btrfs_ordered_tree, &trans->bt_ordered_extents);
 	TAILQ_INIT(&trans->bt_dirty_roots);
 	return (trans);
 }
@@ -111,7 +111,7 @@ btrfs_trans_destroy(struct btrfs_fs *bmp)
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_roots));
 	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_tree_refs));
 	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_data_refs));
-	KASSERT(TAILQ_EMPTY(&trans->bt_ordered_extents));
+	KASSERT(RBT_EMPTY(btrfs_ordered_tree, &trans->bt_ordered_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	if (trans->bt_state != BTRFS_TRANS_COMMITTED)
 		btrfs_space_abort(trans);
@@ -730,7 +730,8 @@ btrfs_trans_close(struct btrfs_fs *bmp, uint64_t minimum_generation,
 		KASSERT(TAILQ_EMPTY(&trans->bt_dirty_roots));
 		KASSERT(TAILQ_EMPTY(&trans->bt_delayed_tree_refs));
 		KASSERT(TAILQ_EMPTY(&trans->bt_delayed_data_refs));
-		KASSERT(TAILQ_EMPTY(&trans->bt_ordered_extents));
+		KASSERT(RBT_EMPTY(btrfs_ordered_tree,
+		    &trans->bt_ordered_extents));
 		KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
 		KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
 		trans->bt_state = BTRFS_TRANS_OPEN;

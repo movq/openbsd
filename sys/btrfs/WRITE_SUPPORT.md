@@ -176,8 +176,12 @@ Mount-time disk validation runs before mutation begins.
 Regular-file buffers use logical sector offsets. Vnode-locked writes modify
 temporary sector copies and attach immutable ordered payloads, then update clean
 buffers. Cache misses consult ordered data before disk; repeated sector writes
-replace the payload and checksum. Strategy writeback is disabled because it
-lacks the vnode lock needed for tree/inode mutation.
+replace the payload and checksum. Pending sectors are indexed by tree, inode,
+and file offset under the transaction lock, so reads, replacement and cancellation
+do not scan unrelated pending writes. Keys stay fixed until cancellation or
+transaction teardown; commit uses a separate allocation-order index for I/O.
+Strategy writeback is disabled because it lacks the vnode lock needed for
+tree/inode mutation.
 Physical data reads use windows of at most `MAXBSIZE`, anchored to the backing
 allocation and bounded by its length. Split mappings use the same cache keys
 and sizes. Each request validates only its sector, allowing different DUP
