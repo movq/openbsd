@@ -64,4 +64,47 @@ struct btrfs_ioctl_xattr {
 #define BTRFSIOC_SETXATTR	_IOW('B', 8, struct btrfs_ioctl_xattr)
 #define BTRFSIOC_RMXATTR	_IOW('B', 9, struct btrfs_ioctl_xattr)
 
+/*
+ * Read stable snapshot items in [min, max], in key order. fd and parent_fd
+ * must name subvolume root directories on the same filesystem, both read-only.
+ * parent_fd == -1 enumerates everything; otherwise omit byte-identical items
+ * and shared subtrees. Reverse the descriptors to discover deleted items.
+ * Open root descriptors pin the trees across calls. No writable-tree queries.
+ *
+ * Buffer contains native btrfs_tree_item headers followed by on-disk bytes,
+ * padded to eight bytes. KEYS omits payloads (size is then zero).
+ * min advances to the first unreturned key; done marks exhaustion. Input
+ * size is capacity (at most 64 KiB); output size is bytes used. ENOBUFS means
+ * one record cannot fit. Counters describe this call, including comparison
+ * searches, and allow callers to measure metadata work without tracing I/O.
+ */
+struct btrfs_tree_key {
+	uint64_t	objectid;
+	uint64_t	offset;
+	uint32_t	type;
+	uint32_t	reserved;
+};
+struct btrfs_tree_item {
+	struct btrfs_tree_key key;
+	uint32_t	size;
+	uint32_t	reserved;
+};
+#define BTRFS_TREE_KEYS	1
+#define BTRFS_TREE_BUFSIZE	65536
+struct btrfs_ioctl_tree {
+	int32_t		fd;
+	int32_t		parent_fd;
+	uint32_t	flags;
+	uint32_t	size;
+	struct btrfs_tree_key min;
+	struct btrfs_tree_key max;
+	void		*buffer;
+	uint64_t	blocks;
+	uint64_t	shared;
+	uint64_t	items;
+	uint32_t	done;
+	uint32_t	sectorsize;	/* output: alignment for clone ranges */
+};
+#define BTRFSIOC_TREE	_IOWR('B', 10, struct btrfs_ioctl_tree)
+
 #endif

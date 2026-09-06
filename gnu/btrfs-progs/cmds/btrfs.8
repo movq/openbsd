@@ -127,8 +127,14 @@ Finalization rejects active vnodes and mounted descendant views.
 Normal errors and catchable termination signals remove temporary mounts;
 an uncatchable termination may require manual unmounting.
 .Pp
-The sender inventories names and compares file contents in userspace.
-Incremental streams omit unchanged data but currently scan all file data.
+The sender inventories names in userspace and compares read-only snapshot
+trees through the kernel, skipping shared metadata subtrees.
+File extent records identify unchanged data and parent clone ranges.
+Only data needed for WRITE commands is read; sparse files are traversed by
+their extent records rather than their logical size.
+Pathname inventories still require memory proportional to the namespace.
+Clone sources are limited to matching inode identities and file offsets in
+the parent; equal contents in unrelated allocations are sent again.
 CLONE commands are received by copying their contents through ordinary writes;
 they do not yet create shared extents.
 Sparse contents are preserved, but some holes may become allocated zero data.
