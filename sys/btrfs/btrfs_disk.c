@@ -624,12 +624,15 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		    record.bde_chunk_tree != BTRFS_CHUNK_TREE_OBJECTID ||
 		    record.bde_chunk_objectid !=
 		    BTRFS_FIRST_CHUNK_TREE_OBJECTID ||
-		    memcmp(item->chunk_tree_uuid, bmp->bm_chunk_tree_uuid,
-		    BTRFS_UUID_SIZE) != 0) {
+		    (memcmp(item->chunk_tree_uuid, bmp->bm_chunk_tree_uuid,
+		    BTRFS_UUID_SIZE) != 0 &&
+		    memcmp(item->chunk_tree_uuid,
+		    (uint8_t[BTRFS_UUID_SIZE]){ 0 }, BTRFS_UUID_SIZE) != 0)) {
 			error = EINVAL;
 			break;
 		}
 		end = record.bde_physical + record.bde_length;
+		/* Linux may leave chunk_tree_uuid zero; verify actual ownership. */
 		error = btrfs_find_chunk(bmp, record.bde_chunk_offset,
 		    record.bde_length, &index);
 		if (error != 0) {

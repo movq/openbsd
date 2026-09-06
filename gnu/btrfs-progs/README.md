@@ -46,7 +46,7 @@ The executables are written to `mkfs/mkfs.btrfs` and `cmds/btrfs`.
   `/dev/btrfs-control`
 - Operations on mounted Btrfs filesystems through Linux Btrfs ioctls
 - Version 2/3 send streams, no-data streams, send clone-source selection,
-  recursive subvolume send, and receive reflink-range sharing
+  and recursive subvolume send
 - The ioctl-based `inspect-internal` commands: `inode-resolve`,
   `logical-resolve`, `subvolid-resolve`, `rootid`, `min-dev-size`,
   `list-chunks`, and `map-swapfile`

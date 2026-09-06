@@ -24,6 +24,7 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
+#include <sys/btrfsio.h>
 #include <sys/dirent.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
@@ -1770,6 +1771,235 @@ btrfs_write(void *v)
 		if (error == 0)
 			error = end_error;
 	}
+	return (error);
+}
+
+/*
+ * CLONE holds both regular-file vnodes throughout replay. Never wait on the
+ * second while holding the first: rename can hold either as a target.
+ * Open descriptors and the caller's busy mounts pin both identities.
+ */
+int
+btrfs_clone_range(struct vnode *svp, struct vnode *dvp,
+    struct btrfs_ioctl_clone *args, struct proc *p)
+{
+	struct btrfs_node *src = VTOBTRFS(svp), *dst = VTOBTRFS(dvp);
+	struct btrfs_fs *bmp = dst->bn_mount;
+	struct btrfs_file_extent source, old;
+	struct btrfs_path path = { 0 };
+	struct btrfs_trans_reservation reservation = { 0 };
+	struct btrfs_trans_handle *handle;
+	struct btrfs_inode saved;
+	struct vattr attr;
+	struct uio uio = { 0 };
+	struct iovec iov;
+	struct buf *bp = NULL;
+	struct timespec now;
+	uint64_t from = args->src_offset, to = args->dst_offset;
+	uint64_t length = args->length, end, count, size, original_size;
+	uint32_t sector = letoh32(bmp->bm_super.sectorsize);
+	ssize_t overrun;
+	int error, end_error, changed = 0;
+
+retry:
+	error = vn_lock(svp, LK_EXCLUSIVE | LK_RETRY);
+	if (error != 0)
+		return (error);
+	if (dvp != svp) {
+		error = vn_lock(dvp, LK_EXCLUSIVE | LK_NOWAIT);
+		if (error != 0) {
+			VOP_UNLOCK(svp);
+			error = vn_lock(dvp, LK_EXCLUSIVE | LK_RETRY);
+			if (error != 0)
+				return (error);
+			VOP_UNLOCK(dvp);
+			goto retry;
+		}
+	}
+	original_size = dst->bn_inode.bi_size;
+	error = EINVAL;
+	if (from > LLONG_MAX || length > LLONG_MAX - from ||
+	    from > src->bn_inode.bi_size ||
+	    length > src->bn_inode.bi_size - from ||
+	    to > LLONG_MAX || length > LLONG_MAX - to ||
+	    ((from | to) & (sector - 1)) != 0)
+		goto out;
+	end = to + length;
+	if ((length & (sector - 1)) != 0 &&
+	    (from + length != src->bn_inode.bi_size ||
+	    end < dst->bn_inode.bi_size))
+		goto out;
+	if (src->bn_treeid == dst->bn_treeid &&
+	    src->bn_ino == dst->bn_ino && length != 0 &&
+	    to < roundup(from + length, sector) &&
+	    from < roundup(end, sector))
+		goto out;
+	error = EROFS;
+	if (btrfs_node_readonly(dst))
+		goto out;
+	error = EPERM;
+	if (dst->bn_inode.bi_flags &
+	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND))
+		goto out;
+	error = EINVAL;
+	/* A shared allocation must have one checksum policy for all owners. */
+	if ((src->bn_inode.bi_flags ^ dst->bn_inode.bi_flags) &
+	    BTRFS_INODE_NODATASUM)
+		goto out;
+	error = vn_writechk(dvp);
+	if (error != 0 || length == 0)
+		goto out;
+	uio.uio_offset = to;
+	uio.uio_resid = length;
+	uio.uio_procp = p;
+	error = vn_fsizechk(dvp, &uio, 0, &overrun);
+	if (error != 0 || overrun != 0) {
+		error = EFBIG;
+		goto out;
+	}
+
+	/*
+	 * Ordered writes may update their private allocation in place until
+	 * commit. Finish them before sharing, and before replacing destination
+	 * items whose pending payloads would otherwise mask the new mappings.
+	 * No tree paths or handles survive this commit.
+	 */
+	error = btrfs_trans_commit(bmp,
+	    MAX(src->bn_inode.bi_last_dirty_transid,
+	    dst->bn_inode.bi_last_dirty_transid), p);
+	if (error != 0)
+		goto out;
+	if (to > dst->bn_inode.bi_size) {
+		/* Preserve/zero the old partial EOF and convert an inline prefix. */
+		vattr_null(&attr);
+		attr.va_size = to;
+		error = VOP_SETATTR(dvp, &attr, p->p_ucred, p);
+		if (error != 0)
+			goto out;
+		changed = 1;
+		error = btrfs_trans_commit(bmp,
+		    dst->bn_inode.bi_last_dirty_transid, p);
+		if (error != 0)
+			goto out;
+	}
+	reservation.btr_metadata =
+	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
+	    BTRFS_VOP_METADATA_BLOCKS;
+	while (length != 0) {
+		error = btrfs_find_file_extent(bmp, src->bn_root, &path,
+		    src->bn_ino, from, roundup(src->bn_inode.bi_size, sector),
+		    &source);
+		btrfs_release_path(&path);
+		if (error != 0)
+			break;
+		if (source.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+			/*
+			 * Inline bytes have no shareable data allocation.
+			 * Read/copy only this bounded inline payload, using the
+			 * ordinary writer for its checksum and EOF handling.
+			 */
+			count = MIN(length, sector);
+			error = bread(svp, from / sector, sector, &bp);
+			if (error != 0)
+				break;
+			iov.iov_base = bp->b_data;
+			iov.iov_len = count;
+			memset(&uio, 0, sizeof(uio));
+			uio.uio_iov = &iov;
+			uio.uio_iovcnt = 1;
+			uio.uio_offset = to;
+			uio.uio_resid = count;
+			uio.uio_segflg = UIO_SYSSPACE;
+			uio.uio_rw = UIO_WRITE;
+			uio.uio_procp = p;
+			error = VOP_WRITE(dvp, &uio, 0, p->p_ucred);
+			brelse(bp);
+			bp = NULL;
+			if (error != 0)
+				break;
+			changed = 1;
+			from += count;
+			to += count;
+			length -= count;
+			continue;
+		}
+		error = btrfs_find_file_extent(bmp, dst->bn_root, &path,
+		    dst->bn_ino, to, roundup(MAX(end,
+		    dst->bn_inode.bi_size), sector), &old);
+		btrfs_release_path(&path);
+		if (error != 0)
+			break;
+		count = MIN(roundup(length, sector),
+		    source.bfe_logical + source.bfe_length - from);
+		if (old.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+			if (to != 0 || old.bfe_length > count) {
+				error = EOPNOTSUPP;
+				break;
+			}
+		} else
+			count = MIN(count,
+			    old.bfe_logical + old.bfe_length - to);
+		if (count == 0 || (count & (sector - 1)) != 0 ||
+		    (source.bfe_logical & (sector - 1)) != 0 ||
+		    (old.bfe_logical & (sector - 1)) != 0 ||
+		    (old.bfe_type != BTRFS_FILE_EXTENT_INLINE &&
+		    (old.bfe_length & (sector - 1)) != 0) ||
+		    source.bfe_encryption != 0 ||
+		    source.bfe_other_encoding != 0 ||
+		    old.bfe_encryption != 0 || old.bfe_other_encoding != 0) {
+			error = EOPNOTSUPP;
+			break;
+		}
+		/* Preallocation reads as zero and need not be duplicated. */
+		if (source.bfe_type == BTRFS_FILE_EXTENT_PREALLOC)
+			source.bfe_type = BTRFS_FILE_EXTENT_HOLE;
+		source.bfe_disk_offset += from - source.bfe_logical;
+		source.bfe_logical = to;
+		source.bfe_length = count;
+		size = MAX(dst->bn_inode.bi_size, to + MIN(length, count));
+		error = btrfs_trans_join(bmp, &reservation, &handle);
+		if (error != 0)
+			break;
+		saved = dst->bn_inode;
+		getnanotime(&now);
+		dst->bn_inode.bi_mtime = dst->bn_inode.bi_ctime = now;
+		dst->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_MTIME |
+		    BTRFS_INODE_DIRTY_CTIME;
+		error = btrfs_clone_file_extent(handle, dst, &source, &old,
+		    to, count, size);
+		end_error = btrfs_trans_end(handle);
+		if (error == 0)
+			error = end_error;
+		if (error != 0) {
+			dst->bn_inode = saved;
+			break;
+		}
+		changed = 1;
+		count = MIN(length, count);
+		from += count;
+		to += count;
+		length -= count;
+	}
+out:
+	btrfs_release_path(&path);
+	if (bp != NULL)
+		brelse(bp);
+	if (changed) {
+		(void)uvm_vnp_uncache(dvp);
+		/* All file buffers are clean; pending writes live in ordered data. */
+		(void)vinvalbuf(dvp, 0, p->p_ucred, p, 0, INFSLP);
+		uvm_vnp_setsize(dvp, dst->bn_inode.bi_size);
+		VN_KNOTE(dvp, NOTE_WRITE |
+		    (dst->bn_inode.bi_size > original_size ? NOTE_EXTEND : 0));
+		if (error == 0 &&
+		    ((dvp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
+		    (dst->bn_inode.bi_flags & BTRFS_INODE_SYNC)))
+			error = btrfs_trans_commit(bmp,
+			    dst->bn_inode.bi_last_dirty_transid, p);
+	}
+	if (dvp != svp)
+		VOP_UNLOCK(dvp);
+	VOP_UNLOCK(svp);
 	return (error);
 }
 

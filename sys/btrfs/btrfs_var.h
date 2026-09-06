@@ -772,6 +772,12 @@ int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, uint64_t);
 int	btrfs_write_file_sector(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, const void *, uint64_t);
+int	btrfs_clone_file_extent(struct btrfs_trans_handle *,
+	    struct btrfs_node *, const struct btrfs_file_extent *,
+	    const struct btrfs_file_extent *, uint64_t, uint64_t, uint64_t);
+struct btrfs_ioctl_clone;
+int	btrfs_clone_range(struct vnode *, struct vnode *,
+	    struct btrfs_ioctl_clone *, struct proc *);
 int	btrfs_iterate_extent_items(struct btrfs_fs *,
 	    btrfs_extent_iter_fn, btrfs_backref_iter_fn, void *);
 int	btrfs_iterate_block_groups(struct btrfs_fs *,
