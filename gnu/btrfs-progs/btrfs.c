@@ -5,7 +5,7 @@
  * modify it under the terms of the GNU General Public License v2.
  *
  * Reduced OpenBSD btrfs command frontend.  Offline inspect-internal
- * commands are available; mounted-filesystem commands are stubbed.
+ * commands and native subvolume administration are available.
  */
 
 #include "kerncompat.h"
@@ -37,7 +37,7 @@ static const char * const btrfs_cmd_group_usage[] = {
 
 static const char btrfs_cmd_group_info[] =
 	"Offline inspection is available through 'btrfs inspect-internal'.\n"
-	"Commands that require Linux Btrfs ioctls are not supported on OpenBSD.";
+	"Subvolume commands select a filesystem by mountpoint; paths start at tree 5.";
 
 static const char *
 skip_prefix(const char *str, const char *prefix)

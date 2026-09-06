@@ -1500,8 +1500,11 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 	uint32_t size, sectorsize;
 	int error;
 
-	if (root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY)
-		return (EROFS);
+	/*
+	 * A read-only snapshot can inherit orphan and truncate markers.
+	 * Internal recovery may retire them; VFS mutation still enforces the
+	 * root's read-only flag before reaching this cleanup engine.
+	 */
 	error = btrfs_read_orphan_inode(root, ino, &item);
 	if (error != 0)
 		return (error);
@@ -1950,6 +1953,43 @@ btrfs_find_dir_parent(struct btrfs_root *root, uint64_t objectid,
 invalid:
 	error = EINVAL;
 out:
+	btrfs_release_path(&path);
+	return (error);
+}
+
+/*
+ * Missing backreferences are snapshot boundaries: the copied directory item
+ * is retained, but the nested subvolume itself was not snapshotted.
+ */
+int
+btrfs_check_subvol_link(struct btrfs_root *root, uint64_t dirid,
+    uint64_t id, const char *name, size_t len)
+{
+	struct btrfs_root *roots;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	const struct btrfs_root_ref *ref;
+	const uint8_t *data;
+	uint32_t size;
+	int error;
+
+	error = btrfs_get_root(root->br_mount, BTRFS_ROOT_TREE_OBJECTID, &roots);
+	if (error != 0)
+		return (error);
+	key.objectid = htole64(id);
+	key.type = BTRFS_ROOT_BACKREF_KEY;
+	key.offset = htole64(root->br_owner);
+	error = btrfs_search_slot(roots, &key, &path);
+	if (error == 0)
+		error = btrfs_path_item(&path, NULL, &data, &size);
+	if (error == 0) {
+		ref = (const struct btrfs_root_ref *)data;
+		if (size != sizeof(*ref) + len ||
+		    letoh64(ref->dirid) != dirid ||
+		    letoh16(ref->name_len) != len ||
+		    memcmp(ref + 1, name, len) != 0)
+			error = EINVAL;
+	}
 	btrfs_release_path(&path);
 	return (error);
 }

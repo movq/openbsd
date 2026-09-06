@@ -417,6 +417,47 @@ then mount the top-level tree read-only and run `subvol.py verify mountpoint`.
 Repeat with 16 KiB metadata. Rebuild mount_btrfs with the matching sys/mount.h
 when changing kernels: its mount arguments now include the selected tree ID.
 
+subvolume.py tests native administration through /dev/btrfs-control and the
+installed btrfs command. The runner cases `subvolume`, `subvolume-orphans`,
+`subvolume-zstd`, and `subvolume-capacity` cover its automated phases; select
+them with `--select 'subvolume*'`. The capacity case fixes the image at 128 MiB
+with 16 KiB nodes and single data regardless of the selected layout.
+On an empty writable top-level mount run `create`,
+then unmount and run both independent checks. Remount and run `verify`.
+Read the ID of `latest` from `btrfs subvolume list mountpoint`, unmount, and
+mount only that ID with `mount_btrfs -o rw -s ID`. Run `child` there to test
+filesystem-relative paths outside the mounted view, sibling snapshots and
+deletion, and refusal to delete the selected view. Unmount/check again, then
+mount tree 5 and run `final`. The phases verify shared metadata/data COW,
+read-only snapshots, hard links, source deletion, final reference reclamation,
+namespace errors, active-file and nested-subvolume deletion rejection, and
+path reconstruction after ancestor-directory rename.
+
+Run `boundaries` and `race` on a top-level writable mount for nested snapshot
+boundary directories and administration concurrent with file writes, fsync,
+creation, and unlink. Unmount and check afterward. Repeat at 4 KiB and 16 KiB
+metadata sizes. `abi` checks malformed requests, descriptor access, and
+privilege checks on an inherited control descriptor. `orphans` snapshots an
+open-unlinked file into a read-only tree; unmount/check, remount writable, and
+run `orphan_verify` to check internal recovery and deletion.
+On a fresh 128 MiB image with 16 KiB nodes, `capacity` checks that complete
+deletion reservation fails with ENOSPC while preserving the namespace and
+data, then verifies continued writes and deletion after individual unlinks.
+Unmount and run both independent checks afterward.
+For compressed extents, run `seed directory` on the host,
+format an unmounted image with `--rootdir directory --subvol rw:imported
+--compress zstd`, then run `compressed` in the VM. After independent checks,
+run `compressed_verify` on writable and read-only remounts. Always put VM
+driver commands under a timeout.
+
+For snapshot publication recovery, create and sync a source subvolume with
+known data, enter DDB through the monitor NMI, set a breakpoint at
+btrfs_write_super_mirrors, and continue. Start a snapshot command and reset
+the VM when the breakpoint stops its commit before superblock publication.
+Check the unmounted image independently, then remount writable and verify
+the source data, absence of the unpublished snapshot, and continued writes,
+snapshot creation, and deletion. Unmount and check again.
+
 ipc.py uses create/verify phases and a readonly phase after a read-only
 remount. It covers FIFO and Unix-domain socket creation, hard-link aliases,
 blocking/nonblocking pipe I/O, EOF, kqueue readiness, socket connections,
