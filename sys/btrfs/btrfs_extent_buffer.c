@@ -60,7 +60,9 @@ static int
 btrfs_extent_buffer_matches(const struct btrfs_extent_buffer *eb,
     uint64_t generation, uint64_t owner, uint8_t level)
 {
-	return (eb->eb_generation == generation && eb->eb_owner == owner &&
+	return (eb->eb_generation == generation &&
+	    (eb->eb_owner == owner ||
+	    (btrfs_file_tree(eb->eb_owner) && btrfs_file_tree(owner))) &&
 	    eb->eb_level == level);
 }
 
@@ -626,9 +628,11 @@ btrfs_extent_buffer_load(const struct btrfs_root *root,
 	    letoh32(root->br_super->nodesize),
 	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM,
 	    btrfs_extent_buffer_validate, &validation, NULL, &bp);
-	if (error == 0)
+	if (error == 0) {
 		eb->eb_buf = bp;
-	else if (error == ENOENT)
+		eb->eb_owner = letoh64(((struct btrfs_header *)
+		    bp->b_data)->owner);
+	} else if (error == ENOENT)
 		error = EINVAL;
 	return (error);
 }
@@ -675,7 +679,10 @@ btrfs_validate_tree_block(const struct btrfs_super_block *sb,
 	    generation == 0 || generation > view_generation ||
 	    letoh64(header->bytenr) != bytenr ||
 	    letoh64(header->generation) != generation ||
-	    letoh64(header->owner) != owner || header->level != level ||
+	    (letoh64(header->owner) != owner &&
+	    !(btrfs_file_tree(owner) &&
+	    btrfs_file_tree(letoh64(header->owner)))) ||
+	    header->level != level ||
 	    level >= BTRFS_MAX_LEVEL)
 		return (EINVAL);
 

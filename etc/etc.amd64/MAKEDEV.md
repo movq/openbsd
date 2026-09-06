@@ -68,6 +68,7 @@ _TITLE(spec)
 _DEV(apm, 83)
 _DEV(au, 42)
 _DEV(bio, 79)
+_DEV(btrfs, 102)
 _DEV(bktr, 49)
 _DEV(bpf, 23)
 _DEV(dt, 30)
@@ -133,6 +134,7 @@ twrget(all, flo, fd, 0, 0B, 0C, 0D, 0E, 0F, 0G, 0H)dnl
 twrget(all, flo, fd, 1, 1B, 1C, 1D, 1E, 1F, 1G, 1H)dnl
 target(all, pty, 0)dnl
 target(all, bio)dnl
+twrget(all, btrfs, btrfs-control)dnl
 target(all, tun, 0, 1, 2, 3)dnl
 target(all, tap, 0, 1, 2, 3)dnl
 target(all, rd, 0)dnl

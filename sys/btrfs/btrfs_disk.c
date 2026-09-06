@@ -220,7 +220,9 @@ btrfs_read_extent_item(struct btrfs_fs *bmp,
 	if (record->ber_refs == 0 || record->ber_generation == 0 ||
 	    record->ber_generation > letoh64(bmp->bm_super.generation) ||
 	    (flags & ~(BTRFS_EXTENT_FLAG_DATA |
-	    BTRFS_EXTENT_FLAG_TREE_BLOCK)) != 0 ||
+	    BTRFS_EXTENT_FLAG_TREE_BLOCK | BTRFS_BLOCK_FLAG_FULL_BACKREF)) != 0 ||
+	    ((flags & BTRFS_BLOCK_FLAG_FULL_BACKREF) != 0 &&
+	    (flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) == 0) ||
 	    (flags & (BTRFS_EXTENT_FLAG_DATA |
 	    BTRFS_EXTENT_FLAG_TREE_BLOCK)) == 0 ||
 	    (flags & (BTRFS_EXTENT_FLAG_DATA |

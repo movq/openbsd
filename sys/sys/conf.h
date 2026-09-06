@@ -594,6 +594,7 @@ cdev_decl(ksyms);
 cdev_decl(kstat);
 
 cdev_decl(bio);
+cdev_decl(btrfs);
 cdev_decl(vscsi);
 
 cdev_decl(bktr);

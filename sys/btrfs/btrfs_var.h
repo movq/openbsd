@@ -38,6 +38,14 @@
 #define BTRFS_MAX_UNCOMPRESSED	(128 * 1024)
 #define BTRFS_MAX_MIRRORS	2
 
+static inline int
+btrfs_file_tree(uint64_t owner)
+{
+	return (owner == BTRFS_FS_TREE_OBJECTID ||
+	    (owner >= BTRFS_FIRST_FREE_OBJECTID &&
+	    owner <= BTRFS_LAST_FREE_OBJECTID));
+}
+
 struct btrfs_chunk_map {
 	uint64_t	logical;
 	uint64_t	length;
@@ -427,6 +435,7 @@ struct btrfs_root {
 	uint64_t			 br_last_ino;
 	/* Root-item flags are immutable until subvolume property changes exist. */
 	uint64_t			 br_flags;
+	int				 br_deleted;
 	dev_t				 br_dev;
 	struct btrfs_transaction	*br_transaction;
 	uint8_t				 br_level;
@@ -549,6 +558,9 @@ struct btrfs_fs {
 	struct mutex			 bm_trans_mtx;
 	uint64_t			 bm_last_transid;
 	int				 bm_committer;
+	/* Administrative operations close joins while inspecting whole trees. */
+	struct proc			*bm_control;
+	uint64_t			 bm_last_rootid;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
 	struct btrfs_root_list		 bm_roots;
 	struct mutex			 bm_rootmtx;
@@ -571,6 +583,9 @@ struct btrfs_node {
 	struct lockf_state		*bn_lockf;
 	uint64_t			 bn_treeid;
 	uint64_t			 bn_ino;
+	/* Snapshot boundary directories have inode 2 and no on-disk inode. */
+	uint64_t			 bn_stub_parent;
+	uint64_t			 bn_stub_id;
 	int				 bn_hashed;
 	struct btrfs_inode		 bn_inode;
 };
@@ -580,6 +595,25 @@ struct btrfs_node {
 #define VTOBTRFS(vp)	((struct btrfs_node *)(vp)->v_data)
 
 extern const struct vops btrfs_vops;
+struct btrfs_ioctl_subvolume;
+int	btrfs_control(struct mount *, u_long, struct btrfs_ioctl_subvolume *,
+	    struct proc *);
+int	btrfs_subvolume(struct btrfs_fs *, u_long,
+	    struct btrfs_ioctl_subvolume *, struct proc *);
+int	btrfs_control_parent(struct btrfs_fs *, uint64_t, uint64_t,
+	    struct vnode **);
+int	btrfs_control_busy(struct btrfs_fs *, uint64_t);
+int	btrfs_new_subvolume_root(struct btrfs_trans_handle *, struct btrfs_root *,
+	    uint64_t, struct btrfs_root_item *, int);
+int	btrfs_drop_subvolume_tree(struct btrfs_trans_handle *, struct btrfs_root *);
+int	btrfs_count_tree(struct btrfs_root *, uint64_t *, uint64_t *);
+int	btrfs_block_refs(struct btrfs_trans_handle *,
+	    const struct btrfs_extent_buffer *, uint64_t *, uint64_t *);
+int	btrfs_block_full(struct btrfs_trans_handle *,
+	    const struct btrfs_extent_buffer *);
+int	btrfs_block_children(struct btrfs_trans_handle *,
+	    const struct btrfs_extent_buffer *, uint64_t, int, int);
+void	btrfs_forget_root(struct btrfs_fs *, uint64_t);
 extern const struct vops btrfs_spec_vops;
 #ifdef FIFO
 extern const struct vops btrfs_fifo_vops;
@@ -699,6 +733,9 @@ int	btrfs_commit_current(struct btrfs_fs *, struct proc *);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_fs *, uint64_t, uint64_t *,
 	    uint64_t *);
+int	btrfs_check_subvol_link(struct btrfs_root *, uint64_t, uint64_t,
+	    const char *, size_t);
+int	btrfs_vget_stub(struct btrfs_node *, uint64_t, struct vnode **);
 int	btrfs_iterate_directory(struct btrfs_root *, uint64_t, uint64_t,
 	    btrfs_dir_iter_fn, void *);
 int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,

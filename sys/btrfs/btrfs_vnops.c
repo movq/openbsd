@@ -303,7 +303,9 @@ btrfs_lookup(void *v)
 			*vpp = dvp;
 			goto found;
 		}
-		if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID) {
+		if (node->bn_stub_parent != 0) {
+			parent = node->bn_stub_parent;
+		} else if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID) {
 			error = btrfs_find_subvol_parent(bmp, node->bn_treeid,
 			    &parent_treeid, &parent);
 		} else {
@@ -338,6 +340,10 @@ btrfs_lookup(void *v)
 		vref(dvp);
 		*vpp = dvp;
 		goto found;
+	}
+	if (node->bn_stub_parent != 0) {
+		error = ENOENT;
+		goto out;
 	}
 
 	memset(&ctx, 0, sizeof(ctx));
@@ -385,14 +391,16 @@ btrfs_lookup(void *v)
 			error = EINVAL;
 			goto out;
 		}
-		error = btrfs_find_subvol_parent(bmp, ctx.blc_objectid,
-		    &parent_treeid, &parent);
-		if (error != 0)
-			goto out;
-		if (parent_treeid != node->bn_treeid || parent != node->bn_ino) {
-			error = EINVAL;
+		error = btrfs_check_subvol_link(root, node->bn_ino,
+		    ctx.blc_objectid, cnp->cn_nameptr, cnp->cn_namelen);
+		if (error == ENOENT) {
+			error = btrfs_vget_stub(node, ctx.blc_objectid, vpp);
+			if (error == 0)
+				goto found;
 			goto out;
 		}
+		if (error != 0)
+			goto out;
 		error = btrfs_vget_tree(dvp->v_mount, ctx.blc_objectid,
 		    BTRFS_FIRST_FREE_OBJECTID, vpp);
 	} else
@@ -1874,6 +1882,7 @@ out:
 #define BTRFS_READDIR_FULL		(-1)
 
 struct btrfs_readdir_ctx {
+	struct btrfs_node	*brc_node;
 	struct uio	*brc_uio;
 	off_t		 brc_offset;
 	int		 brc_full;
@@ -1946,9 +1955,14 @@ btrfs_readdir_entry(const struct btrfs_dir_entry *entry, void *arg)
 	 * A subvolume directory item names a root item; its visible inode is
 	 * the root directory in that tree, not the root item's object ID.
 	 */
-	if (entry->bde_subvolume)
-		fileno = BTRFS_FIRST_FREE_OBJECTID;
-	else
+	if (entry->bde_subvolume) {
+		error = btrfs_check_subvol_link(ctx->brc_node->bn_root,
+		    ctx->brc_node->bn_ino, entry->bde_objectid,
+		    (const char *)entry->bde_name, entry->bde_namelen);
+		if (error != 0 && error != ENOENT)
+			return (error);
+		fileno = error == ENOENT ? 2 : BTRFS_FIRST_FREE_OBJECTID;
+	} else
 		fileno = entry->bde_objectid;
 	error = btrfs_emit_dirent(ctx, fileno,
 	    btrfs_dirent_type(entry->bde_type), entry->bde_name,
@@ -1982,6 +1996,7 @@ btrfs_readdir(void *v)
 		return (0);
 	}
 	memset(&ctx, 0, sizeof(ctx));
+	ctx.brc_node = node;
 	ctx.brc_uio = uio;
 	ctx.brc_offset = uio->uio_offset;
 	resid = uio->uio_resid;
@@ -1994,7 +2009,9 @@ btrfs_readdir(void *v)
 	}
 	if (ctx.brc_offset == BTRFS_DIR_OFFSET_DOTDOT) {
 		parent_treeid = node->bn_treeid;
-		if (node->bn_ino == view->bmv_root_dirid &&
+		if (node->bn_stub_parent != 0)
+			parent = node->bn_stub_parent;
+		else if (node->bn_ino == view->bmv_root_dirid &&
 		    node->bn_treeid == view->bmv_treeid)
 			parent = node->bn_ino;
 		else if (node->bn_ino == BTRFS_FIRST_FREE_OBJECTID &&
@@ -2015,6 +2032,8 @@ btrfs_readdir(void *v)
 			goto out;
 	}
 
+	if (node->bn_stub_parent != 0)
+		goto out;
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
 	if (error != 0)
 		goto out;

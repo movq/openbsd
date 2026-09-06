@@ -284,6 +284,11 @@ struct cdevsw	cdevsw[] =
 	cdev_pppx_init(NPPPX,pppac),	/* 99: PPP Access Concentrator */
 	cdev_ujoy_init(NUJOY,ujoy),	/* 100: USB joystick/gamecontroller */
 	cdev_psp_init(NPSP,psp),	/* 101: PSP */
+#ifdef BTRFS
+	cdev_bio_init(1,btrfs),	/* 102: Btrfs control */
+#else
+	cdev_notdef(),
+#endif
 };
 int	nchrdev = nitems(cdevsw);
 
