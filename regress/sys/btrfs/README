@@ -1,6 +1,9 @@
 Host orchestration
 ------------------
 
+For the basic FFS2 performance comparison and its standalone workload runner,
+see BENCHMARKS.md. It is separate from the correctness matrix below.
+
 With the test VM already running a matching kernel and mount_btrfs, run:
 
     ./regress/sys/btrfs/run-all.sh
