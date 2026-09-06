@@ -30,26 +30,49 @@ int
 btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 {
 	struct btrfs_ioctl_subvolume *args = (void *)data;
+	struct btrfs_ioctl_identity *identity = (void *)data;
+	struct btrfs_ioctl_xattr *xattr = (void *)data;
 	struct file *fp;
 	struct vnode *vp;
 	struct mount *mp;
-	int error;
+	int error, isidentity, isxattr, readonly, fd;
 
 	if ((error = suser(p)) != 0)
 		return (error);
-	if (cmd != BTRFSIOC_LIST && cmd != BTRFSIOC_CREATE &&
+	isidentity = cmd == BTRFSIOC_INFO || cmd == BTRFSIOC_FINISH;
+	isxattr = cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_SETXATTR ||
+	    cmd == BTRFSIOC_RMXATTR;
+	readonly = cmd == BTRFSIOC_LIST || cmd == BTRFSIOC_INFO ||
+	    cmd == BTRFSIOC_GETXATTR;
+	if (!isidentity && !isxattr &&
+	    cmd != BTRFSIOC_LIST && cmd != BTRFSIOC_CREATE &&
 	    cmd != BTRFSIOC_DELETE && cmd != BTRFSIOC_SNAPSHOT)
 		return (ENOTTY);
-	if (cmd != BTRFSIOC_LIST && !(flags & FWRITE))
+	if (!readonly && !(flags & FWRITE))
 		return (EBADF);
-	if (memchr(args->path, '\0', sizeof(args->path)) == NULL ||
-	    memchr(args->source, '\0', sizeof(args->source)) == NULL)
-		return (ENAMETOOLONG);
-	if ((args->flags & ~(cmd == BTRFSIOC_SNAPSHOT ?
-	    BTRFS_CTL_RDONLY : 0)) != 0 || args->id != 0 ||
-	    args->parent != 0 || (cmd != BTRFSIOC_LIST && args->cursor != 0))
-		return (EINVAL);
-	fp = fd_getfile(p->p_fd, args->fd);
+	if (isxattr) {
+		if (memchr(xattr->name, '\0', sizeof(xattr->name)) == NULL)
+			return (ENAMETOOLONG);
+		fd = xattr->fd;
+	} else if (isidentity) {
+		if (memchr(identity->path, '\0', sizeof(identity->path)) == NULL)
+			return (ENAMETOOLONG);
+		if (identity->flags != 0 ||
+		    (identity->id != 0 && identity->path[0] != '\0'))
+			return (EINVAL);
+		fd = identity->fd;
+	} else {
+		if (memchr(args->path, '\0', sizeof(args->path)) == NULL ||
+		    memchr(args->source, '\0', sizeof(args->source)) == NULL)
+			return (ENAMETOOLONG);
+		if ((args->flags & ~(cmd == BTRFSIOC_SNAPSHOT ?
+		    BTRFS_CTL_RDONLY : 0)) != 0 || args->id != 0 ||
+		    args->parent != 0 ||
+		    (cmd != BTRFSIOC_LIST && args->cursor != 0))
+			return (EINVAL);
+		fd = args->fd;
+	}
+	fp = fd_getfile(p->p_fd, fd);
 	if (fp == NULL)
 		return (EBADF);
 	if (fp->f_type != DTYPE_VNODE) {
@@ -64,7 +87,14 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	else {
 		error = vfs_busy(mp, VB_READ | VB_NOWAIT);
 		if (error == 0) {
-			error = btrfs_control(mp, cmd, args, p);
+			if (isxattr)
+				error = btrfs_control_xattr(vp, cmd, xattr, p);
+			else if (isidentity) {
+				error = btrfs_identity_control(mp, cmd, identity, p);
+				if (error == 0 && cmd == BTRFSIOC_INFO)
+					identity->fd_treeid = VTOBTRFS(vp)->bn_treeid;
+			} else
+				error = btrfs_control(mp, cmd, args, p);
 			vfs_unbusy(mp);
 		}
 	}

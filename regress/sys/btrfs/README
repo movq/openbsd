@@ -417,6 +417,37 @@ then mount the top-level tree read-only and run `subvol.py verify mountpoint`.
 Repeat with 16 KiB metadata. Rebuild mount_btrfs with the matching sys/mount.h
 when changing kernels: its mount arguments now include the selected tree ID.
 
+send_receive.py provides targeted OpenBSD/Linux interoperability fixtures.
+Use separate scratch filesystems for source and destination, and unmount a
+device in one VM before mounting it in the other. Always use timeout for
+OpenBSD driver commands. On OpenBSD, create a writable subvolume, run `seed`
+on its mounted directory, snapshot it read-only, run `mutate` on the writable
+source, and take a second read-only snapshot. Send the first with
+`btrfs send -f full.stream mountpoint full`, and the second with
+`btrfs send -p full -f incremental.stream mountpoint incremental`.
+Receive both into another filesystem with `btrfs receive -f file mountpoint /`.
+Use `compare source received` to check data, hardlink topology, node types,
+device numbers, modes, ownership, mtimes, and xattrs. Symlink permission bits
+are excluded because Linux streams do not carry them.
+
+Repeat with Linux's btrfs send/receive in both directions, including an
+incremental directory swap, truncation, hardlink changes, sparse growth, and
+binary/directory xattrs. Run unmounted `btrfs check --readonly --check-data-csum`
+and repeat comparisons after remounting. Run `readonly directory` in both VMs
+after mounting native-created snapshots and received roots: Linux must retain
+the root-item read-only flag. Use 4 KiB and 16 KiB metadata fixtures.
+On Linux, run `clones writable-source` after the incremental fixture and send
+both a full snapshot and a snapshot relative to the prior parent. These must
+exercise CLONE commands referring to the receive tree and to its parent.
+With only an unrelated child mounted, repeat native send/receive outside that
+view and verify that temporary mounts disappear. `lifecycle mountpoint path`
+and `send_lifecycle mountpoint source` check signal interruption in that
+arrangement. With tree 5 mounted,
+`busy mountpoint path` checks finalization with an active writer, and
+`malformed mountpoint path` checks CRC/TLV validation, truncation, unsupported
+commands/versions, and lexical/symlink escapes. Those phases leave incomplete
+writable test subvolumes intentionally.
+
 subvolume.py tests native administration through /dev/btrfs-control and the
 installed btrfs command. The runner cases `subvolume`, `subvolume-orphans`,
 `subvolume-zstd`, and `subvolume-capacity` cover its automated phases; select

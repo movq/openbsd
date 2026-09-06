@@ -112,10 +112,337 @@ subvol_read(struct btrfs_root *root, const struct btrfs_key *key,
 	return (error);
 }
 
+/*
+ * The caller serializes mounts and namespace changes. Finalization fences
+ * vget, proves that no vnode user can still mutate this tree, then publishes
+ * the identity and read-only flag in one transaction.
+ */
+int
+btrfs_identity(struct btrfs_fs *bmp, u_long cmd,
+    struct btrfs_ioctl_identity *args, struct proc *p)
+{
+	struct btrfs_root *root, *roots, *uuids;
+	struct btrfs_root_item item;
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_trans_reservation res = { 0 };
+	struct btrfs_key key = { 0 };
+	struct timespec now;
+	uint64_t ino, value, *values = NULL;
+	uint32_t size, nodesize = letoh32(bmp->bm_super.nodesize);
+	int error, enderror, gated = 0;
+
+	if (args->id != 0)
+		error = btrfs_get_root(bmp, args->id, &root);
+	else {
+		error = subvol_resolve(bmp, args->path, &root, &ino);
+		if (error == 0 && ino != BTRFS_FIRST_FREE_OBJECTID)
+			error = EINVAL;
+	}
+	if (error != 0)
+		return (error);
+	if (root->br_owner != BTRFS_FS_TREE_OBJECTID &&
+	    (root->br_owner < BTRFS_FIRST_FREE_OBJECTID ||
+	    root->br_owner > BTRFS_LAST_FREE_OBJECTID))
+		return (EINVAL);
+	args->id = root->br_owner;
+	error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &roots);
+	if (error == 0)
+		error = btrfs_find_root_item(roots, args->id,
+		    BTRFS_FIRST_FREE_OBJECTID, &item);
+	if (error != 0)
+		return (error);
+	if (cmd == BTRFSIOC_INFO) {
+		args->flags = root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY ?
+		    BTRFS_CTL_RDONLY : 0;
+		args->ctransid = letoh64(item.ctransid);
+		args->stransid = letoh64(item.stransid);
+		memcpy(args->uuid, item.uuid, sizeof(args->uuid));
+		memcpy(args->received_uuid, item.received_uuid,
+		    sizeof(args->received_uuid));
+		return (btrfs_subvol_path(bmp, args->id, args->path,
+		    sizeof(args->path)));
+	}
+	if (args->id == BTRFS_FS_TREE_OBJECTID || args->stransid == 0 ||
+	    memcmp(args->received_uuid, (uint8_t[16]){0}, 16) == 0 ||
+	    memcmp(item.received_uuid, (uint8_t[16]){0}, 16) != 0)
+		return (EINVAL);
+	if (root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY)
+		return (EROFS);
+	mtx_enter(&bmp->bm_nodemtx);
+	root->br_finalizing = 1;
+	mtx_leave(&bmp->bm_nodemtx);
+	error = btrfs_control_busy(bmp, args->id);
+	if (error != 0)
+		goto out;
+	mtx_enter(&bmp->bm_trans_mtx);
+	bmp->bm_control = p;
+	while (bmp->bm_transaction->bt_writers != 0)
+		msleep(&bmp->bm_transaction->bt_writers, &bmp->bm_trans_mtx,
+		    PWAIT, "btrrecv", 0);
+	mtx_leave(&bmp->bm_trans_mtx);
+	gated = 1;
+	error = btrfs_commit_current(bmp, p);
+	/* Commit may have changed the root block and generation. */
+	if (error == 0)
+		error = btrfs_find_root_item(roots, args->id,
+		    BTRFS_FIRST_FREE_OBJECTID, &item);
+	if (error != 0)
+		goto out;
+	error = btrfs_get_root(bmp, BTRFS_UUID_TREE_OBJECTID, &uuids);
+	if (error == ENOENT) {
+		uuids = NULL;
+		error = 0;
+	}
+	if (error != 0)
+		goto out;
+	memcpy(&key.objectid, args->received_uuid, 8);
+	memcpy(&key.offset, args->received_uuid + 8, 8);
+	key.type = BTRFS_UUID_KEY_RECEIVED_SUBVOL;
+	size = 0;
+	if (uuids != NULL) {
+		values = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+		error = subvol_read(uuids, &key, values, nodesize, &size);
+		if (error == ENOENT)
+			error = 0;
+		if (error != 0)
+			goto out;
+		if (size % sizeof(value) != 0 || size + sizeof(value) >
+		    nodesize - sizeof(struct btrfs_header) -
+		    sizeof(struct btrfs_item)) {
+			error = EOVERFLOW;
+			goto out;
+		}
+		value = htole64(args->id);
+		memcpy((uint8_t *)values + size, &value, sizeof(value));
+	}
+	res.btr_metadata = 64 * nodesize;
+	error = btrfs_trans_join(bmp, &res, &handle);
+	if (error != 0)
+		goto out;
+	memcpy(item.received_uuid, args->received_uuid, 16);
+	item.stransid = htole64(args->stransid);
+	item.rtransid = htole64(handle->bth_transaction->bt_generation);
+	nanotime(&now);
+	item.rtime.sec = htole64(now.tv_sec);
+	item.rtime.nsec = htole32(now.tv_nsec);
+	item.flags = htole64(letoh64(item.flags) | BTRFS_ROOT_SUBVOL_RDONLY);
+	item.inode.flags = htole64(letoh64(item.inode.flags) |
+	    BTRFS_INODE_ROOT_ITEM_INIT);
+	if (uuids != NULL) {
+		if (size == 0)
+			error = btrfs_insert_item(handle, uuids, &key, values,
+			    sizeof(value));
+		else
+			error = btrfs_replace_item(handle, uuids, &key, values,
+			    size + sizeof(value));
+	}
+	memset(&key, 0, sizeof(key));
+	key.objectid = htole64(args->id);
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	if (error == 0)
+		error = btrfs_replace_item(handle, roots, &key, &item, sizeof(item));
+	if (error != 0)
+		btrfs_trans_abort(handle, error);
+	enderror = btrfs_trans_end(handle);
+	if (error == 0)
+		error = enderror;
+	if (error == 0)
+		error = btrfs_commit_current(bmp, p);
+	if (error == 0)
+		root->br_flags |= BTRFS_ROOT_SUBVOL_RDONLY;
+out:
+	free(values, M_BTRFS, nodesize);
+	mtx_enter(&bmp->bm_nodemtx);
+	root->br_finalizing = 0;
+	mtx_leave(&bmp->bm_nodemtx);
+	if (gated) {
+		mtx_enter(&bmp->bm_trans_mtx);
+		bmp->bm_control = NULL;
+		wakeup(&bmp->bm_control);
+		mtx_leave(&bmp->bm_trans_mtx);
+	}
+	return (error);
+}
+
 struct subvol_name {
 	uint64_t ino;
 	struct subvol_entry entry;
 };
+
+int
+btrfs_control_xattr(struct vnode *select, u_long cmd,
+    struct btrfs_ioctl_xattr *args, struct proc *p)
+{
+	struct btrfs_fs *bmp = VTOBTRFS(select)->bn_mount;
+	struct btrfs_node *node;
+	struct btrfs_root *root;
+	struct vnode *vp;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	const uint8_t *data;
+	struct btrfs_dir_item *di;
+	struct btrfs_trans_handle *handle;
+	struct btrfs_trans_reservation res = { 0 };
+	uint8_t *buffer, *value = NULL;
+	uint64_t cursor = 0;
+	uint32_t size = 0, pos, step, len, cap;
+	size_t namelen = strlen(args->name);
+	int error, enderror, found = 0;
+
+	if (args->ino < BTRFS_FIRST_FREE_OBJECTID)
+		return (EINVAL);
+	error = btrfs_vget_tree(select->v_mount, VTOBTRFS(select)->bn_treeid,
+	    args->ino, &vp);
+	if (error != 0)
+		return (error);
+	node = VTOBTRFS(vp);
+	root = node->bn_root;
+	cap = letoh32(bmp->bm_super.nodesize);
+	buffer = malloc(cap, M_BTRFS, M_WAITOK);
+	target.objectid = htole64(args->ino);
+	target.type = BTRFS_XATTR_ITEM_KEY;
+	if (cmd == BTRFSIOC_GETXATTR) {
+		error = btrfs_search_lower_bound(root, &target, &path);
+		while (error == 0) {
+			error = btrfs_path_item(&path, &key, &data, &size);
+			if (error != 0)
+				break;
+			if (key->objectid != target.objectid ||
+			    key->type != target.type) {
+				error = ENOENT;
+				break;
+			}
+			for (pos = 0; pos < size; pos += step) {
+				di = (struct btrfs_dir_item *)(data + pos);
+				if (size - pos < sizeof(*di)) {
+					error = EINVAL;
+					break;
+				}
+				len = letoh16(di->name_len);
+				step = sizeof(*di) + len + letoh16(di->data_len);
+				if (len == 0 || len > BTRFS_NAME_MAX ||
+				    step > size - pos || memchr(di + 1, '\0', len)) {
+					error = EINVAL;
+					break;
+				}
+				if (cursor++ != args->cursor)
+					continue;
+				if (args->size < letoh16(di->data_len)) {
+					error = ERANGE;
+					break;
+				}
+				memcpy(args->name, di + 1, len);
+				args->name[len] = '\0';
+				args->size = letoh16(di->data_len);
+				memcpy(buffer, (uint8_t *)(di + 1) + len, args->size);
+				found = 1;
+				break;
+			}
+			if (error != 0 || found)
+				break;
+			error = btrfs_next_item(&path);
+		}
+		btrfs_release_path(&path);
+		if (error == 0 && found) {
+			error = copyout(buffer, args->value, args->size);
+			if (error == 0)
+				args->cursor++;
+		}
+		goto out;
+	}
+	if (bmp->bm_readonly || (select->v_mount->mnt_flag & MNT_RDONLY) ||
+	    (root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY)) {
+		error = EROFS;
+		goto out;
+	}
+	if (node->bn_inode.bi_flags &
+	    (BTRFS_INODE_READONLY | BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) {
+		error = EPERM;
+		goto out;
+	}
+	if (namelen == 0 || args->cursor != 0 ||
+	    args->size > cap - sizeof(struct btrfs_header) -
+	    sizeof(struct btrfs_item) - sizeof(*di) - namelen ||
+	    (cmd == BTRFSIOC_RMXATTR && args->size != 0)) {
+		error = EINVAL;
+		goto out;
+	}
+	if (cmd == BTRFSIOC_SETXATTR) {
+		value = malloc(MAX(args->size, 1), M_BTRFS, M_WAITOK);
+		error = copyin(args->value, value, args->size);
+		if (error != 0)
+			goto out;
+	}
+	target.offset = htole64(crc32c(1, (const uint8_t *)args->name,
+	    namelen) ^ 0xffffffffU);
+	error = subvol_read(root, &target, buffer, cap, &size);
+	if (error == ENOENT)
+		error = 0;
+	if (error != 0)
+		goto out;
+	for (pos = 0; pos < size; pos += step) {
+		di = (struct btrfs_dir_item *)(buffer + pos);
+		if (size - pos < sizeof(*di)) {
+			error = EINVAL;
+			goto out;
+		}
+		step = sizeof(*di) + letoh16(di->name_len) + letoh16(di->data_len);
+		if (step > size - pos) {
+			error = EINVAL;
+			goto out;
+		}
+		if (letoh16(di->name_len) == namelen &&
+		    memcmp(di + 1, args->name, namelen) == 0) {
+			found = 1;
+			break;
+		}
+	}
+	len = size;
+	if (found) {
+		memmove(buffer + pos, buffer + pos + step, size - pos - step);
+		size -= step;
+	} else if (cmd == BTRFSIOC_RMXATTR) {
+		error = ENOENT;
+		goto out;
+	}
+	if (cmd == BTRFSIOC_SETXATTR) {
+		step = sizeof(*di) + namelen + args->size;
+		if (size + step > cap - sizeof(struct btrfs_header) -
+		    sizeof(struct btrfs_item)) {
+			error = ENOSPC;
+			goto out;
+		}
+		di = (struct btrfs_dir_item *)(buffer + size);
+		memset(di, 0, sizeof(*di));
+		di->type = BTRFS_FT_XATTR;
+		di->name_len = htole16(namelen);
+		di->data_len = htole16(args->size);
+		memcpy(di + 1, args->name, namelen);
+		memcpy((uint8_t *)(di + 1) + namelen, value, args->size);
+		size += step;
+	}
+	res.btr_metadata = 64 * cap;
+	error = btrfs_trans_join(bmp, &res, &handle);
+	if (error != 0)
+		goto out;
+	if (size == 0)
+		error = btrfs_delete_item(handle, root, &target);
+	else if (len == 0)
+		error = btrfs_insert_item(handle, root, &target, buffer, size);
+	else
+		error = btrfs_replace_item(handle, root, &target, buffer, size);
+	if (error != 0)
+		btrfs_trans_abort(handle, error);
+	enderror = btrfs_trans_end(handle);
+	if (error == 0)
+		error = enderror;
+out:
+	free(value, M_BTRFS, MAX(args->size, 1));
+	free(buffer, M_BTRFS, cap);
+	vput(vp);
+	return (error);
+}
 
 static int
 subvol_find_name(const struct btrfs_dir_entry *entry, void *arg)
@@ -144,8 +471,8 @@ subvol_prepend(char *path, size_t size, const char *name, size_t len)
 	return (0);
 }
 
-static int
-subvol_path(struct btrfs_fs *bmp, uint64_t id, char *out, size_t len)
+int
+btrfs_subvol_path(struct btrfs_fs *bmp, uint64_t id, char *out, size_t len)
 {
 	struct btrfs_root *roots, *root;
 	struct btrfs_path path = { 0 };
@@ -260,7 +587,7 @@ subvol_list(struct btrfs_fs *bmp, struct btrfs_ioctl_subvolume *args)
 		error = btrfs_find_subvol_parent(bmp, args->id,
 		    &args->parent, &dirid);
 	if (error == 0)
-		error = subvol_path(bmp, args->id, args->path, sizeof(args->path));
+		error = btrfs_subvol_path(bmp, args->id, args->path, sizeof(args->path));
 	if (error == 0)
 		args->cursor = args->id;
 	return (error);
@@ -660,6 +987,15 @@ btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
 	else
 		error = btrfs_new_subvolume_root(handle, source, id, &item,
 		    cmd == BTRFSIOC_SNAPSHOT);
+	/*
+	 * Linux uses this marker in the embedded root-item inode to distinguish
+	 * initialized root flags from legacy garbage. Without it Linux clears
+	 * the read-only flag when opening the subvolume. Set it after building
+	 * a new file tree so the marker is not copied into its directory inode.
+	 */
+	if (!remove)
+		item.inode.flags = htole64(letoh64(item.inode.flags) |
+		    BTRFS_INODE_ROOT_ITEM_INIT);
 	rkey.objectid = htole64(id);
 	rkey.type = BTRFS_ROOT_ITEM_KEY;
 	rkey.offset = 0;

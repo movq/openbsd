@@ -130,6 +130,60 @@ btrfs_control_parent(struct btrfs_fs *bmp, uint64_t treeid, uint64_t ino,
 }
 
 int
+btrfs_identity_control(struct mount *mp, u_long cmd,
+    struct btrfs_ioctl_identity *args, struct proc *p)
+{
+	struct btrfs_fs *bmp;
+	struct btrfs_mount *view;
+	char *path;
+	size_t len;
+	int error, found;
+
+	rw_enter_write(&btrfs_mount_lock);
+	bmp = VFSTOBTRFS(mp);
+	if (cmd == BTRFSIOC_FINISH &&
+	    ((mp->mnt_flag & MNT_RDONLY) || bmp->bm_readonly)) {
+		rw_exit_write(&btrfs_mount_lock);
+		return (EROFS);
+	}
+	rw_enter_write(&bmp->bm_rename_lock);
+	error = btrfs_identity(bmp, cmd, args, p);
+	if (error != 0 || cmd != BTRFSIOC_INFO)
+		goto out;
+	args->access[0] = '\0';
+	path = malloc(BTRFS_CTL_PATH_MAX, M_BTRFS, M_WAITOK);
+	LIST_FOREACH(view, &bmp->bm_mounts, bmv_entry) {
+		error = btrfs_ancestor(bmp, args->id, view->bmv_treeid, &found);
+		if (error != 0)
+			break;
+		if (!found)
+			continue;
+		error = btrfs_subvol_path(bmp, view->bmv_treeid, path,
+		    BTRFS_CTL_PATH_MAX);
+		if (error != 0)
+			break;
+		len = strlen(path);
+		if (strncmp(args->path, path, len) != 0 ||
+		    (len != 0 && args->path[len] != '\0' &&
+		    args->path[len] != '/')) {
+			error = EINVAL;
+			break;
+		}
+		if (snprintf(args->access, sizeof(args->access), "%s/%s",
+		    view->bmv_mount->mnt_stat.f_mntonname,
+		    args->path + len + (args->path[len] == '/')) >=
+		    sizeof(args->access))
+			error = ENAMETOOLONG;
+		break;
+	}
+	free(path, M_BTRFS, BTRFS_CTL_PATH_MAX);
+out:
+	rw_exit_write(&bmp->bm_rename_lock);
+	rw_exit_write(&btrfs_mount_lock);
+	return (error);
+}
+
+int
 btrfs_control_busy(struct btrfs_fs *bmp, uint64_t treeid)
 {
 	struct btrfs_mount *view;
@@ -917,6 +971,10 @@ again:
 		mtx_leave(&bmp->bm_nodemtx);
 		return (0);
 	}
+	if (node->bn_root->br_deleted || node->bn_root->br_finalizing) {
+		mtx_leave(&bmp->bm_nodemtx);
+		return (ENOENT);
+	}
 	vp = node->bn_vnode;
 	vpid = vp->v_id;
 	mtx_leave(&bmp->bm_nodemtx);
@@ -929,6 +987,11 @@ again:
 	if (vpid != vp->v_id) {
 		vput(vp);
 		goto again;
+	}
+	if (VTOBTRFS(vp)->bn_root->br_deleted ||
+	    VTOBTRFS(vp)->bn_root->br_finalizing) {
+		vput(vp);
+		return (ENOENT);
 	}
 	*vpp = vp;
 	return (0);
@@ -951,7 +1014,7 @@ btrfs_node_insert(struct btrfs_node *node)
 			return (EEXIST);
 		}
 	}
-	if (node->bn_root->br_deleted) {
+	if (node->bn_root->br_deleted || node->bn_root->br_finalizing) {
 		mtx_leave(&bmp->bm_nodemtx);
 		return (ENOENT);
 	}

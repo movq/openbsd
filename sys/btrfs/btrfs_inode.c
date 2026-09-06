@@ -242,8 +242,10 @@ btrfs_decode_rdev(uint64_t disk, dev_t *dev)
 {
 	uint32_t maj, min;
 
-	maj = (disk >> 8) & 0xfff;
-	min = (disk & 0xff) | ((disk >> 12) & 0xfff00);
+	/* Btrfs stores Linux's in-kernel dev_t, not new_encode_dev().
+	 * The send protocol uses the latter encoding separately. */
+	maj = disk >> 20;
+	min = disk & 0xfffff;
 	if (disk > UINT32_MAX || maj > 0xff)
 		return (EOVERFLOW);
 	*dev = makedev(maj, min);
@@ -293,8 +295,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	if (S_ISCHR(mode) || S_ISBLK(mode)) {
 		if (minor(dev) > 0xfffff)
 			return (EOVERFLOW);
-		rdev = (minor(dev) & 0xff) | (major(dev) << 8) |
-		    ((uint64_t)(minor(dev) & 0xfff00) << 12);
+		rdev = ((uint64_t)major(dev) << 20) | minor(dev);
 	}
 	if (S_ISLNK(mode) != (link != NULL))
 		return (EINVAL);
