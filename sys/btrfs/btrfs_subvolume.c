@@ -148,7 +148,7 @@ btrfs_identity(struct btrfs_fs *bmp, u_long cmd,
 	error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &roots);
 	if (error == 0)
 		error = btrfs_find_root_item(roots, args->id,
-		    BTRFS_FIRST_FREE_OBJECTID, &item);
+		    BTRFS_FIRST_FREE_OBJECTID, &item, NULL);
 	if (error != 0)
 		return (error);
 	if (cmd == BTRFSIOC_INFO) {
@@ -185,7 +185,7 @@ btrfs_identity(struct btrfs_fs *bmp, u_long cmd,
 	/* Commit may have changed the root block and generation. */
 	if (error == 0)
 		error = btrfs_find_root_item(roots, args->id,
-		    BTRFS_FIRST_FREE_OBJECTID, &item);
+		    BTRFS_FIRST_FREE_OBJECTID, &item, NULL);
 	if (error != 0)
 		goto out;
 	error = btrfs_get_root(bmp, BTRFS_UUID_TREE_OBJECTID, &uuids);
@@ -239,6 +239,7 @@ btrfs_identity(struct btrfs_fs *bmp, u_long cmd,
 	memset(&key, 0, sizeof(key));
 	key.objectid = htole64(args->id);
 	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = htole64(root->br_root_offset);
 	if (error == 0)
 		error = btrfs_replace_item(handle, roots, &key, &item, sizeof(item));
 	if (error != 0)
@@ -775,7 +776,7 @@ btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
 		if (error != 0 && error != ENOENT)
 			goto unlock;
 		error = btrfs_find_root_item(roots, id,
-		    BTRFS_FIRST_FREE_OBJECTID, &item);
+		    BTRFS_FIRST_FREE_OBJECTID, &item, NULL);
 		if (error == 0)
 			error = btrfs_count_tree(source, &blocks, &refs);
 		if (error != 0)
@@ -809,7 +810,7 @@ btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
 				error = EINVAL;
 			if (error == 0)
 				error = btrfs_find_root_item(roots, source->br_owner,
-				    BTRFS_FIRST_FREE_OBJECTID, &source_item);
+				    BTRFS_FIRST_FREE_OBJECTID, &source_item, NULL);
 			if (error != 0)
 				goto unlock;
 			item = source_item;
@@ -998,7 +999,7 @@ btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
 		    BTRFS_INODE_ROOT_ITEM_INIT);
 	rkey.objectid = htole64(id);
 	rkey.type = BTRFS_ROOT_ITEM_KEY;
-	rkey.offset = 0;
+	rkey.offset = remove ? htole64(source->br_root_offset) : 0;
 	if (error == 0 && remove)
 		error = btrfs_delete_item(handle, roots, &rkey);
 	else if (error == 0)
@@ -1010,6 +1011,7 @@ btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
 		source_item.last_snapshot = htole64(gen);
 		skey.objectid = htole64(source->br_owner);
 		skey.type = BTRFS_ROOT_ITEM_KEY;
+		skey.offset = htole64(source->br_root_offset);
 		error = btrfs_replace_item(handle, roots, &skey,
 		    &source_item, sizeof(source_item));
 	}

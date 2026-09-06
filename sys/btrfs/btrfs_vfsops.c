@@ -109,6 +109,47 @@ btrfs_control(struct mount *mp, u_long cmd,
 }
 
 int
+btrfs_tree_control(struct vnode *vp, struct vnode *parent,
+    struct btrfs_ioctl_tree *args)
+{
+	struct btrfs_root *root, *old = NULL;
+	void *buffer;
+	uint32_t capacity = args->size;
+	int error;
+
+	if (args->flags & ~BTRFS_TREE_KEYS ||
+	    args->min.reserved || args->max.reserved ||
+	    args->min.type > 255 || args->max.type > 255 ||
+	    capacity == 0 || capacity > BTRFS_TREE_BUFSIZE ||
+	    VTOBTRFS(vp)->bn_ino != BTRFS_FIRST_FREE_OBJECTID)
+		return (EINVAL);
+	buffer = malloc(capacity, M_BTRFS, M_WAITOK | M_ZERO);
+	rw_enter_write(&btrfs_mount_lock);
+	if (parent != NULL && (parent->v_type != VDIR ||
+	    parent->v_mount == NULL ||
+	    strcmp(parent->v_mount->mnt_vfc->vfc_name, "btrfs") != 0 ||
+	    VFSTOBTRFS(parent->v_mount) != VFSTOBTRFS(vp->v_mount) ||
+	    VTOBTRFS(parent)->bn_ino != BTRFS_FIRST_FREE_OBJECTID)) {
+		error = EINVAL;
+		goto out;
+	}
+	root = VTOBTRFS(vp)->bn_root;
+	if (parent != NULL)
+		old = VTOBTRFS(parent)->bn_root;
+	if (!(root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY) ||
+	    (old != NULL && !(old->br_flags & BTRFS_ROOT_SUBVOL_RDONLY)))
+		error = EROFS;
+	else
+		error = btrfs_read_tree_items(root, old, args, buffer);
+out:
+	rw_exit_write(&btrfs_mount_lock);
+	if (error == 0)
+		error = copyout(buffer, args->buffer, args->size);
+	free(buffer, M_BTRFS, capacity);
+	return (error);
+}
+
+int
 btrfs_control_parent(struct btrfs_fs *bmp, uint64_t treeid, uint64_t ino,
     struct vnode **vpp)
 {

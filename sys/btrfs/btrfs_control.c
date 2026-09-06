@@ -32,8 +32,9 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	struct btrfs_ioctl_subvolume *args = (void *)data;
 	struct btrfs_ioctl_identity *identity = (void *)data;
 	struct btrfs_ioctl_xattr *xattr = (void *)data;
-	struct file *fp;
-	struct vnode *vp;
+	struct btrfs_ioctl_tree *tree = (void *)data;
+	struct file *fp, *parent = NULL;
+	struct vnode *vp, *pvp = NULL;
 	struct mount *mp;
 	int error, isidentity, isxattr, readonly, fd;
 
@@ -43,14 +44,26 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	isxattr = cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_SETXATTR ||
 	    cmd == BTRFSIOC_RMXATTR;
 	readonly = cmd == BTRFSIOC_LIST || cmd == BTRFSIOC_INFO ||
-	    cmd == BTRFSIOC_GETXATTR;
-	if (!isidentity && !isxattr &&
+	    cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_TREE;
+	if (!isidentity && !isxattr && cmd != BTRFSIOC_TREE &&
 	    cmd != BTRFSIOC_LIST && cmd != BTRFSIOC_CREATE &&
 	    cmd != BTRFSIOC_DELETE && cmd != BTRFSIOC_SNAPSHOT)
 		return (ENOTTY);
 	if (!readonly && !(flags & FWRITE))
 		return (EBADF);
-	if (isxattr) {
+	if (cmd == BTRFSIOC_TREE) {
+		fd = tree->fd;
+		if (tree->parent_fd != -1) {
+			parent = fd_getfile(p->p_fd, tree->parent_fd);
+			if (parent == NULL)
+				return (EBADF);
+			if (parent->f_type != DTYPE_VNODE) {
+				FRELE(parent, p);
+				return (EINVAL);
+			}
+			pvp = parent->f_data;
+		}
+	} else if (isxattr) {
 		if (memchr(xattr->name, '\0', sizeof(xattr->name)) == NULL)
 			return (ENAMETOOLONG);
 		fd = xattr->fd;
@@ -73,10 +86,15 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 		fd = args->fd;
 	}
 	fp = fd_getfile(p->p_fd, fd);
-	if (fp == NULL)
+	if (fp == NULL) {
+		if (parent != NULL)
+			FRELE(parent, p);
 		return (EBADF);
+	}
 	if (fp->f_type != DTYPE_VNODE) {
 		FRELE(fp, p);
+		if (parent != NULL)
+			FRELE(parent, p);
 		return (EINVAL);
 	}
 	vp = fp->f_data;
@@ -87,7 +105,9 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	else {
 		error = vfs_busy(mp, VB_READ | VB_NOWAIT);
 		if (error == 0) {
-			if (isxattr)
+			if (cmd == BTRFSIOC_TREE)
+				error = btrfs_tree_control(vp, pvp, tree);
+			else if (isxattr)
 				error = btrfs_control_xattr(vp, cmd, xattr, p);
 			else if (isidentity) {
 				error = btrfs_identity_control(mp, cmd, identity, p);
@@ -99,5 +119,7 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 		}
 	}
 	FRELE(fp, p);
+	if (parent != NULL)
+		FRELE(parent, p);
 	return (error);
 }

@@ -67,7 +67,8 @@ Current limits:
   outside the selected view. Paths do not follow symlinks or `..`.
   Snapshots copy only the root block, sharing lower metadata and file data.
   Root items mark their flags initialized in the embedded inode, so Linux
-  retains their read-only state.
+  retains their read-only state. Lookup selects the newest root-item key;
+  updates and deletion retain imported Linux snapshot key offsets.
   Nested subvolumes appear as empty, immutable boundary directories in a
   snapshot; they are not recursively snapshotted.
   Deletion rejects mounted hierarchies, active vnodes, and nested subvolumes.
@@ -78,9 +79,18 @@ Current limits:
 * `btrfs send` and `receive` support Linux version 1 full and incremental
   streams. A mountpoint selects the filesystem; subvolume and destination
   paths start at tree 5. Tools use existing views or temporary disjoint mounts.
-  Send requires read-only roots, inventories their namespaces, and compares
-  file data to emit changes and parent clones. It currently scans all data
-  and holds pathname/inode inventories in userspace memory.
+  Send requires read-only roots and holds pathname/inode inventories in
+  userspace memory. A privileged, paginated tree-item ioctl uses open root
+  descriptors to pin immutable trees; each call excludes root administration
+  and releases all tree buffers before returning. Comparing in both directions
+  finds changed/deleted items and skips shared subtrees by block address and
+  generation, including across different tree heights. Extent iterators compare
+  allocation identities and decoded offsets, including split compressed
+  mappings, and read file data only for emitted WRITE commands. Unchanged data
+  is omitted or cloned from the parent; holes and preallocation are skipped.
+  Version 1 requires zero WRITEs when holes replace retained parent data.
+  Namespace inventory still visits all names; there is no content-based
+  deduplication or search for clone sources at other inode/offset pairs.
   Receive uses ordinary vnode operations; CLONE is materialized with COW
   writes rather than sharing extents. Opaque Linux xattrs use privileged
   control operations, including for symlinks. Directory xattrs are deferred

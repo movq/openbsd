@@ -448,6 +448,30 @@ arrangement. With tree 5 mounted,
 commands/versions, and lexical/symlink escapes. Those phases leave incomplete
 writable test subvolumes intentionally.
 
+send_metadata.py checks metadata-based send without hashing a huge sparse file.
+On a Linux scratch filesystem (4 KiB or 16 KiB nodes, compress=zstd), create
+`work`, run `seed work`, sync, and snapshot it read-only as `full`. Run
+`mutate work`, sync, and snapshot read-only as `incremental`. The fixture has
+1200 small files, a 100 GiB sparse file, a 64 MiB dense file, fragmented and
+compressed mappings, preallocation, punched holes, inline files, renames,
+hardlinks, xattrs, and partial-EOF truncation.
+Unmount Linux before mounting the source on OpenBSD. Run
+`trees incremental full work` with mounted directory paths: it compares both
+directions of the tree ioctl against independent complete enumeration, checks
+small-buffer pagination and extent-key ranges, verifies shared-subtree skipping,
+and rejects writable trees and undersized buffers. Send full and incremental
+streams as above, tracing the incremental command with
+`ktrace -f /tmp/send.ktrace -t c btrfs send ...`.
+`stream incremental.stream` bounds WRITE bytes and checks parent clones;
+`reads /tmp/send.ktrace` bounds actual file reads (including parent reads).
+Receive with both OpenBSD and Linux, then use `compare source received` on
+Linux for metadata, hardlinks, xattrs, contents, and both files' allocated
+ranges in the huge sparse file. Run unmounted checksum checks on both disks.
+`eof source-mount destination-mount` on OpenBSD creates a separate small
+fixture checking a renamed parent clone with a shortened, unaligned EOF.
+The scratch devices are backed by /home/mike/obj/scratch*.img, passed through
+to both VMs; never mount a device in both guests simultaneously.
+
 subvolume.py tests native administration through /dev/btrfs-control and the
 installed btrfs command. The runner cases `subvolume`, `subvolume-orphans`,
 `subvolume-zstd`, and `subvolume-capacity` cover its automated phases; select
