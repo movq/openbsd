@@ -11,7 +11,7 @@ from checksums import payload, SECTOR
 COUNT = 512
 
 
-def create(base):
+def create(base, bounded=True):
     base.mkdir()
     for cycle in range(4):
         name = base / str(cycle)
@@ -23,7 +23,9 @@ def create(base):
             os.fsync(fd)
             writes = resource.getrusage(resource.RUSAGE_SELF).ru_oublock - before
             # Includes metadata and superblock writes, including DUP copies.
-            assert 0 < writes < COUNT, ("sector-sized submission", writes)
+            assert writes > 0
+            if bounded:
+                assert writes < COUNT, ("sector-sized submission", writes)
             print(f"cycle {cycle}: write/fsync used {writes} output operations",
                   flush=True)
             # Shrinking invalidates vnode buffers. Populate physical read
@@ -38,6 +40,10 @@ def create(base):
         if cycle != 3:
             os.unlink(name)
     verify(base)
+
+
+def measure(base):
+    create(base, bounded=False)
 
 
 def verify(base):

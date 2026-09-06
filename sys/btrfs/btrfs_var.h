@@ -217,6 +217,8 @@ TAILQ_HEAD(btrfs_delayed_data_ref_list, btrfs_delayed_data_ref);
 struct btrfs_ordered_extent {
 	TAILQ_ENTRY(btrfs_ordered_extent) boe_entry;
 	RBT_ENTRY(btrfs_ordered_extent) boe_io_entry;
+	/* Commit-only association with the unmaterialized allocation add. */
+	struct btrfs_delayed_data_ref *boe_ref;
 	void				*boe_data;
 	uint64_t			 boe_treeid;
 	uint64_t			 boe_objectid;
@@ -638,6 +640,7 @@ int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_data_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_ordered_extents_finish(struct btrfs_transaction *, int);
 int	btrfs_write_ordered_extents(struct btrfs_transaction *);
+int	btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *);
 int	btrfs_roots_finish(struct btrfs_transaction *, int);
 int	btrfs_update_dirty_root_items(struct btrfs_trans_handle *);
 /*
