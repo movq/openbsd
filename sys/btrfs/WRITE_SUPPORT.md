@@ -178,13 +178,20 @@ temporary sector copies and attach immutable ordered payloads, then update clean
 buffers. Cache misses consult ordered data before disk; repeated sector writes
 replace the payload and checksum. Strategy writeback is disabled because it
 lacks the vnode lock needed for tree/inode mutation.
+Physical data reads use windows of at most `MAXBSIZE`, anchored to the backing
+allocation and bounded by its length. Split mappings use the same cache keys
+and sizes. Each request validates only its sector, allowing different DUP
+mirrors to supply healthy sectors from a damaged window; a failed window read
+retries the exact sector. Compressed reads use the same windows before decoding.
+Device-buffer users check the returned size because cache keys contain only
+the starting block, and invalidate mismatched buffers before copying.
 Adjacent data checksums append to packed items, capped at one quarter of a
 metadata node. A transaction checksum lock serializes item read/modify/write
 across vnodes and range deletion; it is taken after the handle and before roots.
 Commit sorts ordered sectors by allocation address and combines adjacent
 payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries.
-Before each mirrored write it evicts overlapping device-sector buffers;
-device buffers are keyed by their starting block, not their covered range.
+Before each mirrored data write it evicts cached buffers starting in the written
+range, including for sector writes reusing part of a freed allocation.
 While handles are open, file mappings and pending ownership use separate
 sector extents. After ordered writes complete, commit combines adjacent sectors
 of the same file into regular extents of at most `MAXBSIZE`, within one chunk.
@@ -312,7 +319,7 @@ Relocating live extents would allow reuse of groups that remain partly occupied.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader
-writable formats, larger write reservations, clustered reads, decompression caching,
+writable formats, larger write reservations, decompression caching,
 and the log tree.
 
 Validate each operation class with unmounted independent filesystem/data checks

@@ -52,7 +52,7 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 	uint32_t *csums = NULL;
 	uint64_t inode_flags, logical;
 	const uint32_t *expectedp;
-	uint32_t sectorsize;
+	uint32_t buffer_offset, sectorsize;
 	size_t nsectors;
 	size_t offset;
 	int error = 0;
@@ -80,10 +80,12 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 		expectedp = NULL;
 		if (csums != NULL)
 			expectedp = &csums[offset / sectorsize];
-		error = btrfs_read_data_block(bmp, logical, expectedp, &bp);
+		error = btrfs_read_data_sector(bmp, extent, logical, expectedp,
+		    &bp, &buffer_offset);
 		if (error != 0)
 			break;
-		memcpy(compressed + offset, bp->b_data, sectorsize);
+		memcpy(compressed + offset, (uint8_t *)bp->b_data +
+		    buffer_offset, sectorsize);
 		brelse(bp);
 		bp = NULL;
 	}
