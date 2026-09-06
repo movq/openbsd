@@ -1467,8 +1467,9 @@ btrfs_read_orphan_inode(struct btrfs_root *root, uint64_t ino,
 			error = EINVAL;
 		else {
 			memcpy(item, data, size);
-			/* Linked-inode orphans require truncate/verity recovery. */
-			if (item->nlink != 0)
+			/* Verity is excluded by the writable feature mask. */
+			if (item->nlink != 0 &&
+			    IFTOVT(letoh32(item->mode)) != VREG)
 				error = EOPNOTSUPP;
 			else if (letoh64(item->generation) >
 			    path.bp_view_generation ||
@@ -1482,8 +1483,8 @@ btrfs_read_orphan_inode(struct btrfs_root *root, uint64_t ino,
 
 /*
  * Validate recovery before modifying a filesystem at mount. An unlinked
- * inode has no directory or inode references; only data mappings and xattrs
- * can remain alongside its inode item.
+ * inode has only data mappings and xattrs. A linked regular inode instead
+ * records an interrupted truncate; its names and retained prefix survive.
  */
 int
 btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
@@ -1494,8 +1495,8 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 	struct btrfs_path path = { 0 };
 	const struct btrfs_key *key;
 	const uint8_t *data;
-	uint64_t nbytes = 0;
-	uint32_t size;
+	uint64_t nbytes = 0, cut;
+	uint32_t size, sectorsize;
 	int error;
 
 	if (root->br_flags & BTRFS_ROOT_SUBVOL_RDONLY)
@@ -1506,6 +1507,10 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 	if (IFTOVT(letoh32(item.mode)) == VNON ||
 	    IFTOVT(letoh32(item.mode)) == VBAD)
 		return (EINVAL);
+	if (letoh64(item.size) > LLONG_MAX)
+		return (EINVAL);
+	sectorsize = letoh32(root->br_mount->bm_super.sectorsize);
+	cut = roundup(letoh64(item.size), sectorsize);
 	target.objectid = htole64(ino);
 	target.type = BTRFS_INODE_ITEM_KEY + 1;
 	error = btrfs_search_lower_bound(root, &target, &path);
@@ -1518,6 +1523,24 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 			    path.bp_view_generation, key, data, size, &extent);
 			if (error != 0)
 				break;
+			if (item.nlink != 0) {
+				if (extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+					if (extent.bfe_length != letoh64(item.size))
+						error = EOPNOTSUPP;
+				} else if (extent.bfe_logical +
+				    extent.bfe_length > cut &&
+				    (extent.bfe_encryption != 0 ||
+				    extent.bfe_other_encoding != 0 ||
+				    (extent.bfe_logical & (sectorsize - 1)) != 0 ||
+				    (extent.bfe_length & (sectorsize - 1)) != 0 ||
+				    (extent.bfe_logical < cut &&
+				    extent.bfe_logical + extent.bfe_length > cut &&
+				    extent.bfe_compression != BTRFS_COMPRESS_NONE &&
+				    extent.bfe_compression != BTRFS_COMPRESS_ZSTD)))
+					error = EOPNOTSUPP;
+				if (error != 0)
+					break;
+			}
 			if (extent.bfe_type != BTRFS_FILE_EXTENT_HOLE) {
 				if (extent.bfe_length > UINT64_MAX - nbytes) {
 					error = EINVAL;
@@ -1525,7 +1548,9 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 				}
 				nbytes += extent.bfe_length;
 			}
-		} else if (key->type != BTRFS_XATTR_ITEM_KEY) {
+		} else if (key->type != BTRFS_XATTR_ITEM_KEY &&
+		    !(item.nlink != 0 && (key->type == BTRFS_INODE_REF_KEY ||
+		    key->type == BTRFS_INODE_EXTREF_KEY))) {
 			error = EOPNOTSUPP;
 			break;
 		}
@@ -1536,6 +1561,113 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 		error = 0;
 	if (error == 0 && nbytes != letoh64(item.nbytes))
 		error = EINVAL;
+	return (error);
+}
+
+/*
+ * The inode's durable size is the deletion cursor's lower bound. Re-search
+ * it in every batch, shortening a crossing mapping once and deleting whole
+ * items thereafter. Ordered data must already have been committed.
+ */
+static int
+btrfs_truncate_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
+    uint64_t ino, unsigned int limit, int *finished, uint64_t *remaining)
+{
+	struct btrfs_inode_item inode;
+	struct btrfs_file_extent extent;
+	struct btrfs_file_extent_item item;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	const uint8_t *data;
+	uint64_t cursor, cut, end, left, nbytes;
+	uint32_t size, sectorsize;
+	unsigned int count = 0;
+	int error;
+
+	*finished = 0;
+	error = btrfs_read_orphan_inode(root, ino, &inode);
+	if (error != 0)
+		return (error);
+	sectorsize = letoh32(root->br_mount->bm_super.sectorsize);
+	cut = roundup(letoh64(inode.size), sectorsize);
+	cursor = cut;
+	nbytes = letoh64(inode.nbytes);
+	while (count < limit && cursor < UINT64_MAX) {
+		error = btrfs_find_file_extent(root->br_mount, root, &path,
+		    ino, cursor, UINT64_MAX, &extent);
+		if (error != 0)
+			goto out;
+		end = extent.bfe_logical + extent.bfe_length;
+		if (end <= cursor) {
+			error = EINVAL;
+			goto out;
+		}
+		cursor = end;
+		if (!extent.bfe_item_present) {
+			btrfs_release_path(&path);
+			continue;
+		}
+		if (extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+		left = cut > extent.bfe_logical ? cut - extent.bfe_logical : 0;
+		if (extent.bfe_type != BTRFS_FILE_EXTENT_HOLE) {
+			if (extent.bfe_length - left > nbytes) {
+				error = EINVAL;
+				goto out;
+			}
+			nbytes -= extent.bfe_length - left;
+		}
+		key.objectid = htole64(ino);
+		key.type = BTRFS_EXTENT_DATA_KEY;
+		key.offset = htole64(extent.bfe_logical);
+		if (left != 0) {
+			error = btrfs_path_item(&path, NULL, &data, &size);
+			if (error != 0)
+				goto out;
+			if (size != sizeof(item)) {
+				error = EINVAL;
+				goto out;
+			}
+			memcpy(&item, data, sizeof(item));
+			item.num_bytes = htole64(left);
+			item.generation =
+			    htole64(handle->bth_transaction->bt_generation);
+		}
+		btrfs_release_path(&path);
+		if (left != 0)
+			error = btrfs_replace_item(handle, root, &key, &item,
+			    sizeof(item));
+		else {
+			error = btrfs_delete_item(handle, root, &key);
+			if (error == 0 && extent.bfe_disk_bytenr != 0)
+				error = btrfs_delayed_data_ref_add(handle,
+				    extent.bfe_disk_bytenr, extent.bfe_disk_num_bytes,
+				    root->br_owner, ino, extent.bfe_logical -
+				    extent.bfe_disk_offset, -1);
+		}
+		if (error != 0)
+			return (error);
+		count++;
+	}
+	*finished = cursor == UINT64_MAX;
+	inode.nbytes = htole64(nbytes);
+	inode.transid = htole64(handle->bth_transaction->bt_generation);
+	key.objectid = htole64(ino);
+	key.type = BTRFS_INODE_ITEM_KEY;
+	key.offset = 0;
+	error = btrfs_replace_item(handle, root, &key, &inode, sizeof(inode));
+	if (error == 0 && *finished && inode.nlink != 0) {
+		key.objectid = htole64(BTRFS_ORPHAN_OBJECTID);
+		key.type = BTRFS_ORPHAN_ITEM_KEY;
+		key.offset = htole64(ino);
+		error = btrfs_delete_item(handle, root, &key);
+	}
+	*remaining = nbytes;
+	return (error);
+out:
+	btrfs_release_path(&path);
 	return (error);
 }
 
@@ -1630,19 +1762,25 @@ out:
 	return (error);
 }
 
-int
-btrfs_reap_inode(struct btrfs_root *root, uint64_t ino)
+static int
+btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
+    struct btrfs_node *node)
 {
 	struct btrfs_fs *bmp = root->br_mount;
+	struct btrfs_inode_item inode;
 	struct btrfs_trans_reservation reservation = { 0 };
 	struct btrfs_trans_handle *handle;
-	uint64_t generation;
+	uint64_t generation, remaining = 0;
 	unsigned int limit = 8;
-	int error, end_error, finished = 0;
+	int error, end_error, finished = 0, truncate;
 
 	error = btrfs_check_orphan(root, ino);
 	if (error != 0)
 		return (error);
+	error = btrfs_read_orphan_inode(root, ino, &inode);
+	if (error != 0)
+		return (error);
+	truncate = node != NULL || inode.nlink != 0;
 	/* A still-cached deleted vnode must never alias a new creation. */
 	rw_enter_write(&bmp->bm_namespace_lock);
 	root->br_last_ino = MAX(root->br_last_ino, ino);
@@ -1659,7 +1797,12 @@ btrfs_reap_inode(struct btrfs_root *root, uint64_t ino)
 		if (error != 0)
 			return (error);
 		generation = handle->bth_transaction->bt_generation;
-		error = btrfs_reap_batch(handle, root, ino, limit, &finished);
+		if (truncate)
+			error = btrfs_truncate_batch(handle, root, ino, limit,
+			    &finished, &remaining);
+		else
+			error = btrfs_reap_batch(handle, root, ino, limit,
+			    &finished);
 		if (error != 0)
 			btrfs_trans_abort(handle, error);
 		end_error = btrfs_trans_end(handle);
@@ -1669,8 +1812,53 @@ btrfs_reap_inode(struct btrfs_root *root, uint64_t ino)
 			error = btrfs_trans_commit(bmp, generation, curproc);
 		if (error != 0)
 			return (error);
+		if (node != NULL) {
+			node->bn_inode.bi_nbytes = remaining;
+			node->bn_inode.bi_transid = generation;
+			node->bn_inode.bi_last_dirty_transid = generation;
+		}
 	}
 	return (0);
+}
+
+int
+btrfs_reap_inode(struct btrfs_root *root, uint64_t ino)
+{
+	return (btrfs_cleanup_inode(root, ino, NULL));
+}
+
+int
+btrfs_start_truncate(struct btrfs_trans_handle *handle, struct btrfs_node *node)
+{
+	struct btrfs_key key = { 0 };
+
+	/* Open, unlinked inodes already have a marker for last-close cleanup. */
+	if (node->bn_inode.bi_nlink == 0)
+		return (0);
+	key.objectid = htole64(BTRFS_ORPHAN_OBJECTID);
+	key.type = BTRFS_ORPHAN_ITEM_KEY;
+	key.offset = htole64(node->bn_ino);
+	return (btrfs_insert_item(handle, node->bn_root, &key, NULL, 0));
+}
+
+int
+btrfs_finish_truncate(struct btrfs_node *node)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	error = btrfs_trans_commit(bmp, node->bn_inode.bi_last_dirty_transid,
+	    curproc);
+	if (error == 0)
+		error = btrfs_cleanup_inode(node->bn_root, node->bn_ino, node);
+	if (error != 0) {
+		/* Further writes must not expose the unfinished deletion range. */
+		mtx_enter(&bmp->bm_trans_mtx);
+		btrfs_fs_set_readonly(bmp);
+		mtx_leave(&bmp->bm_trans_mtx);
+	}
+	return (error);
 }
 
 int

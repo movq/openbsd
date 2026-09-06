@@ -1060,7 +1060,7 @@ btrfs_setattr(void *v)
 	uint64_t flags, holes = 0, tail_offset = UINT64_MAX;
 	uint32_t dirty = 0, sectorsize;
 	long hint = NOTE_ATTRIB;
-	int end_error, error;
+	int end_error, error, batched = 0, shrinking = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
 	if (vap->va_type != VNON || vap->va_nlink != VNOVAL ||
@@ -1191,6 +1191,8 @@ btrfs_setattr(void *v)
 			    &holes, &tail_offset);
 			if (error != 0)
 				return (error);
+			shrinking = 1;
+			batched = holes > 8;
 		}
 		if (vap->va_size > node->bn_inode.bi_size) {
 			error = btrfs_check_file_extend(node, vap->va_size,
@@ -1220,12 +1222,24 @@ btrfs_setattr(void *v)
 	reservation.btr_metadata =
 	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
 	    BTRFS_VOP_METADATA_BLOCKS;
+	if (batched)
+		holes = 1;
 	if (holes > UINT64_MAX / reservation.btr_metadata - 1) {
 		error = EOVERFLOW;
 		goto out;
 	}
 	reservation.btr_metadata *= 1 + holes;
+	reservation.btr_reclaim = batched;
 	error = btrfs_trans_join(bmp, &reservation, &handle);
+	if (error == ENOSPC && shrinking && !batched) {
+		/* One mapping (including inline data) fits the protected handle. */
+		batched = holes > 1;
+		reservation.btr_metadata =
+		    (uint64_t)letoh32(bmp->bm_super.nodesize) *
+		    BTRFS_RECLAIM_METADATA_BLOCKS;
+		reservation.btr_reclaim = 1;
+		error = btrfs_trans_join(bmp, &reservation, &handle);
+	}
 	if (error != 0)
 		goto out;
 	memcpy(&saved, &node->bn_inode, sizeof(saved));
@@ -1259,7 +1273,9 @@ btrfs_setattr(void *v)
 	else
 		error = 0;
 	if (error == 0 && vap->va_size != VNOVAL) {
-		if (vap->va_size < saved.bi_size)
+		if (batched)
+			error = btrfs_start_truncate(handle, node);
+		else if (vap->va_size < saved.bi_size)
 			error = btrfs_shrink_file(handle, node, vap->va_size);
 		else
 			error = btrfs_fill_file_holes(handle, node,
@@ -1296,6 +1312,11 @@ btrfs_setattr(void *v)
 		uvm_vnp_setsize(vp, node->bn_inode.bi_size);
 	}
 	VN_KNOTE(vp, hint);
+	if (batched) {
+		error = btrfs_finish_truncate(node);
+		if (error != 0)
+			goto out;
+	}
 	if ((vp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
 	    (node->bn_inode.bi_flags & BTRFS_INODE_SYNC))
 		error = btrfs_trans_commit(bmp,

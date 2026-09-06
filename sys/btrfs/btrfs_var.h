@@ -681,6 +681,8 @@ int	btrfs_rename_inode(struct btrfs_node *, struct btrfs_node *,
 	    const char *, size_t);
 int	btrfs_check_orphan(struct btrfs_root *, uint64_t);
 int	btrfs_reap_inode(struct btrfs_root *, uint64_t);
+int	btrfs_start_truncate(struct btrfs_trans_handle *, struct btrfs_node *);
+int	btrfs_finish_truncate(struct btrfs_node *);
 int	btrfs_commit_current(struct btrfs_fs *, struct proc *);
 int	btrfs_find_dir_parent(struct btrfs_root *, uint64_t, uint64_t *);
 int	btrfs_find_subvol_parent(struct btrfs_fs *, uint64_t, uint64_t *,

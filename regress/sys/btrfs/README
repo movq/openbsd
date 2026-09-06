@@ -119,7 +119,7 @@ outside the selected hierarchy. Also reset during mount after observing a few
 committed cleanup generations: intermediate inode byte accounting, extent and
 free-space trees must check independently, and the next mount must finish.
 Cover both metadata sizes and extent/bitmap free-space records. Root-tree and
-linked-inode orphan rejection remain covered by orphan.py below.
+nonregular linked-inode orphan rejection remain covered by orphan.py below.
 
 rmdir.py uses create/verify/readonly for directory removal, open descriptors
 and current directories, stale handles, rejection of new children in removed
@@ -179,8 +179,10 @@ With subvol.py's seed mounted as disjoint left and right views, use
 and forged handles that attempt to cross view boundaries.
 
 orphan.py uses subvol.py's imported seed. While unmounted, use
-`inject image 257 257` to add a pending file-cleanup marker in the nested tree,
-or `inject image 1 259` for a root-tree cleanup marker. Run the independent
+`inject image treeid inode` with a nonroot directory inode selected from a
+tree dump to add a pending directory-cleanup marker, or `inject image 1 259`
+for a root-tree cleanup marker. Add an ordinary directory to the seed before
+formatting for the directory-marker case. Run the independent
 checks, then `reject device mountpoint` in the VM. Writable mounts, including
 selection of a clean sibling, must return EOPNOTSUPP; read-only data inspection
 must work. Repeat with both metadata sizes and verify writable mounting on a
@@ -346,7 +348,18 @@ split data references, hard links, O_TRUNC, flags, notifications, and huge holes
 Repeat with 4 KiB and 16 KiB nodes, explicit holes (`-O ^no-holes`), and imported
 NODATASUM/NODATACOW files. Its capacity phase on a fresh seed with a small data
 block group checks data and metadata reservation failures without file changes,
-followed by successful sparse shrinking and whole-extent deletion.
+followed by successful sparse shrinking and fragmented/whole-extent deletion.
+
+truncate_batches.py uses create/verify for linked and open-unlinked fragmented
+files, hard links, partial EOF, mapped reads, byte accounting, and zero regrowth.
+Its capacity phase on a small device exhausts metadata and the smaller write
+reservation margin before truncating a linked file and reusing its space.
+Use capacity_verify after remount.
+For recovery, run prepare, set a DDB breakpoint on btrfs_cleanup_inode, then run
+truncate and reset when it stops after target-size publication. Check the
+unmounted image and marker, mount writable, and run recovered. Repeat after
+several batch commits to exercise a persisted deletion cursor. Test both node
+sizes and explicit holes, with independent checks and both remount modes.
 
 shrink_compressed.py uses seed/exercise/verify_metadata with `--compress zlib`
 fixtures and exercise_zstd with `--compress zstd`. It tests O_TRUNC without decoding,
