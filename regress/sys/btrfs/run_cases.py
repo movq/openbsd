@@ -294,6 +294,11 @@ def inherit(r):
     finish(r, "inherit")
 
 
+def xattrs(r):
+    basic(r, "xattrs", readonly="readonly")
+    r.host_test("xattrs", "disk", r.image)
+
+
 def shrink_policy(r, policy):
     seed = r.seed("shrink")
     flags = [f"{policy}:{path.name}" for path in sorted(seed.iterdir())]
@@ -697,7 +702,7 @@ def cases():
         "zstd-cow": partial(imported, script="zstd_cow", compress="zstd",
                             restore="restore"),
         "holes": partial(imported, script="holes", exercise="write", holes=True),
-        "nodatasum": nodatasum, "inherit": inherit,
+        "nodatasum": nodatasum, "inherit": inherit, "xattrs": xattrs,
         "free-space": free_space,
         "free-space-bad-count": partial(free_space, damage="bad-count"),
         "free-space-bad-bit": partial(free_space, damage="bad-bit"),

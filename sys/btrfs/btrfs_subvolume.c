@@ -285,6 +285,7 @@ btrfs_control_xattr(struct vnode *select, u_long cmd,
 	struct btrfs_dir_item *di;
 	struct btrfs_trans_handle *handle;
 	struct btrfs_trans_reservation res = { 0 };
+	struct btrfs_inode saved;
 	uint8_t *buffer, *value = NULL;
 	uint64_t cursor = 0;
 	uint32_t size = 0, pos, step, len, cap;
@@ -423,21 +424,40 @@ btrfs_control_xattr(struct vnode *select, u_long cmd,
 		memcpy((uint8_t *)(di + 1) + namelen, value, args->size);
 		size += step;
 	}
-	res.btr_metadata = 64 * cap;
+	/* Reserve both the xattr bucket and inode item before changing either. */
+	res.btr_metadata = 128 * cap;
 	error = btrfs_trans_join(bmp, &res, &handle);
 	if (error != 0)
 		goto out;
+	saved = node->bn_inode;
 	if (size == 0)
 		error = btrfs_delete_item(handle, root, &target);
 	else if (len == 0)
 		error = btrfs_insert_item(handle, root, &target, buffer, size);
 	else
 		error = btrfs_replace_item(handle, root, &target, buffer, size);
+	if (error == 0) {
+		nanotime(&node->bn_inode.bi_ctime);
+		node->bn_inode.bi_sequence++;
+		node->bn_inode.bi_last_dirty_transid =
+		    handle->bth_transaction->bt_generation;
+		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_CTIME |
+		    BTRFS_INODE_DIRTY_SEQUENCE;
+		error = btrfs_write_inode(handle, node);
+	}
 	if (error != 0)
 		btrfs_trans_abort(handle, error);
 	enderror = btrfs_trans_end(handle);
 	if (error == 0)
 		error = enderror;
+	if (error != 0)
+		node->bn_inode = saved;
+	else {
+		VN_KNOTE(vp, NOTE_ATTRIB);
+		if ((vp->v_mount->mnt_flag & MNT_SYNCHRONOUS) ||
+		    (node->bn_inode.bi_flags & BTRFS_INODE_SYNC))
+			error = btrfs_commit_current(bmp, p);
+	}
 out:
 	free(value, M_BTRFS, MAX(args->size, 1));
 	free(buffer, M_BTRFS, cap);
@@ -867,20 +887,6 @@ btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
 	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) {
 		error = EPERM;
 		goto unlock;
-	}
-	if (cmd == BTRFSIOC_CREATE) {
-		struct btrfs_key xkey = ikey;
-		xkey.type = BTRFS_XATTR_ITEM_KEY;
-		error = btrfs_search_lower_bound(dir, &xkey, &path);
-		if (error == 0) {
-			error = btrfs_path_item(&path, &key, NULL, NULL);
-			if (error == 0 && key->objectid == xkey.objectid &&
-			    key->type == xkey.type)
-				error = EOPNOTSUPP;
-		}
-		btrfs_release_path(&path);
-		if (error != 0 && error != ENOENT)
-			goto unlock;
 	}
 	if ((remove && letoh64(inode.size) < namelen * 2) ||
 	    (!remove && letoh64(inode.size) > UINT64_MAX - namelen * 2)) {

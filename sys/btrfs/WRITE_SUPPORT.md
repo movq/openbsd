@@ -95,10 +95,11 @@ Current limits:
   range-clone ioctl. CLONE shares regular data allocations, including compressed
   slices, and preserves holes; inline source data uses bounded COW copies.
   Opaque Linux xattrs use privileged control operations, including for symlinks.
-  Directory xattrs are deferred
-  until replay ends, avoiding inheritance while each child's metadata is
-  restored explicitly. Linux ACLs/security labels are preserved as data,
-  not enforced as OpenBSD policy.
+  Send removes old xattrs before creation/data changes and restores them after
+  ownership and mode, avoiding Linux ACL inheritance and capability loss.
+  Linux ACLs/security labels are preserved as opaque data and are neither
+  enforced nor inherited.
+  Xattr changes update inode ctime, sequence, and transaction ID atomically.
   Completion atomically publishes the received UUID, sender transaction ID,
   and read-only root flag. Failed/interrupted receives remain incomplete
   writable trees without a received identity. Finalization requires no active
@@ -129,10 +130,10 @@ Current limits:
   NODATACOW data is replaced by COW, preserving
   NODATASUM by omitting data checksums. Compressed reads
   support Zstd only.
-* Creation rejects parents with xattrs pending inheritance support.
-  New inodes inherit parent group, compression flags, and NODATACOW; regular
-  children of NODATACOW directories also receive NODATASUM. Writes still use
-  uncompressed COW data. Inline symlink targets are limited to
+* Creation permits parents with any Linux xattrs and leaves those attributes
+  on the parent. New inodes inherit parent group, compression flags, and
+  NODATACOW; regular children of NODATACOW directories also receive NODATASUM.
+  Writes still use uncompressed COW data. Inline symlink targets are limited to
   `MAXPATHLEN - 1` bytes.
 * Hard links cannot cross trees or target directories. Packed inode references
   overflow into extended references only with `EXTENDED_IREF`; otherwise they

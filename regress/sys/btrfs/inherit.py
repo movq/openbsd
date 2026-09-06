@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Creation under imported NODATACOW directories and persistent inheritance."""
-import errno
 import os
 from pathlib import Path
 import re
@@ -9,8 +8,9 @@ import stat
 import subprocess
 import sys
 
-from namespace import child_checks, expect_error, wait
+from namespace import child_checks, wait
 from nodatasum import disk as check_checksums
+from send_receive import xattr
 
 
 DATA = b"prefix" + bytes(8190) + b"tail"
@@ -33,7 +33,7 @@ def make_file(path):
 
 
 def exercise(base):
-    for name in ("normal", "nocow"):
+    for name in ("normal", "nocow", "xattr"):
         directory = base / name
         os.chflags(directory, stat.UF_NODUMP)
         (directory / "nested/deeper").mkdir(parents=True)
@@ -56,18 +56,12 @@ def exercise(base):
     # Linking an existing inode never changes its allocation policy.
     os.link(base / "normal/file", base / "nocow/normal-link")
     os.link(base / "nocow/file", base / "normal/nocow-link")
-    before = (base / "xattr").stat()
-    expect_error(errno.EOPNOTSUPP, make_file, base / "xattr/blocked")
-    after = (base / "xattr").stat()
-    assert (before.st_size, before.st_mtime_ns, before.st_ctime_ns) == (
-        after.st_size, after.st_mtime_ns, after.st_ctime_ns)
-    assert not (base / "xattr/blocked").exists()
     os.sync()
     verify(base)
 
 
 def more(base):
-    for name in ("normal", "nocow"):
+    for name in ("normal", "nocow", "xattr"):
         directory = base / name / "nested/deeper/after-remount"
         directory.mkdir()
         make_file(directory / "file")
@@ -76,13 +70,16 @@ def more(base):
 
 
 def verify(base):
-    for name in ("normal", "nocow"):
+    for name in ("normal", "nocow", "xattr"):
         directory = base / name
         assert directory.stat().st_flags == stat.UF_NODUMP
+        assert xattr(base, directory, "") == (
+            {"user.test": b"retain".hex()} if name == "xattr" else {})
         for path in directory.rglob("*"):
             info = path.lstat()
             # Nodump is a user flag, not a creation default.
             assert info.st_flags == 0, path
+            assert xattr(base, path, "") == {}, path
             if stat.S_ISREG(info.st_mode):
                 assert path.read_bytes() == DATA, path
         assert (directory / "symlink").read_bytes() == DATA

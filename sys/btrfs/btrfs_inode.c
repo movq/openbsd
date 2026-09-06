@@ -318,21 +318,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	error = btrfs_get_root(bmp, dir->bn_treeid, &root);
 	if (error != 0)
 		goto out;
-	/* Inheritance of ACLs and other directory xattrs is not implemented. */
-	memset(&target, 0, sizeof(target));
-	target.objectid = htole64(dir->bn_ino);
-	target.type = BTRFS_XATTR_ITEM_KEY;
-	error = btrfs_search_lower_bound(root, &target, &path);
-	if (error == 0) {
-		error = btrfs_path_item(&path, &key, NULL, NULL);
-		if (error == 0 && key->objectid == target.objectid &&
-		    key->type == target.type)
-			error = EOPNOTSUPP;
-	}
-	btrfs_release_path(&path);
-	if (error != 0 && error != ENOENT)
-		goto out;
-
+	/* Linux xattrs are opaque metadata; creation does not inherit them. */
 	memset(&target, 0xff, sizeof(target));
 	target.objectid = htole64(BTRFS_LAST_FREE_OBJECTID);
 	error = btrfs_search_predecessor(root, &target, &path);

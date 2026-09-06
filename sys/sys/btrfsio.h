@@ -51,6 +51,7 @@ struct btrfs_ioctl_identity {
 
 /* fd selects the inode's tree; ino may identify a symlink. GET enumerates
  * attributes in tree order, advancing cursor. ENOENT denotes the end.
+ * SET/RM update inode ctime and revision in the same transaction as the xattr.
  * Values are opaque Linux xattrs, not OpenBSD access-control policy. */
 struct btrfs_ioctl_xattr {
 	int32_t		fd;
