@@ -262,11 +262,6 @@ recv_write(const char *path, const void *data, u64 offset, u64 len, void *user)
 	return ret;
 }
 
-/*
- * The native writer has no reflink-range API yet. Materialize clone data
- * through normal COW writes; UUID/transid and range validation still have
- * the same meaning as Linux CLONE commands.
- */
 static int
 recv_clone(const char *path, u64 offset, u64 len, const u8 *uuid,
     u64 transid, const char *source, u64 source_offset, void *user)
@@ -274,9 +269,7 @@ recv_clone(const char *path, u64 offset, u64 len, const u8 *uuid,
 	struct receiver *r = user;
 	struct stream_root clone = { .fd = -1 };
 	struct btrfs_ioctl_identity info;
-	struct stat a, b;
-	char buffer[65536];
-	size_t count;
+	struct btrfs_ioctl_clone args;
 	int root, fd = -1, out = -1, ret;
 
 	if (r->root.fd == -1 || offset > INT64_MAX ||
@@ -304,26 +297,13 @@ recv_clone(const char *path, u64 offset, u64 len, const u8 *uuid,
 		ret = out;
 		goto out;
 	}
-	if (fstat(fd, &a) == -1 || fstat(out, &b) == -1) {
-		ret = -errno;
-		goto out;
-	}
-	if (source_offset + len > (uint64_t)a.st_size ||
-	    (a.st_dev == b.st_dev && a.st_ino == b.st_ino &&
-	    offset < source_offset + len && source_offset < offset + len)) {
-		ret = -EINVAL;
-		goto out;
-	}
-	ret = 0;
-	while (len && !ret) {
-		count = MIN(len, sizeof(buffer));
-		ret = stream_pread(fd, buffer, count, source_offset);
-		if (!ret)
-			ret = stream_pwrite(out, buffer, count, offset);
-		offset += count;
-		source_offset += count;
-		len -= count;
-	}
+	memset(&args, 0, sizeof(args));
+	args.src_fd = fd;
+	args.dst_fd = out;
+	args.src_offset = source_offset;
+	args.dst_offset = offset;
+	args.length = len;
+	ret = ioctl(r->fs.control, BTRFSIOC_CLONE, &args) == -1 ? -errno : 0;
 out:
 	if (fd >= 0)
 		close(fd);

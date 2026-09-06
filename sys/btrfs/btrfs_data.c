@@ -1650,6 +1650,112 @@ btrfs_shrink_file(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 	return (btrfs_file_shrink(handle, node, size, NULL, NULL));
 }
 
+/*
+ * Replace a range contained in one destination item (or synthetic hole).
+ * The caller has flushed ordered data, locked both vnodes, checked alignment
+ * and reserved the split, insertion, inode and reference work. Source is a
+ * private decoded mapping, already sliced to the destination range. No data
+ * allocation or checksum change is needed: the new owner references the
+ * entire source allocation, even for a slice of a compressed extent.
+ */
+int
+btrfs_clone_file_extent(struct btrfs_trans_handle *handle,
+    struct btrfs_node *node, const struct btrfs_file_extent *source,
+    const struct btrfs_file_extent *old, uint64_t offset, uint64_t length,
+    uint64_t size)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_file_extent piece;
+	struct btrfs_file_extent_item item;
+	struct btrfs_key key = { 0 };
+	uint64_t left, right, removed, added, end = offset + length;
+	int error, ref_mod;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	left = offset - old->bfe_logical;
+	right = old->bfe_type == BTRFS_FILE_EXTENT_INLINE ? 0 :
+	    old->bfe_logical + old->bfe_length - end;
+	removed = old->bfe_type == BTRFS_FILE_EXTENT_HOLE ? 0 :
+	    old->bfe_type == BTRFS_FILE_EXTENT_INLINE ?
+	    old->bfe_length : length;
+	added = source->bfe_type == BTRFS_FILE_EXTENT_HOLE ? 0 : length;
+	if (removed > node->bn_inode.bi_nbytes ||
+	    added > UINT64_MAX - (node->bn_inode.bi_nbytes - removed))
+		return (EINVAL);
+
+	key.objectid = htole64(node->bn_ino);
+	key.type = BTRFS_EXTENT_DATA_KEY;
+	key.offset = htole64(old->bfe_logical);
+	if (old->bfe_item_present) {
+		if (left != 0) {
+			piece = *old;
+			piece.bfe_length = left;
+			btrfs_encode_file_extent(&item, &piece,
+			    trans->bt_generation);
+			error = btrfs_replace_item(handle, node->bn_root, &key,
+			    &item, sizeof(item));
+		} else
+			error = btrfs_delete_item(handle, node->bn_root, &key);
+		if (error != 0)
+			goto abort;
+		if (right != 0) {
+			piece = *old;
+			piece.bfe_logical = end;
+			piece.bfe_disk_offset += end - old->bfe_logical;
+			piece.bfe_length = right;
+			key.offset = htole64(end);
+			btrfs_encode_file_extent(&item, &piece,
+			    trans->bt_generation);
+			error = btrfs_insert_item(handle, node->bn_root, &key,
+			    &item, sizeof(item));
+			if (error != 0)
+				goto abort;
+		}
+	}
+	if (source->bfe_type != BTRFS_FILE_EXTENT_HOLE ||
+	    !(letoh64(node->bn_mount->bm_super.incompat_flags) &
+	    BTRFS_FEATURE_INCOMPAT_NO_HOLES)) {
+		key.offset = htole64(offset);
+		btrfs_encode_file_extent(&item, source, trans->bt_generation);
+		error = btrfs_insert_item(handle, node->bn_root, &key, &item,
+		    sizeof(item));
+		if (error != 0)
+			goto abort;
+	}
+	if (added != 0) {
+		/* Unsigned file-base subtraction is the on-disk backref ABI. */
+		error = btrfs_delayed_data_ref_add(handle,
+		    source->bfe_disk_bytenr, source->bfe_disk_num_bytes,
+		    node->bn_treeid, node->bn_ino,
+		    offset - source->bfe_disk_offset, 1);
+		if (error != 0)
+			goto abort;
+	}
+	if (old->bfe_type == BTRFS_FILE_EXTENT_REG ||
+	    old->bfe_type == BTRFS_FILE_EXTENT_PREALLOC) {
+		ref_mod = (left != 0) + (right != 0) - 1;
+		if (ref_mod != 0) {
+			error = btrfs_delayed_data_ref_add(handle,
+			    old->bfe_disk_bytenr, old->bfe_disk_num_bytes,
+			    node->bn_treeid, node->bn_ino,
+			    old->bfe_logical - old->bfe_disk_offset, ref_mod);
+			if (error != 0)
+				goto abort;
+		}
+	}
+	node->bn_inode.bi_nbytes += added - removed;
+	node->bn_inode.bi_size = size;
+	node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NBYTES |
+	    BTRFS_INODE_DIRTY_SIZE;
+	node->bn_inode.bi_last_dirty_transid = trans->bt_generation;
+	error = btrfs_write_inode(handle, node);
+	if (error == 0)
+		return (0);
+abort:
+	btrfs_trans_abort(handle, error);
+	return (error);
+}
+
 int
 btrfs_write_file_sector(struct btrfs_trans_handle *handle,
     struct btrfs_node *node, uint64_t file_offset, const void *data,

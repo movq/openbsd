@@ -91,9 +91,11 @@ Current limits:
   Version 1 requires zero WRITEs when holes replace retained parent data.
   Namespace inventory still visits all names; there is no content-based
   deduplication or search for clone sources at other inode/offset pairs.
-  Receive uses ordinary vnode operations; CLONE is materialized with COW
-  writes rather than sharing extents. Opaque Linux xattrs use privileged
-  control operations, including for symlinks. Directory xattrs are deferred
+  Receive uses ordinary vnode operations and a privileged descriptor-based
+  range-clone ioctl. CLONE shares regular data allocations, including compressed
+  slices, and preserves holes; inline source data uses bounded COW copies.
+  Opaque Linux xattrs use privileged control operations, including for symlinks.
+  Directory xattrs are deferred
   until replay ends, avoiding inheritance while each child's metadata is
   restored explicitly. Linux ACLs/security labels are preserved as data,
   not enforced as OpenBSD policy.
@@ -102,7 +104,7 @@ Current limits:
   writable trees without a received identity. Finalization requires no active
   vnodes or mounted descendant views; the destination must remain private
   during replay. Version 2/3 commands, no-data streams, recursive subvolumes,
-  inode-flag preservation, and reflink-range receive remain unsupported.
+  and inode-flag preservation remain unsupported.
   As on Linux receive, ctime is local; symlink permissions are not transmitted.
 * Regular-file `truncate`/`ftruncate` and `O_TRUNC` support shrinking
   uncompressed or Zstd regular mappings, preallocation, and supported inline
@@ -354,6 +356,21 @@ Large namespace reservations may therefore fail under transient pressure.
 Delayed references merge by extent and ownership. Only the final drop pins an
 extent; for data it also removes its checksum range, preserving neighbors.
 Hard links change inode references, not data ownership `(root, inode, file-base)`.
+
+Range cloning locks both regular-file vnodes without waiting on one while
+holding the other. It commits their ordered writes before sharing: pending
+payloads may otherwise still change in place or mask a replaced mapping.
+Source and destination must be on the same filesystem with matching checksum
+policy. Offsets are sector aligned; a partial final sector must end at source
+EOF and at or beyond destination EOF. Same-inode overlaps are rejected.
+Each reserved handle replaces at most one destination mapping with a source
+slice, retaining prefix/suffix owners and adding the destination's file-base
+reference to the whole allocation. Compressed slices retain decoded offsets;
+preallocation is cloned as holes. No data or checksum copy is required for
+regular mappings. Destination vnode buffers are invalidated before unlocking.
+Large ranges need bounded metadata reservations, but are not atomic as a whole:
+an error can leave a completed prefix and sparse growth to the destination
+offset. Growing past an old partial EOF or inline prefix can require data COW.
 
 Shrinking COWs a retained partial data sector with a zero tail, removes mappings
 through the last extent (including preallocation beyond EOF), and invalidates
