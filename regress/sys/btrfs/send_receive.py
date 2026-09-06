@@ -15,6 +15,14 @@ import sys
 import time
 
 
+CAPABILITY = struct.pack("<IIIII", 0x02000001, 1 << 10, 0, 0, 0)
+DEFAULT_ACL = struct.pack("<I", 2) + b"".join(
+    struct.pack("<HHI", tag, perm, uid)
+    for tag, perm, uid in (
+        (1, 7, 0xffffffff), (2, 7, 123), (4, 5, 0xffffffff),
+        (16, 7, 0xffffffff), (32, 5, 0xffffffff)))
+
+
 def xattr(root, path, name, value=None, remove=False):
     if not sys.platform.startswith("openbsd"):
         if remove:
@@ -56,7 +64,7 @@ def xattr(root, path, name, value=None, remove=False):
 
 def seed(root):
     root.mkdir(exist_ok=True)
-    for name in ("a", "b", "gone", "kind", "empty"):
+    for name in ("a", "b", "gone", "kind", "empty", "acl-parent"):
         (root / name).mkdir()
     (root / "a/data").write_bytes(bytes(range(251)) * 1200)
     (root / "b/stable").write_bytes(b"unchanged" * 16000)
@@ -75,10 +83,16 @@ def seed(root):
     os.mknod(root / "device", stat.S_IFCHR | 0o600, os.makedev(1, 3))
     (root / "a/data").chmod(0o6751)
     os.chown(root / "b/stable", 123, 456)
-    # Add directory xattrs last, because native creation has no ACL inheritance.
+    # Capabilities must be restored after data, ownership, and mode changes.
+    for name in ("cap-keep", "cap-remove", "cap-change", "cap-stable"):
+        path = root / name
+        path.write_bytes(b"capability fixture\n")
+        path.chmod(0o755)
+        xattr(root, path, "security.capability", CAPABILITY)
     xattr(root, root / "a/data", "user.binary", b"\0one\xff")
     xattr(root, root / "a/data", "user.remove", b"old")
     xattr(root, root / "a", "user.directory", b"directory metadata")
+    xattr(root, root / "acl-parent", "system.posix_acl_default", DEFAULT_ACL)
     xattr(root, root, "user.root", b"root metadata")
     for path in sorted(root.rglob("*"), reverse=True) + [root]:
         os.utime(path, ns=(1234567890123456789, 1234567800987654321),
@@ -86,9 +100,10 @@ def seed(root):
 
 
 def mutate(root):
-    # Remove pending directory inheritance restrictions while adding children.
-    xattr(root, root, "user.root", remove=True)
-    xattr(root, root / "a", "user.directory", remove=True)
+    # OpenBSD children have no inherited ACL. Linux receive must preserve that.
+    (root / "acl-parent/new").write_bytes(b"new child")
+    (root / "acl-parent/nested").mkdir()
+    (root / "acl-parent/nested/child").write_bytes(b"nested child")
     (root / "a").rename(root / "temporary")
     (root / "b").rename(root / "a")
     (root / "temporary").rename(root / "b")
@@ -116,7 +131,20 @@ def mutate(root):
     xattr(root, root / "b/data", "user.binary", b"\0two\xfe")
     xattr(root, root / "b", "user.directory", b"moved directory")
     xattr(root, root, "user.root", b"new root metadata")
+    for name in ("cap-keep", "cap-remove", "cap-change"):
+        path = root / name
+        # Remove explicitly before Linux's write/chown can invalidate it.
+        xattr(root, path, "security.capability", remove=True)
+        path.write_bytes(b"changed capability fixture\n")
+        os.chown(path, 123, 456)
+        path.chmod(0o751)
+        if name != "cap-remove":
+            value = (CAPABILITY if name == "cap-keep" else
+                     struct.pack("<IIIII", 0x02000001, 1 << 11, 0, 0, 0))
+            xattr(root, path, "security.capability", value)
     for path in sorted(root.rglob("*"), reverse=True) + [root]:
+        if path == root / "cap-stable":
+            continue
         os.utime(path, ns=(1234567890123456789, 1334567800987654321),
                  follow_symlinks=False)
 

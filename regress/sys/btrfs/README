@@ -432,7 +432,9 @@ are excluded because Linux streams do not carry them.
 
 Repeat with Linux's btrfs send/receive in both directions, including an
 incremental directory swap, truncation, hardlink changes, sparse growth, and
-binary/directory xattrs. Run unmounted `btrfs check --readonly --check-data-csum`
+binary/directory xattrs, creation beneath retained default ACLs, and retained,
+changed, and removed file capabilities.
+Run unmounted `btrfs check --readonly --check-data-csum`
 and repeat comparisons after remounting. Run `readonly directory` in both VMs
 after mounting native-created snapshots and received roots: Linux must retain
 the root-item read-only flag. Use 4 KiB and 16 KiB metadata fixtures.
@@ -665,5 +667,12 @@ inherit.py seeds normal, NODATACOW, and xattr parent directories. Import its
 and check independently (including `disk image`), then use `more mountpoint`
 after writable remount and `verify mountpoint` after read-only remount.
 It checks nested/concurrent creation, regular and special inodes, checksum
-policy, hard links between policies, noninherited user flags, and continued
-rejection of creation under parents with xattrs.
+policy, hard links between policies, noninherited user flags, and creation
+under parents with xattrs while preserving them without inheritance.
+
+xattrs.py uses create/verify/readonly and unmounted disk phases. It checks
+creation beneath opaque user, ACL, security-label, and property xattrs,
+including subvolume creation; packed hash collisions; and set/replace/remove
+on files, directories, and symlinks. Successful changes advance ctime, inode
+sequence and transaction ID, and notify kqueue; failed changes preserve
+metadata. Remount checks cover persisted values and timestamps.

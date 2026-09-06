@@ -8,7 +8,6 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -23,14 +22,6 @@
 #include "cmds/commands.h"
 #include "cmds/stream-openbsd.h"
 
-struct pending_xattr {
-	struct pending_xattr *next;
-	uint64_t ino;
-	char *name;
-	void *value;
-	size_t size;
-};
-
 struct receiver {
 	struct stream_fs fs;
 	struct stream_root root;
@@ -39,11 +30,7 @@ struct receiver {
 	char path[PATH_MAX];
 	uint8_t uuid[16];
 	uint64_t transid;
-	struct pending_xattr *xattrs;
-	char xattr_buffer[65536];
 };
-
-static int receive_strip_dirs(struct receiver *, int);
 
 static int
 begin_receive(const char *path, const u8 *uuid, u64 transid,
@@ -77,9 +64,7 @@ begin_receive(const char *path, const u8 *uuid, u64 transid,
 		return ret;
 	memcpy(r->uuid, uuid, 16);
 	r->transid = transid;
-	/* Defer directory xattrs so native creation need not inherit Linux
-	 * ACLs. Every child's complete metadata arrives in the stream. */
-	return parent_uuid ? receive_strip_dirs(r, r->root.fd) : 0;
+	return 0;
 }
 
 static int
@@ -385,128 +370,6 @@ recv_utimes(const char *path, struct timespec *at, struct timespec *mt,
 }
 
 static int
-pending_xattr(struct receiver *r, uint64_t ino, const char *name,
-    const void *value, size_t size, int remove)
-{
-	struct pending_xattr **link, *x;
-	for (link = &r->xattrs; (x = *link) != NULL; link = &x->next)
-		if (x->ino == ino && !strcmp(x->name, name))
-			break;
-	if (remove) {
-		if (!x)
-			return -ENOENT;
-		*link = x->next;
-		free(x->name);
-		free(x->value);
-		free(x);
-		return 0;
-	}
-	if (!x) {
-		x = calloc(1, sizeof(*x));
-		if (!x)
-			return -ENOMEM;
-		x->name = strdup(name);
-		if (!x->name) {
-			free(x);
-			return -ENOMEM;
-		}
-		x->ino = ino;
-		*link = x;
-	}
-	free(x->value);
-	x->value = malloc(size ? size : 1);
-	if (!x->value)
-		return -ENOMEM;
-	memcpy(x->value, value, size);
-	x->size = size;
-	return 0;
-}
-
-static int
-receive_strip_xattrs(struct receiver *r, uint64_t ino)
-{
-	struct btrfs_ioctl_xattr args;
-	char *value = r->xattr_buffer;
-	int ret;
-
-	for (;;) {
-		memset(&args, 0, sizeof(args));
-		args.fd = r->root.fd;
-		args.ino = ino;
-		args.size = sizeof(r->xattr_buffer);
-		args.value = value;
-		if (ioctl(r->fs.control, BTRFSIOC_GETXATTR, &args) == -1) {
-			if (errno == ENOENT)
-				break;
-			return -errno;
-		}
-		ret = pending_xattr(r, args.ino, args.name, value, args.size, 0);
-		if (ret)
-			return ret;
-		args.cursor = args.size = 0;
-		if (ioctl(r->fs.control, BTRFSIOC_RMXATTR, &args) == -1)
-			return -errno;
-	}
-	return 0;
-}
-
-static int
-receive_strip_dirs(struct receiver *r, int fd)
-{
-	struct stat st;
-	struct dirent *de;
-	DIR *dir;
-	int child, copy, ret;
-
-	if (fstat(fd, &st) == -1)
-		return -errno;
-	ret = receive_strip_xattrs(r, st.st_ino);
-	if (ret)
-		return ret;
-	copy = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (copy == -1)
-		return -errno;
-	dir = fdopendir(copy);
-	if (!dir) {
-		ret = -errno;
-		close(copy);
-		return ret;
-	}
-	for (;;) {
-		errno = 0;
-		de = readdir(dir);
-		if (!de) {
-			ret = -errno;
-			break;
-		}
-		if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
-			continue;
-		if (fstatat(fd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
-			ret = -errno;
-			break;
-		}
-		if (!S_ISDIR(st.st_mode))
-			continue;
-		if (st.st_ino == 2 || st.st_ino == 256) {
-			ret = -EOPNOTSUPP;
-			break;
-		}
-		child = openat(fd, de->d_name,
-		    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-		if (child == -1) {
-			ret = -errno;
-			break;
-		}
-		ret = receive_strip_dirs(r, child);
-		close(child);
-		if (ret)
-			break;
-	}
-	closedir(dir);
-	return ret;
-}
-
-static int
 recv_xattr(const char *path, const char *name, const void *data, int len,
     void *user, int remove)
 {
@@ -520,8 +383,6 @@ recv_xattr(const char *path, const char *name, const void *data, int len,
 	ret = stream_stat(r->root.fd, path, &st);
 	if (ret)
 		return ret;
-	if (S_ISDIR(st.st_mode))
-		return pending_xattr(r, st.st_ino, name, data, len, remove);
 	args.fd = r->root.fd;
 	args.ino = st.st_ino;
 	args.value = (void *)data;
@@ -535,32 +396,6 @@ static int recv_set_xattr(const char *p, const char *n, const void *d,
 { return recv_xattr(p, n, d, len, r, 0); }
 static int recv_remove_xattr(const char *p, const char *n, void *r)
 { return recv_xattr(p, n, NULL, 0, r, 1); }
-
-static int
-receive_flush_xattrs(struct receiver *r, int apply)
-{
-	struct pending_xattr *x;
-	struct btrfs_ioctl_xattr args;
-	int ret = 0;
-	while ((x = r->xattrs) != NULL) {
-		r->xattrs = x->next;
-		if (apply && !ret) {
-			memset(&args, 0, sizeof(args));
-			args.fd = r->root.fd;
-			args.ino = x->ino;
-			args.size = x->size;
-			args.value = x->value;
-			strlcpy(args.name, x->name, sizeof(args.name));
-			if (ioctl(r->fs.control, BTRFSIOC_SETXATTR, &args) == -1 &&
-			    errno != ENOENT)
-				ret = -errno;
-		}
-		free(x->name);
-		free(x->value);
-		free(x);
-	}
-	return ret;
-}
 
 static int recv_update_extent(const char *p, u64 offset, u64 len, void *r)
 { return -EOPNOTSUPP; }
@@ -641,9 +476,6 @@ cmd_receive(const struct cmd_struct *cmd, int argc, char **argv)
 			ret = -EINVAL;
 			break;
 		}
-		ret = receive_flush_xattrs(&r, 1);
-		if (ret)
-			break;
 		memset(&finish, 0, sizeof(finish));
 		finish.fd = r.fs.fd;
 		finish.id = r.root.info.id;
@@ -664,7 +496,6 @@ cmd_receive(const struct cmd_struct *cmd, int argc, char **argv)
 	if (fd != STDIN_FILENO)
 		close(fd);
 out:
-	receive_flush_xattrs(&r, 0);
 	err = stream_root_close(&r.root);
 	if (!ret)
 		ret = err;

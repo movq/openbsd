@@ -390,10 +390,48 @@ send_time(struct sender *s, uint16_t type, struct timespec time)
 	attr(s, type, &value, sizeof(value));
 }
 
-static void
+static int
+send_xattrs(struct sender *s, struct entry *entry, int set)
+{
+	struct btrfs_ioctl_xattr args;
+	struct entry *old = entry->keep ? find_path(&s->old, entry->path) : NULL;
+	char value[65536];
+	uint64_t cursor = 0;
+
+	if (!set && !old)
+		return 0;
+	for (;;) {
+		memset(&args, 0, sizeof(args));
+		args.fd = set ? s->root.fd : s->parent.fd;
+		args.ino = set ? entry->st.st_ino : old->st.st_ino;
+		args.cursor = cursor;
+		args.value = value;
+		args.size = sizeof(value);
+		if (ioctl(s->fs->control, BTRFSIOC_GETXATTR, &args) == -1) {
+			if (errno == ENOENT)
+				break;
+			return -errno;
+		}
+		cursor = args.cursor;
+		start_cmd(s, set ? BTRFS_SEND_C_SET_XATTR :
+		    BTRFS_SEND_C_REMOVE_XATTR);
+		attr_path(s, BTRFS_SEND_A_PATH, entry->path);
+		attr_path(s, BTRFS_SEND_A_XATTR_NAME, args.name);
+		if (set)
+			attr(s, BTRFS_SEND_A_XATTR_DATA, value, args.size);
+		end_cmd(s);
+		if (s->error)
+			return s->error;
+	}
+	return 0;
+}
+
+static int
 send_metadata(struct sender *s, struct entry *entry)
 {
 	struct stat *st = &entry->st;
+	int ret;
+
 	start_cmd(s, BTRFS_SEND_C_CHOWN);
 	attr_path(s, BTRFS_SEND_A_PATH, entry->path);
 	attr_u64(s, BTRFS_SEND_A_UID, st->st_uid);
@@ -402,52 +440,18 @@ send_metadata(struct sender *s, struct entry *entry)
 	if (!S_ISLNK(st->st_mode))
 		number_cmd(s, BTRFS_SEND_C_CHMOD, entry->path,
 		    BTRFS_SEND_A_MODE, st->st_mode & 07777);
+	/* Linux writes/chown clear capabilities and chmod adjusts ACLs.
+	 * Restore xattrs after those operations, then restore timestamps. */
+	ret = send_xattrs(s, entry, 1);
+	if (ret)
+		return ret;
 	start_cmd(s, BTRFS_SEND_C_UTIMES);
 	attr_path(s, BTRFS_SEND_A_PATH, entry->path);
 	send_time(s, BTRFS_SEND_A_ATIME, st->st_atim);
 	send_time(s, BTRFS_SEND_A_MTIME, st->st_mtim);
 	send_time(s, BTRFS_SEND_A_CTIME, st->st_ctim);
 	end_cmd(s);
-}
-
-static int
-send_xattrs(struct sender *s, struct entry *entry)
-{
-	struct btrfs_ioctl_xattr args;
-	struct entry *old = entry->keep ? find_path(&s->old, entry->path) : NULL;
-	char value[65536];
-	uint64_t cursor;
-	int pass;
-
-	for (pass = 0; pass < 2; pass++) {
-		if (pass == 0 && !old)
-			continue;
-		cursor = 0;
-		for (;;) {
-			memset(&args, 0, sizeof(args));
-			args.fd = pass ? s->root.fd : s->parent.fd;
-			args.ino = pass ? entry->st.st_ino : old->st.st_ino;
-			args.cursor = cursor;
-			args.value = value;
-			args.size = sizeof(value);
-			if (ioctl(s->fs->control, BTRFSIOC_GETXATTR, &args) == -1) {
-				if (errno == ENOENT)
-					break;
-				return -errno;
-			}
-			cursor = args.cursor;
-			start_cmd(s, pass ? BTRFS_SEND_C_SET_XATTR :
-			    BTRFS_SEND_C_REMOVE_XATTR);
-			attr_path(s, BTRFS_SEND_A_PATH, entry->path);
-			attr_path(s, BTRFS_SEND_A_XATTR_NAME, args.name);
-			if (pass)
-				attr(s, BTRFS_SEND_A_XATTR_DATA, value, args.size);
-			end_cmd(s);
-			if (s->error)
-				return s->error;
-		}
-	}
-	return 0;
+	return s->error;
 }
 
 struct extent_reader {
@@ -690,6 +694,16 @@ send_changes(struct sender *s)
 				b->keep = 1;
 		}
 	}
+	/* Retained Linux default ACLs would otherwise be inherited by newly
+	 * created children. Each inode's final xattrs are restored explicitly. */
+	for (i = 0; i < s->current.count; i++) {
+		a = &s->current.entries[i];
+		if (S_ISDIR(a->st.st_mode)) {
+			ret = send_xattrs(s, a, 0);
+			if (ret)
+				return ret;
+		}
+	}
 	for (i = s->old.count; i > 0; i--) {
 		a = &s->old.entries[i - 1];
 		if (!a->keep)
@@ -727,28 +741,29 @@ send_changes(struct sender *s)
 			attr_path(s, BTRFS_SEND_A_PATH_LINK, canonical->path);
 			end_cmd(s);
 		}
+		if (canonical->keep && !canonical->changed && s->parent.fd != -1)
+			continue;
+		/* Remove parent xattrs before data changes can invalidate them on
+		 * Linux; a later REMOVE_XATTR would fail for a cleared capability. */
+		ret = send_xattrs(s, canonical, 0);
+		if (ret)
+			return ret;
 		if (S_ISREG(canonical->st.st_mode)) {
 			ret = send_data(s, canonical);
 			if (ret)
 				return ret;
 		}
-		if (canonical->keep && !canonical->changed && s->parent.fd != -1)
-			continue;
-		ret = send_xattrs(s, canonical);
+		ret = send_metadata(s, canonical);
 		if (ret)
 			return ret;
-		send_metadata(s, canonical);
-		if (s->error)
-			return s->error;
 	}
 	/* Restore directory times after all namespace changes. */
 	for (i = s->current.count; i > 0; i--) {
 		a = &s->current.entries[i - 1];
 		if (S_ISDIR(a->st.st_mode)) {
-			ret = send_xattrs(s, a);
+			ret = send_metadata(s, a);
 			if (ret)
 				return ret;
-			send_metadata(s, a);
 		}
 	}
 	start_cmd(s, BTRFS_SEND_C_END);
