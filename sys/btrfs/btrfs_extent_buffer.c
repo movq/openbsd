@@ -34,6 +34,9 @@
 
 #include <btrfs/btrfs_var.h>
 
+/* Bound idle metadata independently of transaction-owned and active blocks. */
+#define BTRFS_METADATA_CACHE_BYTES	(8 * 1024 * 1024)
+
 static int	btrfs_extent_buffer_load(const struct btrfs_root *,
 		    struct btrfs_extent_buffer *, uint64_t);
 static const void *
@@ -55,6 +58,90 @@ struct btrfs_extent_buffer_validation {
 	uint64_t			 ebv_owner;
 	uint8_t				 ebv_level;
 };
+
+static inline int
+btrfs_extent_buffer_compare(const struct btrfs_extent_buffer *a,
+    const struct btrfs_extent_buffer *b)
+{
+	if (a->eb_bytenr < b->eb_bytenr)
+		return (-1);
+	if (a->eb_bytenr > b->eb_bytenr)
+		return (1);
+	return (0);
+}
+
+RBT_GENERATE(btrfs_extent_buffer_tree, btrfs_extent_buffer, eb_entry,
+    btrfs_extent_buffer_compare);
+
+static void
+btrfs_extent_buffer_free(struct btrfs_extent_buffer *eb)
+{
+	if (eb == NULL)
+		return;
+	rw_assert_unlocked(&eb->eb_lock);
+	if (eb->eb_buf != NULL)
+		brelse(eb->eb_buf);
+	if (eb->eb_private != NULL)
+		free(eb->eb_private, M_BTRFS,
+		    letoh32(eb->eb_mount->bm_super.nodesize));
+	free(eb, M_BTRFS, sizeof(*eb));
+}
+
+/* The caller excludes new users with bm_ebmtx. */
+static void
+btrfs_extent_buffer_uncache(struct btrfs_fs *bmp,
+    struct btrfs_extent_buffer *eb)
+{
+	MUTEX_ASSERT_LOCKED(&bmp->bm_ebmtx);
+	KASSERT(eb->eb_refs == 0);
+	KASSERT(eb->eb_transaction == NULL);
+	TAILQ_REMOVE(&bmp->bm_eb_lru, eb, eb_lru);
+	bmp->bm_eb_cached--;
+	RBT_REMOVE(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers, eb);
+}
+
+/*
+ * An allocator-authorized reuse supersedes an idle old generation. Live
+ * references still exclude reuse, just as they did before clean caching.
+ */
+static int
+btrfs_extent_buffer_publish(struct btrfs_extent_buffer *eb)
+{
+	struct btrfs_fs *bmp = eb->eb_mount;
+	struct btrfs_extent_buffer *old, *collision;
+
+	mtx_enter(&bmp->bm_ebmtx);
+	old = RBT_FIND(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers, eb);
+	if (old != NULL) {
+		if (old->eb_refs != 0) {
+			mtx_leave(&bmp->bm_ebmtx);
+			return (EINVAL);
+		}
+		btrfs_extent_buffer_uncache(bmp, old);
+	}
+	collision = RBT_INSERT(btrfs_extent_buffer_tree,
+	    &bmp->bm_extent_buffers, eb);
+	KASSERT(collision == NULL);
+	mtx_leave(&bmp->bm_ebmtx);
+	btrfs_extent_buffer_free(old);
+	return (0);
+}
+
+void
+btrfs_extent_buffers_purge(struct btrfs_fs *bmp)
+{
+	struct btrfs_extent_buffer *eb;
+
+	/* Mount failure or last-view teardown: no callers or transactions remain. */
+	while ((eb = TAILQ_FIRST(&bmp->bm_eb_lru)) != NULL) {
+		mtx_enter(&bmp->bm_ebmtx);
+		btrfs_extent_buffer_uncache(bmp, eb);
+		mtx_leave(&bmp->bm_ebmtx);
+		btrfs_extent_buffer_free(eb);
+	}
+	KASSERT(RBT_EMPTY(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers));
+	KASSERT(bmp->bm_eb_cached == 0);
+}
 
 static int
 btrfs_extent_buffer_matches(const struct btrfs_extent_buffer *eb,
@@ -80,7 +167,7 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
     uint64_t generation, uint64_t view_generation, uint8_t level,
     struct btrfs_extent_buffer **ebp)
 {
-	struct btrfs_extent_buffer *eb, *new;
+	struct btrfs_extent_buffer *eb, *new = NULL, key = { 0 }, *collision;
 	struct btrfs_fs *bmp = root->br_mount;
 	uint32_t sectorsize;
 	int error;
@@ -101,48 +188,70 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
 	}
 #endif
 
-	new = malloc(sizeof(*new), M_BTRFS, M_WAITOK | M_ZERO);
-	new->eb_mount = bmp;
-	new->eb_bytenr = logical;
-	new->eb_generation = generation;
-	new->eb_owner = root->br_owner;
-	new->eb_level = level;
-	new->eb_refs = 1;
-	rw_init_flags(&new->eb_lock, "btreebuf", RWL_DUPOK);
-	rw_enter_write(&new->eb_lock);
-
+	key.eb_bytenr = logical;
+again:
 	if (bmp != NULL) {
 		mtx_enter(&bmp->bm_ebmtx);
-		LIST_FOREACH(eb, &bmp->bm_extent_buffers, eb_entry) {
-			if (eb->eb_bytenr == logical)
-				break;
-		}
+		eb = RBT_FIND(btrfs_extent_buffer_tree,
+		    &bmp->bm_extent_buffers, &key);
 		if (eb != NULL) {
 			if (!btrfs_extent_buffer_matches(eb, generation,
 			    root->br_owner, level)) {
+				if (eb->eb_refs == 0) {
+					btrfs_extent_buffer_uncache(bmp, eb);
+					mtx_leave(&bmp->bm_ebmtx);
+					btrfs_extent_buffer_free(eb);
+					goto again;
+				}
 				mtx_leave(&bmp->bm_ebmtx);
-				rw_exit_write(&new->eb_lock);
-				free(new, M_BTRFS, sizeof(*new));
+				if (new != NULL) {
+					rw_exit_write(&new->eb_lock);
+					btrfs_extent_buffer_free(new);
+				}
 				return (EINVAL);
+			}
+			if (eb->eb_refs == 0) {
+				TAILQ_REMOVE(&bmp->bm_eb_lru, eb, eb_lru);
+				bmp->bm_eb_cached--;
 			}
 			KASSERT(eb->eb_refs != UINT_MAX);
 			eb->eb_refs++;
 			mtx_leave(&bmp->bm_ebmtx);
-			rw_exit_write(&new->eb_lock);
-			free(new, M_BTRFS, sizeof(*new));
+			if (new != NULL) {
+				rw_exit_write(&new->eb_lock);
+				btrfs_extent_buffer_free(new);
+			}
 
 			rw_enter_read(&eb->eb_lock);
 			KASSERT(eb->eb_loaded);
-			if (eb->eb_error != 0 || eb->eb_stale) {
-				error = eb->eb_error != 0 ? eb->eb_error : EIO;
+			if (eb->eb_error != 0 || eb->eb_stale ||
+			    eb->eb_max_generation > view_generation) {
+				error = eb->eb_error != 0 ? eb->eb_error :
+				    eb->eb_stale ? EIO : EINVAL;
 				btrfs_extent_buffer_put(eb);
 				return (error);
 			}
 			*ebp = eb;
 			return (0);
 		}
-		LIST_INSERT_HEAD(&bmp->bm_extent_buffers, new, eb_entry);
+		if (new != NULL) {
+			collision = RBT_INSERT(btrfs_extent_buffer_tree,
+			    &bmp->bm_extent_buffers, new);
+			KASSERT(collision == NULL);
+		}
 		mtx_leave(&bmp->bm_ebmtx);
+	}
+	if (new == NULL) {
+		new = malloc(sizeof(*new), M_BTRFS, M_WAITOK | M_ZERO);
+		new->eb_mount = bmp;
+		new->eb_bytenr = logical;
+		new->eb_generation = generation;
+		new->eb_owner = root->br_owner;
+		new->eb_level = level;
+		new->eb_refs = 1;
+		rw_init_flags(&new->eb_lock, "btreebuf", RWL_DUPOK);
+		rw_enter_write(&new->eb_lock);
+		goto again;
 	}
 
 	error = btrfs_extent_buffer_load(root, new, view_generation);
@@ -169,7 +278,7 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
     struct btrfs_extent_buffer **ebp)
 {
 	struct btrfs_transaction *trans;
-	struct btrfs_extent_buffer *eb, *collision;
+	struct btrfs_extent_buffer *eb;
 	struct btrfs_fs *bmp;
 	struct btrfs_header *header;
 	uint64_t bytenr, flags;
@@ -220,22 +329,15 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 	eb->eb_transaction = trans;
 	eb->eb_bytenr = bytenr;
 	eb->eb_generation = trans->bt_generation;
+	eb->eb_max_generation = trans->bt_generation;
 	eb->eb_owner = source->eb_owner;
 	eb->eb_refs = 2;	/* caller plus transaction dirty-list ownership */
 	eb->eb_level = source->eb_level;
 	eb->eb_loaded = 1;
 	eb->eb_dirty = 1;
 
-	collision = NULL;
-	mtx_enter(&bmp->bm_ebmtx);
-	LIST_FOREACH(collision, &bmp->bm_extent_buffers, eb_entry) {
-		if (collision->eb_bytenr == bytenr)
-			break;
-	}
-	if (collision == NULL)
-		LIST_INSERT_HEAD(&bmp->bm_extent_buffers, eb, eb_entry);
-	mtx_leave(&bmp->bm_ebmtx);
-	if (collision != NULL) {
+	error = btrfs_extent_buffer_publish(eb);
+	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
 		free(eb->eb_private, M_BTRFS, nodesize);
 		free(eb, M_BTRFS, sizeof(*eb));
@@ -262,7 +364,7 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
     struct btrfs_extent_buffer **ebp)
 {
 	struct btrfs_transaction *trans;
-	struct btrfs_extent_buffer *eb, *collision;
+	struct btrfs_extent_buffer *eb;
 	struct btrfs_fs *bmp;
 	struct btrfs_header *header;
 	const struct btrfs_header *source_header;
@@ -320,22 +422,15 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 	eb->eb_transaction = trans;
 	eb->eb_bytenr = bytenr;
 	eb->eb_generation = trans->bt_generation;
+	eb->eb_max_generation = trans->bt_generation;
 	eb->eb_owner = source->eb_owner;
 	eb->eb_refs = 2;	/* caller plus transaction dirty-list ownership */
 	eb->eb_level = level;
 	eb->eb_loaded = 1;
 	eb->eb_dirty = 1;
 
-	collision = NULL;
-	mtx_enter(&bmp->bm_ebmtx);
-	LIST_FOREACH(collision, &bmp->bm_extent_buffers, eb_entry) {
-		if (collision->eb_bytenr == bytenr)
-			break;
-	}
-	if (collision == NULL)
-		LIST_INSERT_HEAD(&bmp->bm_extent_buffers, eb, eb_entry);
-	mtx_leave(&bmp->bm_ebmtx);
-	if (collision != NULL) {
+	error = btrfs_extent_buffer_publish(eb);
+	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
 		free(eb->eb_private, M_BTRFS, nodesize);
 		free(eb, M_BTRFS, sizeof(*eb));
@@ -442,7 +537,8 @@ void
 btrfs_extent_buffer_put(struct btrfs_extent_buffer *eb)
 {
 	struct btrfs_fs *bmp = eb->eb_mount;
-	int last;
+	struct btrfs_extent_buffer *victim = NULL;
+	unsigned int limit;
 
 	KASSERT(eb->eb_refs > 0);
 	rw_assert_anylock(&eb->eb_lock);
@@ -451,25 +547,32 @@ btrfs_extent_buffer_put(struct btrfs_extent_buffer *eb)
 	if (bmp != NULL) {
 		mtx_enter(&bmp->bm_ebmtx);
 		KASSERT(eb->eb_refs > 0);
-		last = --eb->eb_refs == 0;
-		if (last)
-			LIST_REMOVE(eb, eb_entry);
+		if (--eb->eb_refs == 0) {
+			KASSERT(eb->eb_transaction == NULL);
+			if (eb->eb_error != 0 || eb->eb_stale) {
+				RBT_REMOVE(btrfs_extent_buffer_tree,
+				    &bmp->bm_extent_buffers, eb);
+				victim = eb;
+			} else {
+				KASSERT(eb->eb_loaded && !eb->eb_dirty);
+				KASSERT(eb->eb_buf == NULL);
+				TAILQ_INSERT_TAIL(&bmp->bm_eb_lru, eb, eb_lru);
+				bmp->bm_eb_cached++;
+				limit = BTRFS_METADATA_CACHE_BYTES /
+				    letoh32(bmp->bm_super.nodesize);
+				if (bmp->bm_eb_cached > limit) {
+					victim = TAILQ_FIRST(&bmp->bm_eb_lru);
+					btrfs_extent_buffer_uncache(bmp, victim);
+				}
+			}
+		}
 		mtx_leave(&bmp->bm_ebmtx);
 	} else {
 		KASSERT(eb->eb_refs == 1);
 		eb->eb_refs = 0;
-		last = 1;
+		victim = eb;
 	}
-	if (!last)
-		return;
-
-	rw_assert_unlocked(&eb->eb_lock);
-	if (eb->eb_buf != NULL)
-		brelse(eb->eb_buf);
-	if (eb->eb_private != NULL)
-		free(eb->eb_private, M_BTRFS,
-		    letoh32(bmp->bm_super.nodesize));
-	free(eb, M_BTRFS, sizeof(*eb));
+	btrfs_extent_buffer_free(victim);
 }
 
 static void
@@ -614,7 +717,10 @@ btrfs_extent_buffer_load(const struct btrfs_root *root,
     struct btrfs_extent_buffer *eb, uint64_t view_generation)
 {
 	struct btrfs_extent_buffer_validation validation;
+	const struct btrfs_header *header;
+	const struct btrfs_key_ptr *ptrs;
 	struct buf *bp;
+	uint32_t i;
 	int error;
 
 	rw_assert_wrlock(&eb->eb_lock);
@@ -629,9 +735,23 @@ btrfs_extent_buffer_load(const struct btrfs_root *root,
 	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM,
 	    btrfs_extent_buffer_validate, &validation, NULL, &bp);
 	if (error == 0) {
-		eb->eb_buf = bp;
-		eb->eb_owner = letoh64(((struct btrfs_header *)
-		    bp->b_data)->owner);
+		header = (const struct btrfs_header *)bp->b_data;
+		eb->eb_owner = letoh64(header->owner);
+		eb->eb_max_generation = eb->eb_generation;
+		if (header->level != 0) {
+			ptrs = (const struct btrfs_key_ptr *)(header + 1);
+			for (i = 0; i < letoh32(header->nritems); i++)
+				eb->eb_max_generation = MAX(eb->eb_max_generation,
+				    letoh64(ptrs[i].generation));
+		}
+		if (eb->eb_mount != NULL) {
+			eb->eb_private = malloc(letoh32(root->br_super->nodesize),
+			    M_BTRFS, M_WAITOK);
+			memcpy(eb->eb_private, bp->b_data,
+			    letoh32(root->br_super->nodesize));
+			brelse(bp);
+		} else
+			eb->eb_buf = bp;
 	} else if (error == ENOENT)
 		error = EINVAL;
 	return (error);
