@@ -2291,7 +2291,7 @@ btrfs_inactive(void *v)
 		 * Retire ordered writes before raw, restartable range deletion.
 		 * The orphan remains durable if cleanup cannot reserve space.
 		 */
-		error = btrfs_commit_current(node->bn_mount, ap->a_p);
+		error = btrfs_commit_inode_data(node, ap->a_p);
 		if (error == 0)
 			error = btrfs_reap_inode(node->bn_root, node->bn_ino);
 	}

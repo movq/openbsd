@@ -23,6 +23,8 @@ p.add_argument("--type", choices=["ffs", "btrfs"], required=True)
 p.add_argument("--options", default="noatime")
 p.add_argument("--archive", required=True)
 p.add_argument("--out", required=True)
+p.add_argument("--delete-only", action="store_true",
+               help="extract and delete the archive, skipping other workloads")
 a = p.parse_args()
 out = Path(a.out)
 out.mkdir(exist_ok=True)
@@ -79,11 +81,23 @@ def measure(label, argv, durable=False, output=None):
     emit(result)
 
 
+def delete_tree():
+    mount()
+    measure("delete", ["rm", "-rf", str(mp / "tree")], durable=True)
+    mount()
+    assert not (mp / "tree").exists()
+    emit({"event": "complete"})
+    unmount()
+
+
 emit({"event": "setup", "args": vars(a)})
 mount()
 assert not (mp / "tree").exists() and not (mp / "large").exists()
 run(["mkdir", str(mp / "tree")])
 measure("extract", ["tar", "-xpf", a.archive, "-C", str(mp / "tree")], durable=True)
+if a.delete_only:
+    delete_tree()
+    raise SystemExit(0)
 mount()
 for label in ["grep-remount", "grep-repeat"]:
     measure(label, ["grep", "-r", "-a", "-F", "-c", "Copyright", str(mp / "tree")],
@@ -123,9 +137,4 @@ for iteration in (1, 2):
     mount()
     run(["rm", str(mp / "large")])
     unmount()
-mount()
-measure("delete", ["rm", "-rf", str(mp / "tree")], durable=True)
-mount()
-assert not (mp / "tree").exists()
-emit({"event": "complete"})
-unmount()
+delete_tree()

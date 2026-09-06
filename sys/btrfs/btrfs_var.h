@@ -776,6 +776,7 @@ int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,
 int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
+int	btrfs_commit_inode_data(struct btrfs_node *, struct proc *);
 int	btrfs_read_ordered_sector(struct btrfs_node *, uint64_t, void *);
 int	btrfs_check_file_extend(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_check_file_shrink(struct btrfs_node *, uint64_t, uint64_t *,
