@@ -673,6 +673,7 @@ def cases():
         "checksums": checksums, "cluster": cluster, "coalesce": coalesce,
         "reflink": reflink,
         "read-cluster": read_cluster,
+        "read-range": partial(basic, script="read_range"),
         "read-import": read_import,
         "read-compressed": partial(read_import, compressed=True),
         "read-faults": read_faults,

@@ -187,11 +187,12 @@ Mutable inode state is host-endian; encoding preserves unmodeled fields.
 
 The highest valid superblock generation is the commit point:
 
-1. Write ordered data to every required mirror.
+1. Submit ordered data to every required mirror and wait for completion.
 2. Drain delayed references, update block-group accounting, and rewrite dirty
    root items to a fixed point. Include allocator change sequence in the
    stability check: this work can COW more trees and queue more references.
-3. Finalize metadata headers/checksums and write every required mirror.
+3. Finalize metadata headers/checksums, submit every required mirror, and wait
+   for completion.
 4. Drain device buffers and issue `DIOCCACHESYNC`.
 5. Write updated superblocks at usable mirrors within the recorded device size.
 6. Drain and cache-sync again, then publish in memory and release pinned space.
@@ -200,6 +201,13 @@ The highest valid superblock generation is the commit point:
 Every DUP copy is required. Once superblock writing has been attempted, attempt
 the final barrier even if a mirror failed; ambiguous publication requires an
 error and read-only mount.
+
+Data and metadata phases each queue at most 16 physical writes asynchronously.
+Submitted buffers own their bytes. Completion records errors and short I/O,
+releases the buffer, then drops the phase's pending count. Every exit drains
+the phase before its completion state or transaction resources can be freed;
+failed completion prevents advancing to publication. Superblock writes and
+the two cache barriers retain their synchronous ordering.
 
 Committed metadata is never overwritten. Abort restores saved roots and marks
 transaction-owned extent buffers stale before releasing new allocations.
@@ -226,6 +234,9 @@ blocks. Hits must match generation, level, and permitted owner, and their
 validated child generations must fit the caller's view. Allocator-authorized
 reuse can evict an idle old generation, never an active reference. Aborted
 blocks are discarded; last-view teardown purges the cache after transactions.
+Per-filesystem pools reuse metadata-node storage and `MAXBSIZE` I/O scratch
+storage, with idle high-water marks of 64 and 16 objects respectively. These
+pools carry no cache identity and are destroyed after transaction/cache teardown.
 Inodes use a separate index by tree, inode, and snapshot-boundary identity,
 with publication and removal serialized by the node-cache mutex.
 
@@ -256,15 +267,17 @@ publication drains handles before replacing indexes and freeing removed groups.
 `statfs` holds the mapping lock throughout its group traversal.
 Mount-time disk validation runs before mutation begins.
 
-Regular-file buffers use logical sector offsets. Vnode-locked writes modify
-temporary sector copies and attach immutable ordered payloads, then update clean
-buffers. Cache misses consult ordered data before disk; repeated sector writes
-replace the payload and checksum. Pending sectors are indexed by tree, inode,
+Regular-file reads, including VM-pager reads, use bounded range reads through
+temporary storage of at most `MAXBSIZE`. They consult ordered data before disk,
+without maintaining a second cache of sector vnode buffers. Vnode-locked writes
+modify temporary sector copies and attach ordered payloads; repeated sector
+writes replace the payload and checksum. Pending sectors are indexed by tree, inode,
 and file offset under the transaction lock, so reads, replacement and cancellation
 do not scan unrelated pending writes. Keys stay fixed until cancellation or
 transaction teardown; commit uses a separate allocation-order index for I/O.
-Strategy writeback is disabled because it lacks the vnode lock needed for
-tree/inode mutation.
+The compatibility strategy read path uses the same range reader and marks
+buffers noncacheable. Strategy writeback is disabled because it lacks the vnode
+lock needed for tree/inode mutation.
 Physical data reads use windows of at most `MAXBSIZE`, anchored to the backing
 allocation and bounded by its length. Split mappings use the same cache keys
 and sizes. Each request validates only its sector, allowing different DUP

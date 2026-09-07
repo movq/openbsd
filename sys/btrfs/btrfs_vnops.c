@@ -63,6 +63,8 @@ static int	btrfs_close(void *);
 static int	btrfs_access(void *);
 static int	btrfs_getattr(void *);
 static int	btrfs_setattr(void *);
+static int	btrfs_read_file_range(struct btrfs_node *, uint64_t, size_t,
+		    uint8_t *);
 static int	btrfs_read(void *);
 static int	btrfs_write(void *);
 static int	btrfs_fsync(void *);
@@ -1061,7 +1063,6 @@ btrfs_setattr(void *v)
 	struct vattr attr = *ap->a_vap;
 	struct vattr *vap = &attr;
 	struct ucred *cred = ap->a_cred;
-	struct buf *bp = NULL;
 	struct timespec now;
 	uint8_t *data = NULL;
 	uid_t uid;
@@ -1220,12 +1221,12 @@ btrfs_setattr(void *v)
 		return (0);
 
 	if (tail_offset != UINT64_MAX) {
-		error = bread(vp, tail_offset / sectorsize, sectorsize, &bp);
+		data = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
+		error = btrfs_read_file_range(node, tail_offset,
+		    MIN(node->bn_inode.bi_size, vap->va_size) - tail_offset,
+		    data);
 		if (error != 0)
 			goto out;
-		data = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
-		memcpy(data, bp->b_data,
-		    MIN(node->bn_inode.bi_size, vap->va_size) - tail_offset);
 		reservation.btr_data = sectorsize;
 	}
 	reservation.btr_metadata =
@@ -1308,13 +1309,7 @@ btrfs_setattr(void *v)
 	}
 	if (vap->va_size != VNOVAL && vap->va_size != saved.bi_size) {
 		(void)uvm_vnp_uncache(vp);
-		if (data != NULL)
-			memcpy(bp->b_data, data, sectorsize);
 		if (vap->va_size < saved.bi_size) {
-			if (bp != NULL) {
-				brelse(bp);
-				bp = NULL;
-			}
 			/* Buffers are clean; ordered data owns pending writes. */
 			(void)vinvalbuf(vp, 0, cred, ap->a_p, 0, INFSLP);
 		}
@@ -1331,8 +1326,6 @@ btrfs_setattr(void *v)
 		error = btrfs_trans_commit(bmp,
 		    node->bn_inode.bi_last_dirty_transid, ap->a_p);
 out:
-	if (bp != NULL)
-		brelse(bp);
 	if (data != NULL)
 		free(data, M_BTRFS, sectorsize);
 	return (error);
@@ -1420,6 +1413,7 @@ btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
 	uint64_t available, end, file_size;
+	uint32_t sectorsize;
 	size_t size;
 	int error = 0;
 
@@ -1430,12 +1424,29 @@ btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
 	if (length == 0)
 		return (0);
 	end = offset + length;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
 
 	error = btrfs_get_root(bmp, node->bn_treeid, &root);
 	if (error != 0)
 		return (error);
 
 	while (error == 0 && offset < end) {
+		/*
+		 * Pending mappings are separate sectors until commit, which
+		 * writes their data before merging them. A disk mapping found
+		 * below therefore cannot span an unwritten pending sector.
+		 */
+		size = MIN(end - offset,
+		    sectorsize - (offset & (sectorsize - 1)));
+		error = btrfs_read_ordered_range(node, offset, size,
+		    destination);
+		if (error == 0) {
+			offset += size;
+			destination += size;
+			continue;
+		}
+		if (error != ENOENT)
+			break;
 		error = btrfs_find_file_extent(bmp, root, &path,
 		    node->bn_ino, offset, file_size, &extent);
 		if (error != 0)
@@ -1503,6 +1514,8 @@ btrfs_strategy(void *v)
 	int error, s;
 
 	sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	/* Current file data lives in ordered payloads or physical buffers. */
+	bp->b_flags |= B_NOCACHE;
 	error = 0;
 	if ((bp->b_flags & B_READ) == 0)
 		error = EROFS;
@@ -1518,11 +1531,8 @@ btrfs_strategy(void *v)
 		if (file_offset < file_size) {
 			length = MIN((uint64_t)bp->b_bcount,
 			    file_size - file_offset);
-			error = btrfs_read_ordered_sector(node, file_offset,
-			    bp->b_data);
-			if (error == ENOENT)
-				error = btrfs_read_file_range(node, file_offset,
-				    length, bp->b_data);
+			error = btrfs_read_file_range(node, file_offset,
+			    length, bp->b_data);
 		}
 	}
 	if (error != 0) {
@@ -1542,13 +1552,10 @@ btrfs_read(void *v)
 	struct vop_read_args *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
-	struct btrfs_fs *bmp = node->bn_mount;
-	struct buf *bp = NULL;
 	struct uio *uio = ap->a_uio;
+	uint8_t *data;
 	uint64_t file_size;
-	uint32_t sectorsize;
-	daddr_t block;
-	size_t offset, size;
+	size_t capacity, size;
 	int error = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
@@ -1560,26 +1567,25 @@ btrfs_read(void *v)
 		return (0);
 
 	file_size = node->bn_inode.bi_size;
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	if ((uint64_t)uio->uio_offset >= file_size)
+		return (0);
+	capacity = MIN((uint64_t)MIN(uio->uio_resid, MAXBSIZE),
+	    file_size - (uint64_t)uio->uio_offset);
+	data = pool_get(&node->bn_mount->bm_scratch_pool, PR_WAITOK);
 	while (uio->uio_resid != 0 &&
 	    (uint64_t)uio->uio_offset < file_size) {
-		block = (uint64_t)uio->uio_offset / sectorsize;
-		offset = (uint64_t)uio->uio_offset & (sectorsize - 1);
-		size = MIN((size_t)(sectorsize - offset), uio->uio_resid);
+		size = MIN(capacity, uio->uio_resid);
 		if (size > file_size - (uint64_t)uio->uio_offset)
 			size = file_size - (uint64_t)uio->uio_offset;
 
-		error = bread(vp, block, sectorsize, &bp);
+		error = btrfs_read_file_range(node, uio->uio_offset, size, data);
 		if (error != 0)
 			break;
-		error = uiomove((uint8_t *)bp->b_data + offset, size, uio);
-		brelse(bp);
-		bp = NULL;
+		error = uiomove(data, size, uio);
 		if (error != 0)
 			break;
 	}
-	if (bp != NULL)
-		brelse(bp);
+	pool_put(&node->bn_mount->bm_scratch_pool, data);
 	return (error);
 }
 
@@ -1596,7 +1602,6 @@ btrfs_write(void *v)
 	struct btrfs_file_extent first;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
-	struct buf *bp = NULL;
 	struct uio *uio = ap->a_uio;
 	struct timespec now;
 	uint8_t *data = NULL;
@@ -1666,10 +1671,15 @@ btrfs_write(void *v)
 		block = (uint64_t)uio->uio_offset / sectorsize;
 		offset = (uint64_t)uio->uio_offset & (sectorsize - 1);
 		size = MIN((size_t)(sectorsize - offset), uio->uio_resid);
-		error = bread(vp, block, sectorsize, &bp);
-		if (error != 0)
-			break;
-		memcpy(data, bp->b_data, sectorsize);
+		file_offset = (uint64_t)block * sectorsize;
+		memset(data, 0, sectorsize);
+		if (file_offset < node->bn_inode.bi_size) {
+			error = btrfs_read_file_range(node, file_offset,
+			    MIN(sectorsize, node->bn_inode.bi_size -
+			    file_offset), data);
+			if (error != 0)
+				break;
+		}
 
 		move_offset = uio->uio_offset;
 		move_resid = uio->uio_resid;
@@ -1677,11 +1687,8 @@ btrfs_write(void *v)
 		moved = move_resid - uio->uio_resid;
 		if (moved == 0) {
 			error = move_error;
-			brelse(bp);
-			bp = NULL;
 			break;
 		}
-		file_offset = (uint64_t)block * sectorsize;
 		file_size = MAX(node->bn_inode.bi_size,
 		    (uint64_t)move_offset + moved);
 		error = btrfs_count_file_holes(node, file_size, &holes);
@@ -1733,17 +1740,10 @@ btrfs_write(void *v)
 		if (error != 0) {
 			uio->uio_offset = move_offset;
 			uio->uio_resid = move_resid;
-			brelse(bp);
-			bp = NULL;
 			break;
 		}
 
 		(void)uvm_vnp_uncache(vp);
-		memcpy(bp->b_data, data, sectorsize);
-		if (ap->a_ioflag & IO_NOCACHE)
-			bp->b_flags |= B_NOCACHE;
-		brelse(bp);
-		bp = NULL;
 		if (file_size > saved.bi_size) {
 			uvm_vnp_setsize(vp, file_size);
 			extended = 1;
@@ -1754,8 +1754,6 @@ btrfs_write(void *v)
 			break;
 		}
 	}
-	if (bp != NULL)
-		brelse(bp);
 	free(data, M_BTRFS, sectorsize);
 	if (error != 0 && (ap->a_ioflag & IO_UNIT)) {
 		uio->uio_offset = unit_offset;
@@ -1793,7 +1791,7 @@ btrfs_clone_range(struct vnode *svp, struct vnode *dvp,
 	struct vattr attr;
 	struct uio uio = { 0 };
 	struct iovec iov;
-	struct buf *bp = NULL;
+	uint8_t *data = NULL;
 	struct timespec now;
 	uint64_t from = args->src_offset, to = args->dst_offset;
 	uint64_t length = args->length, end, count, size, original_size;
@@ -1899,10 +1897,11 @@ retry:
 			 * ordinary writer for its checksum and EOF handling.
 			 */
 			count = MIN(length, sector);
-			error = bread(svp, from / sector, sector, &bp);
+			data = malloc(sector, M_BTRFS, M_WAITOK);
+			error = btrfs_read_file_range(src, from, count, data);
 			if (error != 0)
 				break;
-			iov.iov_base = bp->b_data;
+			iov.iov_base = data;
 			iov.iov_len = count;
 			memset(&uio, 0, sizeof(uio));
 			uio.uio_iov = &iov;
@@ -1913,8 +1912,8 @@ retry:
 			uio.uio_rw = UIO_WRITE;
 			uio.uio_procp = p;
 			error = VOP_WRITE(dvp, &uio, 0, p->p_ucred);
-			brelse(bp);
-			bp = NULL;
+			free(data, M_BTRFS, sector);
+			data = NULL;
 			if (error != 0)
 				break;
 			changed = 1;
@@ -1982,8 +1981,7 @@ retry:
 	}
 out:
 	btrfs_release_path(&path);
-	if (bp != NULL)
-		brelse(bp);
+	free(data, M_BTRFS, sector);
 	if (changed) {
 		(void)uvm_vnp_uncache(dvp);
 		/* All file buffers are clean; pending writes live in ordered data. */
