@@ -36,6 +36,22 @@ static int	btrfs_materialize_tree_ref(struct btrfs_trans_handle *,
 		    const struct btrfs_delayed_tree_ref *);
 static int	btrfs_sync_device(struct btrfs_fs *, struct proc *);
 
+static inline int
+btrfs_tree_ref_compare(const struct btrfs_delayed_tree_ref *a,
+    const struct btrfs_delayed_tree_ref *b)
+{
+	if (a->bdr_bytenr != b->bdr_bytenr)
+		return (a->bdr_bytenr < b->bdr_bytenr ? -1 : 1);
+	if (a->bdr_parent != b->bdr_parent)
+		return (a->bdr_parent < b->bdr_parent ? -1 : 1);
+	if (a->bdr_root != b->bdr_root)
+		return (a->bdr_root < b->bdr_root ? -1 : 1);
+	return ((int)a->bdr_level - (int)b->bdr_level);
+}
+
+RBT_GENERATE(btrfs_tree_ref_tree, btrfs_delayed_tree_ref, bdr_index,
+    btrfs_tree_ref_compare);
+
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 {
@@ -53,6 +69,8 @@ btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 	TAILQ_INIT(&trans->bt_dirty_extent_buffers);
 	TAILQ_INIT(&trans->bt_delayed_tree_refs);
 	TAILQ_INIT(&trans->bt_delayed_data_refs);
+	RBT_INIT(btrfs_tree_ref_tree, &trans->bt_tree_ref_index);
+	RBT_INIT(btrfs_data_ref_tree, &trans->bt_data_ref_index);
 	RBT_INIT(btrfs_ordered_tree, &trans->bt_ordered_extents);
 	TAILQ_INIT(&trans->bt_dirty_roots);
 	return (trans);
@@ -165,6 +183,18 @@ retry:
 		}
 		msleep(&bmp->bm_transaction, &bmp->bm_trans_mtx, PWAIT,
 		    "btrjoin", 0);
+	}
+	mtx_enter(&trans->bt_lock);
+	dirty = trans->bt_ordered_bytes >= BTRFS_ORDERED_BYTES_MAX;
+	mtx_leave(&trans->bt_lock);
+	if (dirty) {
+		generation = trans->bt_generation;
+		mtx_leave(&bmp->bm_trans_mtx);
+		free(handle, M_BTRFS, sizeof(*handle));
+		error = btrfs_trans_commit(bmp, generation, curproc);
+		if (error != 0)
+			return (error);
+		goto retry;
 	}
 	KASSERT(trans->bt_writers != UINT_MAX);
 	trans->bt_writers++;
@@ -331,20 +361,22 @@ btrfs_delayed_ref_add(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	new->bdr_ref_mod = ref_mod;
 
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(ref, &trans->bt_delayed_tree_refs, bdr_entry) {
-		if (ref->bdr_bytenr == bytenr &&
-		    ref->bdr_parent == parent && ref->bdr_root == root &&
-		    ref->bdr_level == level)
-			break;
-	}
+	ref = RBT_FIND(btrfs_tree_ref_tree, &trans->bt_tree_ref_index, new);
 	if (ref == NULL) {
-		TAILQ_INSERT_TAIL(&trans->bt_delayed_tree_refs, new,
-		    bdr_entry);
+		RBT_INSERT(btrfs_tree_ref_tree, &trans->bt_tree_ref_index, new);
+		if (ref_mod >= 0)
+			TAILQ_INSERT_HEAD(&trans->bt_delayed_tree_refs, new,
+			    bdr_entry);
+		else
+			TAILQ_INSERT_TAIL(&trans->bt_delayed_tree_refs, new,
+			    bdr_entry);
 		new = NULL;
 	} else if (ref_mod != 0) {
 		KASSERT(ref->bdr_ref_mod != 0);
 		ref->bdr_ref_mod += ref_mod;
 		if (ref->bdr_ref_mod == 0) {
+			RBT_REMOVE(btrfs_tree_ref_tree,
+			    &trans->bt_tree_ref_index, ref);
 			TAILQ_REMOVE(&trans->bt_delayed_tree_refs, ref,
 			    bdr_entry);
 			free(ref, M_BTRFS, sizeof(*ref));
@@ -374,7 +406,7 @@ btrfs_block_refs(struct btrfs_trans_handle *handle,
 	struct btrfs_key key = { 0 };
 	const struct btrfs_extent_item *item;
 	const uint8_t *data;
-	struct btrfs_delayed_tree_ref *ref;
+	struct btrfs_delayed_tree_ref *ref, probe = { 0 };
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	uint32_t size;
 	int error;
@@ -402,9 +434,11 @@ btrfs_block_refs(struct btrfs_trans_handle *handle,
 	if (error != 0 && error != ENOENT)
 		return (error);
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(ref, &trans->bt_delayed_tree_refs, bdr_entry) {
+	probe.bdr_bytenr = eb->eb_bytenr;
+	for (ref = RBT_NFIND(btrfs_tree_ref_tree, &trans->bt_tree_ref_index,
+	    &probe); ref != NULL; ref = RBT_NEXT(btrfs_tree_ref_tree, ref)) {
 		if (ref->bdr_bytenr != eb->eb_bytenr)
-			continue;
+			break;
 		*refs += ref->bdr_ref_mod;
 		if (ref->bdr_ref_mod == 0)
 			*flags |= BTRFS_BLOCK_FLAG_FULL_BACKREF;
@@ -592,14 +626,13 @@ btrfs_run_delayed_refs(struct btrfs_trans_handle *handle)
 	for (;;) {
 		mtx_enter(&trans->bt_lock);
 		/* Materialize adds and conversions before any final drop. */
-		TAILQ_FOREACH(ref, &trans->bt_delayed_tree_refs, bdr_entry)
-			if (ref->bdr_ref_mod >= 0)
-				break;
-		if (ref == NULL)
-			ref = TAILQ_FIRST(&trans->bt_delayed_tree_refs);
-		if (ref != NULL)
+		ref = TAILQ_FIRST(&trans->bt_delayed_tree_refs);
+		if (ref != NULL) {
+			RBT_REMOVE(btrfs_tree_ref_tree,
+			    &trans->bt_tree_ref_index, ref);
 			TAILQ_REMOVE(&trans->bt_delayed_tree_refs, ref,
 			    bdr_entry);
+		}
 		mtx_leave(&trans->bt_lock);
 		if (ref == NULL)
 			return (btrfs_run_delayed_data_refs(handle));
@@ -756,6 +789,7 @@ btrfs_delayed_refs_finish(struct btrfs_transaction *trans, int committed)
 		return (EBUSY);
 
 	while ((ref = TAILQ_FIRST(&trans->bt_delayed_tree_refs)) != NULL) {
+		RBT_REMOVE(btrfs_tree_ref_tree, &trans->bt_tree_ref_index, ref);
 		TAILQ_REMOVE(&trans->bt_delayed_tree_refs, ref, bdr_entry);
 		free(ref, M_BTRFS, sizeof(*ref));
 	}
