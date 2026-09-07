@@ -160,6 +160,9 @@ def faults(base):
     try:
         for sector in (1, 2):
             assert os.pread(fd, SECTOR, sector * SECTOR) == payload(13, sector)
+        # A range can need a different mirror for each of its sectors.
+        pair = payload(13, 1) + payload(13, 2)
+        assert os.pread(fd, 2 * SECTOR - 26, SECTOR + 13) == pair[13:-13]
         expect_error(errno.EIO, os.pread, fd, SECTOR, 0)
         # The failed sector retry replaced full windows at the same start.
         # A new sector read must safely restore the larger buffer size.
