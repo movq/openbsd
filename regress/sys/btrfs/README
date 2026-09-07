@@ -121,6 +121,11 @@ Run disk on the unmounted image to check checksum packing, alongside both
 independent checkers, then verify after writable and read-only remounts.
 Cover both metadata node sizes and SINGLE/DUP data.
 
+write_range.py uses create/verify for multi-sector pending writes, overlapping
+replacement, short truncation followed by sparse growth, and writev copy faults
+within and across range boundaries. The write-range recipe includes independent
+filesystem/checksum/mirror checks and read-only and writable remounts.
+
 cluster.py uses create/verify to measure commit output operations and exercise
 physical-sector cache eviction while repeatedly freeing and reusing data.
 It invalidates vnode buffers before checking data in the same mount. Use create

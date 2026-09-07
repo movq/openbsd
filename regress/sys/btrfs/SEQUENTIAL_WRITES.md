@@ -1,12 +1,84 @@
 # Sequential-write investigation
 
-Investigated at `bae246e724e`, following the changes recorded in
-[PROFILING.md](PROFILING.md). The remaining bottlenecks are coupled:
+Baseline investigated at `bae246e724e`, following the changes recorded in
+[PROFILING.md](PROFILING.md). Its remaining bottlenecks are coupled:
 sector-sized metadata operations, reservations retained until publication,
 quadratic delayed-reference insertion, and frequent full commits. Range
 allocation and a reservation model based on affected items are the main
 architectural opportunities. Increasing transaction capacity alone exposes
 other costs.
+
+## Bounded-range prototype
+
+The prototype reaches the requested 0.7x FFS2 throughput target, so performance
+work stopped after indexed references and direct ranges of at most 64 KiB.
+The final uninstrumented guest is GENERIC.MP#146, with the same eight vCPUs,
+1 GiB RAM, buffer-cache setting, format and durable 2 GiB workload as below.
+All passes used fresh filesystems; builds and other workloads did not overlap
+measurement.
+
+| Build / filesystem | Write including unmount, seconds | Generations |
+| --- | ---: | ---: |
+| FFS2 control before | 3.190 | — |
+| Indexed references only, #143 | 8.502 | 1,190 |
+| First direct-range prototype, #144 | 3.984 | 192 |
+| Final prototype, #146, two passes | 3.959 / 4.136 | 192 / 192 |
+| FFS2 control after | 3.419 | — |
+
+The final passes delivered 495–517 MiB/s. Even pairing the slower Btrfs pass
+with the faster FFS2 control gives **0.77x FFS2 throughput**; using mean elapsed
+times gives approximately 0.82x. This is about
+twice the baseline Btrfs throughput. Child system CPU fell to 2.44 / 2.59
+seconds. The control variation remains part of this VM measurement.
+
+The retained changes are:
+
+* Separate red-black indexes match metadata and data delayed references by
+  complete identity. Work queues put adds/conversions before drops, and data
+  delta sign changes move the queue entry. Cancellation and commit coalescing
+  update both queue and index. Metadata reference-count queries visit only the
+  matching allocation. Indexing alone did not improve this small-transaction
+  workload, but removes its quadratic insertion algorithm.
+* Each write handle replaces at most one old mapping with a directly allocated
+  range of at most `MAXBSIZE`, retaining any old prefix/suffix. The existing
+  single-mapping metadata budget covers mapping/split, inode, checksum and
+  delayed tree work; inline conversion and explicit holes add their own costs.
+  On this layout a 64 KiB range promises 2 MiB of metadata instead of 32 MiB.
+  Reservation or contiguous-allocation failure reduces the range before copy.
+* Pending lookup finds a containing live range. Overwrites update its payload;
+  short truncation and partial-copy failure retain complete allocation payloads
+  for checksums while exposing only the live file prefix. Final cancellation
+  releases payload, reference and allocation together. A 32 MiB pending-payload
+  watermark causes new joins to commit; existing handles finish bounded work.
+
+The final file still has 32,768 extents of 64 KiB, but full range writes install
+these directly. Its file tree has **315 leaves at 49.8% occupancy**, compared
+with 3,216 at 4.9% in the baseline. `btrfs check` reports 4.95 MiB of filesystem
+tree blocks instead of 50.5 MiB. Sector writes retain the existing commit-time
+coalescer. No new phase instrumentation was used, so these runs do not
+attribute the remaining elapsed time to individual commit phases.
+
+Validation comprised 33 targeted case passes across the prototype builds:
+checksum/coalescing/read smoke tests; 4 KiB and 16 KiB range writes, copy faults,
+ENOSPC-prefix fallback, reflinks, snapshots, inline conversion, growth, shrink,
+holes and Zstd COW; DUP/bitmap/no-free-space-tree and nodatasum checks; and
+resets before and after publication. The publication workload now replaces
+four sectors in one range write. The new `write-range` recipe checks pending
+overlaps, short truncation, sparse regrowth and faults across range boundaries.
+Each recipe includes independent unmounted checks and remount verification.
+All benchmark passes also passed full checksum and metadata-mirror checks and
+complete zero comparison after OpenBSD remount; the final file passed complete
+comparison through a Linux read-only mount. FFS2 controls passed `fsck_ffs -fn`.
+The full regression suite was not run.
+
+Artifacts use `seq-prototype-*` names under
+`/home/mike/obj/btrfs-architecture-profile`; `seq-prototype-final-fs-tree.txt`
+records the final topology. Targeted logs are under
+`/home/mike/obj/btrfs-prototype-{smoke,targeted,dup,publication}`.
+The reproduction runner below was reused. Larger extents with segmented
+payloads, chunk-growth changes, background writeback and overlapping
+transactions were not implemented. Publication barriers and queue depth remain
+unchanged. The guest is left on #146 with the retained prototype.
 
 ## Fresh controls and method
 
@@ -134,7 +206,7 @@ count alone is insufficient.
 
 Linux source `09f35c36a4ad0` was consulted without importing code.
 
-| Area | Current OpenBSD driver | Linux btrfs |
+| Area | Baseline OpenBSD driver | Linux btrfs |
 | --- | --- | --- |
 | Buffered write | Copy and allocate sectors; install each file mapping immediately | Copy to page cache; reserve and mark delayed-allocation ranges |
 | Allocation and completion | Sector-owned pending records; reconstruct 64 KiB extents at commit | Allocate ranges at writeback; ordered completion installs file extents and checksums |
@@ -216,6 +288,7 @@ separator keys for leaf items. Anchoring the item match fixed it; the
 rerun checked all 23,066 metadata blocks, followed by full data verification.
 The Linux-written filesystem also passed these independent checks.
 
-No driver changes were retained. The guest was rebuilt and returned to
+At the end of the baseline investigation, no driver changes were retained.
+The guest was rebuilt and returned to
 HEAD-equivalent GENERIC.MP#142, with tracing disabled. The full regression
 suite was not run for this profiling investigation.

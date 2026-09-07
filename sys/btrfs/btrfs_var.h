@@ -204,6 +204,7 @@ TAILQ_HEAD(btrfs_dirty_extent_buffer_list, btrfs_extent_buffer);
  */
 struct btrfs_delayed_tree_ref {
 	TAILQ_ENTRY(btrfs_delayed_tree_ref) bdr_entry;
+	RBT_ENTRY(btrfs_delayed_tree_ref) bdr_index;
 	uint64_t			 bdr_bytenr;
 	uint64_t			 bdr_parent;
 	uint64_t			 bdr_root;
@@ -211,9 +212,13 @@ struct btrfs_delayed_tree_ref {
 	uint8_t				 bdr_level;
 };
 TAILQ_HEAD(btrfs_delayed_tree_ref_list, btrfs_delayed_tree_ref);
+RBT_HEAD(btrfs_tree_ref_tree, btrfs_delayed_tree_ref);
+RBT_PROTOTYPE(btrfs_tree_ref_tree, btrfs_delayed_tree_ref, bdr_index,
+    btrfs_tree_ref_compare);
 
 struct btrfs_delayed_data_ref {
 	TAILQ_ENTRY(btrfs_delayed_data_ref) bdr_entry;
+	RBT_ENTRY(btrfs_delayed_data_ref) bdr_index;
 	uint64_t			 bdr_bytenr;
 	uint64_t			 bdr_length;
 	uint64_t			 bdr_root;
@@ -222,6 +227,9 @@ struct btrfs_delayed_data_ref {
 	int64_t				 bdr_ref_mod;
 };
 TAILQ_HEAD(btrfs_delayed_data_ref_list, btrfs_delayed_data_ref);
+RBT_HEAD(btrfs_data_ref_tree, btrfs_delayed_data_ref);
+RBT_PROTOTYPE(btrfs_data_ref_tree, btrfs_delayed_data_ref, bdr_index,
+    btrfs_data_ref_compare);
 
 struct btrfs_ordered_extent {
 	RBT_ENTRY(btrfs_ordered_extent) boe_entry;
@@ -234,6 +242,8 @@ struct btrfs_ordered_extent {
 	uint64_t			 boe_file_offset;
 	uint64_t			 boe_bytenr;
 	uint32_t			 boe_length;
+	/* Live file prefix; allocation/payload length survives a short truncate. */
+	uint32_t			 boe_file_length;
 	uint8_t				 boe_written;
 	uint8_t				 boe_nodatasum;
 };
@@ -278,6 +288,8 @@ struct btrfs_trans_reservation {
 /* Covers namespace removal as well as a minimum range-cleanup batch. */
 #define BTRFS_RECLAIM_METADATA_BLOCKS	160
 #define BTRFS_CHUNK_SYSTEM_BLOCKS		64
+/* Close joins at this payload watermark; existing handles may finish. */
+#define BTRFS_ORDERED_BYTES_MAX		(32ULL * 1024 * 1024)
 
 struct btrfs_pending_chunk {
 	struct btrfs_chunk_map	*chunks;
@@ -330,13 +342,16 @@ struct btrfs_transaction {
 					 bt_delayed_tree_refs;
 	struct btrfs_delayed_data_ref_list
 					 bt_delayed_data_refs;
-	/* Indexed by (tree, inode, sector offset), protected by bt_lock. */
+	struct btrfs_tree_ref_tree	 bt_tree_ref_index;
+	struct btrfs_data_ref_tree	 bt_data_ref_index;
+	/* Indexed by (tree, inode, range start), protected by bt_lock. */
 	struct btrfs_ordered_tree	 bt_ordered_extents;
 	struct btrfs_dirty_root_list	 bt_dirty_roots;
 	uint64_t			 bt_generation;
 	uint64_t			 bt_commit_reserve_target;
 	uint64_t			 bt_commit_reserved_bytes;
 	uint64_t			 bt_allocated_bytes;
+	uint64_t			 bt_ordered_bytes;
 	uint64_t			 bt_pinned_bytes;
 	uint64_t			 bt_bytes_used;
 	uint64_t			 bt_dev_bytes_added;
@@ -802,6 +817,10 @@ int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 #define BTRFS_WRITE_NO_INLINE	0x02
 int	btrfs_write_file_sector(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, const void *, uint64_t, int);
+int	btrfs_file_write_length(struct btrfs_node *, uint64_t, uint32_t *);
+int	btrfs_write_file_range(struct btrfs_trans_handle *,
+	    struct btrfs_node *, uint64_t, const void *, uint32_t, uint64_t,
+	    uint32_t, uint64_t, int);
 int	btrfs_clone_file_extent(struct btrfs_trans_handle *,
 	    struct btrfs_node *, const struct btrfs_file_extent *,
 	    const struct btrfs_file_extent *, uint64_t, uint64_t, uint64_t);

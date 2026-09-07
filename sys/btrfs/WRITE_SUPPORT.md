@@ -5,7 +5,7 @@ Test procedures and coverage belong in `regress/sys/btrfs/README`.
 
 ## Supported scope
 
-Writable mounts support regular-file creation and uncompressed sector writes,
+Writable mounts support regular-file creation and uncompressed range writes,
 directories, inline symlinks, hard links, FIFOs, Unix-domain socket and device nodes, and
 ownership, mode, and timestamp changes. FIFOs use the shared OpenBSD pipe
 implementation, including IPC on read-only mounts. Regular files use shared
@@ -175,7 +175,7 @@ Unmount flushes only that view's vnodes; the last view closes the device and
 destroys filesystem services. Sync or unmount of any view can commit all views.
 
 Operations join with typed reservations, encode affected inodes and attach
-immutable data payloads before ending their
+owned data payloads before ending their
 handles. Ending a handle does not commit. A committer closes joins and drains
 handles; new writers wait for publication. Commit must not acquire arbitrary
 vnode locks.
@@ -271,16 +271,23 @@ Mount-time disk validation runs before mutation begins.
 Regular-file reads, including VM-pager reads, use bounded range reads through
 temporary storage of at most `MAXBSIZE`. They consult ordered data before disk,
 without maintaining a second cache of sector vnode buffers. Vnode-locked writes
-modify temporary sector copies and attach ordered payloads; repeated sector
-writes replace the payload. Pending sectors are indexed by tree, inode,
-and file offset under the transaction lock, so reads, replacement and cancellation
-do not scan unrelated pending writes. Keys stay fixed until cancellation or
-transaction teardown; commit uses a separate allocation-order index for I/O.
-Each write handle covers at most `MAXBSIZE` of sectors, retaining the full
-per-sector metadata allowance plus explicit-hole costs. Reservation failure
-halves the batch down to one sector before mutation. The inode is encoded
-before ending each handle, including a successful prefix before a later
-copy/read failure; commit cannot observe a batch with an unencoded inode.
+replace at most one mapping per handle with a range of at most `MAXBSIZE`.
+Reservations cover the affected mapping, retained prefix/suffix, new mapping,
+inode, checksum run and delayed tree work, plus inline conversion and explicit
+holes. The metadata allowance is per mapping operation, independent of payload
+sector count. Reservation or contiguous-allocation failure halves the range down
+to one sector before copying or mutation. Each handle encodes its inode,
+including a successful prefix before a later copy fault.
+
+Pending ranges are indexed by tree, inode and starting offset under the
+transaction lock. Reads and repeated writes find the containing live range;
+replacement modifies its payload without splitting its private allocation.
+A short truncate or copy fault may leave a live file prefix shorter than the
+allocation. Keep the complete allocation payload for writeback and checksums,
+but exclude the trimmed suffix from pending lookup. A final mapping deletion
+cancels the delayed add, payload and allocation together. Range keys remain
+fixed until cancellation or teardown. At 32 MiB of pending payload, new joins
+commit before continuing; already joined handles may finish their bounded work.
 The compatibility strategy read path uses the same range reader and marks
 buffers noncacheable. Strategy writeback is disabled because it lacks the vnode
 lock needed for tree/inode mutation.
@@ -291,22 +298,22 @@ mirrors to supply healthy sectors from a damaged window; a failed window read
 retries the exact sector. Compressed reads use the same windows before decoding.
 Device-buffer users check the returned size because cache keys contain only
 the starting block, and invalidate mismatched buffers before copying.
-Commit sorts ordered sectors by allocation address and combines adjacent
+Commit sorts ordered ranges by allocation address and combines adjacent
 payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries and
 checksum-policy changes. It computes checksums from the stable payloads and
 inserts each run into packed items capped at one quarter of a metadata node.
 Checksum insertion and final-drop deletion belong to commit after handles drain;
-canceled pending sectors never acquire checksum items. New checksum ranges
+canceled pending allocations never acquire checksum items. New checksum ranges
 must not overlap existing ranges.
 Before each mirrored data write it evicts cached buffers starting in the written
 range, including for sector writes reusing part of a freed allocation.
-While handles are open, file mappings and pending ownership use separate
-sector extents. After ordered writes complete, commit combines adjacent sectors
-of the same file into regular extents of at most `MAXBSIZE`, within one chunk.
-It validates the private mappings and their allocation adds before replacing
-them with one mapping and one delayed reference. Sector allocation-accounting
-records retain the same disjoint byte ranges until publication. Later COW and
-truncation split the committed mappings using ordinary shared extent references.
+Range writes install one file mapping and allocation reference directly.
+For sector writes, commit still combines adjacent sectors of the same file into
+regular extents of at most `MAXBSIZE`, within one chunk. It validates their
+private mappings and allocation adds before replacing them with one mapping
+and one delayed reference. Sector allocation-accounting records retain the
+same disjoint byte ranges until publication. Later COW and truncation split
+committed mappings using ordinary shared extent references.
 
 Without `NO_HOLES`, writes and growth count missing hole items under the vnode
 lock and reserve their insertion cost before joining. Fill gaps in the same
@@ -390,7 +397,11 @@ failure may commit pending work and retry once before returning `ENOSPC`.
 Concurrent operations can claim the next generation's space before that retry.
 Large namespace reservations may therefore fail under transient pressure.
 
-Delayed references merge by extent and ownership. Only the final drop pins an
+Delayed references use separate metadata and data indexes keyed by extent and
+complete ownership identity. Work queues keep adds and conversions before drops,
+including after a data delta changes sign; cancellation removes both index and
+queue entries. Coalescing rekeys the enlarged allocation reference.
+Only the final drop pins an
 extent; for data it also removes its checksum range, preserving neighbors.
 Hard links change inode references, not data ownership `(root, inode, file-base)`.
 
@@ -411,7 +422,7 @@ offset. Growing past an old partial EOF or inline prefix can require data COW.
 
 Shrinking COWs a retained partial data sector with a zero tail, removes mappings
 through the last extent (including preallocation beyond EOF), and invalidates
-vnode buffers and mapped pages. Pending sectors that are removed cancel their
+vnode buffers and mapped pages. Pending allocations that are removed cancel their
 delayed adds, payloads, and unpublished allocations together.
 Small shrinks fit one handle. Larger deletions first persist the target size
 and an orphan marker, then commit ordered data and delete in reserved batches,
@@ -447,8 +458,8 @@ Relocating live extents would allow reuse of groups that remain partly occupied.
 
 Transaction overlap requires root versioning and per-generation ownership of
 pinned space, ordered data, and extent buffers. Other later work includes broader
-writable formats, larger write reservations, decompression caching,
-and the log tree.
+writable formats, larger extents backed by bounded payload segments,
+decompression caching, and the log tree.
 
 Validate each operation class with unmounted independent filesystem/data checks
 and remount verification. Recovery work also needs reservation exhaustion and
