@@ -26,7 +26,45 @@
 
 #include <lib/libkern/crc32c.h>
 
+#ifdef __amd64__
+#include <machine/cpu.h>
+#include <machine/specialreg.h>
+#endif
+
 #include <btrfs/btrfs_var.h>
+
+/*
+ * CRC32 uses general-purpose registers, so it needs no kernel FPU context.
+ * Keep the portable implementation for CPUs without the instruction.
+ */
+uint32_t
+btrfs_crc32c(const void *buffer, size_t length)
+{
+	const uint8_t *data = buffer;
+
+#ifdef __amd64__
+	if (cpu_ecxfeature & CPUIDECX_SSE42) {
+		uint64_t crc = 0xffffffffU, word;
+		uint32_t tail;
+
+		while (length >= sizeof(word)) {
+			memcpy(&word, data, sizeof(word));
+			__asm volatile("crc32q %1, %0" : "+r" (crc) :
+			    "r" (word));
+			data += sizeof(word);
+			length -= sizeof(word);
+		}
+		tail = crc;
+		while (length-- != 0) {
+			__asm volatile("crc32b %1, %0" : "+r" (tail) :
+			    "m" (*data));
+			data++;
+		}
+		return (tail ^ 0xffffffffU);
+	}
+#endif
+	return (crc32c(0, data, length));
+}
 
 static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
@@ -284,7 +322,7 @@ btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 
 	if (csum->offset > length || csum->sectorsize > length - csum->offset)
 		return (EINVAL);
-	if (crc32c(0, (const uint8_t *)data + csum->offset,
+	if (btrfs_crc32c((const uint8_t *)data + csum->offset,
 	    csum->sectorsize) != *csum->expected)
 		return (EIO);
 	return (0);

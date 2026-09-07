@@ -674,6 +674,7 @@ int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 	    uint64_t, uint32_t, struct btrfs_io_map *);
 int	btrfs_lookup_fs_logical(struct btrfs_fs *, uint64_t, uint32_t,
 	    struct btrfs_io_map *);
+uint32_t btrfs_crc32c(const void *, size_t);
 int	btrfs_read_logical(const struct btrfs_root *, uint64_t, uint32_t,
 	    uint64_t, btrfs_io_validate_fn, void *, struct btrfs_io_result *,
 	    struct buf **);
