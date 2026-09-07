@@ -214,6 +214,12 @@ and transaction-aware B-tree APIs. Roots are persistent filesystem-owned objects
 readers snapshot their locations; writers retain root locks and COW paths from
 the root downward. Validate against the path's view generation.
 
+Packed leaf edits move payloads and descriptors within private COW storage
+after validating capacity and affected ancestor separators. Leaves with gaps
+or inputs that alias the leaf use a scratch rebuild. Both paths compact size
+changes and zero unused space. Data and metadata CRC32C use the general-register
+instruction on amd64 CPUs with SSE4.2, with a portable fallback.
+
 Idle validated metadata retains private bytes in a bounded 8 MiB LRU; device
 buffers are released after loading. An address index finds active and cached
 blocks. Hits must match generation, level, and permitted owner, and their

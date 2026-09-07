@@ -33,7 +33,6 @@
 #include <sys/proc.h>
 #include <sys/vnode.h>
 
-#include <lib/libkern/crc32c.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -472,7 +471,7 @@ btrfs_set_super_csum(struct btrfs_super_block *sb)
 	uint32_t csum;
 
 	memset(sb->csum, 0, sizeof(sb->csum));
-	csum = htole32(crc32c(0,
+	csum = htole32(btrfs_crc32c(
 	    (const uint8_t *)sb + sizeof(sb->csum),
 	    sizeof(*sb) - sizeof(sb->csum)));
 	memcpy(sb->csum, &csum, sizeof(csum));
@@ -664,7 +663,7 @@ btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 
 	memcpy(&disk_csum, sb->csum, sizeof(disk_csum));
 	disk_csum = letoh32(disk_csum);
-	csum = crc32c(0, (const uint8_t *)sb + sizeof(sb->csum),
+	csum = btrfs_crc32c((const uint8_t *)sb + sizeof(sb->csum),
 	    BTRFS_SUPER_SIZE - sizeof(sb->csum));
 	if (csum != disk_csum)
 		return (EINVAL);

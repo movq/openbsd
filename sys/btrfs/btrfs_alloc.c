@@ -1382,7 +1382,7 @@ btrfs_space_reserve_type(struct btrfs_fs *bmp,
     struct btrfs_reserved_space_list *reservations, uint64_t type,
     uint64_t bytes)
 {
-	struct btrfs_reserved_space *reservation;
+	struct btrfs_reserved_space *reservation = NULL;
 	struct btrfs_block_group *group;
 	uint64_t take;
 	unsigned int i, count;
@@ -1394,8 +1394,9 @@ btrfs_space_reserve_type(struct btrfs_fs *bmp,
 			group = btrfs_space_group_at(bmp, i);
 			if (!btrfs_space_group_matches(group, type, mixed))
 				continue;
-			reservation = malloc(sizeof(*reservation), M_BTRFS,
-			    M_WAITOK | M_ZERO);
+			if (reservation == NULL)
+				reservation = malloc(sizeof(*reservation),
+				    M_BTRFS, M_WAITOK | M_ZERO);
 			mtx_enter(&group->bbg_lock);
 			take = group->bbg_removing ? 0 :
 			    MIN(bytes, group->bbg_free_bytes);
@@ -1409,15 +1410,15 @@ btrfs_space_reserve_type(struct btrfs_fs *bmp,
 				reservation->brs_type = type;
 				TAILQ_INSERT_TAIL(reservations,
 				    reservation, brs_entry);
+				reservation = NULL;
 				bytes -= take;
 			}
 			btrfs_space_check_group(group);
 			mtx_leave(&group->bbg_lock);
-			if (take == 0)
-				free(reservation, M_BTRFS,
-				    sizeof(*reservation));
 		}
 	}
+	if (reservation != NULL)
+		free(reservation, M_BTRFS, sizeof(*reservation));
 	return (bytes == 0 ? 0 : ENOSPC);
 }
 
