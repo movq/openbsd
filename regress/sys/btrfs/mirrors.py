@@ -24,7 +24,8 @@ def check(image):
     nodesize = int(re.search(r"^nodesize\s+(\d+)", superblock, re.M)[1])
     chunks = []
     for item in inspect(image, "dump-tree", "-t", "chunk").split("\titem "):
-        key = re.search(r"key \(\S+ CHUNK_ITEM (\d+)\)", item)
+        # Internal-node separator keys have no chunk payload.
+        key = re.search(r"^\d+ key \(\S+ CHUNK_ITEM (\d+)\)", item)
         if key is None:
             continue
         logical = int(key[1])
