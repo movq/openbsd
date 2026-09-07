@@ -109,8 +109,7 @@ def disk(image):
 
 def crash_write(base):
     fd = os.open(base / "main", os.O_RDWR)
-    for sector in range(4):
-        assert os.pwrite(fd, b"C" * SECTOR, sector * SECTOR) == SECTOR
+    assert os.pwrite(fd, b"C" * (4 * SECTOR), 0) == 4 * SECTOR
     os.fsync(fd)
     os.close(fd)
     verify_crash(base)

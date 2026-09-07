@@ -54,6 +54,26 @@ RBT_GENERATE(btrfs_ordered_tree, btrfs_ordered_extent, boe_entry,
     btrfs_ordered_file_compare);
 
 static inline int
+btrfs_data_ref_compare(const struct btrfs_delayed_data_ref *a,
+    const struct btrfs_delayed_data_ref *b)
+{
+	if (a->bdr_bytenr != b->bdr_bytenr)
+		return (a->bdr_bytenr < b->bdr_bytenr ? -1 : 1);
+	if (a->bdr_length != b->bdr_length)
+		return (a->bdr_length < b->bdr_length ? -1 : 1);
+	if (a->bdr_root != b->bdr_root)
+		return (a->bdr_root < b->bdr_root ? -1 : 1);
+	if (a->bdr_objectid != b->bdr_objectid)
+		return (a->bdr_objectid < b->bdr_objectid ? -1 : 1);
+	if (a->bdr_offset != b->bdr_offset)
+		return (a->bdr_offset < b->bdr_offset ? -1 : 1);
+	return (0);
+}
+
+RBT_GENERATE(btrfs_data_ref_tree, btrfs_delayed_data_ref, bdr_index,
+    btrfs_data_ref_compare);
+
+static inline int
 btrfs_ordered_compare(const struct btrfs_ordered_extent *a,
     const struct btrfs_ordered_extent *b)
 {
@@ -79,13 +99,26 @@ static struct btrfs_ordered_extent *
 btrfs_find_ordered_sector(struct btrfs_transaction *trans,
     const struct btrfs_node *node, uint64_t file_offset)
 {
-	struct btrfs_ordered_extent key = { 0 };
+	struct btrfs_ordered_extent key = { 0 }, *ordered;
 
 	MUTEX_ASSERT_LOCKED(&trans->bt_lock);
 	key.boe_treeid = node->bn_treeid;
 	key.boe_objectid = node->bn_ino;
 	key.boe_file_offset = file_offset;
-	return (RBT_FIND(btrfs_ordered_tree, &trans->bt_ordered_extents, &key));
+	ordered = RBT_NFIND(btrfs_ordered_tree, &trans->bt_ordered_extents,
+	    &key);
+	if (ordered == NULL)
+		ordered = RBT_MAX(btrfs_ordered_tree, &trans->bt_ordered_extents);
+	else if (ordered->boe_file_offset != file_offset ||
+	    ordered->boe_treeid != node->bn_treeid ||
+	    ordered->boe_objectid != node->bn_ino)
+		ordered = RBT_PREV(btrfs_ordered_tree, ordered);
+	if (ordered == NULL || ordered->boe_treeid != node->bn_treeid ||
+	    ordered->boe_objectid != node->bn_ino ||
+	    file_offset < ordered->boe_file_offset ||
+	    file_offset - ordered->boe_file_offset >= ordered->boe_file_length)
+		return (NULL);
+	return (ordered);
 }
 
 /*
@@ -389,16 +422,15 @@ btrfs_delayed_data_ref_add(struct btrfs_trans_handle *handle,
 	new->bdr_ref_mod = ref_mod;
 
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(ref, &trans->bt_delayed_data_refs, bdr_entry) {
-		if (ref->bdr_bytenr == bytenr &&
-		    ref->bdr_length == length && ref->bdr_root == root &&
-		    ref->bdr_objectid == objectid &&
-		    ref->bdr_offset == offset)
-			break;
-	}
+	ref = RBT_FIND(btrfs_data_ref_tree, &trans->bt_data_ref_index, new);
 	if (ref == NULL) {
-		TAILQ_INSERT_TAIL(&trans->bt_delayed_data_refs, new,
-		    bdr_entry);
+		RBT_INSERT(btrfs_data_ref_tree, &trans->bt_data_ref_index, new);
+		if (ref_mod > 0)
+			TAILQ_INSERT_HEAD(&trans->bt_delayed_data_refs, new,
+			    bdr_entry);
+		else
+			TAILQ_INSERT_TAIL(&trans->bt_delayed_data_refs, new,
+			    bdr_entry);
 		new = NULL;
 	} else if ((ref_mod > 0 &&
 	    ref->bdr_ref_mod > INT64_MAX - ref_mod) ||
@@ -407,12 +439,18 @@ btrfs_delayed_data_ref_add(struct btrfs_trans_handle *handle,
 		free(new, M_BTRFS, sizeof(*new));
 		return (EOVERFLOW);
 	} else {
+		TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref, bdr_entry);
 		ref->bdr_ref_mod += ref_mod;
 		if (ref->bdr_ref_mod == 0) {
-			TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref,
-			    bdr_entry);
+			RBT_REMOVE(btrfs_data_ref_tree,
+			    &trans->bt_data_ref_index, ref);
 			free(ref, M_BTRFS, sizeof(*ref));
-		}
+		} else if (ref->bdr_ref_mod > 0)
+			TAILQ_INSERT_HEAD(&trans->bt_delayed_data_refs, ref,
+			    bdr_entry);
+		else
+			TAILQ_INSERT_TAIL(&trans->bt_delayed_data_refs, ref,
+			    bdr_entry);
 	}
 	mtx_leave(&trans->bt_lock);
 	if (new != NULL)
@@ -896,14 +934,13 @@ btrfs_run_delayed_data_refs(struct btrfs_trans_handle *handle)
 	trans = handle->bth_transaction;
 	for (;;) {
 		mtx_enter(&trans->bt_lock);
-		TAILQ_FOREACH(ref, &trans->bt_delayed_data_refs, bdr_entry)
-			if (ref->bdr_ref_mod > 0)
-				break;
-		if (ref == NULL)
-			ref = TAILQ_FIRST(&trans->bt_delayed_data_refs);
-		if (ref != NULL)
+		ref = TAILQ_FIRST(&trans->bt_delayed_data_refs);
+		if (ref != NULL) {
+			RBT_REMOVE(btrfs_data_ref_tree,
+			    &trans->bt_data_ref_index, ref);
 			TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref,
 			    bdr_entry);
+		}
 		mtx_leave(&trans->bt_lock);
 		if (ref == NULL)
 			return (0);
@@ -927,7 +964,7 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 	struct btrfs_fs *bmp;
 	uint8_t *data;
 	uint64_t bytenr;
-	uint32_t length, sectorsize;
+	uint32_t length, sectorsize, pos;
 	uint32_t csums[MAXBSIZE / DEV_BSIZE];
 	int error = 0, end_error;
 
@@ -950,9 +987,11 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 		if (ordered->boe_written)
 			continue;
 		if (ordered->boe_data == NULL ||
-		    ordered->boe_length != sectorsize ||
+		    ordered->boe_length == 0 ||
+		    ordered->boe_length > MAXBSIZE ||
+		    (ordered->boe_length & (sectorsize - 1)) != 0 ||
 		    (ordered->boe_bytenr & (sectorsize - 1)) != 0 ||
-		    ordered->boe_bytenr > UINT64_MAX - sectorsize ||
+		    ordered->boe_bytenr > UINT64_MAX - ordered->boe_length ||
 		    (ordered->boe_file_offset & (sectorsize - 1)) != 0 ||
 		    ordered->boe_treeid == 0 || ordered->boe_objectid == 0)
 			return (EINVAL);
@@ -965,7 +1004,7 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 	/*
 	 * Handles have drained: payloads and mappings remain stable through
 	 * publication. Sort by allocation address, including across vnodes,
-	 * and stage bounded runs without changing sector ownership.
+	 * and stage bounded runs without changing allocation ownership.
 	 */
 	data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
 	btrfs_write_batch_init(&batch);
@@ -975,20 +1014,23 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 		bytenr = ordered->boe_bytenr;
 		length = 0;
 		do {
-			memcpy(data + length, ordered->boe_data, sectorsize);
-			if (!first->boe_nodatasum)
-				csums[length / sectorsize] =
-				    htole32(btrfs_crc32c(ordered->boe_data,
-				    sectorsize));
-			length += sectorsize;
+			memcpy(data + length, ordered->boe_data,
+			    ordered->boe_length);
+			for (pos = 0; !first->boe_nodatasum &&
+			    pos < ordered->boe_length; pos += sectorsize)
+				csums[(length + pos) / sectorsize] =
+				    htole32(btrfs_crc32c(
+				    (uint8_t *)ordered->boe_data + pos, sectorsize));
+			length += ordered->boe_length;
 			next = RBT_NEXT(btrfs_ordered_io, ordered);
-			if (next == NULL || length > MAXBSIZE - sectorsize ||
+			if (next == NULL ||
+			    length > MAXBSIZE - next->boe_length ||
 			    next->boe_bytenr != bytenr + length ||
 			    next->boe_nodatasum != first->boe_nodatasum)
 				break;
 			/* Adjacent logical chunks need not share physical runs. */
 			error = btrfs_lookup_fs_logical(bmp, bytenr,
-			    length + sectorsize, &map);
+			    length + next->boe_length, &map);
 			if (error == ENOENT) {
 				error = 0;
 				break;
@@ -1077,11 +1119,16 @@ btrfs_coalesce_ordered_run(struct btrfs_trans_handle *handle,
 	if (error != 0)
 		return (error);
 
+	RBT_REMOVE(btrfs_data_ref_tree, &trans->bt_data_ref_index,
+	    first->boe_ref);
 	first->boe_ref->bdr_length = length;
+	RBT_INSERT(btrfs_data_ref_tree, &trans->bt_data_ref_index,
+	    first->boe_ref);
 	first->boe_ref = NULL;
 	for (ordered = RBT_NEXT(btrfs_ordered_io, first); ordered != end;
 	    ordered = RBT_NEXT(btrfs_ordered_io, ordered)) {
 		ref = ordered->boe_ref;
+		RBT_REMOVE(btrfs_data_ref_tree, &trans->bt_data_ref_index, ref);
 		TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref, bdr_entry);
 		ordered->boe_ref = NULL;
 		free(ref, M_BTRFS, sizeof(*ref));
@@ -1105,8 +1152,10 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 	KASSERT(trans->bt_writers == 0);
 	RBT_FOREACH(ordered, btrfs_ordered_tree, &trans->bt_ordered_extents) {
 		KASSERT(ordered->boe_written);
-		KASSERT(ordered->boe_length == sectorsize);
 		ordered->boe_ref = NULL;
+		/* Direct ranges already own one mapping and allocation. */
+		if (ordered->boe_length != sectorsize)
+			continue;
 		if (RBT_INSERT(btrfs_ordered_io, &io, ordered) != NULL)
 			return (EINVAL);
 	}
@@ -1129,7 +1178,7 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 		ordered->boe_ref = ref;
 	}
 	RBT_FOREACH(ordered, btrfs_ordered_tree, &trans->bt_ordered_extents)
-		if (ordered->boe_ref == NULL)
+		if (ordered->boe_length == sectorsize && ordered->boe_ref == NULL)
 			return (EINVAL);
 
 	for (ordered = RBT_MIN(btrfs_ordered_io, &io); ordered != NULL;
@@ -1173,6 +1222,7 @@ btrfs_delayed_data_refs_finish(struct btrfs_transaction *trans, int committed)
 	if (committed && !TAILQ_EMPTY(&trans->bt_delayed_data_refs))
 		return (EBUSY);
 	while ((ref = TAILQ_FIRST(&trans->bt_delayed_data_refs)) != NULL) {
+		RBT_REMOVE(btrfs_data_ref_tree, &trans->bt_data_ref_index, ref);
 		TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref, bdr_entry);
 		free(ref, M_BTRFS, sizeof(*ref));
 	}
@@ -1200,9 +1250,12 @@ btrfs_ordered_extents_finish(struct btrfs_transaction *trans, int committed)
 	    &trans->bt_ordered_extents)) != NULL) {
 		RBT_REMOVE(btrfs_ordered_tree, &trans->bt_ordered_extents,
 		    ordered);
+		KASSERT(trans->bt_ordered_bytes >= ordered->boe_length);
+		trans->bt_ordered_bytes -= ordered->boe_length;
 		free(ordered->boe_data, M_BTRFS, ordered->boe_length);
 		free(ordered, M_BTRFS, sizeof(*ordered));
 	}
+	KASSERT(trans->bt_ordered_bytes == 0);
 	mtx_leave(&trans->bt_lock);
 	return (0);
 }
@@ -1285,11 +1338,13 @@ btrfs_read_ordered_range(struct btrfs_node *node, uint64_t file_offset,
 	ordered = btrfs_find_ordered_sector(trans, node, file_offset);
 	if (ordered != NULL) {
 		if (ordered->boe_data == NULL ||
-		    ordered->boe_length != sectorsize) {
+		    file_offset - ordered->boe_file_offset + offset + length >
+		    ordered->boe_file_length) {
 			error = EINVAL;
 			goto out;
 		}
-		memcpy(data, (uint8_t *)ordered->boe_data + offset, length);
+		memcpy(data, (uint8_t *)ordered->boe_data +
+		    file_offset - ordered->boe_file_offset + offset, length);
 		error = 0;
 	}
 out:
@@ -1510,11 +1565,13 @@ btrfs_cancel_ordered_sector(struct btrfs_trans_handle *handle,
 	if (ordered->boe_bytenr != extent->bfe_disk_bytenr ||
 	    ordered->boe_length != extent->bfe_disk_num_bytes ||
 	    extent->bfe_disk_offset != 0 ||
-	    extent->bfe_length != ordered->boe_length) {
+	    extent->bfe_length != ordered->boe_file_length) {
 		mtx_leave(&trans->bt_lock);
 		return (EINVAL);
 	}
 	RBT_REMOVE(btrfs_ordered_tree, &trans->bt_ordered_extents, ordered);
+	KASSERT(trans->bt_ordered_bytes >= ordered->boe_length);
+	trans->bt_ordered_bytes -= ordered->boe_length;
 	mtx_leave(&trans->bt_lock);
 	/* Its checksums have not been inserted yet. */
 	error = btrfs_space_cancel_alloc(handle, ordered->boe_bytenr,
@@ -1631,11 +1688,22 @@ btrfs_file_shrink(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		key.type = BTRFS_EXTENT_DATA_KEY;
 		key.offset = htole64(extent.bfe_logical);
 		if (left != 0) {
+			struct btrfs_ordered_extent *ordered;
+
 			extent.bfe_length = left;
 			btrfs_encode_file_extent(&item, &extent,
 			    handle->bth_transaction->bt_generation);
 			error = btrfs_replace_item(handle, root, &key, &item,
 			    sizeof(item));
+			if (error == 0) {
+				mtx_enter(&handle->bth_transaction->bt_lock);
+				ordered = btrfs_find_ordered_sector(
+				    handle->bth_transaction, node,
+				    extent.bfe_logical);
+				if (ordered != NULL)
+					ordered->boe_file_length = left;
+				mtx_leave(&handle->bth_transaction->bt_lock);
+			}
 		} else {
 			error = btrfs_delete_item(handle, root, &key);
 			if (error == 0 && extent.bfe_disk_bytenr != 0)
@@ -1783,14 +1851,69 @@ abort:
 	return (error);
 }
 
-/*
- * A batching caller must encode the inode before releasing its handle.
- * NO_INLINE is valid after a successful sector write under the same vnode lock:
- * inline conversion has completed and no other writer can change the layout.
- */
+/* Bound one replacement by its old mapping; inline conversion stays sector-sized. */
+int
+btrfs_file_write_length(struct btrfs_node *node, uint64_t offset,
+    uint32_t *length)
+{
+	struct btrfs_file_extent extent;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	uint32_t sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	uint64_t size = roundup(MAX(node->bn_inode.bi_size,
+	    offset + *length), sectorsize);
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	error = btrfs_get_root(node->bn_mount, node->bn_treeid, &root);
+	if (error == 0)
+		error = btrfs_find_file_extent(node->bn_mount, root, &path,
+		    node->bn_ino, 0, size, &extent);
+	if (error == 0 && extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		*length = sectorsize;
+		btrfs_release_path(&path);
+		return (0);
+	}
+	btrfs_release_path(&path);
+	if (error == 0)
+		error = btrfs_find_file_extent(node->bn_mount, root, &path,
+		    node->bn_ino, offset, size, &extent);
+	if (error == 0)
+		*length = MIN(*length, extent.bfe_logical +
+		    extent.bfe_length - offset);
+	btrfs_release_path(&path);
+	if (error == 0 && (*length == 0 ||
+	    (*length & (sectorsize - 1)) != 0))
+		error = EOPNOTSUPP;
+	return (error);
+}
+
 int
 btrfs_write_file_sector(struct btrfs_trans_handle *handle,
     struct btrfs_node *node, uint64_t file_offset, const void *data,
+    uint64_t file_size, int flags)
+{
+	uint32_t sectorsize;
+
+	if (node == NULL)
+		return (EINVAL);
+	sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	return (btrfs_write_file_range(handle, node, file_offset, data,
+	    sectorsize, 0, sectorsize, file_size, flags));
+}
+
+/*
+ * Replace at most one mapping. A preallocated range may exceed the copied
+ * prefix after uiomove faults: retain its complete payload/checksum ownership
+ * while exposing only the rounded prefix as a file mapping.
+ * A DEFER_INODE caller must encode the inode before releasing its handle.
+ * NO_INLINE is valid after a successful write under the same vnode lock:
+ * inline conversion has completed and no other writer can change the layout.
+ */
+int
+btrfs_write_file_range(struct btrfs_trans_handle *handle,
+    struct btrfs_node *node, uint64_t file_offset, const void *data,
+    uint32_t length, uint64_t allocated_bytenr, uint32_t allocated_length,
     uint64_t file_size, int flags)
 {
 	struct btrfs_transaction *trans;
@@ -1815,19 +1938,31 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	if (node->bn_mount != trans->bt_mount ||
 	    node->bn_inode.bi_last_dirty_transid > trans->bt_generation ||
 	    (file_offset & (sectorsize - 1)) != 0 ||
-	    file_offset > UINT64_MAX - sectorsize ||
+	    length == 0 || length > allocated_length ||
+	    allocated_length > MAXBSIZE ||
+	    (length & (sectorsize - 1)) != 0 ||
+	    (allocated_length & (sectorsize - 1)) != 0 ||
+	    file_offset > UINT64_MAX - length ||
 	    file_size <= file_offset || file_size < node->bn_inode.bi_size ||
 	    file_size > MAX(node->bn_inode.bi_size,
-	    file_offset + sectorsize))
+	    file_offset + length))
 		return (EINVAL);
 	nodatasum = (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0;
-	end = file_offset + sectorsize;
+	end = file_offset + length;
 
 	mtx_enter(&trans->bt_lock);
 	ordered = btrfs_find_ordered_sector(trans, node, file_offset);
 	mtx_leave(&trans->bt_lock);
 	if (ordered != NULL) {
 		KASSERT(ordered->boe_nodatasum == nodatasum);
+		if (end > ordered->boe_file_offset + ordered->boe_file_length)
+			return (EINVAL);
+		if (allocated_bytenr != 0) {
+			error = btrfs_space_cancel_alloc(handle, allocated_bytenr,
+			    allocated_length);
+			if (error != 0)
+				goto abort;
+		}
 		if (file_size > node->bn_inode.bi_size) {
 			node->bn_inode.bi_size = file_size;
 			node->bn_inode.bi_dirty_fields |=
@@ -1844,7 +1979,8 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 				goto abort;
 		}
 		mtx_enter(&trans->bt_lock);
-		memcpy(ordered->boe_data, data, sectorsize);
+		memcpy((uint8_t *)ordered->boe_data +
+		    file_offset - ordered->boe_file_offset, data, length);
 		mtx_leave(&trans->bt_lock);
 		return (0);
 	}
@@ -1884,8 +2020,9 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 			free(inline_data, M_BTRFS, sectorsize);
 			if (error != 0)
 				goto out;
-			error = btrfs_write_file_sector(handle, node,
-			    file_offset, data, file_size,
+			error = btrfs_write_file_range(handle, node,
+			    file_offset, data, length, allocated_bytenr,
+			    allocated_length, file_size,
 			    flags | BTRFS_WRITE_NO_INLINE);
 			if (error != 0)
 				goto abort;
@@ -1900,6 +2037,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	btrfs_release_path(&path);
 
 	if (old.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		KASSERT(length == sectorsize);
 		error = btrfs_check_inline_conversion(node, &old);
 		if (error != 0)
 			return (error);
@@ -1925,22 +2063,25 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	    old.bfe_disk_num_bytes == 0))
 		return (EINVAL);
 	if (old.bfe_type == BTRFS_FILE_EXTENT_HOLE &&
-	    node->bn_inode.bi_nbytes > UINT64_MAX - sectorsize)
+	    node->bn_inode.bi_nbytes > UINT64_MAX - length)
 		return (EOVERFLOW);
 
 	new_ordered = malloc(sizeof(*new_ordered), M_BTRFS,
 	    M_WAITOK | M_ZERO);
-	new_ordered->boe_data = malloc(sectorsize, M_BTRFS, M_WAITOK);
-	memcpy(new_ordered->boe_data, data, sectorsize);
-	error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_DATA,
-	    sectorsize, sectorsize, &bytenr);
+	new_ordered->boe_data = malloc(allocated_length, M_BTRFS, M_WAITOK);
+	memcpy(new_ordered->boe_data, data, allocated_length);
+	bytenr = allocated_bytenr;
+	if (bytenr == 0)
+		error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_DATA,
+		    allocated_length, sectorsize, &bytenr);
 	if (error != 0)
 		goto out;
 	new_ordered->boe_treeid = node->bn_treeid;
 	new_ordered->boe_objectid = node->bn_ino;
 	new_ordered->boe_file_offset = file_offset;
 	new_ordered->boe_bytenr = bytenr;
-	new_ordered->boe_length = sectorsize;
+	new_ordered->boe_length = allocated_length;
+	new_ordered->boe_file_length = length;
 	new_ordered->boe_nodatasum = nodatasum;
 
 	left = file_offset - old.bfe_logical;
@@ -1979,10 +2120,10 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 
 	memset(&replacement, 0, sizeof(replacement));
 	replacement.bfe_logical = file_offset;
-	replacement.bfe_length = sectorsize;
+	replacement.bfe_length = length;
 	replacement.bfe_disk_bytenr = bytenr;
-	replacement.bfe_disk_num_bytes = sectorsize;
-	replacement.bfe_ram_bytes = sectorsize;
+	replacement.bfe_disk_num_bytes = allocated_length;
+	replacement.bfe_ram_bytes = allocated_length;
 	replacement.bfe_type = BTRFS_FILE_EXTENT_REG;
 	memset(&key, 0, sizeof(key));
 	key.objectid = htole64(node->bn_ino);
@@ -1993,7 +2134,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	if (error != 0)
 		goto abort;
 
-	error = btrfs_delayed_data_ref_add(handle, bytenr, sectorsize,
+	error = btrfs_delayed_data_ref_add(handle, bytenr, allocated_length,
 	    node->bn_treeid, node->bn_ino, file_offset, 1);
 	if (error != 0)
 		goto abort;
@@ -2014,6 +2155,8 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	mtx_enter(&trans->bt_lock);
 	ordered = RBT_INSERT(btrfs_ordered_tree, &trans->bt_ordered_extents,
 	    new_ordered);
+	if (ordered == NULL)
+		trans->bt_ordered_bytes += new_ordered->boe_length;
 	mtx_leave(&trans->bt_lock);
 	if (ordered != NULL) {
 		error = EINVAL;
@@ -2021,7 +2164,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	}
 	new_ordered = NULL;
 	if (old.bfe_type == BTRFS_FILE_EXTENT_HOLE || inline_bytes != 0) {
-		node->bn_inode.bi_nbytes += sectorsize - inline_bytes;
+		node->bn_inode.bi_nbytes += length - inline_bytes;
 		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NBYTES;
 	}
 	if (file_size > node->bn_inode.bi_size) {
@@ -2041,7 +2184,7 @@ abort:
 out:
 	btrfs_release_path(&path);
 	if (new_ordered != NULL) {
-		free(new_ordered->boe_data, M_BTRFS, sectorsize);
+		free(new_ordered->boe_data, M_BTRFS, allocated_length);
 		free(new_ordered, M_BTRFS, sizeof(*new_ordered));
 	}
 	return (error);
