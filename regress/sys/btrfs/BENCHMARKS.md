@@ -1,5 +1,9 @@
 # Btrfs / FFS2 performance
 
+The later [sequential-write investigation](SEQUENTIAL_WRITES.md) has fresh
+write controls, phase profiling, and architectural recommendations. The table
+below retains the complete workload comparison from the validated build.
+
 Measured with OpenBSD GENERIC.MP#140, containing the range-read, buffer,
 allocation-pool, asynchronous-write and write-batching improvements described in
 [PROFILING.md](PROFILING.md). The guest has eight vCPUs, 1 GiB RAM,

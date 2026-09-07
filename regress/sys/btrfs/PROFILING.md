@@ -1,5 +1,10 @@
 # Performance architecture investigation
 
+The follow-up [sequential-write investigation](SEQUENTIAL_WRITES.md) profiles
+`bae246e724e`, quantifies commit phases and reservation/mutation amplification,
+and compares range allocation with Linux. The sections below record the earlier
+investigation and the improvements that led to that checkpoint.
+
 Investigated at `a5654709607`, using the existing OpenBSD guest: GENERIC.MP
 #129, eight vCPUs, 1 GiB RAM, `kern.bufcachepercent=20`, virtio-scsi, and
 host-cached sparse scratch images. Linux source at `09f35c36a4ad0` was read
