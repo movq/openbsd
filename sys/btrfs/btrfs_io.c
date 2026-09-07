@@ -281,6 +281,13 @@ btrfs_write_done(struct buf *bp)
 	mtx_leave(&batch->bwb_lock);
 }
 
+/*
+ * The source must remain stable until return and must not alias a device
+ * buffer: acquiring or invalidating targets can recycle those buffers.
+ * Commit callers supply ordered payloads, staging storage, or locked private
+ * metadata. Each submitted buffer owns its copy before this call returns;
+ * asynchronous completion never accesses the caller's storage.
+ */
 int
 btrfs_write_logical(struct btrfs_fs *bmp,
     uint64_t logical, uint32_t length, uint64_t type_mask,
@@ -289,7 +296,6 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 	struct vnode *devvp = bmp->bm_devvp;
 	struct btrfs_io_map map;
 	struct buf *bp;
-	void *copy;
 	unsigned int i;
 	int error;
 
@@ -307,12 +313,6 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		if ((map.physical[i] & (DEV_BSIZE - 1)) != 0)
 			return (EINVAL);
 	}
-	/*
-	 * Preserve one immutable source while each target buffer is acquired,
-	 * submitted, and released.
-	 */
-	copy = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
-	memcpy(copy, data, length);
 	for (i = 0; i < map.nmirrors; i++) {
 		/* Bound both outstanding buffers and occupied KVA slots. */
 		mtx_enter(&batch->bwb_lock);
@@ -339,7 +339,7 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 			SET(bp->b_flags, B_INVAL);
 			brelse(bp);
 		}
-		memcpy(bp->b_data, copy, length);
+		memcpy(bp->b_data, data, length);
 		/*
 		 * B_NOCACHE prevents bwrite() from becoming a delayed write
 		 * when the device vnode belongs to an asynchronous mount.
@@ -352,8 +352,6 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		mtx_leave(&batch->bwb_lock);
 		(void)bwrite(bp);
 	}
-	pool_put(&bmp->bm_scratch_pool, copy);
-
 	return (error);
 }
 

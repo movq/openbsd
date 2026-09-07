@@ -962,7 +962,8 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 	struct btrfs_io_map map;
 	struct btrfs_write_batch batch;
 	struct btrfs_fs *bmp;
-	uint8_t *data;
+	uint8_t *scratch = NULL;
+	const void *data;
 	uint64_t bytenr;
 	uint32_t length, sectorsize, pos;
 	uint32_t csums[MAXBSIZE / DEV_BSIZE];
@@ -1004,18 +1005,29 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 	/*
 	 * Handles have drained: payloads and mappings remain stable through
 	 * publication. Sort by allocation address, including across vnodes,
-	 * and stage bounded runs without changing allocation ownership.
+	 * and combine bounded runs without changing allocation ownership.
+	 * A single payload can be submitted directly; staging is needed only
+	 * when a run combines multiple allocations.
 	 */
-	data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
 	btrfs_write_batch_init(&batch);
 	ordered = RBT_MIN(btrfs_ordered_io, &io);
 	while (ordered != NULL) {
 		first = ordered;
 		bytenr = ordered->boe_bytenr;
+		data = first->boe_data;
 		length = 0;
 		do {
-			memcpy(data + length, ordered->boe_data,
-			    ordered->boe_length);
+			if (ordered != first) {
+				if (scratch == NULL)
+					scratch = pool_get(&bmp->bm_scratch_pool,
+					    PR_WAITOK);
+				if (length == first->boe_length) {
+					memcpy(scratch, first->boe_data, length);
+					data = scratch;
+				}
+				memcpy(scratch + length, ordered->boe_data,
+				    ordered->boe_length);
+			}
 			for (pos = 0; !first->boe_nodatasum &&
 			    pos < ordered->boe_length; pos += sectorsize)
 				csums[(length + pos) / sectorsize] =
@@ -1055,7 +1067,8 @@ out:
 	end_error = btrfs_write_batch_wait(&batch);
 	if (error == 0)
 		error = end_error;
-	pool_put(&bmp->bm_scratch_pool, data);
+	if (scratch != NULL)
+		pool_put(&bmp->bm_scratch_pool, scratch);
 	return (error);
 }
 

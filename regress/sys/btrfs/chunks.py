@@ -84,8 +84,11 @@ def capacity(base):
         os.close(fd)
     # Bounded orphan cleanup can reap the fragmented file at capacity.
     os.unlink(base / "full")
-    sync(base)
-    assert os.statvfs(base).f_bavail >= count
+    # Cleanup can finish in a later generation than the directory unlink.
+    # Publish that generation too before checking that all pins are free.
+    os.sync()
+    reclaimed = os.statvfs(base)
+    assert reclaimed.f_bavail >= count, (count, reclaimed)
     write_file(base / "reuse", 8, 512)
     sync(base)
     print(f"device capacity and reuse passed after {count} sectors", flush=True)
