@@ -398,9 +398,11 @@ the marker recoverable and makes the filesystem read-only.
 Final-link removal records a zero-link inode and an orphan marker in the same
 handle as namespace removal. Last-close cleanup first commits if that inode has
 pending ordered data, then deletes mappings and xattrs in reserved batches,
-reducing batch size under space pressure. Each intermediate commit retains the
-inode, marker, and remaining byte accounting. The final batch removes inode and
-marker together and can share a transaction with later namespace operations;
+reducing batch size under space pressure. Validation counts the remaining tree
+items so small or final batches reserve only their work, with a floor at the
+minimum cleanup budget. Each intermediate commit retains the inode, marker,
+and remaining byte accounting. The final batch removes inode and marker
+together and can share a transaction with later namespace operations;
 minimum-reserve cleanup commits promptly to replenish protected space. Freed
 allocations remain unavailable until publication. Mount uses
 the same cleanup engine across all file trees, including outside the selected
