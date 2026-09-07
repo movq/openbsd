@@ -35,10 +35,23 @@ def expected():
     return bytes(data[:cut]) + bytes(SIZE - cut)
 
 
-def copy_faults(base, create=False):
+def write_fault(fd, offset, value, bad_length):
     class Iovec(ctypes.Structure):
         _fields_ = [("base", ctypes.c_void_p), ("length", ctypes.c_size_t)]
 
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.writev.argtypes = [ctypes.c_int, ctypes.POINTER(Iovec), ctypes.c_int]
+    libc.writev.restype = ctypes.c_ssize_t
+    source = ctypes.create_string_buffer(value)
+    vectors = (Iovec * 2)(Iovec(ctypes.addressof(source), len(value)),
+                          Iovec(None, bad_length))
+    os.lseek(fd, offset, os.SEEK_SET)
+    ctypes.set_errno(0)
+    assert libc.writev(fd, vectors, 2) == -1
+    assert ctypes.get_errno() == errno.EFAULT
+
+
+def copy_faults(base, create=False):
     data = bytearray(original()[:2 * SECTOR])
     fd = os.open(base / "copy-fault", os.O_RDWR | os.O_CREAT if create
                  else os.O_RDONLY, 0o600)
@@ -46,21 +59,10 @@ def copy_faults(base, create=False):
         if create:
             assert os.write(fd, data) == len(data)
             os.fsync(fd)
-            libc = ctypes.CDLL(None, use_errno=True)
-            libc.writev.argtypes = [ctypes.c_int, ctypes.POINTER(Iovec),
-                                    ctypes.c_int]
-            libc.writev.restype = ctypes.c_ssize_t
         for offset, value in ((0, b"F" * 17), (11, b"G" * 17),
                               (SECTOR + 7, b"H" * 17)):
             if create:
-                source = ctypes.create_string_buffer(value)
-                vectors = (Iovec * 2)(
-                    Iovec(ctypes.addressof(source), len(value)),
-                    Iovec(None, SECTOR - len(value)))
-                os.lseek(fd, offset, os.SEEK_SET)
-                ctypes.set_errno(0)
-                assert libc.writev(fd, vectors, 2) == -1
-                assert ctypes.get_errno() == errno.EFAULT
+                write_fault(fd, offset, value, SECTOR - len(value))
             data[offset:offset + len(value)] = value
             if create:
                 # The first iovec was copied before the second faulted.
@@ -71,6 +73,22 @@ def copy_faults(base, create=False):
         check(fd, data)
     finally:
         os.close(fd)
+
+    # Failure on a later sector must still encode growth from the prefix.
+    # Exercise both zero bytes and a partial copy in the failing sector.
+    for length in (SECTOR, SECTOR + 17):
+        content = original()[:length]
+        fd = os.open(base / f"copy-grow-{length}",
+                     os.O_RDWR | os.O_CREAT | os.O_EXCL if create
+                     else os.O_RDONLY, 0o600)
+        try:
+            if create:
+                write_fault(fd, 0, content, SECTOR)
+                check(fd, content)
+                os.fsync(fd)
+            check(fd, content)
+        finally:
+            os.close(fd)
 
 
 def check(fd, data):
@@ -106,6 +124,17 @@ def create(base):
         check(fd, expected())
         os.fsync(fd)
         check(fd, expected())
+        # Supply file-backed userspace pages to a write spanning several
+        # handles; later source-page faults can occur with a handle open.
+        with mmap.mmap(fd, SIZE, access=mmap.ACCESS_READ) as mapping:
+            target = os.open(base / "pager-copy",
+                             os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            try:
+                assert os.write(target, mapping) == SIZE
+                os.fsync(target)
+                check(target, expected())
+            finally:
+                os.close(target)
     finally:
         os.close(fd)
     copy_faults(base, create=True)
@@ -119,6 +148,7 @@ def verify(base):
     finally:
         os.close(fd)
     copy_faults(base)
+    assert (base / "pager-copy").read_bytes() == expected()
     print("range reads verified after remount", flush=True)
 
 
