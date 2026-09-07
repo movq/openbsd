@@ -10,10 +10,10 @@ other costs.
 
 ## Bounded-range prototype
 
-The prototype reaches the requested 0.7x FFS2 throughput target, so performance
-work stopped after indexed references and direct ranges of at most 64 KiB.
-The final uninstrumented guest is GENERIC.MP#146, with the same eight vCPUs,
-1 GiB RAM, buffer-cache setting, format and durable 2 GiB workload as below.
+The initial prototype reached the requested 0.7x FFS2 throughput target, so
+performance work paused after indexed references and direct ranges of at most
+64 KiB. Its final uninstrumented guest was GENERIC.MP#146, with the same eight
+vCPUs, 1 GiB RAM, buffer-cache setting, format and durable 2 GiB workload as below.
 All passes used fresh filesystems; builds and other workloads did not overlap
 measurement.
 
@@ -78,7 +78,77 @@ records the final topology. Targeted logs are under
 The reproduction runner below was reused. Larger extents with segmented
 payloads, chunk-growth changes, background writeback and overlapping
 transactions were not implemented. Publication barriers and queue depth remain
-unchanged. The guest is left on #146 with the retained prototype.
+unchanged. The guest was left on #146 with the retained prototype, committed
+as `a41f6d993d2`.
+
+## Chunk growth and copy follow-up
+
+A requested follow-up evaluated two small changes separately and together,
+using the same fresh format, durable 2 GiB workload and uninstrumented runner.
+No build or other workload overlapped measurement.
+
+| Change | Kernel | Write including unmount, seconds | Generations | Throughput gain over fresh baseline |
+| --- | --- | ---: | ---: | ---: |
+| Committed range writer | #146 | 4.130 / 4.180 | 192 / 192 | — |
+| Larger data chunks only | #147 | 3.801 / 3.895 | 80 / 80 | 8.0% |
+| Remove commit scratch copies only | #148 | 3.864 / 4.011 | 192 / 192 | 5.5% |
+| Both changes | #149 | **3.633 / 3.780** | **80 / 80** | **12.1%** |
+
+Gains use mean elapsed times. FFS2 controls before and after this series took
+3.155 / 3.384 seconds. Together the changes reach approximately **0.88x FFS2**
+using mean elapsed times, or **0.83x** pairing the slower Btrfs run with the
+faster FFS2 control. Child system CPU for the combined passes was 2.18 / 2.44
+seconds. These are modest samples with visible control variation.
+
+Data growth now targets up to 256 MiB. Above the 32 MiB base, the target uses
+at most a tenth of remaining unallocated physical space, accounting for every
+mirror and rounding down to stripe alignment. Metadata/system targets and the
+fallback that halves a target to fit physical gaps remain unchanged.
+The sequential file needed eight new 256 MiB data groups instead of 64 new
+32 MiB groups. File extents remain capped at 64 KiB and the pending-payload
+watermark remains 32 MiB.
+
+The copy cleanup removes two scratch copies for a full-range data write.
+Ordered writeback passes a single payload directly and stages only runs that
+combine multiple payloads. Logical submission copies directly from the caller
+into each device buffer. Its source must remain stable until return and must
+not alias a device buffer that target acquisition/invalidation could recycle.
+Both callers satisfy this: ordered payloads are stable after handles drain,
+and metadata comes from locked private extent-buffer storage. Async completion
+uses the submitted buffer's bytes, never the caller's storage. Checksums,
+mirrored submission, error draining, queue depth and publication barriers keep
+their existing ordering.
+
+Validation passed 32 selected cases across 4 KiB, 16 KiB, DUP and bitmap
+layouts: checksum packing, clustering, coalescing, range writes/reads,
+nodatasum, larger data chunks, system growth, device capacity, reclamation,
+and recovery before/after publication. Recipes included independent checks,
+checksum/mirror validation and remount verification. Every measured Btrfs pass
+also passed `btrfs check --readonly --check-data-csum`, metadata-mirror checks
+and complete zero comparison after OpenBSD remount. FFS2 controls passed
+`fsck_ffs -fn`. The full regression suite was not run.
+
+Two test corrections were needed. The new `chunks-large` recipe uses 8 GiB
+devices, except that imported bitmap layouts use 3 GiB to fit the fixture
+converter's single-leaf limit; these exercise a scaled growth target.
+The capacity test's directory fsync could publish the unlink while leaving
+later orphan-cleanup pins unpublished. This also failed on the committed
+driver, rebuilt as #150: 11,952 of 12,032 sectors were available until the
+later generation published. A full sync before the capacity assertion passed
+on that baseline and the combined driver, retaining the requirement that all
+data capacity be reclaimed.
+
+Both changes are retained. The guest was returned to GENERIC.MP#151 with the
+same driver changes as measured #149; scratch filesystems were left unmounted
+in both guests.
+
+Artifacts use `seq-followup-*` under
+`/home/mike/obj/btrfs-architecture-profile`. The combined chunk-tree dump is
+`seq-followup-both-chunk-tree.txt`; the same reproduction runner below produced
+all measurements. Targeted logs are under
+`/home/mike/obj/btrfs-followup-{data,large-bitmap,space-final,publication}`.
+The original capacity failure and its baseline reproduction/correction are
+under `/home/mike/obj/btrfs-followup-{space,capacity-baseline,capacity-baseline-fixed}`.
 
 ## Fresh controls and method
 
