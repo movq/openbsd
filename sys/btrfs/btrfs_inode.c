@@ -1474,8 +1474,8 @@ btrfs_read_orphan_inode(struct btrfs_root *root, uint64_t ino,
  * inode has only data mappings and xattrs. A linked regular inode instead
  * records an interrupted truncate; its names and retained prefix survive.
  */
-int
-btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
+static int
+btrfs_validate_orphan(struct btrfs_root *root, uint64_t ino, uint64_t *itemsp)
 {
 	struct btrfs_inode_item item;
 	struct btrfs_file_extent extent;
@@ -1483,7 +1483,7 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 	struct btrfs_path path = { 0 };
 	const struct btrfs_key *key;
 	const uint8_t *data;
-	uint64_t nbytes = 0, cut;
+	uint64_t nbytes = 0, items = 0, cut;
 	uint32_t size, sectorsize;
 	int error;
 
@@ -1545,6 +1545,7 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 			error = EOPNOTSUPP;
 			break;
 		}
+		items++;
 		error = btrfs_next_item(&path);
 	}
 	btrfs_release_path(&path);
@@ -1552,7 +1553,15 @@ btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
 		error = 0;
 	if (error == 0 && nbytes != letoh64(item.nbytes))
 		error = EINVAL;
+	if (error == 0 && itemsp != NULL)
+		*itemsp = items;
 	return (error);
+}
+
+int
+btrfs_check_orphan(struct btrfs_root *root, uint64_t ino)
+{
+	return (btrfs_validate_orphan(root, ino, NULL));
 }
 
 /*
@@ -1689,7 +1698,7 @@ btrfs_reap_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 	nbytes = letoh64(item.nbytes);
 	target.objectid = htole64(ino);
 	target.type = BTRFS_INODE_ITEM_KEY + 1;
-	for (i = 0; i < limit; i++) {
+	for (i = 0; ; i++) {
 		error = btrfs_search_lower_bound(root, &target, &path);
 		if (error == 0)
 			error = btrfs_path_item(&path, &found, &data, &size);
@@ -1702,6 +1711,11 @@ btrfs_reap_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 		}
 		if (error != 0)
 			goto out;
+		/* Look past a full batch before deciding to retain the marker. */
+		if (i == limit) {
+			btrfs_release_path(&path);
+			break;
+		}
 		key = *found;
 		memset(&extent, 0, sizeof(extent));
 		if (key.type == BTRFS_EXTENT_DATA_KEY) {
@@ -1761,11 +1775,11 @@ btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
 	struct btrfs_inode_item inode;
 	struct btrfs_trans_reservation reservation = { 0 };
 	struct btrfs_trans_handle *handle;
-	uint64_t generation, remaining = 0;
-	unsigned int limit = 8;
+	uint64_t generation, remaining = 0, items;
+	unsigned int limit = 8, batch;
 	int error, end_error, finished = 0, truncate;
 
-	error = btrfs_check_orphan(root, ino);
+	error = btrfs_validate_orphan(root, ino, &items);
 	if (error != 0)
 		return (error);
 	error = btrfs_read_orphan_inode(root, ino, &inode);
@@ -1777,12 +1791,23 @@ btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
 	root->br_last_ino = MAX(root->br_last_ino, ino);
 	rw_exit_write(&bmp->bm_namespace_lock);
 	while (!finished) {
+		/*
+		 * Validation counted every mapping and xattr of an unlinked
+		 * inode. Its locked vnode (or private mount recovery) keeps
+		 * that count stable. Reserve only the items this batch can
+		 * remove, retaining the minimum inode/marker budget even
+		 * for an empty inode. Truncate keeps its existing bound
+		 * because it preserves some of those items.
+		 */
+		batch = truncate ? limit : MIN(items, limit);
 		reservation.btr_metadata =
-		    (uint64_t)letoh32(bmp->bm_super.nodesize) * 64 * (limit + 1);
+		    (uint64_t)letoh32(bmp->bm_super.nodesize) *
+		    64 * (MAX(1, batch) + 1);
+		/* A small inode alone must not force a protected-reserve commit. */
 		reservation.btr_reclaim = limit == 1;
 		error = btrfs_trans_join(bmp, &reservation, &handle);
 		if (error == ENOSPC && limit > 1) {
-			limit /= 2;
+			limit = MAX(1, batch / 2);
 			continue;
 		}
 		if (error != 0)
@@ -1791,9 +1816,15 @@ btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
 		if (truncate)
 			error = btrfs_truncate_batch(handle, root, ino, limit,
 			    &finished, &remaining);
-		else
-			error = btrfs_reap_batch(handle, root, ino, limit,
+		else {
+			error = btrfs_reap_batch(handle, root, ino, batch,
 			    &finished);
+			if (error == 0) {
+				items -= batch;
+				if (finished != (items == 0))
+					error = EINVAL;
+			}
+		}
 		if (error != 0)
 			btrfs_trans_abort(handle, error);
 		end_error = btrfs_trans_end(handle);

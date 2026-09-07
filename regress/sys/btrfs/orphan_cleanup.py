@@ -10,6 +10,8 @@ import time
 
 import enospc
 from namespace import expect_error
+from send_receive import xattr
+from xattrs import COLLISIONS
 
 
 def fill(fd, count):
@@ -18,6 +20,44 @@ def fill(fd, count):
         if i % 128 == 127:
             os.fsync(fd)
     os.fsync(fd)
+
+
+def batch_boundaries(base):
+    keeper = base / "keeper"
+    keeper.write_bytes(b"K" * 4096)
+    os.sync()
+    available = os.statvfs(base).f_bavail
+    name = base / "boundary"
+    for count in (0, 1, 7, 8, 9, 16, 17):
+        fd = os.open(name, os.O_CREAT | os.O_RDWR, 0o600)
+        fill(fd, count)
+        os.close(fd)
+        os.unlink(name)
+        os.sync()
+        assert os.statvfs(base).f_bavail == available
+        assert keeper.read_bytes() == b"K" * 4096
+
+    # Count tree items, including xattrs and inline data. Two colliding
+    # xattr records share one item; directories have no data extent.
+    for kind in ("file", "directory", "symlink"):
+        for count in (0, 1, 7, 8, 9):
+            if kind == "directory":
+                name.mkdir()
+            elif kind == "symlink":
+                os.symlink("keeper", name)
+            else:
+                name.write_bytes(b"B" * 4096)
+            for attr in (*COLLISIONS, *(f"user.item-{i}" for i in range(count))):
+                xattr(base, name, attr, b"opaque")
+            os.sync()
+            if kind == "directory":
+                os.rmdir(name)
+            else:
+                os.unlink(name)
+            os.sync()
+            assert os.statvfs(base).f_bavail == available
+            assert keeper.read_bytes() == b"K" * 4096
+    keeper.unlink()
 
 
 def create(base):
@@ -91,6 +131,7 @@ def create(base):
     os.sync()
     assert other.read_bytes() == b"P" * 16384
     os.unlink(other)
+    batch_boundaries(base)
     name.write_bytes(b"survivor\n")
     os.sync()
     assert not os.statvfs(base).f_flag & os.ST_RDONLY

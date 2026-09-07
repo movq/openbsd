@@ -77,3 +77,21 @@ alongside the usual device, mountpoint, `--type`, `--archive`, and `--out`
 arguments. This measures extraction and deletion and skips the other workloads.
 Format the unmounted scratch filesystem before each pass and run independent
 checks afterward, as for the baseline.
+
+A follow-up sizes each cleanup reservation from the validated number of
+remaining mappings and xattr items, retaining the existing minimum budget.
+A lookahead also finishes exact multiples of the batch size without an extra
+inode/marker-only transaction. A fresh comparison against `30ddf4f0b45`, using
+the same archive and procedure, gives:
+
+| Kernel | Delete seconds, three passes | Median seconds | Generation advances per pass |
+| --- | ---: | ---: | ---: |
+| Batched cleanup, repeat | 0.338 / 0.337 / 0.348 | 0.338 | 21 |
+| Counted cleanup | 0.257 / 0.268 / 0.267 | 0.267 | 6 |
+
+This reduces elapsed time by **21%** in the fresh comparison. A small inode's
+cleanup now reserves 4 MiB instead of 18 MiB on this layout. The allowance per
+actual item remains conservative, so reservation pressure still causes commits.
+All six passes passed the same independent and remount checks; their logs use
+the `reservations-before` and `reservations-after` prefixes in the results
+directory above.

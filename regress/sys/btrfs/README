@@ -247,6 +247,8 @@ cleanup, writes and attribute changes through unlinked descriptors, mapped
 reads, inode-number reuse prevention, and symlink/FIFO/device cleanup.
 It also deletes committed mappings alongside unrelated pending writes and
 closes an unlinked inode whose pending data starts beyond sector zero.
+Batch-boundary cases cover empty and fragmented files, directories, inline
+symlinks, and packed xattrs, checking reclamation and a surviving neighbor.
 Its capacity phase holds an unlinked inode open, exhausts metadata with both
 creation and writes, then checks close-time reclamation using the protected
 cleanup reserve. Use a rootdir fixture with at least 64 MiB of imported data,
