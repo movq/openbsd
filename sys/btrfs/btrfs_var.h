@@ -235,6 +235,7 @@ struct btrfs_ordered_extent {
 	uint64_t			 boe_bytenr;
 	uint32_t			 boe_length;
 	uint8_t				 boe_written;
+	uint8_t				 boe_nodatasum;
 };
 RBT_HEAD(btrfs_ordered_tree, btrfs_ordered_extent);
 RBT_PROTOTYPE(btrfs_ordered_tree, btrfs_ordered_extent, boe_entry,
@@ -319,7 +320,6 @@ enum btrfs_trans_state {
 struct btrfs_transaction {
 	struct btrfs_fs			*bt_mount;
 	struct mutex			 bt_lock;
-	struct rwlock			 bt_csum_lock;
 	struct btrfs_reserved_space_list bt_commit_reservations;
 	struct btrfs_reserved_space_list bt_reclaim_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;
@@ -721,7 +721,7 @@ int	btrfs_prepare_metadata_commit(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_data_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_ordered_extents_finish(struct btrfs_transaction *, int);
-int	btrfs_write_ordered_extents(struct btrfs_transaction *);
+int	btrfs_write_ordered_extents(struct btrfs_trans_handle *);
 int	btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *);
 int	btrfs_roots_finish(struct btrfs_transaction *, int);
 int	btrfs_update_dirty_root_items(struct btrfs_trans_handle *);
@@ -798,8 +798,10 @@ int	btrfs_shrink_file(struct btrfs_trans_handle *, struct btrfs_node *,
 int	btrfs_count_file_holes(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, uint64_t);
+#define BTRFS_WRITE_DEFER_INODE	0x01
+#define BTRFS_WRITE_NO_INLINE	0x02
 int	btrfs_write_file_sector(struct btrfs_trans_handle *,
-	    struct btrfs_node *, uint64_t, const void *, uint64_t);
+	    struct btrfs_node *, uint64_t, const void *, uint64_t, int);
 int	btrfs_clone_file_extent(struct btrfs_trans_handle *,
 	    struct btrfs_node *, const struct btrfs_file_extent *,
 	    const struct btrfs_file_extent *, uint64_t, uint64_t, uint64_t);

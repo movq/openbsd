@@ -187,7 +187,8 @@ Mutable inode state is host-endian; encoding preserves unmodeled fields.
 
 The highest valid superblock generation is the commit point:
 
-1. Submit ordered data to every required mirror and wait for completion.
+1. Submit ordered data and insert its checksums, then wait for every required
+   data mirror.
 2. Drain delayed references, update block-group accounting, and rewrite dirty
    root items to a fixed point. Include allocator change sequence in the
    stability check: this work can COW more trees and queue more references.
@@ -271,10 +272,15 @@ Regular-file reads, including VM-pager reads, use bounded range reads through
 temporary storage of at most `MAXBSIZE`. They consult ordered data before disk,
 without maintaining a second cache of sector vnode buffers. Vnode-locked writes
 modify temporary sector copies and attach ordered payloads; repeated sector
-writes replace the payload and checksum. Pending sectors are indexed by tree, inode,
+writes replace the payload. Pending sectors are indexed by tree, inode,
 and file offset under the transaction lock, so reads, replacement and cancellation
 do not scan unrelated pending writes. Keys stay fixed until cancellation or
 transaction teardown; commit uses a separate allocation-order index for I/O.
+Each write handle covers at most `MAXBSIZE` of sectors, retaining the full
+per-sector metadata allowance plus explicit-hole costs. Reservation failure
+halves the batch down to one sector before mutation. The inode is encoded
+before ending each handle, including a successful prefix before a later
+copy/read failure; commit cannot observe a batch with an unencoded inode.
 The compatibility strategy read path uses the same range reader and marks
 buffers noncacheable. Strategy writeback is disabled because it lacks the vnode
 lock needed for tree/inode mutation.
@@ -285,11 +291,13 @@ mirrors to supply healthy sectors from a damaged window; a failed window read
 retries the exact sector. Compressed reads use the same windows before decoding.
 Device-buffer users check the returned size because cache keys contain only
 the starting block, and invalidate mismatched buffers before copying.
-Adjacent data checksums append to packed items, capped at one quarter of a
-metadata node. A transaction checksum lock serializes item read/modify/write
-across vnodes and range deletion; it is taken after the handle and before roots.
 Commit sorts ordered sectors by allocation address and combines adjacent
-payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries.
+payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries and
+checksum-policy changes. It computes checksums from the stable payloads and
+inserts each run into packed items capped at one quarter of a metadata node.
+Checksum insertion and final-drop deletion belong to commit after handles drain;
+canceled pending sectors never acquire checksum items. New checksum ranges
+must not overlap existing ranges.
 Before each mirrored data write it evicts cached buffers starting in the written
 range, including for sector writes reusing part of a freed allocation.
 While handles are open, file mappings and pending ownership use separate
@@ -404,7 +412,7 @@ offset. Growing past an old partial EOF or inline prefix can require data COW.
 Shrinking COWs a retained partial data sector with a zero tail, removes mappings
 through the last extent (including preallocation beyond EOF), and invalidates
 vnode buffers and mapped pages. Pending sectors that are removed cancel their
-delayed adds, checksums, payloads, and unpublished allocations together.
+delayed adds, payloads, and unpublished allocations together.
 Small shrinks fit one handle. Larger deletions first persist the target size
 and an orphan marker, then commit ordered data and delete in reserved batches,
 reducing the batch to one item under space pressure. Each batch re-searches

@@ -23,13 +23,13 @@ def writer(base, worker):
         for sector in range(256):
             assert os.write(fd, payload(worker, sector)) == SECTOR
         os.fsync(fd)
-        # Final drops split shared checksum items, while other vnodes may
-        # append or replace checksums in the same tree.
+        # Final drops split shared checksum items while commit inserts
+        # checksums for replacement data from concurrent vnodes.
         for sector in range(0, 256, 3):
             assert os.pwrite(fd, payload(worker + 10, sector),
                              sector * SECTOR) == SECTOR
         os.fsync(fd)
-        # Replace pending payloads/checksums, then cancel the tail.
+        # Replace pending payloads, then cancel the tail before checksumming.
         for sector in range(128, 256):
             assert os.pwrite(fd, b"X" * SECTOR, sector * SECTOR) == SECTOR
             assert os.pwrite(fd, b"Y" * SECTOR, sector * SECTOR) == SECTOR

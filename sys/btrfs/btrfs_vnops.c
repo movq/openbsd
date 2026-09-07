@@ -1279,7 +1279,7 @@ btrfs_setattr(void *v)
 	    handle->bth_transaction->bt_generation;
 	if (data != NULL)
 		error = btrfs_write_file_sector(handle, node, tail_offset,
-		    data, saved.bi_size);
+		    data, saved.bi_size, 0);
 	else
 		error = 0;
 	if (error == 0 && vap->va_size != VNOVAL) {
@@ -1589,6 +1589,23 @@ btrfs_read(void *v)
 	return (error);
 }
 
+/*
+ * The vnode and handle keep the in-memory inode stable until it is encoded.
+ * Even a later copy/read failure must publish the successfully modified prefix
+ * into this transaction before the handle lets commit proceed.
+ */
+static int
+btrfs_end_write(struct btrfs_trans_handle *handle, struct btrfs_node *node)
+{
+	int error, end_error;
+
+	error = btrfs_write_inode(handle, node);
+	if (error != 0)
+		btrfs_trans_abort(handle, error);
+	end_error = btrfs_trans_end(handle);
+	return (error != 0 ? error : end_error);
+}
+
 static int
 btrfs_write(void *v)
 {
@@ -1606,7 +1623,8 @@ btrfs_write(void *v)
 	struct timespec now;
 	uint8_t *data = NULL;
 	uint64_t file_offset, file_size, holes, metadata_reserve, metadata_unit;
-	uint32_t sectorsize;
+	uint64_t data_reserve, planned_size;
+	uint32_t sectorsize, batch, remaining = 0;
 	daddr_t block;
 	off_t move_offset, unit_offset;
 	size_t move_resid, moved, offset, resid, size;
@@ -1660,6 +1678,7 @@ btrfs_write(void *v)
 		}
 	}
 	metadata_reserve = reservation.btr_metadata;
+	data_reserve = reservation.btr_data;
 	error = vn_fsizechk(vp, uio, ap->a_ioflag, &overrun);
 	if (error != 0)
 		return (error);
@@ -1691,17 +1710,37 @@ btrfs_write(void *v)
 		}
 		file_size = MAX(node->bn_inode.bi_size,
 		    (uint64_t)move_offset + moved);
-		error = btrfs_count_file_holes(node, file_size, &holes);
-		if (error == 0) {
-			if (holes > (UINT64_MAX - metadata_reserve) /
-			    metadata_unit)
-				error = EOVERFLOW;
-			else {
-				reservation.btr_metadata = metadata_reserve +
+		if (handle == NULL) {
+			batch = MIN(MAXBSIZE / sectorsize,
+			    1 + howmany(MIN(uio->uio_resid, MAXBSIZE),
+			    sectorsize));
+			if (move_error != 0)
+				batch = 1;
+			for (;;) {
+				planned_size = MAX(node->bn_inode.bi_size,
+				    file_offset + MIN((uint64_t)batch *
+				    sectorsize, offset + moved + uio->uio_resid));
+				error = btrfs_count_file_holes(node,
+				    planned_size, &holes);
+				if (error != 0)
+					break;
+				if (holes > (UINT64_MAX -
+				    metadata_reserve * batch) / metadata_unit) {
+					error = EOVERFLOW;
+					break;
+				}
+				reservation.btr_metadata =
+				    metadata_reserve * batch +
 				    holes * metadata_unit;
+				reservation.btr_data = data_reserve * batch;
 				error = btrfs_trans_join(bmp, &reservation,
 				    &handle);
+				if (error != ENOSPC || batch == 1)
+					break;
+				/* No mutation yet: retry a smaller promise. */
+				batch = (batch + 1) / 2;
 			}
+			remaining = batch;
 		}
 		if (error == 0) {
 			memcpy(&saved, &node->bn_inode, sizeof(saved));
@@ -1723,19 +1762,27 @@ btrfs_write(void *v)
 			node->bn_inode.bi_last_dirty_transid =
 			    handle->bth_transaction->bt_generation;
 			error = btrfs_write_file_sector(handle, node,
-			    file_offset, data, file_size);
+			    file_offset, data, file_size, BTRFS_WRITE_DEFER_INODE |
+			    (wrote ? BTRFS_WRITE_NO_INLINE : 0));
 			if (error == 0) {
 				error = btrfs_fill_file_holes(handle, node,
 				    saved.bi_size, file_size);
 				if (error != 0)
 					btrfs_trans_abort(handle, error);
 			}
-			end_error = btrfs_trans_end(handle);
-			handle = NULL;
-			if (error == 0)
-				error = end_error;
 			if (error != 0)
 				memcpy(&node->bn_inode, &saved, sizeof(saved));
+			if (--remaining == 0 || uio->uio_resid == 0 ||
+			    move_error != 0 || error != 0) {
+				end_error = btrfs_end_write(handle, node);
+				handle = NULL;
+				if (error == 0) {
+					error = end_error;
+					if (error != 0)
+						memcpy(&node->bn_inode, &saved,
+						    sizeof(saved));
+				}
+			}
 		}
 		if (error != 0) {
 			uio->uio_offset = move_offset;
@@ -1753,6 +1800,11 @@ btrfs_write(void *v)
 			error = move_error;
 			break;
 		}
+	}
+	if (handle != NULL) {
+		end_error = btrfs_end_write(handle, node);
+		if (error == 0)
+			error = end_error;
 	}
 	free(data, M_BTRFS, sectorsize);
 	if (error != 0 && (ap->a_ioflag & IO_UNIT)) {

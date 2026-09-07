@@ -257,6 +257,80 @@ The completion-fault runner is `/home/mike/obj/btrfs-write-fault.py`, with
 `struct buf` offsets were checked using `btrfs-buf-offsets.c` against the guest
 headers before injection; recheck offsets before using it on another build.
 
+## Write batching experiments
+
+Starting from the validated checkpoint `133bd044181`, the next experiments
+kept sector allocations, pending ownership and reservation bounds while
+reducing repeated metadata work. Each sequential pass reformatted the same
+scratch disk and used the method above, with tracing disabled.
+
+| Cumulative configuration | Kernel | Write 2 GiB seconds | System CPU seconds | Generations |
+| --- | --- | ---: | ---: | ---: |
+| Fresh checkpoint control | #135 | 10.495 | 7.91 | 1,160 |
+| Insert checksums in batches at commit | #136 | 10.102 / 10.312 | 7.57 / 7.97 | 1,160 |
+| Also batch transaction handles | #137 | 9.506 | 6.91 | 1,190 |
+| Also encode the inode once per handle | #139 | 9.032 / 9.237 | 6.51 / 6.70 | 1,190 |
+| Also skip repeated inline lookup; final validation | #140 | 9.238 / 9.189 | 6.72 / 6.79 | 1,190 |
+
+Pending reads already use ordered payloads, so checksum-tree edits can wait
+until commit. Commit computes checksums from stable payloads and inserts
+adjacent checksums together, stopping at chunk and checksum-policy boundaries.
+Pending replacement and cancellation no longer edit the checksum tree.
+Insertion and final-drop deletion now belong exclusively to commit; the old
+checksum-writer lock is unnecessary. The checksum-only improvement is small
+relative to run variation and does not establish a large standalone benefit.
+
+A write handle now covers at most `MAXBSIZE` of sectors. Its reservation
+retains the full per-sector budget and accounts for holes across the planned
+range. ENOSPC halves the requested batch before mutation, down to one sector.
+The inode is encoded before the handle ends, including a completed prefix
+before a later read/copy failure. This is bounded batching within a vnode
+operation; it does not introduce transaction-wide deferred inode ownership.
+The larger promises slightly increase generation count through unused space
+at transaction boundaries. Actual range allocations and tighter reservation
+bounds remain separate work.
+
+The final prototype also avoids repeating the inline-prefix lookup after a
+successful sector write under the same vnode lock. At that point inline
+conversion has completed and another writer cannot change the layout.
+Its timings overlap the preceding build; no separate benefit is established
+for this refinement.
+
+The final build writes at 222–223 MiB/s, about 14% more throughput than the
+fresh checkpoint control, with 12% less elapsed time and 14–15% less system
+CPU time. Fresh FFS2 controls before and after the final passes took
+2.959 / 3.561 seconds, putting btrfs at 0.32–0.39x FFS2 write throughput.
+Extraction took 15.137 seconds and deletion 10.952 seconds; their single
+samples do not establish a substantial improvement. The complete current
+comparison is in [BENCHMARKS.md](BENCHMARKS.md). Control variation limits
+precision, and the half-FFS2 write-throughput target remains unmet.
+
+The inode-batching build passed 24 targeted cases covering both node sizes,
+SINGLE/DUP data, bitmap free space, checksum packing, reflinks, pending data,
+inline/compressed conversion, holes, flags, ENOSPC and publication recovery.
+The new `write-batch-capacity` case passed on all three layouts: it fills the
+filesystem, frees exactly one sector, then verifies the successful prefix of
+a 64 KiB write that ends in ENOSPC. `read-range` now also covers faults after
+a complete sector and writes supplied from file-backed userspace buffers.
+
+The final build passed another 17 targeted cases: checksums, coalescing,
+reflinks, read-range and write-batch-capacity on 4 KiB and 16 KiB bitmap
+layouts; flags, inline files, compressed growth, holes, nodatasum and both
+publication recovery cases on 16 KiB. Injected ordered-data short completion
+and metadata `B_ERROR`/`EIO` each returned `EIO` from fsync, rejected later
+writes with `EROFS`, and recovered the previous committed contents after
+reset and independent checks. These change completion status after physical
+I/O and do not emulate lost device-cache contents. All final benchmark
+passes also passed the filesystem checks described below.
+
+Logs use `write-csums-*`, `write-handles`, and `write-batched-*` prefixes in
+the results directory below; final passes use `write-final-*`, including
+FFS2 controls before and after. Intermediate test results are in
+`/home/mike/obj/btrfs-write-{csums,handles,batched,batched-formats,batch-capacity}-regress`.
+Final test results are in
+`/home/mike/obj/btrfs-write-final{,-formats}-regress`, with completion-fault
+logs in `/home/mike/obj/btrfs-write-final-fault-{data,metadata}`.
+
 ## Reproduction and checks
 
 Enable `kern.allowdt=1` at boot for profiling. The working sampling action is:
