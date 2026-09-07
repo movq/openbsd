@@ -81,8 +81,7 @@ btrfs_extent_buffer_free(struct btrfs_extent_buffer *eb)
 	if (eb->eb_buf != NULL)
 		brelse(eb->eb_buf);
 	if (eb->eb_private != NULL)
-		free(eb->eb_private, M_BTRFS,
-		    letoh32(eb->eb_mount->bm_super.nodesize));
+		pool_put(&eb->eb_mount->bm_metadata_pool, eb->eb_private);
 	free(eb, M_BTRFS, sizeof(*eb));
 }
 
@@ -301,7 +300,7 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 		return (EINVAL);
 
 	eb = malloc(sizeof(*eb), M_BTRFS, M_WAITOK | M_ZERO);
-	eb->eb_private = malloc(nodesize, M_BTRFS, M_WAITOK);
+	eb->eb_private = pool_get(&bmp->bm_metadata_pool, PR_WAITOK);
 	memcpy(eb->eb_private, btrfs_extent_buffer_bytes(source), nodesize);
 	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
 	rw_enter_write(&eb->eb_lock);
@@ -312,7 +311,7 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 	    nodesize, nodesize, &bytenr);
 	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
-		free(eb->eb_private, M_BTRFS, nodesize);
+		pool_put(&bmp->bm_metadata_pool, eb->eb_private);
 		free(eb, M_BTRFS, sizeof(*eb));
 		return (error);
 	}
@@ -338,7 +337,7 @@ btrfs_extent_buffer_clone(struct btrfs_trans_handle *handle,
 	error = btrfs_extent_buffer_publish(eb);
 	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
-		free(eb->eb_private, M_BTRFS, nodesize);
+		pool_put(&bmp->bm_metadata_pool, eb->eb_private);
 		free(eb, M_BTRFS, sizeof(*eb));
 		btrfs_trans_abort(handle, EINVAL);
 		return (EINVAL);
@@ -392,7 +391,7 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 	source_header = btrfs_extent_buffer_bytes(source);
 
 	eb = malloc(sizeof(*eb), M_BTRFS, M_WAITOK | M_ZERO);
-	eb->eb_private = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+	eb->eb_private = pool_get(&bmp->bm_metadata_pool, PR_WAITOK | PR_ZERO);
 	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
 	rw_enter_write(&eb->eb_lock);
 
@@ -402,7 +401,7 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 	    nodesize, nodesize, &bytenr);
 	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
-		free(eb->eb_private, M_BTRFS, nodesize);
+		pool_put(&bmp->bm_metadata_pool, eb->eb_private);
 		free(eb, M_BTRFS, sizeof(*eb));
 		return (error);
 	}
@@ -431,7 +430,7 @@ btrfs_extent_buffer_alloc(struct btrfs_trans_handle *handle,
 	error = btrfs_extent_buffer_publish(eb);
 	if (error != 0) {
 		rw_exit_write(&eb->eb_lock);
-		free(eb->eb_private, M_BTRFS, nodesize);
+		pool_put(&bmp->bm_metadata_pool, eb->eb_private);
 		free(eb, M_BTRFS, sizeof(*eb));
 		btrfs_trans_abort(handle, EINVAL);
 		return (EINVAL);
@@ -595,6 +594,7 @@ int
 btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 {
 	struct btrfs_extent_buffer *eb;
+	struct btrfs_write_batch batch;
 	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_header *header;
 	uint64_t flags;
@@ -612,6 +612,7 @@ btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 	mtx_leave(&bmp->bm_trans_mtx);
 
 	nodesize = letoh32(bmp->bm_super.nodesize);
+	btrfs_write_batch_init(&batch);
 	TAILQ_FOREACH(eb, &trans->bt_dirty_extent_buffers, eb_dirty_entry) {
 		rw_enter_write(&eb->eb_lock);
 		if (eb->eb_transaction != trans || !eb->eb_dirty ||
@@ -643,19 +644,24 @@ btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 		if (error == 0)
 			error = btrfs_write_logical(bmp, eb->eb_bytenr,
 			    nodesize, BTRFS_BLOCK_GROUP_METADATA |
-			    BTRFS_BLOCK_GROUP_SYSTEM, header, NULL);
+			    BTRFS_BLOCK_GROUP_SYSTEM, header, &batch);
 		eb->eb_writeback = 0;
 		if (error != 0)
 			goto fail;
+		/* Freeze this block; phase completion gates durable publication. */
 		eb->eb_written = 1;
 		rw_exit_write(&eb->eb_lock);
 	}
-	return (0);
+	error = btrfs_write_batch_wait(&batch);
+	if (error != 0)
+		btrfs_extent_buffer_fail_transaction(trans, error);
+	return (error);
 
 fail:
 	eb->eb_writeback = 0;
 	eb->eb_error = error;
 	rw_exit_write(&eb->eb_lock);
+	(void)btrfs_write_batch_wait(&batch);
 	btrfs_extent_buffer_fail_transaction(trans, error);
 	return (error);
 }
@@ -744,8 +750,8 @@ btrfs_extent_buffer_load(const struct btrfs_root *root,
 				    letoh64(ptrs[i].generation));
 		}
 		if (eb->eb_mount != NULL) {
-			eb->eb_private = malloc(letoh32(root->br_super->nodesize),
-			    M_BTRFS, M_WAITOK);
+			eb->eb_private = pool_get(&eb->eb_mount->bm_metadata_pool,
+			    PR_WAITOK);
 			memcpy(eb->eb_private, bp->b_data,
 			    letoh32(root->br_super->nodesize));
 			brelse(bp);

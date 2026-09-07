@@ -955,11 +955,12 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 	struct btrfs_ordered_extent *ordered, *next, *first;
 	struct btrfs_ordered_io io = RBT_INITIALIZER(&io);
 	struct btrfs_io_map map;
+	struct btrfs_write_batch batch;
 	struct btrfs_fs *bmp;
 	uint8_t *data;
 	uint64_t bytenr;
 	uint32_t length, sectorsize;
-	int error = 0;
+	int error = 0, end_error;
 
 	if (trans == NULL)
 		return (EINVAL);
@@ -996,7 +997,8 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 	 * publication. Sort by allocation address, including across vnodes,
 	 * and stage bounded runs without changing sector ownership.
 	 */
-	data = malloc(MAXBSIZE, M_BTRFS, M_WAITOK);
+	data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
+	btrfs_write_batch_init(&batch);
 	ordered = RBT_MIN(btrfs_ordered_io, &io);
 	while (ordered != NULL) {
 		first = ordered;
@@ -1021,15 +1023,19 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 			ordered = next;
 		} while (1);
 		error = btrfs_write_logical(bmp, bytenr, length,
-		    BTRFS_BLOCK_GROUP_DATA, data, NULL);
+		    BTRFS_BLOCK_GROUP_DATA, data, &batch);
 		if (error != 0)
 			break;
+		/* Submission is final only if the whole phase drains successfully. */
 		for (ordered = first; ordered != next;
 		    ordered = RBT_NEXT(btrfs_ordered_io, ordered))
 			ordered->boe_written = 1;
 	}
 out:
-	free(data, M_BTRFS, MAXBSIZE);
+	end_error = btrfs_write_batch_wait(&batch);
+	if (error == 0)
+		error = end_error;
+	pool_put(&bmp->bm_scratch_pool, data);
 	return (error);
 }
 
@@ -1267,21 +1273,23 @@ btrfs_commit_inode_data(struct btrfs_node *node, struct proc *p)
 }
 
 int
-btrfs_read_ordered_sector(struct btrfs_node *node, uint64_t file_offset,
-    void *data)
+btrfs_read_ordered_range(struct btrfs_node *node, uint64_t file_offset,
+    size_t length, void *data)
 {
 	struct btrfs_fs *bmp;
 	struct btrfs_ordered_extent *ordered;
 	struct btrfs_transaction *trans;
-	uint32_t sectorsize;
+	uint32_t offset, sectorsize;
 	int error = ENOENT;
 
 	if (node == NULL || data == NULL)
 		return (EINVAL);
 	bmp = node->bn_mount;
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	if ((file_offset & (sectorsize - 1)) != 0)
+	offset = file_offset & (sectorsize - 1);
+	if (length == 0 || length > sectorsize - offset)
 		return (EINVAL);
+	file_offset -= offset;
 	if ((bmp->bm_open_flags & FWRITE) == 0)
 		return (ENOENT);
 
@@ -1303,7 +1311,7 @@ btrfs_read_ordered_sector(struct btrfs_node *node, uint64_t file_offset,
 			error = EINVAL;
 			goto out;
 		}
-		memcpy(data, ordered->boe_data, sectorsize);
+		memcpy(data, (uint8_t *)ordered->boe_data + offset, length);
 		error = 0;
 	}
 out:

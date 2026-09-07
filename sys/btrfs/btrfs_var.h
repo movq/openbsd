@@ -26,6 +26,7 @@
 
 #include <sys/types.h>
 #include <sys/mutex.h>
+#include <sys/pool.h>
 #include <sys/queue.h>
 #include <sys/rwlock.h>
 #include <sys/time.h>
@@ -409,6 +410,12 @@ struct btrfs_inode {
 };
 
 struct buf;
+/* One commit phase owns a bounded set of asynchronous physical writes. */
+struct btrfs_write_batch {
+	struct mutex	bwb_lock;
+	unsigned int	bwb_pending;
+	int		bwb_error;
+};
 struct btrfs_node;
 struct btrfs_root_entry;
 struct proc;
@@ -549,6 +556,8 @@ struct btrfs_fs {
 	struct vnode			*bm_devvp;
 	dev_t				 bm_dev;
 	int				 bm_open_flags;
+	struct pool			 bm_scratch_pool;
+	struct pool			 bm_metadata_pool;
 	struct btrfs_super_block	 bm_super;
 	struct btrfs_super_mirror	 bm_super_mirrors[
 					    BTRFS_SUPER_MIRROR_MAX];
@@ -678,8 +687,10 @@ uint32_t btrfs_crc32c(const void *, size_t);
 int	btrfs_read_logical(const struct btrfs_root *, uint64_t, uint32_t,
 	    uint64_t, btrfs_io_validate_fn, void *, struct btrfs_io_result *,
 	    struct buf **);
+void	btrfs_write_batch_init(struct btrfs_write_batch *);
+int	btrfs_write_batch_wait(struct btrfs_write_batch *);
 int	btrfs_write_logical(struct btrfs_fs *, uint64_t, uint32_t, uint64_t,
-	    const void *, struct btrfs_io_result *);
+	    const void *, struct btrfs_write_batch *);
 void	btrfs_invalidate_physical(struct btrfs_fs *, uint64_t, uint64_t);
 int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
@@ -778,7 +789,7 @@ int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
 int	btrfs_commit_inode_data(struct btrfs_node *, struct proc *);
-int	btrfs_read_ordered_sector(struct btrfs_node *, uint64_t, void *);
+int	btrfs_read_ordered_range(struct btrfs_node *, uint64_t, size_t, void *);
 int	btrfs_check_file_extend(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_check_file_shrink(struct btrfs_node *, uint64_t, uint64_t *,
 	    uint64_t *);

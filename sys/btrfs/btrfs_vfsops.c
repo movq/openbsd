@@ -475,6 +475,12 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, uint64_t treeid,
 	bmp->bm_dev = devvp->v_rdev;
 	bmp->bm_open_flags = open_flags;
 	memcpy(&bmp->bm_super, sb, sizeof(bmp->bm_super));
+	pool_init(&bmp->bm_scratch_pool, MAXBSIZE, 0, IPL_NONE,
+	    PR_WAITOK, "btrscratch", NULL);
+	pool_sethiwat(&bmp->bm_scratch_pool, 16);
+	pool_init(&bmp->bm_metadata_pool, letoh32(sb->nodesize), 0, IPL_NONE,
+	    PR_WAITOK, "btrmetadata", NULL);
+	pool_sethiwat(&bmp->bm_metadata_pool, 64);
 	memcpy(bmp->bm_super_mirrors, mirrors, sizeof(mirrors));
 	bmp->bm_selected_super = selected;
 	/*
@@ -543,6 +549,8 @@ out:
 			btrfs_trans_destroy(bmp);
 			btrfs_space_destroy(bmp);
 			btrfs_extent_buffers_purge(bmp);
+			pool_destroy(&bmp->bm_metadata_pool);
+			pool_destroy(&bmp->bm_scratch_pool);
 			btrfs_free_roots(bmp);
 			free(bmp->bm_chunks, M_BTRFS,
 			    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
@@ -887,6 +895,8 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	KASSERT(RBT_EMPTY(btrfs_node_tree, &bmp->bm_node_tree));
 	btrfs_trans_destroy(bmp);
 	btrfs_extent_buffers_purge(bmp);
+	pool_destroy(&bmp->bm_metadata_pool);
+	pool_destroy(&bmp->bm_scratch_pool);
 	btrfs_space_destroy(bmp);
 	btrfs_free_roots(bmp);
 

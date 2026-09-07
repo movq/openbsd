@@ -241,23 +241,59 @@ btrfs_invalidate_physical(struct btrfs_fs *bmp, uint64_t physical,
 	}
 }
 
+void
+btrfs_write_batch_init(struct btrfs_write_batch *batch)
+{
+	memset(batch, 0, sizeof(*batch));
+	mtx_init(&batch->bwb_lock, IPL_BIO);
+}
+
+int
+btrfs_write_batch_wait(struct btrfs_write_batch *batch)
+{
+	int error;
+
+	mtx_enter(&batch->bwb_lock);
+	while (batch->bwb_pending != 0)
+		msleep(batch, &batch->bwb_lock, PRIBIO, "btrwrite", 0);
+	error = batch->bwb_error;
+	mtx_leave(&batch->bwb_lock);
+	return (error);
+}
+
+static void
+btrfs_write_done(struct buf *bp)
+{
+	struct btrfs_write_batch *batch = bp->b_saveaddr;
+	int error = 0;
+
+	if (ISSET(bp->b_flags, B_ERROR | B_EINTR) || bp->b_resid != 0)
+		error = bp->b_error != 0 ? bp->b_error : EIO;
+	bp->b_saveaddr = NULL;
+	bp->b_iodone = NULL;
+	brelse(bp);
+	mtx_enter(&batch->bwb_lock);
+	KASSERT(batch->bwb_pending != 0);
+	if (batch->bwb_error == 0)
+		batch->bwb_error = error;
+	batch->bwb_pending--;
+	wakeup(batch);
+	mtx_leave(&batch->bwb_lock);
+}
+
 int
 btrfs_write_logical(struct btrfs_fs *bmp,
     uint64_t logical, uint32_t length, uint64_t type_mask,
-    const void *data, struct btrfs_io_result *result)
+    const void *data, struct btrfs_write_batch *batch)
 {
 	struct vnode *devvp = bmp->bm_devvp;
 	struct btrfs_io_map map;
 	struct buf *bp;
 	void *copy;
 	unsigned int i;
-	int error, first_error = 0;
+	int error;
 
-	if (result != NULL) {
-		memset(result, 0, sizeof(*result));
-		result->bir_mirror = -1;
-	}
-	if (devvp == NULL || data == NULL || length == 0 ||
+	if (devvp == NULL || data == NULL || batch == NULL || length == 0 ||
 	    length > MAXBSIZE || type_mask == 0)
 		return (EINVAL);
 
@@ -271,16 +307,21 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		if ((map.physical[i] & (DEV_BSIZE - 1)) != 0)
 			return (EINVAL);
 	}
-	if (result != NULL)
-		result->bir_nmirrors = map.nmirrors;
-
 	/*
 	 * Preserve one immutable source while each target buffer is acquired,
 	 * submitted, and released.
 	 */
-	copy = malloc(length, M_BTRFS, M_WAITOK);
+	copy = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
 	memcpy(copy, data, length);
 	for (i = 0; i < map.nmirrors; i++) {
+		/* Bound both outstanding buffers and occupied KVA slots. */
+		mtx_enter(&batch->bwb_lock);
+		while (batch->bwb_pending >= 16)
+			msleep(batch, &batch->bwb_lock, PRIBIO, "btrqueue", 0);
+		error = batch->bwb_error;
+		mtx_leave(&batch->bwb_lock);
+		if (error != 0)
+			break;
 		/*
 		 * Device buffers are keyed only by their starting block.
 		 * Reused data can have cached read windows of a different
@@ -303,16 +344,17 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		 * B_NOCACHE prevents bwrite() from becoming a delayed write
 		 * when the device vnode belongs to an asynchronous mount.
 		 */
-		SET(bp->b_flags, B_NOCACHE);
-		error = bwrite(bp);
-		if (result != NULL)
-			result->bir_error[i] = error;
-		if (error != 0 && first_error == 0)
-			first_error = error;
+		bp->b_saveaddr = batch;
+		bp->b_iodone = btrfs_write_done;
+		SET(bp->b_flags, B_NOCACHE | B_ASYNC | B_CALL);
+		mtx_enter(&batch->bwb_lock);
+		batch->bwb_pending++;
+		mtx_leave(&batch->bwb_lock);
+		(void)bwrite(bp);
 	}
-	free(copy, M_BTRFS, length);
+	pool_put(&bmp->bm_scratch_pool, copy);
 
-	return (first_error);
+	return (error);
 }
 
 static int

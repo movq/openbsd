@@ -133,7 +133,7 @@ concurrent vnodes and canceled sectors; chunks.py covers chunk boundaries.
 
 read_cluster.py uses create in a new VM directory, then measure after a cold
 remount to check physical read clustering. OpenBSD input-operation accounting
-also includes one logical file-buffer read per sector. Run small, check
+counts buffer operations, not raw device IOPS. Run small, check
 independently, then verify_small and again after remount to exercise reuse
 between large read windows and sector allocations; use verify_again after
 both remount modes. Repeat with 4/16 KiB nodes, SINGLE/DUP data and bitmap
@@ -151,6 +151,12 @@ in the VM. It checks recovery from different mirrors of the same window,
 EIO when both copies of a sector are damaged, and buffer-size recovery after
 the sector retry. Unmount and run `repair image journal` before independent
 checks or further clean remounts; measure must pass again afterward.
+
+read_range.py (the read-range case) uses create/verify to cover unaligned
+reads across sector and MAXBSIZE boundaries, pending overwrite, sparse growth,
+truncate/regrow, EOF, and VM-pager reads. It also injects a userspace copy fault
+with writev to check preservation of untouched committed and pending bytes.
+Check independently and verify after writable and read-only remounts.
 
 coalesce.py uses create on a fresh image, then disk while unmounted to verify
 that sequential sectors became larger regular extents. Check independently,
