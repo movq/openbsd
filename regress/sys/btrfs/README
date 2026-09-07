@@ -206,6 +206,10 @@ the data. Existing statfs capacity tests require a device with no room for
 additional data chunks now. metadata/metadata_verify fill metadata through
 chunk growth and final device exhaustion, then check the namespace after
 remount. combined/combined_verify exercise concurrent data and metadata growth.
+The chunks-large recipe exercises larger data-group targets, including DUP
+stripes, on an 8 GiB device. Bitmap layouts use 3 GiB to keep the imported
+fixture within one leaf and exercise a scaled target. The smaller chunks and
+chunks-capacity recipes exercise reduced targets and physical-gap fallback.
 On a fresh unmounted image, chunks_fixture.py image shrinks the initial system
 group while maintaining all chunk/device/block-group/free-space records and
 superblock copies. Check that fixture independently, then run create or

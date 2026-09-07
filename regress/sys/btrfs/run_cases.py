@@ -447,14 +447,21 @@ def orphan_reject(r, directory=False):
     r.checks()
 
 
-def chunks(r, phase="create", system=False):
-    size = "512M" if phase in ("create", "combined") else small_size(r)
+def chunks(r, phase="create", system=False, size=None):
+    if size is None:
+        size = "512M" if phase in ("create", "combined") else small_size(r)
     r.format(size=size, system=system)
     r.mount()
     r.test("chunks", phase, r.path("test"))
     verify = {"create": "verify", "combined": "combined_verify",
               "metadata": "metadata_verify", "capacity": None}[phase]
     finish(r, "chunks", r.path("test"), verify)
+
+
+def chunks_large(r):
+    # Keep the imported bitmaps within the fixture helper's single leaf.
+    # Other layouts reach the 256 MiB cap; bitmaps exercise a scaled target.
+    chunks(r, size="3G" if r.layout.free_space == "bitmap" else "8G")
 
 
 def reclaim(r, bounded=True, bitmap_retire=False):
@@ -717,6 +724,7 @@ def cases():
         "orphan-directory-reject": partial(orphan_reject, directory=True),
         "statfs": statfs,
         "chunks": chunks,
+        "chunks-large": chunks_large,
         "chunks-system": partial(chunks, system=True),
         "chunks-combined": partial(chunks, phase="combined"),
         "chunks-system-combined": partial(chunks, phase="combined", system=True),

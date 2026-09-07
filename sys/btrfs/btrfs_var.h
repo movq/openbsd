@@ -704,6 +704,7 @@ int	btrfs_read_logical(const struct btrfs_root *, uint64_t, uint32_t,
 	    struct buf **);
 void	btrfs_write_batch_init(struct btrfs_write_batch *);
 int	btrfs_write_batch_wait(struct btrfs_write_batch *);
+/* Stable source until return; must not alias a device buffer. */
 int	btrfs_write_logical(struct btrfs_fs *, uint64_t, uint32_t, uint64_t,
 	    const void *, struct btrfs_write_batch *);
 void	btrfs_invalidate_physical(struct btrfs_fs *, uint64_t, uint64_t);

@@ -873,6 +873,17 @@ retry:
 	if (type == BTRFS_BLOCK_GROUP_SYSTEM)
 		chunk->length = MAX(8ULL * 1024 * 1024, roundup(needed, 65536));
 	/*
+	 * Amortize data chunk publication on larger devices. Above the base
+	 * size, assign at most a tenth of the remaining physical space, counting
+	 * all mirrors, and cap the logical range at 256 MiB. Keep room for
+	 * metadata growth and retain small trials on nearly full devices.
+	 */
+	if (type == BTRFS_BLOCK_GROUP_DATA && physical_used < device_size)
+		chunk->length = MAX(chunk->length,
+		    MIN(256ULL * 1024 * 1024,
+		    ((device_size - physical_used) /
+		    (10 * chunk->nmirrors)) & ~65535ULL));
+	/*
 	 * Smaller chunks use fragmented device tails. Every stripe has the
 	 * same length, and each trial reselects all DUP mirrors.
 	 */

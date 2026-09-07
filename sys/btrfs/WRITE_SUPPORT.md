@@ -204,7 +204,11 @@ the final barrier even if a mirror failed; ambiguous publication requires an
 error and read-only mount.
 
 Data and metadata phases each queue at most 16 physical writes asynchronously.
-Submitted buffers own their bytes. Completion records errors and short I/O,
+Logical-write callers supply storage that remains stable until return and does
+not alias a device buffer: target acquisition and invalidation can recycle
+device buffers. Ordered payloads, staging storage and locked private metadata
+satisfy this contract. Submitted buffers own their copies; completion never
+accesses the caller's storage. Completion records errors and short I/O,
 releases the buffer, then drops the phase's pending count. Every exit drains
 the phase before its completion state or transaction resources can be freed;
 failed completion prevents advancing to publication. Superblock writes and
@@ -300,8 +304,10 @@ Device-buffer users check the returned size because cache keys contain only
 the starting block, and invalidate mismatched buffers before copying.
 Commit sorts ordered ranges by allocation address and combines adjacent
 payloads into writes of at most `MAXBSIZE`, stopping at chunk boundaries and
-checksum-policy changes. It computes checksums from the stable payloads and
-inserts each run into packed items capped at one quarter of a metadata node.
+checksum-policy changes. Single payloads are submitted directly; only runs
+combining multiple payloads need staging storage. It computes checksums from the
+stable payloads and inserts each run into packed items capped at one quarter
+of a metadata node.
 Checksum insertion and final-drop deletion belong to commit after handles drain;
 canceled pending allocations never acquire checksum items. New checksum ranges
 must not overlap existing ranges.
@@ -361,9 +367,13 @@ when enabled, otherwise to the extent tree.
 Reservation failure first publishes pending work, then serializes chunk
 growth without retaining a handle. The physical planner avoids existing device
 extents and superblock stripes, selecting equal-length disjoint stripes for DUP.
-It starts with 32 MiB data/metadata or 8 MiB system chunks and halves the size
-down to 1 MiB when device gaps are smaller. Logical ranges append beyond a
-mount-lifetime high-water mark. Low system space triggers system growth first.
+The base target is 32 MiB for data/metadata or 8 MiB for system chunks.
+Data growth can target up to 256 MiB, limiting growth above the base to a tenth
+of the remaining unallocated physical space, including all mirrors.
+The planner halves the target down to 1 MiB when device gaps are smaller.
+Chunk size does not change extent size or the pending-payload watermark.
+Logical ranges append beyond a mount-lifetime high-water mark.
+Low system space triggers system growth first.
 One reserved handle updates chunk and device trees, device usage, block-group
 records, and optional extent-format free-space records. Chunk-tree COW uses
 system space. System growth also appends a bootstrap mapping to the superblock
