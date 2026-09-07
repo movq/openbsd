@@ -28,14 +28,10 @@
 
 #include <btrfs/btrfs_var.h>
 
-static int	btrfs_set_data_csum(struct btrfs_trans_handle *, uint64_t,
-		    uint32_t);
-static int	btrfs_set_data_csum_locked(struct btrfs_trans_handle *, uint64_t,
-		    uint32_t);
+static int	btrfs_insert_data_csums(struct btrfs_trans_handle *, uint64_t,
+		    const uint32_t *, uint32_t);
 static int	btrfs_delete_data_csums(struct btrfs_trans_handle *, uint64_t,
 		    uint64_t);
-static int	btrfs_delete_data_csums_locked(struct btrfs_trans_handle *,
-		    uint64_t, uint64_t);
 static void	btrfs_encode_file_extent(struct btrfs_file_extent_item *,
 		    const struct btrfs_file_extent *, uint64_t);
 static int	btrfs_find_separate_data_ref(struct btrfs_root *, uint64_t,
@@ -92,22 +88,13 @@ btrfs_find_ordered_sector(struct btrfs_transaction *trans,
 	return (RBT_FIND(btrfs_ordered_tree, &trans->bt_ordered_extents, &key));
 }
 
+/*
+ * Commit inserts checksums for new allocations only, in disk byte order.
+ * Writers have drained, so no checksum writer can race the overlap searches.
+ */
 static int
-btrfs_set_data_csum(struct btrfs_trans_handle *handle, uint64_t logical,
-    uint32_t csum)
-{
-	int error;
-
-	/* Adjacent allocations from different vnodes can share one item. */
-	rw_enter_write(&handle->bth_transaction->bt_csum_lock);
-	error = btrfs_set_data_csum_locked(handle, logical, csum);
-	rw_exit_write(&handle->bth_transaction->bt_csum_lock);
-	return (error);
-}
-
-static int
-btrfs_set_data_csum_locked(struct btrfs_trans_handle *handle, uint64_t logical,
-    uint32_t csum)
+btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
+    const uint32_t *csums, uint32_t count)
 {
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
@@ -116,18 +103,23 @@ btrfs_set_data_csum_locked(struct btrfs_trans_handle *handle, uint64_t logical,
 	struct btrfs_root *root;
 	struct btrfs_key key;
 	uint8_t *payload = NULL;
-	uint64_t item_end, span, start;
-	uint32_t disk_csum, item_size, sectorsize, capacity;
-	size_t index;
+	uint64_t item_end, span, start, end;
+	uint32_t item_size, sectorsize, capacity, bytes;
 	int error;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	KASSERT(handle->bth_commit);
+	KASSERT(handle->bth_transaction->bt_writers == 0);
 	/* Bound copying and leave room for neighboring items in the leaf. */
 	capacity = letoh32(bmp->bm_super.nodesize) / 4;
-	if ((logical & (sectorsize - 1)) != 0)
+	if (count == 0 || count > capacity / sizeof(*csums) ||
+	    (logical & (sectorsize - 1)) != 0)
 		return (EINVAL);
-	if (logical > UINT64_MAX - sectorsize)
+	span = (uint64_t)count * sectorsize;
+	if (logical > UINT64_MAX - span)
 		return (EINVAL);
+	end = logical + span;
+	bytes = count * sizeof(*csums);
 	error = btrfs_get_root(bmp, BTRFS_CSUM_TREE_OBJECTID, &root);
 	if (error != 0)
 		return (error);
@@ -136,72 +128,7 @@ btrfs_set_data_csum_locked(struct btrfs_trans_handle *handle, uint64_t logical,
 	key.objectid = htole64(BTRFS_EXTENT_CSUM_OBJECTID);
 	key.type = BTRFS_EXTENT_CSUM_KEY;
 	key.offset = htole64(logical);
-	error = btrfs_search_predecessor(root, &key, &path);
-	if (error == 0) {
-		error = btrfs_path_item(&path, &found_key, &data, &item_size);
-		if (error != 0)
-			goto out;
-		if (letoh64(found_key->objectid) !=
-		    BTRFS_EXTENT_CSUM_OBJECTID ||
-		    found_key->type != BTRFS_EXTENT_CSUM_KEY ||
-		    item_size == 0 || item_size % sizeof(disk_csum) != 0) {
-			error = EINVAL;
-			goto out;
-		}
-		start = letoh64(found_key->offset);
-		span = (uint64_t)(item_size / sizeof(disk_csum)) * sectorsize;
-		if ((start & (sectorsize - 1)) != 0 ||
-		    start > UINT64_MAX - span) {
-			error = EINVAL;
-			goto out;
-		}
-		item_end = start + span;
-		if (logical >= start && logical < item_end) {
-			payload = malloc(item_size, M_BTRFS, M_WAITOK);
-			memcpy(payload, data, item_size);
-			memcpy(&key, found_key, sizeof(key));
-			index = (logical - start) / sectorsize;
-			disk_csum = htole32(csum);
-			memcpy(payload + index * sizeof(disk_csum), &disk_csum,
-			    sizeof(disk_csum));
-			btrfs_release_path(&path);
-			error = btrfs_replace_item(handle, root, &key, payload,
-			    item_size);
-			free(payload, M_BTRFS, item_size);
-			return (error);
-		}
-		if (logical == item_end &&
-		    item_size <= capacity - sizeof(disk_csum)) {
-			payload = malloc(item_size + sizeof(disk_csum),
-			    M_BTRFS, M_WAITOK);
-			memcpy(payload, data, item_size);
-			disk_csum = htole32(csum);
-			memcpy(payload + item_size, &disk_csum,
-			    sizeof(disk_csum));
-			memcpy(&key, found_key, sizeof(key));
-			btrfs_release_path(&path);
-			/*
-			 * Keys and checksum ranges are sector aligned, so the
-			 * next item cannot overlap this one-sector extension.
-			 * Replacement cannot split a full leaf; reinsertion can.
-			 */
-			error = btrfs_replace_item(handle, root, &key, payload,
-			    item_size + sizeof(disk_csum));
-			if (error == ENOSPC) {
-				error = btrfs_delete_item(handle, root, &key);
-				if (error == 0)
-					error = btrfs_insert_item(handle, root,
-					    &key, payload,
-					    item_size + sizeof(disk_csum));
-			}
-			free(payload, M_BTRFS, item_size + sizeof(disk_csum));
-			return (error);
-		}
-		btrfs_release_path(&path);
-	} else if (error != ENOENT) {
-		goto out;
-	}
-
+	/* Newly allocated data must not overlap any existing checksum range. */
 	error = btrfs_search_lower_bound(root, &key, &path);
 	if (error == 0) {
 		error = btrfs_path_item(&path, &found_key, NULL, NULL);
@@ -210,17 +137,67 @@ btrfs_set_data_csum_locked(struct btrfs_trans_handle *handle, uint64_t logical,
 		if (letoh64(found_key->objectid) ==
 		    BTRFS_EXTENT_CSUM_OBJECTID &&
 		    found_key->type == BTRFS_EXTENT_CSUM_KEY &&
-		    letoh64(found_key->offset) < logical + sectorsize) {
+		    letoh64(found_key->offset) < end) {
 			error = EINVAL;
 			goto out;
 		}
+	} else if (error != ENOENT)
+		goto out;
+	btrfs_release_path(&path);
+	error = btrfs_search_predecessor(root, &key, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &found_key, &data, &item_size);
+		if (error != 0)
+			goto out;
+		if (letoh64(found_key->objectid) !=
+		    BTRFS_EXTENT_CSUM_OBJECTID ||
+		    found_key->type != BTRFS_EXTENT_CSUM_KEY ||
+		    item_size == 0 || item_size % sizeof(*csums) != 0) {
+			error = EINVAL;
+			goto out;
+		}
+		start = letoh64(found_key->offset);
+		span = (uint64_t)(item_size / sizeof(*csums)) * sectorsize;
+		if ((start & (sectorsize - 1)) != 0 ||
+		    start > UINT64_MAX - span) {
+			error = EINVAL;
+			goto out;
+		}
+		item_end = start + span;
+		if (logical < item_end) {
+			error = EINVAL;
+			goto out;
+		}
+		if (logical == item_end &&
+		    item_size <= capacity - bytes) {
+			payload = malloc(item_size + bytes, M_BTRFS, M_WAITOK);
+			memcpy(payload, data, item_size);
+			memcpy(payload + item_size, csums, bytes);
+			memcpy(&key, found_key, sizeof(key));
+			btrfs_release_path(&path);
+			/*
+			 * The lower-bound search excluded overlapping items.
+			 * Replacement cannot split a full leaf; reinsertion can.
+			 */
+			error = btrfs_replace_item(handle, root, &key, payload,
+			    item_size + bytes);
+			if (error == ENOSPC) {
+				error = btrfs_delete_item(handle, root, &key);
+				if (error == 0)
+					error = btrfs_insert_item(handle, root,
+					    &key, payload,
+					    item_size + bytes);
+			}
+			free(payload, M_BTRFS, item_size + bytes);
+			return (error);
+		}
+		btrfs_release_path(&path);
 	} else if (error != ENOENT) {
 		goto out;
 	}
+
 	btrfs_release_path(&path);
-	disk_csum = htole32(csum);
-	return (btrfs_insert_item(handle, root, &key, &disk_csum,
-	    sizeof(disk_csum)));
+	return (btrfs_insert_item(handle, root, &key, csums, bytes));
 
 out:
 	btrfs_release_path(&path);
@@ -230,18 +207,6 @@ out:
 static int
 btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
     uint64_t length)
-{
-	int error;
-
-	rw_enter_write(&handle->bth_transaction->bt_csum_lock);
-	error = btrfs_delete_data_csums_locked(handle, logical, length);
-	rw_exit_write(&handle->bth_transaction->bt_csum_lock);
-	return (error);
-}
-
-static int
-btrfs_delete_data_csums_locked(struct btrfs_trans_handle *handle,
-    uint64_t logical, uint64_t length)
 {
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
@@ -254,6 +219,8 @@ btrfs_delete_data_csums_locked(struct btrfs_trans_handle *handle,
 	uint32_t item_size, prefix_size, sectorsize, suffix_size;
 	int error;
 
+	KASSERT(handle->bth_commit);
+	KASSERT(handle->bth_transaction->bt_writers == 0);
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	if (length == 0 || (logical & (sectorsize - 1)) != 0 ||
 	    (length & (sectorsize - 1)) != 0 ||
@@ -950,8 +917,9 @@ btrfs_run_delayed_data_refs(struct btrfs_trans_handle *handle)
 }
 
 int
-btrfs_write_ordered_extents(struct btrfs_transaction *trans)
+btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 {
+	struct btrfs_transaction *trans;
 	struct btrfs_ordered_extent *ordered, *next, *first;
 	struct btrfs_ordered_io io = RBT_INITIALIZER(&io);
 	struct btrfs_io_map map;
@@ -960,10 +928,12 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 	uint8_t *data;
 	uint64_t bytenr;
 	uint32_t length, sectorsize;
+	uint32_t csums[MAXBSIZE / DEV_BSIZE];
 	int error = 0, end_error;
 
-	if (trans == NULL)
+	if (handle == NULL || !handle->bth_commit)
 		return (EINVAL);
+	trans = handle->bth_transaction;
 	bmp = trans->bt_mount;
 	mtx_enter(&bmp->bm_trans_mtx);
 	if (bmp->bm_transaction != trans || !bmp->bm_committer ||
@@ -1006,10 +976,15 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 		length = 0;
 		do {
 			memcpy(data + length, ordered->boe_data, sectorsize);
+			if (!first->boe_nodatasum)
+				csums[length / sectorsize] =
+				    htole32(btrfs_crc32c(ordered->boe_data,
+				    sectorsize));
 			length += sectorsize;
 			next = RBT_NEXT(btrfs_ordered_io, ordered);
 			if (next == NULL || length > MAXBSIZE - sectorsize ||
-			    next->boe_bytenr != bytenr + length)
+			    next->boe_bytenr != bytenr + length ||
+			    next->boe_nodatasum != first->boe_nodatasum)
 				break;
 			/* Adjacent logical chunks need not share physical runs. */
 			error = btrfs_lookup_fs_logical(bmp, bytenr,
@@ -1024,6 +999,9 @@ btrfs_write_ordered_extents(struct btrfs_transaction *trans)
 		} while (1);
 		error = btrfs_write_logical(bmp, bytenr, length,
 		    BTRFS_BLOCK_GROUP_DATA, data, &batch);
+		if (error == 0 && !first->boe_nodatasum)
+			error = btrfs_insert_data_csums(handle, bytenr, csums,
+			    length / sectorsize);
 		if (error != 0)
 			break;
 		/* Submission is final only if the whole phase drains successfully. */
@@ -1512,7 +1490,7 @@ out:
 
 /*
  * An ordered sector has never been published and its delayed add cancels
- * the drop. Remove its checksum and payload before returning the allocation
+ * the drop. Remove its payload before returning the allocation
  * to the reservation pool; a later write must not find the old payload.
  */
 static int
@@ -1538,11 +1516,9 @@ btrfs_cancel_ordered_sector(struct btrfs_trans_handle *handle,
 	}
 	RBT_REMOVE(btrfs_ordered_tree, &trans->bt_ordered_extents, ordered);
 	mtx_leave(&trans->bt_lock);
-	error = btrfs_delete_data_csums(handle, ordered->boe_bytenr,
+	/* Its checksums have not been inserted yet. */
+	error = btrfs_space_cancel_alloc(handle, ordered->boe_bytenr,
 	    ordered->boe_length);
-	if (error == 0)
-		error = btrfs_space_cancel_alloc(handle, ordered->boe_bytenr,
-		    ordered->boe_length);
 	free(ordered->boe_data, M_BTRFS, ordered->boe_length);
 	free(ordered, M_BTRFS, sizeof(*ordered));
 	return (error);
@@ -1807,10 +1783,15 @@ abort:
 	return (error);
 }
 
+/*
+ * A batching caller must encode the inode before releasing its handle.
+ * NO_INLINE is valid after a successful sector write under the same vnode lock:
+ * inline conversion has completed and no other writer can change the layout.
+ */
 int
 btrfs_write_file_sector(struct btrfs_trans_handle *handle,
     struct btrfs_node *node, uint64_t file_offset, const void *data,
-    uint64_t file_size)
+    uint64_t file_size, int flags)
 {
 	struct btrfs_transaction *trans;
 	struct btrfs_ordered_extent *ordered, *new_ordered = NULL;
@@ -1822,7 +1803,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	uint8_t *inline_data;
 	uint64_t bytenr, end, inline_bytes = 0, left, lookup_size, old_end;
 	uint64_t ref_offset, right;
-	uint32_t csum, sectorsize;
+	uint32_t sectorsize;
 	int error, nodatasum, old_ref_mod, old_refs;
 
 	if (handle == NULL || handle->bth_transaction == NULL ||
@@ -1841,18 +1822,12 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 		return (EINVAL);
 	nodatasum = (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0;
 	end = file_offset + sectorsize;
-	csum = nodatasum ? 0 : btrfs_crc32c(data, sectorsize);
 
 	mtx_enter(&trans->bt_lock);
 	ordered = btrfs_find_ordered_sector(trans, node, file_offset);
 	mtx_leave(&trans->bt_lock);
 	if (ordered != NULL) {
-		if (!nodatasum) {
-			error = btrfs_set_data_csum(handle, ordered->boe_bytenr,
-			    csum);
-			if (error != 0)
-				goto abort;
-		}
+		KASSERT(ordered->boe_nodatasum == nodatasum);
 		if (file_size > node->bn_inode.bi_size) {
 			node->bn_inode.bi_size = file_size;
 			node->bn_inode.bi_dirty_fields |=
@@ -1860,7 +1835,8 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 			node->bn_inode.bi_last_dirty_transid =
 			    trans->bt_generation;
 		}
-		if (node->bn_inode.bi_dirty_fields != 0) {
+		if (!(flags & BTRFS_WRITE_DEFER_INODE) &&
+		    node->bn_inode.bi_dirty_fields != 0) {
 			node->bn_inode.bi_last_dirty_transid =
 			    trans->bt_generation;
 			error = btrfs_write_inode(handle, node);
@@ -1878,7 +1854,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	error = btrfs_get_root(node->bn_mount, node->bn_treeid, &root);
 	if (error != 0)
 		return (error);
-	if (file_offset != 0) {
+	if (file_offset != 0 && !(flags & BTRFS_WRITE_NO_INLINE)) {
 		error = btrfs_find_file_extent(node->bn_mount, root, &path,
 		    node->bn_ino, 0, lookup_size, &first);
 		if (error != 0)
@@ -1903,12 +1879,14 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 			btrfs_release_path(&path);
 			if (error == 0)
 				error = btrfs_write_file_sector(handle, node, 0,
-				    inline_data, node->bn_inode.bi_size);
+				    inline_data, node->bn_inode.bi_size,
+				    flags);
 			free(inline_data, M_BTRFS, sectorsize);
 			if (error != 0)
 				goto out;
 			error = btrfs_write_file_sector(handle, node,
-			    file_offset, data, file_size);
+			    file_offset, data, file_size,
+			    flags | BTRFS_WRITE_NO_INLINE);
 			if (error != 0)
 				goto abort;
 			return (0);
@@ -1963,12 +1941,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 	new_ordered->boe_file_offset = file_offset;
 	new_ordered->boe_bytenr = bytenr;
 	new_ordered->boe_length = sectorsize;
-
-	if (!nodatasum) {
-		error = btrfs_set_data_csum(handle, bytenr, csum);
-		if (error != 0)
-			goto abort;
-	}
+	new_ordered->boe_nodatasum = nodatasum;
 
 	left = file_offset - old.bfe_logical;
 	right = old_end - end;
@@ -2056,9 +2029,11 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE;
 	}
 	node->bn_inode.bi_last_dirty_transid = trans->bt_generation;
-	error = btrfs_write_inode(handle, node);
-	if (error != 0)
-		goto abort;
+	if (!(flags & BTRFS_WRITE_DEFER_INODE)) {
+		error = btrfs_write_inode(handle, node);
+		if (error != 0)
+			goto abort;
+	}
 	return (0);
 
 abort:

@@ -156,7 +156,14 @@ read_range.py (the read-range case) uses create/verify to cover unaligned
 reads across sector and MAXBSIZE boundaries, pending overwrite, sparse growth,
 truncate/regrow, EOF, and VM-pager reads. It also injects a userspace copy fault
 with writev to check preservation of untouched committed and pending bytes.
+Faults after a full sector check that the inode records the successful prefix.
+File-backed userspace buffers exercise source-page faults during write batching.
 Check independently and verify after writable and read-only remounts.
+
+write_batch.py (write-batch-capacity) fills a small filesystem, frees exactly
+one sector, and attempts a MAXBSIZE write. Its completed prefix must survive
+ENOSPC, fsync and both remount modes, with the mount still writable. This
+checks fallback from a large reservation to a sector-sized one.
 
 coalesce.py uses create on a fresh image, then disk while unmounted to verify
 that sequential sectors became larger regular extents. Check independently,

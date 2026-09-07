@@ -1,7 +1,7 @@
 # Btrfs / FFS2 performance
 
-Measured with OpenBSD GENERIC.MP#135, containing the range-read, buffer,
-allocation-pool and asynchronous-write improvements described in
+Measured with OpenBSD GENERIC.MP#140, containing the range-read, buffer,
+allocation-pool, asynchronous-write and write-batching improvements described in
 [PROFILING.md](PROFILING.md). The guest has eight vCPUs, 1 GiB RAM,
 `kern.bufcachepercent=20`, and virtio-scsi disks backed by host-cached sparse
 images. Tracing was disabled, and no workload overlapped a kernel build.
@@ -13,20 +13,21 @@ is FFS2 time divided by btrfs time, spanning the measurements; higher is better.
 
 | Workload | FFS2 seconds, before / after | Btrfs seconds | Btrfs / FFS2 throughput |
 | --- | ---: | ---: | ---: |
-| Extract source tree | 13.632 / 11.214 | 16.048 | 0.70–0.85x |
-| Recursive grep after remount | 11.789 / 11.447 | 10.889 | 1.05–1.08x |
-| Immediate grep repeat | 11.909 / 11.809 | 11.394 | 1.04–1.05x |
-| Recursive chown | 0.948 / 0.904 | 1.748 | 0.52–0.54x |
-| Recursive chmod | 0.901 / 0.897 | 1.980 | 0.45–0.46x |
-| Delete source tree | 4.039 / 3.981 | 10.939 | 0.36–0.37x |
-| Write 2 GiB | 3.593 / 3.552 | 10.509 / 10.820 | 0.33–0.34x |
-| Read 2 GiB after remount | 2.385 / 2.364 | 1.799 / 1.853 | 1.28–1.33x |
-| Immediate read repeat | 2.593 / 2.432 | 1.769 / 1.899 | 1.28–1.47x |
+| Extract source tree | 9.311 / 13.355 | 15.137 | 0.62–0.88x |
+| Recursive grep after remount | 9.910 / 11.684 | 11.359 | 0.87–1.03x |
+| Immediate grep repeat | 10.781 / 11.960 | 11.768 | 0.92–1.02x |
+| Recursive chown | 0.912 / 0.929 | 1.795 | 0.51–0.52x |
+| Recursive chmod | 0.791 / 0.869 | 1.958 | 0.40–0.44x |
+| Delete source tree | 3.755 / 4.070 | 10.952 | 0.34–0.37x |
+| Write 2 GiB | 2.959 / 3.561 | 9.238 / 9.189 | 0.32–0.39x |
+| Read 2 GiB after remount | 1.894 / 2.407 | 1.923 / 1.916 | 0.98–1.26x |
+| Immediate read repeat | 1.915 / 2.501 | 2.114 / 2.054 | 0.91–1.22x |
 
 Reads, extraction, grep and chown meet a target of half FFS2 throughput in
-these workloads. Chmod is borderline; bulk writes and deletion remain the
-largest gaps. These VM measurements are workload-specific, and the FFS2
-extraction variation warrants caution about small differences.
+these workloads. Chmod, bulk writes and deletion remain below that target.
+These VM measurements are workload-specific. Variation between the FFS2
+controls, especially extraction and sequential I/O, limits precision;
+the ranges span observed values and are not confidence intervals.
 
 ## Workloads and method
 
@@ -56,8 +57,9 @@ zeroes after read-only remount, and deletion was verified after remount.
 FFS2 passes passed `fsck_ffs -fn`.
 
 Raw timings and check logs are in
-`/home/mike/obj/btrfs-architecture-profile`, using `experiment-retained-*`
-and `experiment-ffs-*` prefixes. The host runner is
+`/home/mike/obj/btrfs-architecture-profile`, using `write-final-*`
+prefixes, including `write-final-ffs-before*` and `write-final-ffs-after*`
+for the controls. The host runner is
 `/home/mike/obj/btrfs-architecture-profile.py`. Architectural findings,
 implementation comparisons and targeted correctness coverage are recorded
 in [PROFILING.md](PROFILING.md).

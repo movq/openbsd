@@ -31,6 +31,10 @@ def basic(r, script, create="create", verify="verify", readonly=None,
     finish(r, script, directory, verify, readonly)
 
 
+def write_batch_capacity(r):
+    basic(r, "write_batch", create="capacity", size=small_size(r))
+
+
 def cluster(r):
     phase = "create" if (r.layout.nodesize == 4096 and
                          r.layout.data == "single" and
@@ -674,6 +678,7 @@ def cases():
         "reflink": reflink,
         "read-cluster": read_cluster,
         "read-range": partial(basic, script="read_range"),
+        "write-batch-capacity": write_batch_capacity,
         "read-import": read_import,
         "read-compressed": partial(read_import, compressed=True),
         "read-faults": read_faults,
