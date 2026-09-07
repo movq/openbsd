@@ -95,3 +95,77 @@ actual item remains conservative, so reservation pressure still causes commits.
 All six passes passed the same independent and remount checks; their logs use
 the `reservations-before` and `reservations-after` prefixes in the results
 directory above.
+
+## Sequential-write improvements
+
+Starting at `bf686c4b29e`, a targeted `dd bs=1m count=2048` comparison used a
+fresh 100 GiB scratch filesystem per pass: 16 KiB nodes, 4 KiB sectors, SINGLE
+data, DUP metadata, extent-format free-space records, NO_HOLES, and no separate
+block-group tree. Each write used a `noatime` mount; elapsed time includes
+unmount. These runs omit the source-tree workload and do not constitute a new
+FFS2 comparison.
+
+| Kernel | Write 2 GiB seconds | Median seconds | Median MiB/s | Generation advances |
+| --- | ---: | ---: | ---: | ---: |
+| HEAD before changes | 48.322 / 49.098 | 48.710 | 42.0 | 1,160 |
+| Packed leaf edits, reservation reuse, accelerated CRC32C | 17.569 / 18.569 / 18.931 | 18.569 | 110.3 | 1,160 |
+
+The median improves **2.6x**. Neither row contains timing instrumentation.
+The two baseline logs are `baseline` and `baseline-profile`; the attempted
+tracer in the latter failed before the workload started. Final samples use
+the `final` prefix.
+
+Temporary elapsed-time counters exposed the main costs. In a 51.978-second
+instrumented baseline, transaction joins took 22.8 seconds, including commits
+triggered by reservation pressure. Sector mutation took 24.4 seconds, including
+8.2 seconds editing checksum items. Commit-time extent coalescing took another
+8.3 seconds within the join time. These nested measurements must not be added
+together.
+
+Three cumulative experiments reduced that work:
+
+| Instrumented configuration | Seconds | Finding |
+| --- | ---: | --- |
+| Baseline | 51.978 | Variable-size item edits rebuild whole leaves |
+| Edit packed COW leaves in place | 27.060 | Checksum edits fall to 0.8 s; extent coalescing to 1.2 s |
+| Also reuse reservation objects while scanning full groups | 23.761 | Avoid allocating/freeing an object for every exhausted group |
+| Also accelerate data and metadata CRC32C on amd64 | 17.539 | Data checksum computation falls from 4.3 s to 0.24 s |
+
+The leaf change retains validation and ancestor-key updates, and falls back to
+scratch rebuilding for gaps or aliased inputs. The CRC32 instruction uses
+general-purpose registers; CPUs without SSE4.2 and other architectures retain
+the portable implementation. Reservation sizes and durability ordering are
+unchanged. A further experiment skipping buffer reads for full-sector appends
+took 17.802 seconds and was dropped because it showed no throughput gain.
+
+Every performance pass passed unmounted `btrfs check --readonly
+--check-data-csum`, metadata-mirror checks, and a read-only remount comparing
+the complete file with zeroes. The final kernel also passed namespace, rename,
+checksums, coalesce, reflink, and xattrs on the `4k`, `16k`, and `16k-bitmap`
+layouts: 18 targeted cases with independent checks and remount verification.
+A host check of the actual CRC function compared both dispatch paths with an
+independent bitwise oracle, including unaligned inputs, short tails, and
+inaccessible pages immediately after the input.
+
+Reservations still retain a conservative metadata allowance per sector, and
+the filesystem still advances 1,160 generations for this write, including
+chunk growth. Per-sector handles and tree operations, plus synchronous 64 KiB
+data submissions, remain targets. Bounded range writes could amortize metadata
+reservations and create larger mappings directly; that requires preserving
+pending replacement, cancellation, and shared-extent ownership rules.
+
+Raw timings, check logs, and the CRC check are in
+`/home/mike/obj/btrfs-write-performance`; the host runner is
+`/home/mike/obj/btrfs-write-bench.py`. To run only sequential I/O with the
+in-tree runner on a freshly formatted, unmounted scratch filesystem:
+
+```sh
+timeout 300 ssh root@10.77.0.2 \
+    'python3 /mnt/src/regress/sys/btrfs/benchmark.py sequential \
+    /dev/sd1c /mnt/bench --type btrfs --io-only --out /root/sequential-results'
+```
+
+This performs two write/read/delete iterations. `--io-mib` and
+`--io-iterations` allow shorter experiments; `--archive` is unnecessary with
+`--io-only`. Formatting and independent checks remain external. The new mode
+was exercised with a 16 MiB file and checked independently afterward.

@@ -1423,8 +1423,60 @@ fail:
 }
 
 /*
- * Size changes rebuild and compact the leaf, zeroing unused bytes. Equal-size
- * replacements preserve its layout and update only the private COW payload.
+ * Edit a packed, private leaf by moving only the payload below the edited
+ * item and its following descriptors. The caller has validated the layout,
+ * capacity and ancestor separators; key and data must not alias the leaf.
+ */
+static void
+btrfs_leaf_edit_packed(struct btrfs_header *header,
+    const struct btrfs_key *key, const void *data, uint32_t size,
+    uint32_t capacity, uint32_t slot, int operation)
+{
+	struct btrfs_item *items = (struct btrfs_item *)(header + 1);
+	uint8_t *base = (uint8_t *)(header + 1);
+	uint32_t nritems = letoh32(header->nritems);
+	uint32_t low, end, oldsize, i, first;
+	int32_t delta;
+
+	low = nritems == 0 ? capacity : letoh32(items[nritems - 1].offset);
+	end = slot == 0 ? capacity : letoh32(items[slot - 1].offset);
+	oldsize = operation == BTRFS_LEAF_INSERT ? 0 :
+	    letoh32(items[slot].size);
+	if (operation == BTRFS_LEAF_DELETE)
+		size = 0;
+	delta = (int32_t)size - (int32_t)oldsize;
+	memmove(base + low - delta, base + low, end - oldsize - low);
+
+	if (operation == BTRFS_LEAF_INSERT) {
+		memmove(&items[slot + 1], &items[slot],
+		    (nritems - slot) * sizeof(*items));
+		nritems++;
+	} else if (operation == BTRFS_LEAF_DELETE) {
+		memmove(&items[slot], &items[slot + 1],
+		    (nritems - slot - 1) * sizeof(*items));
+		nritems--;
+	}
+	first = slot;
+	if (operation != BTRFS_LEAF_DELETE) {
+		memcpy(&items[slot].key, key, sizeof(*key));
+		items[slot].offset = htole32(end - size);
+		items[slot].size = htole32(size);
+		if (size != 0)
+			memcpy(base + end - size, data, size);
+		first++;
+	}
+	for (i = first; i < nritems; i++)
+		items[i].offset = htole32(letoh32(items[i].offset) - delta);
+	header->nritems = htole32(nritems);
+	low -= delta;
+	KASSERT(low >= nritems * sizeof(*items));
+	memset(&items[nritems], 0, low - nritems * sizeof(*items));
+}
+
+/*
+ * Equal-size replacements update only the private COW payload. Size changes
+ * move packed data in place; imported leaves with gaps, or aliased inputs,
+ * use a scratch rebuild. Both paths compact and zero unused bytes.
  */
 static int
 btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
@@ -1439,7 +1491,7 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 	size_t payload_bytes;
 	uint32_t capacity, destination_slot, i, new_nritems, nodesize;
 	uint32_t nritems, offset, payload_end, slot, source_size, source_slot;
-	int first_changed = 0;
+	int first_changed = 0, packed = 1;
 
 	if (path->bp_root == NULL || !path->bp_write ||
 	    path->bp_handle == NULL || key == NULL ||
@@ -1491,6 +1543,8 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 		    (i != 0 &&
 		    btrfs_key_cmp(&items[i - 1].key, &items[i].key) >= 0))
 			return (EINVAL);
+		if (source_size != payload_end - offset)
+			packed = 0;
 		payload_end = offset;
 		payload_bytes += source_size;
 		if (payload_bytes > capacity)
@@ -1578,6 +1632,16 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 		}
 	}
 
+	if (packed &&
+	    ((uintptr_t)key < (uintptr_t)header ||
+	    (uintptr_t)key >= (uintptr_t)header + nodesize) &&
+	    (size == 0 || (uintptr_t)data < (uintptr_t)header ||
+	    (uintptr_t)data >= (uintptr_t)header + nodesize)) {
+		btrfs_leaf_edit_packed(header, key, data, size, capacity,
+		    slot, operation);
+		goto separators;
+	}
+
 	scratch = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
 	new_header = (struct btrfs_header *)scratch;
 	memcpy(new_header, header, sizeof(*new_header));
@@ -1628,6 +1692,7 @@ btrfs_leaf_mutate(struct btrfs_path *path, const struct btrfs_key *key,
 	memcpy(header, scratch, nodesize);
 	free(scratch, M_BTRFS, nodesize);
 
+separators:
 	if (first_changed) {
 		items = (struct btrfs_item *)(header + 1);
 		for (i = 1; i <= path->bp_level; i++) {

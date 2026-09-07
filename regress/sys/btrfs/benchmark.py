@@ -21,11 +21,21 @@ p.add_argument("device")
 p.add_argument("mountpoint")
 p.add_argument("--type", choices=["ffs", "btrfs"], required=True)
 p.add_argument("--options", default="noatime")
-p.add_argument("--archive", required=True)
+p.add_argument("--archive", help="source archive; required unless --io-only")
 p.add_argument("--out", required=True)
-p.add_argument("--delete-only", action="store_true",
-               help="extract and delete the archive, skipping other workloads")
+workloads = p.add_mutually_exclusive_group()
+workloads.add_argument("--delete-only", action="store_true",
+                       help="extract and delete the archive, skipping other workloads")
+workloads.add_argument("--io-only", action="store_true",
+                       help="run only sequential writes and reads")
+p.add_argument("--io-mib", type=int, default=2048,
+               help="size of each sequential I/O file in MiB (default: 2048)")
+p.add_argument("--io-iterations", type=int, default=2)
 a = p.parse_args()
+if not a.io_only and not a.archive:
+    p.error("--archive is required unless --io-only")
+if a.io_mib <= 0 or a.io_iterations <= 0:
+    p.error("--io-mib and --io-iterations must be positive")
 out = Path(a.out)
 out.mkdir(exist_ok=True)
 mp = Path(a.mountpoint)
@@ -90,9 +100,30 @@ def delete_tree():
     unmount()
 
 
+def sequential_io():
+    size = "2g" if a.io_mib == 2048 else str(a.io_mib) + "m"
+    for iteration in range(1, a.io_iterations + 1):
+        mount()
+        measure("write-" + size + "-" + str(iteration),
+                ["dd", "if=/dev/zero", "of=" + str(mp / "large"), "bs=1m",
+                 "count=" + str(a.io_mib)], durable=True)
+        mount()
+        measure("read-" + size + "-" + str(iteration),
+                ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1m"])
+        unmount()
+        mount()
+        run(["rm", str(mp / "large")])
+        unmount()
+
+
 emit({"event": "setup", "args": vars(a)})
 mount()
 assert not (mp / "tree").exists() and not (mp / "large").exists()
+if a.io_only:
+    unmount()
+    sequential_io()
+    emit({"event": "complete"})
+    raise SystemExit(0)
 run(["mkdir", str(mp / "tree")])
 measure("extract", ["tar", "-xpf", a.archive, "-C", str(mp / "tree")], durable=True)
 if a.delete_only:
@@ -125,16 +156,5 @@ for parent, dirs, files in os.walk(mp / "tree", followlinks=False):
             assert st.st_mode & 0o777 in (0o644, 0o755), path
 emit({"event": "tree-verification", **counts})
 unmount()
-for iteration in (1, 2):
-    mount()
-    measure("write-2g-" + str(iteration),
-            ["dd", "if=/dev/zero", "of=" + str(mp / "large"), "bs=1m", "count=2048"],
-            durable=True)
-    mount()
-    measure("read-2g-" + str(iteration),
-            ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1m"])
-    unmount()
-    mount()
-    run(["rm", str(mp / "large")])
-    unmount()
+sequential_io()
 delete_tree()

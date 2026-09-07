@@ -30,7 +30,6 @@
 #include <sys/mount.h>
 #include <sys/vnode.h>
 
-#include <lib/libkern/crc32c.h>
 
 #include <btrfs/btrfs_var.h>
 
@@ -634,7 +633,7 @@ btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 		flags = letoh64(header->flags);
 		header->flags = htole64(flags | BTRFS_HEADER_FLAG_WRITTEN);
 		memset(header->csum, 0, sizeof(header->csum));
-		csum = htole32(crc32c(0,
+		csum = htole32(btrfs_crc32c(
 		    (const uint8_t *)header + sizeof(header->csum),
 		    nodesize - sizeof(header->csum)));
 		memcpy(header->csum, &csum, sizeof(csum));
@@ -784,7 +783,7 @@ btrfs_validate_tree_block(const struct btrfs_super_block *sb,
 	nodesize = letoh32(sb->nodesize);
 	memcpy(&disk_csum, header->csum, sizeof(disk_csum));
 	disk_csum = letoh32(disk_csum);
-	csum = crc32c(0, (const uint8_t *)header + sizeof(header->csum),
+	csum = btrfs_crc32c((const uint8_t *)header + sizeof(header->csum),
 	    nodesize - sizeof(header->csum));
 	if (csum != disk_csum)
 		return (EINVAL);

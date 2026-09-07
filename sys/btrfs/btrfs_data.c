@@ -1833,7 +1833,7 @@ btrfs_write_file_sector(struct btrfs_trans_handle *handle,
 		return (EINVAL);
 	nodatasum = (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0;
 	end = file_offset + sectorsize;
-	csum = nodatasum ? 0 : crc32c(0, data, sectorsize);
+	csum = nodatasum ? 0 : btrfs_crc32c(data, sectorsize);
 
 	mtx_enter(&trans->bt_lock);
 	ordered = btrfs_find_ordered_sector(trans, node, file_offset);
