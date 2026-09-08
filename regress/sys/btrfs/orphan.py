@@ -61,7 +61,9 @@ def inject(image, treeid, objectid):
 
 def reject(device, mountpoint):
     class Args(ctypes.Structure):
-        _fields_ = [("fspec", ctypes.c_char_p), ("subvolid", ctypes.c_uint64)]
+        _fields_ = [("fspec", ctypes.c_char_p), ("subvolid", ctypes.c_uint64),
+                    ("devices", ctypes.POINTER(ctypes.c_char_p)),
+                    ("ndevices", ctypes.c_uint32)]
 
     libc = ctypes.CDLL(None, use_errno=True)
     libc.mount.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,

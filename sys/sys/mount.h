@@ -217,9 +217,12 @@ struct ntfs_args {
 #define	NTFS_MFLAG_ALLNAMES     0x00000002
 
 /* Arguments to mount Btrfs file systems. */
+#define BTRFS_MAX_DEVICES	64
 struct btrfs_args {
 	char	*fspec;			/* block special device to mount */
 	uint64_t subvolid;		/* zero selects the top-level tree */
+	char	**devices;		/* additional member device paths */
+	uint32_t ndevices;		/* excludes fspec */
 };
 
 /* Arguments to mount UDF file systems */

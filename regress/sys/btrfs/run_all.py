@@ -400,6 +400,14 @@ class Runner:
                     self.note("DDB stop IPI; continuing without counting a hit")
                     proceed()
                     continue
+                # A delayed stop IPI during breakpoint step-over can expose
+                # the single-step trap immediately after amd64's ENDBR64.
+                # The function-entry breakpoint was already counted.
+                if re.search(rb"Stopped at\s+" + target.encode() +
+                             rb"\+0x4:", answer):
+                    self.note("DDB entry step-over; continuing without a hit")
+                    proceed()
+                    continue
                 raise Failure(f"unexpected debugger stop: {target}")
             raise Failure(f"breakpoint timeout: {target}")
 
