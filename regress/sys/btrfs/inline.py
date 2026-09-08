@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from namespace import child_checks, expect_error, wait
+from read_range import write_fault
 
 
 CASES = {
@@ -18,6 +19,11 @@ CASES = {
     "sparse": (2048, [(16387, b"sparse"), (3, b"prefix")]),
     "sector": (100, [(4096, b"S" * 4096)]),
     "replace": (2048, [(0, b"R" * 9000)]),
+}
+
+COPY_FAULTS = {
+    "fault-inline": (7, b"copied prefix"),
+    "fault-sparse": (16387, b"copied sparse prefix"),
 }
 
 
@@ -40,6 +46,8 @@ def seed():
         Path(name).write_bytes(original(size))
     os.link("sparse", "alias")
     Path("capacity-inline").write_bytes(original(100))
+    for name in COPY_FAULTS:
+        Path(name).write_bytes(original(100))
 
 
 GROWTH = ((511, 512), (2048, 4096), (2048, 16387), (2047, 8193))
@@ -85,6 +93,8 @@ def verify_seed():
         assert Path(name).read_bytes() == original(size), name
     assert Path("alias").read_bytes() == original(2048)
     assert Path("capacity-inline").read_bytes() == original(100)
+    for name in COPY_FAULTS:
+        assert Path(name).read_bytes() == original(100)
 
 
 def write_case(name, size, writes):
@@ -115,6 +125,36 @@ def write():
                 for name, (size, writes) in CASES.items()]
     for pid in children:
         wait(pid)
+    for name, (offset, payload) in COPY_FAULTS.items():
+        fd = os.open(name, os.O_RDWR)
+        try:
+            before = os.fstat(fd)
+            # Cancelling a distant write must release both allocations and
+            # leave the inline prefix, size and attributes untouched.
+            for _ in range(3):
+                write_fault(fd, offset, b"", 65536)
+            after = os.fstat(fd)
+            assert (after.st_size, after.st_blocks, after.st_mtime_ns,
+                    after.st_ctime_ns) == (
+                        before.st_size, before.st_blocks, before.st_mtime_ns,
+                        before.st_ctime_ns)
+            assert os.pread(fd, 65536, 0) == original(100)
+            os.fsync(fd)
+            write_fault(fd, offset, payload, 65536)
+            data = expected(100, [(offset, payload)])
+            assert os.pread(fd, 65536, 0) == data
+            # Cancellation also leaves an existing pending payload intact.
+            before = os.fstat(fd)
+            write_fault(fd, offset, b"", 65536)
+            after = os.fstat(fd)
+            assert (after.st_size, after.st_blocks, after.st_mtime_ns,
+                    after.st_ctime_ns) == (
+                        before.st_size, before.st_blocks, before.st_mtime_ns,
+                        before.st_ctime_ns)
+            assert os.pread(fd, 65536, 0) == data
+            os.fsync(fd)
+        finally:
+            os.close(fd)
     verify()
 
 
@@ -130,6 +170,8 @@ def verify(restored=False):
         assert os.stat("alias").st_ino == os.stat("sparse").st_ino
         assert os.stat("sparse").st_nlink == 2
     assert Path("capacity-inline").read_bytes() == original(100)
+    for name, (offset, payload) in COPY_FAULTS.items():
+        assert Path(name).read_bytes() == expected(100, [(offset, payload)])
 
 
 def capacity(name="capacity-inline", size=100):
