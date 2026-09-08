@@ -49,14 +49,14 @@
 
 static int	btrfs_validate_super(const struct btrfs_super_block *,
 		    uint64_t);
-static int	btrfs_parse_system_chunks(const struct btrfs_super_block *,
+static int	btrfs_parse_system_chunks(const struct btrfs_fs *,
 		    struct btrfs_chunk_map **, unsigned int *);
 static int	btrfs_load_chunk_tree(struct btrfs_root *,
 		    const struct btrfs_io_map *,
 		    struct btrfs_chunk_map **, unsigned int *);
 static int	btrfs_load_root_location(struct btrfs_root *, uint64_t,
 		    struct btrfs_root_location *);
-static int	btrfs_validate_dev_item(const struct btrfs_super_block *,
+static int	btrfs_validate_dev_item(struct btrfs_fs *,
 		    const struct btrfs_key *, const struct btrfs_dev_item *,
 		    size_t);
 static int	btrfs_snapshot_root(struct btrfs_transaction *, uint64_t,
@@ -67,7 +67,7 @@ static int	btrfs_ispow2(uint32_t);
 int
 btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
     struct btrfs_super_candidate *candidates,
-    struct btrfs_super_mirror *mirrors)
+    struct btrfs_super_mirror *mirrors, uint64_t *sizep)
 {
 	const struct btrfs_super_block *sb;
 	struct buf *bp;
@@ -84,6 +84,7 @@ btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
 		if (partition_size <= UINT64_MAX / pi.disklab->d_secsize)
 			media_size = partition_size * pi.disklab->d_secsize;
 	}
+	*sizep = media_size;
 	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
 		mirrors[i].bsm_bytenr = superblock_addrs[i];
 		if (superblock_addrs[i] > media_size ||
@@ -133,10 +134,6 @@ btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
 			if (btrfs_csum_size(sb) == 0) {
 				printf("btrfs: unsupported checksum type %u\n",
 				    letoh16(sb->csum_type));
-			} else if (letoh64(sb->num_devices) != 1) {
-				printf("btrfs: unsupported device count %llu\n",
-				    (unsigned long long)
-				    letoh64(sb->num_devices));
 			} else {
 				printf("btrfs: unsupported superblock format\n");
 			}
@@ -144,6 +141,180 @@ btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
 		}
 	}
 	return (nvalid == 0 ? result : 0);
+}
+
+struct btrfs_device *
+btrfs_find_device(const struct btrfs_fs *bmp, uint64_t devid)
+{
+	unsigned int i;
+
+	for (i = 0; i < bmp->bm_ndevices; i++)
+		if (letoh64(bmp->bm_devices[i].bd_item.devid) == devid)
+			return (&bmp->bm_devices[i]);
+	return (NULL);
+}
+
+/*
+ * Open every member before reading trees. A successful pre-super barrier
+ * covers all members, so the newest usable super on any member publishes a
+ * complete transaction even if other members still have older supers.
+ * Never mount an older tree writable when a newer valid super exists.
+ */
+int
+btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
+    struct btrfs_bootstrap *bootstrap)
+{
+	struct btrfs_super_candidate *candidates, *candidate;
+	struct btrfs_super_mirror *mirror;
+	struct btrfs_device *device;
+	const struct btrfs_super_block *anchor, *sb;
+	unsigned int count = bmp->bm_ndevices * BTRFS_SUPER_MIRROR_MAX;
+	unsigned int d, i, j, first, newest, best, selected;
+	uint64_t generation, selected_generation;
+	int error, last_error = EINVAL;
+
+	candidates = mallocarray(count, sizeof(*candidates), M_BTRFS,
+	    M_WAITOK | M_ZERO);
+	for (d = 0; d < bmp->bm_ndevices; d++) {
+		device = &bmp->bm_devices[d];
+		candidate = candidates + d * BTRFS_SUPER_MIRROR_MAX;
+		error = btrfs_read_super_mirrors(device->bd_devvp, p,
+		    candidate, device->bd_mirrors, &device->bd_media_size);
+		if (error != 0)
+			goto out;
+		for (first = 0; first < BTRFS_SUPER_MIRROR_MAX; first++)
+			if (device->bd_mirrors[first].bsm_flags &
+			    BTRFS_SUPER_MIRROR_VALID)
+				break;
+		anchor = &candidate[first].bsc_super;
+		newest = first;
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			mirror = &device->bd_mirrors[i];
+			if (!(mirror->bsm_flags & BTRFS_SUPER_MIRROR_VALID))
+				continue;
+			if (!btrfs_super_same_filesystem(anchor,
+			    &candidate[i].bsc_super)) {
+				mirror->bsm_flags |= BTRFS_SUPER_MIRROR_FOREIGN;
+				continue;
+			}
+			if (mirror->bsm_generation >
+			    device->bd_mirrors[newest].bsm_generation)
+				newest = i;
+		}
+		sb = &candidate[newest].bsc_super;
+		device->bd_item = sb->dev_item;
+		if (d != 0 && memcmp(device->bd_item.fsid,
+		    bmp->bm_devices[0].bd_item.fsid, BTRFS_UUID_SIZE) != 0) {
+			error = EINVAL;
+			goto out;
+		}
+		for (j = 0; j < d; j++) {
+			if (device->bd_item.devid ==
+			    bmp->bm_devices[j].bd_item.devid ||
+			    memcmp(device->bd_item.uuid,
+			    bmp->bm_devices[j].bd_item.uuid,
+			    BTRFS_UUID_SIZE) == 0) {
+				error = EINVAL;
+				goto out;
+			}
+		}
+	}
+	for (;;) {
+		best = count;
+		generation = 0;
+		for (i = 0; i < count; i++) {
+			mirror = &bmp->bm_devices[i / BTRFS_SUPER_MIRROR_MAX].
+			    bd_mirrors[i % BTRFS_SUPER_MIRROR_MAX];
+			if ((mirror->bsm_flags & (BTRFS_SUPER_MIRROR_VALID |
+			    BTRFS_SUPER_MIRROR_FOREIGN)) !=
+			    BTRFS_SUPER_MIRROR_VALID || candidates[i].bsc_tried)
+				continue;
+			if (best == count ||
+			    mirror->bsm_generation > generation) {
+				best = i;
+				generation = mirror->bsm_generation;
+			}
+		}
+		if (best == count) {
+			error = last_error;
+			goto out;
+		}
+		candidates[best].bsc_tried = 1;
+		sb = &candidates[best].bsc_super;
+		if (letoh64(sb->num_devices) != bmp->bm_ndevices) {
+			printf("btrfs: all %llu members must be supplied "
+			    "(got %u)\n", (unsigned long long)
+			    letoh64(sb->num_devices), bmp->bm_ndevices);
+			error = EINVAL;
+			goto out;
+		}
+		error = btrfs_check_super_policy(sb, bmp->bm_readonly);
+		if (error != 0)
+			goto out;
+		bmp->bm_super = *sb;
+		for (d = 0; d < bmp->bm_ndevices; d++)
+			bmp->bm_devices[d].bd_in_chunk_tree = 0;
+		error = btrfs_bootstrap_super(bmp, bootstrap);
+		if (error == 0) {
+			selected = best;
+			break;
+		}
+		last_error = error;
+		if (error == EOPNOTSUPP || error == ENOMEM)
+			goto out;
+	}
+	selected_generation = letoh64(bmp->bm_super.generation);
+	for (i = 0; i < count; i++) {
+		device = &bmp->bm_devices[i / BTRFS_SUPER_MIRROR_MAX];
+		mirror = &device->bd_mirrors[i % BTRFS_SUPER_MIRROR_MAX];
+		if ((mirror->bsm_flags & (BTRFS_SUPER_MIRROR_VALID |
+		    BTRFS_SUPER_MIRROR_FOREIGN)) != BTRFS_SUPER_MIRROR_VALID)
+			continue;
+		sb = &candidates[i].bsc_super;
+		if (sb->sectorsize != bmp->bm_super.sectorsize ||
+		    sb->nodesize != bmp->bm_super.nodesize ||
+		    sb->csum_type != bmp->bm_super.csum_type) {
+			error = EINVAL;
+			goto out;
+		}
+		if (mirror->bsm_generation > selected_generation &&
+		    !bmp->bm_readonly) {
+			error = EROFS;
+			goto out;
+		}
+		if (mirror->bsm_generation < selected_generation)
+			mirror->bsm_flags |= BTRFS_SUPER_MIRROR_STALE;
+		if (mirror->bsm_generation == selected_generation &&
+		    (sb->root != bmp->bm_super.root ||
+		    sb->root_level != bmp->bm_super.root_level ||
+		    sb->chunk_root != bmp->bm_super.chunk_root ||
+		    sb->chunk_root_generation !=
+		    bmp->bm_super.chunk_root_generation ||
+		    sb->chunk_root_level != bmp->bm_super.chunk_root_level ||
+		    sb->total_bytes != bmp->bm_super.total_bytes ||
+		    sb->bytes_used != bmp->bm_super.bytes_used ||
+		    sb->num_devices != bmp->bm_super.num_devices ||
+		    sb->incompat_flags != bmp->bm_super.incompat_flags ||
+		    sb->compat_ro_flags != bmp->bm_super.compat_ro_flags ||
+		    sb->log_root != bmp->bm_super.log_root ||
+		    sb->log_root_level != bmp->bm_super.log_root_level ||
+		    sb->sys_chunk_array_size !=
+		    bmp->bm_super.sys_chunk_array_size ||
+		    memcmp(sb->sys_chunk_array, bmp->bm_super.sys_chunk_array,
+		    letoh32(sb->sys_chunk_array_size)) != 0 ||
+		    sb->dev_item.total_bytes != device->bd_item.total_bytes ||
+		    sb->dev_item.bytes_used != device->bd_item.bytes_used)) {
+			error = EINVAL;
+			goto out;
+		}
+		if (i == selected)
+			mirror->bsm_flags |= BTRFS_SUPER_MIRROR_CONSISTENT |
+			    BTRFS_SUPER_MIRROR_SELECTED;
+	}
+	error = 0;
+out:
+	free(candidates, M_BTRFS, count * sizeof(*candidates));
+	return (error);
 }
 
 int
@@ -215,10 +386,9 @@ btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 }
 
 int
-btrfs_bootstrap_super(struct vnode *devvp,
-    const struct btrfs_super_block *sb,
-    struct btrfs_bootstrap *bootstrap)
+btrfs_bootstrap_super(struct btrfs_fs *bmp, struct btrfs_bootstrap *bootstrap)
 {
+	const struct btrfs_super_block *sb = &bmp->bm_super;
 	struct btrfs_inode inode;
 	struct btrfs_root_item fs_root_item;
 	struct btrfs_chunk_map *chunks = NULL;
@@ -244,7 +414,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	nodesize = letoh32(sb->nodesize);
 
 	chunk_root = letoh64(sb->chunk_root);
-	error = btrfs_parse_system_chunks(sb, &system_chunks,
+	error = btrfs_parse_system_chunks(bmp, &system_chunks,
 	    &nsystem_chunks);
 	if (error != 0)
 		goto out;
@@ -254,7 +424,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 		goto out;
 
 	memset(&chunk_tree, 0, sizeof(chunk_tree));
-	chunk_tree.br_devvp = devvp;
+	chunk_tree.br_bootstrap_fs = bmp;
 	chunk_tree.br_super = sb;
 	chunk_tree.br_bootstrap_chunks = system_chunks;
 	chunk_tree.br_bootstrap_nchunks = nsystem_chunks;
@@ -279,7 +449,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 
 	root = letoh64(sb->root);
 	memset(&root_tree, 0, sizeof(root_tree));
-	root_tree.br_devvp = devvp;
+	root_tree.br_bootstrap_fs = bmp;
 	root_tree.br_super = sb;
 	root_tree.br_bootstrap_chunks = chunks;
 	root_tree.br_bootstrap_nchunks = nchunks;
@@ -320,7 +490,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	}
 
 	memset(&csum_tree, 0, sizeof(csum_tree));
-	csum_tree.br_devvp = devvp;
+	csum_tree.br_bootstrap_fs = bmp;
 	csum_tree.br_super = sb;
 	csum_tree.br_bootstrap_chunks = chunks;
 	csum_tree.br_bootstrap_nchunks = nchunks;
@@ -338,7 +508,7 @@ btrfs_bootstrap_super(struct vnode *devvp,
 	eb = NULL;
 
 	memset(&fs_tree, 0, sizeof(fs_tree));
-	fs_tree.br_devvp = devvp;
+	fs_tree.br_bootstrap_fs = bmp;
 	fs_tree.br_super = sb;
 	fs_tree.br_bootstrap_chunks = chunks;
 	fs_tree.br_bootstrap_nchunks = nchunks;
@@ -425,7 +595,7 @@ btrfs_validate_backup_roots(const struct btrfs_super_block *sb)
 		    backup->fs_root_level >= BTRFS_MAX_LEVEL ||
 		    backup->csum_root_level >= BTRFS_MAX_LEVEL ||
 		    total_bytes == 0 || bytes_used > total_bytes ||
-		    num_devices != 1)
+		    num_devices == 0)
 			continue;
 		valid |= 1U << i;
 	}
@@ -572,14 +742,15 @@ btrfs_build_super(struct btrfs_transaction *trans,
  * outside that prefix is not a superblock mirror of this filesystem.
  */
 int
-btrfs_super_mirror_writable(const struct btrfs_fs *bmp, unsigned int index)
+btrfs_super_mirror_writable(const struct btrfs_device *device,
+    unsigned int index)
 {
 	const struct btrfs_super_mirror *mirror;
 	uint64_t size;
 
 	KASSERT(index < BTRFS_SUPER_MIRROR_MAX);
-	mirror = &bmp->bm_super_mirrors[index];
-	size = letoh64(bmp->bm_super.dev_item.total_bytes);
+	mirror = &device->bd_mirrors[index];
+	size = letoh64(device->bd_item.total_bytes);
 	return ((mirror->bsm_flags & BTRFS_SUPER_MIRROR_READABLE) != 0 &&
 	    mirror->bsm_bytenr <= size &&
 	    sizeof(struct btrfs_super_block) <= size - mirror->bsm_bytenr);
@@ -590,42 +761,46 @@ btrfs_write_super_mirrors(struct btrfs_fs *bmp,
     const struct btrfs_super_block *template)
 {
 	struct btrfs_super_block *sb;
+	struct btrfs_device *device;
 	struct btrfs_super_mirror *mirror;
 	struct buf *bp;
-	unsigned int i, nwritten = 0;
+	unsigned int d, i, nwritten;
 	int error, first_error = 0;
 
 	if (bmp == NULL || template == NULL)
 		return (EINVAL);
 	sb = malloc(sizeof(*sb), M_BTRFS, M_WAITOK);
-	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
-		mirror = &bmp->bm_super_mirrors[i];
-		if (!btrfs_super_mirror_writable(bmp, i))
-			continue;
-		memcpy(sb, template, sizeof(*sb));
-		sb->bytenr = htole64(mirror->bsm_bytenr);
-		btrfs_set_super_csum(sb);
-		error = btrfs_validate_super(sb, mirror->bsm_bytenr);
-		if (error != 0) {
+	for (d = 0; d < bmp->bm_ndevices; d++) {
+		device = &bmp->bm_devices[d];
+		nwritten = 0;
+		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			mirror = &device->bd_mirrors[i];
+			if (!btrfs_super_mirror_writable(device, i))
+				continue;
+			memcpy(sb, template, sizeof(*sb));
+			btrfs_chunk_device_item(bmp->bm_transaction, device,
+			    &sb->dev_item);
+			sb->bytenr = htole64(mirror->bsm_bytenr);
+			btrfs_set_super_csum(sb);
+			error = btrfs_validate_super(sb, mirror->bsm_bytenr);
+			if (error == 0) {
+				bp = getblk(device->bd_devvp,
+				    mirror->bsm_bytenr / DEV_BSIZE,
+				    sizeof(*sb), 0, INFSLP);
+				memcpy(bp->b_data, sb, sizeof(*sb));
+				SET(bp->b_flags, B_NOCACHE);
+				error = bwrite(bp);
+			}
 			mirror->bsm_error = error;
-			if (first_error == 0)
+			if (error == 0)
+				nwritten++;
+			else if (first_error == 0)
 				first_error = error;
-			continue;
 		}
-		bp = getblk(bmp->bm_devvp,
-		    mirror->bsm_bytenr / DEV_BSIZE, sizeof(*sb), 0, INFSLP);
-		memcpy(bp->b_data, sb, sizeof(*sb));
-		SET(bp->b_flags, B_NOCACHE);
-		error = bwrite(bp);
-		mirror->bsm_error = error;
-		if (error == 0)
-			nwritten++;
-		else if (first_error == 0)
-			first_error = error;
+		if (nwritten == 0 && first_error == 0)
+			first_error = ENXIO;
 	}
 	free(sb, M_BTRFS, sizeof(*sb));
-	if (nwritten == 0 && first_error == 0)
-		return (ENXIO);
 	return (first_error);
 }
 
@@ -669,9 +844,10 @@ btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 	if (total_bytes < bytenr + BTRFS_SUPER_SIZE ||
 	    bytes_used > total_bytes)
 		return (EINVAL);
-	if (letoh64(sb->num_devices) != 1)
-		return (EOPNOTSUPP);
-	if (letoh64(sb->dev_item.total_bytes) > total_bytes ||
+	if (letoh64(sb->num_devices) == 0 ||
+	    letoh64(sb->dev_item.devid) == 0 ||
+	    letoh64(sb->dev_item.total_bytes) < bytenr + BTRFS_SUPER_SIZE ||
+	    letoh64(sb->dev_item.total_bytes) > total_bytes ||
 	    letoh64(sb->dev_item.bytes_used) >
 	    letoh64(sb->dev_item.total_bytes) ||
 	    letoh32(sb->dev_item.sector_size) != sectorsize)
@@ -697,9 +873,10 @@ btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 }
 
 static int
-btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
+btrfs_parse_system_chunks(const struct btrfs_fs *bmp,
     struct btrfs_chunk_map **chunksp, unsigned int *nchunksp)
 {
+	const struct btrfs_super_block *sb = &bmp->bm_super;
 	const struct btrfs_key *key;
 	const struct btrfs_chunk *chunk;
 	const uint8_t *p;
@@ -731,7 +908,7 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 		entry_size = sizeof(*key) + chunk_base +
 		    nstripes * sizeof(struct btrfs_stripe);
 
-		error = btrfs_decode_chunk_item(sb, key, chunk,
+		error = btrfs_decode_chunk_item(bmp, key, chunk,
 		    entry_size - sizeof(*key), &chunk_map);
 		if (error != 0)
 			return (error);
@@ -761,7 +938,7 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 		nstripes = letoh16(chunk->num_stripes);
 		entry_size = sizeof(*key) + chunk_base +
 		    nstripes * sizeof(struct btrfs_stripe);
-		error = btrfs_decode_chunk_item(sb, key, chunk,
+		error = btrfs_decode_chunk_item(bmp, key, chunk,
 		    entry_size - sizeof(*key), &chunks[nchunks]);
 		if (error != 0) {
 			free(chunks, M_BTRFS, total * sizeof(*chunks));
@@ -778,12 +955,14 @@ btrfs_parse_system_chunks(const struct btrfs_super_block *sb,
 }
 
 int
-btrfs_decode_chunk_item(const struct btrfs_super_block *sb,
+btrfs_decode_chunk_item(const struct btrfs_fs *bmp,
     const struct btrfs_key *key, const struct btrfs_chunk *chunk,
     size_t item_size, struct btrfs_chunk_map *map)
 {
+	const struct btrfs_super_block *sb = &bmp->bm_super;
+	struct btrfs_device *device;
 	const struct btrfs_stripe *stripe;
-	uint64_t devid, dev_bytes, logical, profile, stripe_offset, type;
+	uint64_t dev_bytes, logical, profile, stripe_offset, type;
 	uint64_t chunk_len, stripe_len;
 	uint32_t sectorsize;
 	uint16_t nstripes;
@@ -805,8 +984,6 @@ btrfs_decode_chunk_item(const struct btrfs_super_block *sb,
 		return (EINVAL);
 
 	memset(map, 0, sizeof(*map));
-	devid = letoh64(sb->dev_item.devid);
-	dev_bytes = letoh64(sb->dev_item.total_bytes);
 	sectorsize = letoh32(sb->sectorsize);
 	logical = letoh64(key->offset);
 	chunk_len = letoh64(chunk->length);
@@ -855,18 +1032,29 @@ btrfs_decode_chunk_item(const struct btrfs_super_block *sb,
 	for (i = 0; i < nstripes; i++) {
 		stripe = &chunk->stripe[i];
 		stripe_offset = letoh64(stripe->offset);
-		if (letoh64(stripe->devid) != devid ||
-		    memcmp(stripe->dev_uuid, sb->dev_item.uuid,
+		device = btrfs_find_device(bmp, letoh64(stripe->devid));
+		if (device == NULL)
+			return (ENXIO);
+		dev_bytes = device->bd_media_size;
+		if (device->bd_in_chunk_tree)
+			dev_bytes = letoh64(device->bd_item.total_bytes);
+		if (memcmp(stripe->dev_uuid, device->bd_item.uuid,
 		    BTRFS_UUID_SIZE) != 0 ||
 		    (stripe_offset & (sectorsize - 1)) != 0 ||
 		    stripe_offset > dev_bytes ||
 		    chunk_len > dev_bytes - stripe_offset)
 			return (EINVAL);
 		map->physical[i] = stripe_offset;
+		map->device[i] = device;
 		map->devid[i] = letoh64(stripe->devid);
 		memcpy(map->dev_uuid[i], stripe->dev_uuid,
 		    sizeof(map->dev_uuid[i]));
 	}
+	if (profile == BTRFS_BLOCK_GROUP_DUP &&
+	    (map->device[0] != map->device[1] ||
+	    (map->physical[0] < map->physical[1] + chunk_len &&
+	    map->physical[1] < map->physical[0] + chunk_len)))
+		return (EINVAL);
 
 	return (0);
 }
@@ -876,6 +1064,7 @@ btrfs_load_chunk_tree(struct btrfs_root *root,
     const struct btrfs_io_map *bootstrap,
     struct btrfs_chunk_map **chunksp, unsigned int *nchunksp)
 {
+	struct btrfs_fs *bmp = root->br_bootstrap_fs;
 	const struct btrfs_key *key;
 	const struct btrfs_super_block *sb = root->br_super;
 	const uint8_t *item_data;
@@ -883,9 +1072,9 @@ btrfs_load_chunk_tree(struct btrfs_root *root,
 	struct btrfs_key target;
 	struct btrfs_chunk_map *chunks;
 	struct btrfs_io_map root_map;
-	uint64_t previous_end = 0;
+	uint64_t previous_end = 0, total_bytes = 0, bytes;
 	uint32_t size;
-	unsigned int chunk_index = 0, device_items = 0, root_maps = 0;
+	unsigned int chunk_index = 0, device_items = 0, root_maps = 0, i;
 	int error;
 
 	*chunksp = NULL;
@@ -898,7 +1087,7 @@ btrfs_load_chunk_tree(struct btrfs_root *root,
 			break;
 		switch (key->type) {
 		case BTRFS_DEV_ITEM_KEY:
-			error = btrfs_validate_dev_item(sb, key,
+			error = btrfs_validate_dev_item(bmp, key,
 			    (const struct btrfs_dev_item *)item_data, size);
 			if (error != 0)
 				goto count_out;
@@ -920,7 +1109,17 @@ count_out:
 	if (error != 0)
 		return (error);
 
-	if (device_items != 1 || *nchunksp == 0)
+	if (device_items != bmp->bm_ndevices || *nchunksp == 0)
+		return (EINVAL);
+	for (i = 0; i < bmp->bm_ndevices; i++) {
+		if (!bmp->bm_devices[i].bd_in_chunk_tree)
+			return (EINVAL);
+		bytes = letoh64(bmp->bm_devices[i].bd_item.total_bytes);
+		if (bytes > UINT64_MAX - total_bytes)
+			return (EINVAL);
+		total_bytes += bytes;
+	}
+	if (total_bytes != letoh64(sb->total_bytes))
 		return (EINVAL);
 	chunks = mallocarray(*nchunksp, sizeof(*chunks), M_BTRFS,
 	    M_WAITOK | M_ZERO);
@@ -935,7 +1134,7 @@ count_out:
 			continue;
 		}
 
-		error = btrfs_decode_chunk_item(sb, key,
+		error = btrfs_decode_chunk_item(bmp, key,
 		    (const struct btrfs_chunk *)item_data, size,
 		    &chunks[chunk_index]);
 		if (error != 0)
@@ -954,6 +1153,8 @@ count_out:
 			if ((chunks[chunk_index].type &
 			    BTRFS_BLOCK_GROUP_SYSTEM) == 0 ||
 			    root_map.nmirrors != bootstrap->nmirrors ||
+			    memcmp(root_map.device, bootstrap->device,
+			    sizeof(root_map.device)) != 0 ||
 			    memcmp(root_map.physical, bootstrap->physical,
 			    root_map.nmirrors * sizeof(root_map.physical[0])) != 0) {
 				error = EINVAL;
@@ -1064,10 +1265,12 @@ out:
 }
 
 static int
-btrfs_validate_dev_item(const struct btrfs_super_block *sb,
+btrfs_validate_dev_item(struct btrfs_fs *bmp,
     const struct btrfs_key *key, const struct btrfs_dev_item *dev_item,
     size_t item_size)
 {
+	const struct btrfs_super_block *sb = &bmp->bm_super;
+	struct btrfs_device *device;
 	uint64_t bytes_used, devid, total_bytes;
 
 	if (item_size != sizeof(*dev_item) ||
@@ -1076,18 +1279,26 @@ btrfs_validate_dev_item(const struct btrfs_super_block *sb,
 		return (EINVAL);
 
 	devid = letoh64(dev_item->devid);
+	device = btrfs_find_device(bmp, devid);
+	if (device == NULL || device->bd_in_chunk_tree)
+		return (EINVAL);
 	total_bytes = letoh64(dev_item->total_bytes);
 	bytes_used = letoh64(dev_item->bytes_used);
 	if (letoh64(key->offset) != devid ||
-	    devid != letoh64(sb->dev_item.devid) ||
-	    total_bytes != letoh64(sb->dev_item.total_bytes) ||
-	    bytes_used != letoh64(sb->dev_item.bytes_used) ||
+	    total_bytes < superblock_addrs[0] + BTRFS_SUPER_SIZE ||
+	    total_bytes > device->bd_media_size ||
 	    bytes_used > total_bytes ||
 	    letoh32(dev_item->sector_size) != letoh32(sb->sectorsize) ||
-	    memcmp(dev_item->uuid, sb->dev_item.uuid, BTRFS_UUID_SIZE) != 0 ||
+	    memcmp(dev_item->uuid, device->bd_item.uuid,
+	    BTRFS_UUID_SIZE) != 0 ||
 	    memcmp(dev_item->fsid, sb->fsid, BTRFS_UUID_SIZE) != 0)
 		return (EINVAL);
-
+	if (dev_item->devid == sb->dev_item.devid &&
+	    (dev_item->bytes_used != sb->dev_item.bytes_used ||
+	    dev_item->total_bytes != sb->dev_item.total_bytes))
+		return (EINVAL);
+	device->bd_item = *dev_item;
+	device->bd_in_chunk_tree = 1;
 	return (0);
 }
 

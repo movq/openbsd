@@ -1,6 +1,37 @@
 Host orchestration
 ------------------
 
+For existing multi-device SINGLE/DUP filesystems, multi_device.py is a
+separate targeted runner using both VMs. It REFORMATS scratch1.img through
+scratch2.img (or scratch4.img with --members 4), assumes these are /dev/sd1c
+through sd4c in OpenBSD and /dev/sdb through sde in Linux, and requires both
+VMs to have all btrfs filesystems unmounted at entry. Build and install the
+matching kernel, sys/mount.h and mount_btrfs first; the mount argument
+structure includes the additional member paths. For example:
+
+    python3 regress/sys/btrfs/multi_device.py
+    python3 regress/sys/btrfs/multi_device.py --metadata single --nodesize 4096
+    python3 regress/sys/btrfs/multi_device.py --members 4 --data dup --csum xxhash
+    python3 regress/sys/btrfs/multi_device.py --crash
+    python3 regress/sys/btrfs/multi_device.py --reclaim
+
+The runner uses 256 MiB recorded member sizes to force allocation onto every
+member. It checks imported data, compressed files and snapshot sharing;
+concurrent writable subvolume views entered through different members;
+missing, duplicate, foreign and busy devices and failed-mount cleanup;
+recovery through an old member after restoring only that member's older
+superblocks; and DUP data and bootstrap-metadata fallback. Linux independently
+checks checksums, device usage, physical bounds, superblock generations and
+all allocated DUP copies. --crash additionally uses DDB to reset before any
+superblock write and between member superblock writes, then checks recovery
+through another member. It does not run the single-device fixture matrix.
+--reclaim runs a separate two-member capacity test: fill physical space,
+empty data groups, force their stripes to be reused for metadata, then
+return metadata stripes to data. It verifies reassignment by device ID
+as well as physical offset, and reads the result through the other member.
+--results selects the log and fault-journal directory. A failure preserves
+the current VM and disk state for diagnosis; inspect mounts before retrying.
+
 For the basic FFS2 performance comparison and its standalone workload runner,
 see BENCHMARKS.md. It is separate from the correctness matrix below.
 

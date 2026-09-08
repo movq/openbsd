@@ -397,26 +397,36 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 static int
 btrfs_sync_device(struct btrfs_fs *bmp, struct proc *p)
 {
-	int error, flush_error, force = 1;
+	struct vnode *vp;
+	unsigned int i;
+	int error, flush_error, first_error = 0, force = 1;
 
-	vn_lock(bmp->bm_devvp, LK_EXCLUSIVE | LK_RETRY);
-	error = VOP_FSYNC(bmp->bm_devvp, FSCRED, MNT_WAIT, p);
-	flush_error = VOP_IOCTL(bmp->bm_devvp, DIOCCACHESYNC, &force,
-	    FWRITE, FSCRED, p);
-	VOP_UNLOCK(bmp->bm_devvp);
-	if (error == 0)
-		error = flush_error;
-	return (error);
+	/* Complete every member's barrier, including after a write error. */
+	for (i = 0; i < bmp->bm_ndevices; i++) {
+		vp = bmp->bm_devices[i].bd_devvp;
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+		error = VOP_FSYNC(vp, FSCRED, MNT_WAIT, p);
+		flush_error = VOP_IOCTL(vp, DIOCCACHESYNC, &force,
+		    FWRITE, FSCRED, p);
+		VOP_UNLOCK(vp);
+		if (error == 0)
+			error = flush_error;
+		if (first_error == 0)
+			first_error = error;
+	}
+	return (first_error);
 }
 
 /*
- * The highest valid superblock generation is the commit point. First submit
- * ordered data, insert its checksums, and wait for every required mirror.
+ * The highest valid superblock generation on any member is the commit point.
+ * First submit ordered data, insert its checksums, and wait for every
+ * required mirror.
  * Drain metadata accounting to a fixed point, finalize metadata headers and
  * checksums, then submit and wait for all metadata mirrors. Drain device
- * buffers and cache-sync before writing usable superblock mirrors within the
- * recorded device size. A second drain/cache-sync precedes in-memory
- * publication and release of pinned space. Every DUP copy is required.
+ * buffers and cache-sync every member before writing any superblock. Write
+ * device-specific superblock mirrors within each recorded member size.
+ * A second drain/cache-sync on every member precedes in-memory publication
+ * and release of pinned space. Every DUP copy is required.
  *
  * Once superblock writing is attempted, attempt the final barrier even if a
  * mirror failed. Ambiguous publication requires an error and read-only views.
@@ -428,7 +438,8 @@ btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
 	struct btrfs_super_block *super = NULL;
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_transaction *trans = NULL;
-	unsigned int i;
+	struct btrfs_super_mirror *mirror;
+	unsigned int d, i;
 	int end_error, error, finish_error, write_error;
 
 	if (bmp == NULL || p == NULL)
@@ -472,16 +483,19 @@ btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
 		memcpy(&bmp->bm_super, super, sizeof(bmp->bm_super));
 		bmp->bm_backup_roots_valid =
 		    btrfs_validate_backup_roots(&bmp->bm_super);
-		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
-			if (!btrfs_super_mirror_writable(bmp, i))
-				continue;
-			bmp->bm_super_mirrors[i].bsm_generation =
-			    trans->bt_generation;
-			bmp->bm_super_mirrors[i].bsm_flags |=
-			    BTRFS_SUPER_MIRROR_VALID |
-			    BTRFS_SUPER_MIRROR_CONSISTENT;
-			bmp->bm_super_mirrors[i].bsm_flags &=
-			    ~BTRFS_SUPER_MIRROR_STALE;
+		for (d = 0; d < bmp->bm_ndevices; d++) {
+			for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+				if (!btrfs_super_mirror_writable(
+				    &bmp->bm_devices[d], i))
+					continue;
+				mirror = &bmp->bm_devices[d].bd_mirrors[i];
+				mirror->bsm_generation = trans->bt_generation;
+				mirror->bsm_flags |= BTRFS_SUPER_MIRROR_VALID |
+				    BTRFS_SUPER_MIRROR_CONSISTENT;
+				mirror->bsm_flags &=
+				    ~(BTRFS_SUPER_MIRROR_STALE |
+				    BTRFS_SUPER_MIRROR_FOREIGN);
+			}
 		}
 	}
 	if (super != NULL)

@@ -195,7 +195,7 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
 
 #ifdef DIAGNOSTIC
 	if (bmp != NULL) {
-		KASSERT(root->br_devvp == bmp->bm_devvp);
+		KASSERT(root->br_bootstrap_fs == NULL);
 		KASSERT(root->br_super == &bmp->bm_super);
 		KASSERT(root->br_bootstrap_chunks == NULL);
 		KASSERT(root->br_bootstrap_nchunks == 0);

@@ -479,7 +479,7 @@ btrfs_iterate_chunk_items(struct btrfs_fs *bmp,
 			error = EINVAL;
 			break;
 		}
-		error = btrfs_decode_chunk_item(&bmp->bm_super, key,
+		error = btrfs_decode_chunk_item(bmp, key,
 		    (const struct btrfs_chunk *)data, size, &chunk);
 		if (error != 0)
 			break;
@@ -505,6 +505,7 @@ int
 btrfs_iterate_device_extents(struct btrfs_fs *bmp,
     btrfs_dev_extent_iter_fn callback, void *arg)
 {
+	struct btrfs_device *device = NULL, *previous = NULL;
 	const struct btrfs_dev_extent *item;
 	const struct btrfs_chunk_map *chunk;
 	const struct btrfs_key *key;
@@ -513,7 +514,7 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
 	uint8_t *seen = NULL;
-	uint64_t end, last_end = 0, used = 0;
+	uint64_t end, last_end = 0, *used;
 	uint32_t size;
 	unsigned int i, index, stripe;
 	int error;
@@ -522,6 +523,8 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 	if (error != 0)
 		return (error);
 	seen = mallocarray(bmp->bm_nchunks, sizeof(*seen), M_BTRFS,
+	    M_WAITOK | M_ZERO);
+	used = mallocarray(bmp->bm_ndevices, sizeof(*used), M_BTRFS,
 	    M_WAITOK | M_ZERO);
 	error = btrfs_first_item(root, &path);
 	while (error == 0) {
@@ -544,8 +547,11 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		record.bde_chunk_tree = letoh64(item->chunk_tree);
 		record.bde_chunk_objectid = letoh64(item->chunk_objectid);
 		record.bde_chunk_offset = letoh64(item->chunk_offset);
-		if (record.bde_devid !=
-		    letoh64(bmp->bm_super.dev_item.devid) ||
+		device = btrfs_find_device(bmp, record.bde_devid);
+		if (device != previous)
+			last_end = 0;
+		previous = device;
+		if (device == NULL ||
 		    record.bde_length == 0 ||
 		    record.bde_physical > UINT64_MAX - record.bde_length ||
 		    record.bde_physical < last_end ||
@@ -560,6 +566,10 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 			break;
 		}
 		end = record.bde_physical + record.bde_length;
+		if (end > letoh64(device->bd_item.total_bytes)) {
+			error = EINVAL;
+			break;
+		}
 		/* Linux may leave chunk_tree_uuid zero; verify actual ownership. */
 		error = btrfs_find_chunk(bmp, record.bde_chunk_offset,
 		    record.bde_length, &index);
@@ -584,11 +594,12 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		}
 		seen[index] |= 1U << stripe;
 		last_end = end;
-		if (used > UINT64_MAX - record.bde_length) {
+		if (used[device - bmp->bm_devices] >
+		    UINT64_MAX - record.bde_length) {
 			error = EINVAL;
 			break;
 		}
-		used += record.bde_length;
+		used[device - bmp->bm_devices] += record.bde_length;
 		if (callback != NULL) {
 			error = callback(&record, arg);
 			if (error != 0)
@@ -597,8 +608,11 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		error = btrfs_next_item(&path);
 	}
 	if (error == ENOENT) {
-		error = used == letoh64(bmp->bm_super.dev_item.bytes_used) ?
-		    0 : EINVAL;
+		error = 0;
+		for (i = 0; i < bmp->bm_ndevices; i++)
+			if (used[i] !=
+			    letoh64(bmp->bm_devices[i].bd_item.bytes_used))
+				error = EINVAL;
 		for (i = 0; i < bmp->bm_nchunks; i++) {
 			if (seen[i] != (1U << bmp->bm_chunks[i].nmirrors) - 1) {
 				error = EINVAL;
@@ -608,6 +622,7 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 	}
 	btrfs_release_path(&path);
 	free(seen, M_BTRFS, bmp->bm_nchunks * sizeof(*seen));
+	free(used, M_BTRFS, bmp->bm_ndevices * sizeof(*used));
 	return (error);
 }
 
