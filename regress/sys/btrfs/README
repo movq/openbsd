@@ -623,9 +623,13 @@ inline.py uses seed on the host to prepare a rootdir fixture, write in the VM,
 then verify after unmount/check/remount. It covers conversion of imported
 uncompressed inline files, partial overwrites, append, sector boundaries,
 sparse extension, cached reads, concurrent writers, hard links, and repeated
-COW after fsync. Its capacity phase fills existing data space on a small
-image and checks that a failed sparse inline conversion preserves data and
-attributes and leaves the mount writable. Unmount and check afterward.
+COW after fsync. Copy-fault cases cancel inline conversions before any bytes
+are copied, publish short copied prefixes, and cancel writes to existing
+pending payloads. They check data, size and attributes before sync and after
+remount, for both ordinary and distant writes. Its capacity phase fills existing
+data space on a small image and checks that a failed sparse inline conversion
+preserves data and attributes and leaves the mount writable. Unmount and check
+afterward.
 Import a fresh seed image with --compress zlib and use reject to check
 compressed-inline write rejection without attribute changes. Zlib reads are
 not implemented, so unmount, use btrfs restore on the host, and run verify-seed

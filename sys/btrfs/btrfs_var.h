@@ -820,14 +820,6 @@ int	btrfs_read_file_range(struct btrfs_node *, uint64_t, size_t, uint8_t *);
 int	btrfs_count_file_holes(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, uint64_t);
-#define BTRFS_WRITE_DEFER_INODE	0x01
-#define BTRFS_WRITE_NO_INLINE	0x02
-int	btrfs_write_file_sector(struct btrfs_trans_handle *,
-	    struct btrfs_node *, uint64_t, const void *, uint64_t, int);
-int	btrfs_file_write_length(struct btrfs_node *, uint64_t, uint32_t *);
-int	btrfs_write_file_range(struct btrfs_trans_handle *,
-	    struct btrfs_node *, uint64_t, const void *, uint32_t, uint64_t,
-	    uint32_t, uint64_t, int);
 int	btrfs_clone_file_extent(struct btrfs_trans_handle *,
 	    struct btrfs_node *, const struct btrfs_file_extent *,
 	    const struct btrfs_file_extent *, uint64_t, uint64_t, uint64_t);

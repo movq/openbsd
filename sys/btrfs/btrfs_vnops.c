@@ -1393,34 +1393,6 @@ btrfs_read(void *v)
 	return (error);
 }
 
-/*
- * The vnode and handle keep the in-memory inode stable until it is encoded.
- * Even a later copy/read failure must publish the successfully modified prefix
- * into this transaction before the handle lets commit proceed.
- */
-static int
-btrfs_end_write(struct btrfs_trans_handle *handle, struct btrfs_node *node)
-{
-	int error, end_error;
-
-	error = btrfs_write_inode(handle, node);
-	if (error != 0)
-		btrfs_trans_abort(handle, error);
-	end_error = btrfs_trans_end(handle);
-	return (error != 0 ? error : end_error);
-}
-
-static void
-btrfs_cancel_write_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
-    uint32_t length)
-{
-	int error;
-
-	error = btrfs_space_cancel_alloc(handle, bytenr, length);
-	if (error != 0)
-		btrfs_trans_abort(handle, error);
-}
-
 static int
 btrfs_write(void *v)
 {
@@ -1428,21 +1400,12 @@ btrfs_write(void *v)
 	struct vnode *vp = ap->a_vp;
 	struct btrfs_node *node = VTOBTRFS(vp);
 	struct btrfs_fs *bmp = node->bn_mount;
-	struct btrfs_inode saved;
-	struct btrfs_trans_handle *handle = NULL;
-	struct btrfs_trans_reservation reservation = { 0 };
-	struct btrfs_file_extent first;
-	struct btrfs_path path = { 0 };
-	struct btrfs_root *root;
+	struct btrfs_write_operation op;
 	struct uio *uio = ap->a_uio;
 	struct timespec now;
-	uint8_t *data = NULL;
-	uint64_t file_offset, file_size, holes, metadata_reserve, metadata_unit;
-	uint64_t data_reserve, planned_size, bytenr;
-	uint32_t sectorsize, length, allocated_length;
-	daddr_t block;
+	uint64_t oldsize;
 	off_t move_offset, unit_offset;
-	size_t move_resid, moved, offset, resid, size;
+	size_t move_resid, moved, resid;
 	ssize_t overrun;
 	int end_error, error = 0, extended = 0, move_error, wrote = 0;
 
@@ -1469,116 +1432,23 @@ btrfs_write(void *v)
 	    (uint64_t)uio->uio_offset > LLONG_MAX ||
 	    uio->uio_resid > LLONG_MAX - (uint64_t)uio->uio_offset)
 		return (EFBIG);
-	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	reservation.btr_data = sectorsize;
-	reservation.btr_metadata =
-	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
-	    BTRFS_VOP_METADATA_BLOCKS;
-	metadata_unit = reservation.btr_metadata;
-	/*
-	 * A sparse write to an inline file also materializes sector zero.
-	 * Reserve both replacements before either becomes visible.
-	 */
-	if ((uint64_t)uio->uio_offset >= sectorsize) {
-		error = btrfs_get_root(bmp, node->bn_treeid, &root);
-		if (error == 0)
-			error = btrfs_find_file_extent(bmp, root, &path,
-			    node->bn_ino, 0, node->bn_inode.bi_size, &first);
-		btrfs_release_path(&path);
-		if (error != 0)
-			return (error);
-		if (first.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
-			reservation.btr_data *= 2;
-			reservation.btr_metadata *= 2;
-		}
-	}
-	metadata_reserve = reservation.btr_metadata;
-	data_reserve = reservation.btr_data;
 	error = vn_fsizechk(vp, uio, ap->a_ioflag, &overrun);
 	if (error != 0)
 		return (error);
 	unit_offset = uio->uio_offset;
 	resid = uio->uio_resid;
 
-	data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
 	while (uio->uio_resid != 0) {
-		block = (uint64_t)uio->uio_offset / sectorsize;
-		offset = (uint64_t)uio->uio_offset & (sectorsize - 1);
-		file_offset = (uint64_t)block * sectorsize;
-		length = roundup(MIN(MAXBSIZE,
-		    offset + uio->uio_resid), sectorsize);
-		error = btrfs_file_write_length(node, file_offset, &length);
+		oldsize = node->bn_inode.bi_size;
+		error = btrfs_write_prepare(&op, node, uio->uio_offset,
+		    uio->uio_resid);
 		if (error != 0)
 			break;
-		/*
-		 * One old mapping, at most two retained pieces, one new mapping,
-		 * an inode, a checksum run and their delayed references. Keep
-		 * the existing worst-case single-mapping tree budget, independent
-		 * of payload sector count. Inline conversion and holes are extra.
-		 * Allocate before copying so fragmented space can shrink the
-		 * operation without consuming the caller's uio.
-		 */
-		for (;;) {
-			planned_size = MAX(node->bn_inode.bi_size,
-			    file_offset + MIN(length, offset + uio->uio_resid));
-			error = btrfs_count_file_holes(node, planned_size, &holes);
-			if (error != 0)
-				break;
-			if (holes > (UINT64_MAX - metadata_reserve) /
-			    metadata_unit) {
-				error = EOVERFLOW;
-				break;
-			}
-			reservation.btr_metadata = metadata_reserve +
-			    holes * metadata_unit;
-			reservation.btr_data = length + data_reserve - sectorsize;
-			error = btrfs_trans_join(bmp, &reservation, &handle);
-			if (error == 0) {
-				error = btrfs_space_alloc(handle,
-				    BTRFS_BLOCK_GROUP_DATA, length, sectorsize,
-				    &bytenr);
-				if (error != 0) {
-					end_error = btrfs_trans_end(handle);
-					handle = NULL;
-					if (end_error != 0)
-						error = end_error;
-				}
-			}
-			if (error != ENOSPC || length == sectorsize)
-				break;
-			length = roundup(length / 2, sectorsize);
-		}
-		if (error != 0)
-			break;
-		allocated_length = length;
-		size = MIN((size_t)(length - offset), uio->uio_resid);
-		memset(data, 0, length);
-		if (file_offset < node->bn_inode.bi_size) {
-			error = btrfs_read_file_range(node, file_offset,
-			    MIN(length, node->bn_inode.bi_size -
-			    file_offset), data);
-			if (error != 0) {
-				btrfs_cancel_write_alloc(handle, bytenr,
-				    allocated_length);
-				break;
-			}
-		}
-
 		move_offset = uio->uio_offset;
 		move_resid = uio->uio_resid;
-		move_error = uiomove(data + offset, size, uio);
+		move_error = uiomove(op.data + op.offset, op.length, uio);
 		moved = move_resid - uio->uio_resid;
-		if (moved == 0) {
-			btrfs_cancel_write_alloc(handle, bytenr,
-			    allocated_length);
-			error = move_error;
-			break;
-		}
-		length = roundup(offset + moved, sectorsize);
-		file_size = MAX(node->bn_inode.bi_size,
-		    (uint64_t)move_offset + moved);
-		if (error == 0) {
-			memcpy(&saved, &node->bn_inode, sizeof(saved));
+		if (moved != 0) {
 			getnanotime(&now);
 			node->bn_inode.bi_mtime = now;
 			node->bn_inode.bi_ctime = now;
@@ -1594,43 +1464,21 @@ btrfs_write(void *v)
 				node->bn_inode.bi_dirty_fields |=
 				    BTRFS_INODE_DIRTY_MODE;
 			}
-			node->bn_inode.bi_last_dirty_transid =
-			    handle->bth_transaction->bt_generation;
-			error = btrfs_write_file_range(handle, node,
-			    file_offset, data, length, bytenr, allocated_length,
-			    file_size, BTRFS_WRITE_DEFER_INODE |
-			    (wrote ? BTRFS_WRITE_NO_INLINE : 0));
-			if (error == 0) {
-				error = btrfs_fill_file_holes(handle, node,
-				    saved.bi_size, file_size);
-				if (error != 0)
-					btrfs_trans_abort(handle, error);
-			}
-			if (error != 0) {
-				memcpy(&node->bn_inode, &saved, sizeof(saved));
-				if (handle->bth_transaction->bt_state !=
-				    BTRFS_TRANS_ABORTED)
-					btrfs_cancel_write_alloc(handle,
-					    bytenr, allocated_length);
-			}
-			end_error = btrfs_end_write(handle, node);
-			handle = NULL;
-			if (error == 0) {
-				error = end_error;
-				if (error != 0)
-					memcpy(&node->bn_inode, &saved,
-					    sizeof(saved));
-			}
 		}
+		error = btrfs_write_finish(&op, moved);
 		if (error != 0) {
 			uio->uio_offset = move_offset;
 			uio->uio_resid = move_resid;
 			break;
 		}
+		if (moved == 0) {
+			error = move_error;
+			break;
+		}
 
 		(void)uvm_vnp_uncache(vp);
-		if (file_size > saved.bi_size) {
-			uvm_vnp_setsize(vp, file_size);
+		if (node->bn_inode.bi_size > oldsize) {
+			uvm_vnp_setsize(vp, node->bn_inode.bi_size);
 			extended = 1;
 		}
 		wrote = 1;
@@ -1639,13 +1487,6 @@ btrfs_write(void *v)
 			break;
 		}
 	}
-	if (handle != NULL) {
-		/* A read/copy error before mutation left only a reservation. */
-		end_error = btrfs_trans_end(handle);
-		if (error == 0)
-			error = end_error;
-	}
-	pool_put(&bmp->bm_scratch_pool, data);
 	if (error != 0 && (ap->a_ioflag & IO_UNIT)) {
 		uio->uio_offset = unit_offset;
 		uio->uio_resid = resid;

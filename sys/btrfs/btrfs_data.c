@@ -61,6 +61,8 @@ static inline int btrfs_ordered_compare(const struct btrfs_ordered_extent *,
 static inline int btrfs_ordered_file_compare(
 		    const struct btrfs_ordered_extent *,
 		    const struct btrfs_ordered_extent *);
+static int	btrfs_write_tail(struct btrfs_trans_handle *,
+		    struct btrfs_node *, uint64_t, const void *);
 
 RBT_HEAD(btrfs_ordered_io, btrfs_ordered_extent);
 RBT_PROTOTYPE(btrfs_ordered_io, btrfs_ordered_extent, boe_io_entry,
@@ -1619,8 +1621,8 @@ btrfs_resize_apply(struct btrfs_trans_handle *handle,
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
 	KASSERT(node->bn_inode.bi_size == plan->oldsize);
 	if (plan->tail != NULL)
-		error = btrfs_write_file_sector(handle, node, plan->tail_offset,
-		    plan->tail, plan->oldsize, 0);
+		error = btrfs_write_tail(handle, node, plan->tail_offset,
+		    plan->tail);
 	if (error == 0) {
 		if (plan->cleanup)
 			error = btrfs_start_truncate(handle, node);
@@ -1705,10 +1707,10 @@ abort:
 	return (error);
 }
 
-/* Bound one replacement by its old mapping; inline conversion stays sector-sized. */
-int
-btrfs_file_write_length(struct btrfs_node *node, uint64_t offset,
-    uint32_t *length)
+/* Bound one replacement; a distant inline write also needs sector zero. */
+static int
+btrfs_write_select(struct btrfs_node *node, uint64_t offset,
+    uint32_t *length, int *prefix)
 {
 	struct btrfs_file_extent extent;
 	struct btrfs_path path = { 0 };
@@ -1719,14 +1721,17 @@ btrfs_file_write_length(struct btrfs_node *node, uint64_t offset,
 	int error;
 
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	*prefix = 0;
 	error = btrfs_get_root(node->bn_mount, node->bn_treeid, &root);
 	if (error == 0)
 		error = btrfs_find_file_extent(node->bn_mount, root, &path,
 		    node->bn_ino, 0, size, &extent);
 	if (error == 0 && extent.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		error = btrfs_check_inline_conversion(node, &extent);
+		*prefix = offset != 0;
 		*length = sectorsize;
 		btrfs_release_path(&path);
-		return (0);
+		return (error);
 	}
 	btrfs_release_path(&path);
 	if (error == 0)
@@ -1742,205 +1747,136 @@ btrfs_file_write_length(struct btrfs_node *node, uint64_t offset,
 	return (error);
 }
 
-int
-btrfs_write_file_sector(struct btrfs_trans_handle *handle,
-    struct btrfs_node *node, uint64_t file_offset, const void *data,
-    uint64_t file_size, int flags)
+static int
+btrfs_write_extent_cancel(struct btrfs_trans_handle *handle,
+    struct btrfs_write_extent *extent)
 {
-	uint32_t sectorsize;
+	int error;
 
-	if (node == NULL)
-		return (EINVAL);
-	sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
-	return (btrfs_write_file_range(handle, node, file_offset, data,
-	    sectorsize, 0, sectorsize, file_size, flags));
+	if (extent->bytenr == 0)
+		return (0);
+	error = btrfs_space_cancel_alloc(handle, extent->bytenr,
+	    extent->allocated_length);
+	if (error != 0)
+		btrfs_trans_abort(handle, error);
+	extent->bytenr = 0;
+	return (error);
 }
 
 /*
- * Replace at most one mapping. A preallocated range may exceed the copied
- * prefix after uiomove faults: retain its complete payload/checksum ownership
- * while exposing only the rounded prefix as a file mapping.
- * A DEFER_INODE caller must encode the inode before releasing its handle.
- * NO_INLINE is valid after a successful write under the same vnode lock:
- * inline conversion has completed and no other writer can change the layout.
+ * Refresh the mapping after joining: join can commit and coalesce ordered
+ * extents. The handle and vnode lock keep both the decoded mapping and any
+ * pending payload stable from here through application. No leaf is borrowed.
+ * Resize can enter without an allocation; ordinary writes allocate before
+ * this step so ENOSPC can shorten the chunk before copying user data.
  */
-int
-btrfs_write_file_range(struct btrfs_trans_handle *handle,
-    struct btrfs_node *node, uint64_t file_offset, const void *data,
-    uint32_t length, uint64_t allocated_bytenr, uint32_t allocated_length,
-    uint64_t file_size, int flags)
+static int
+btrfs_write_extent_stage(struct btrfs_write_operation *op,
+    struct btrfs_write_extent *extent)
 {
-	struct btrfs_transaction *trans;
-	struct btrfs_ordered_extent *ordered, *new_ordered = NULL;
-	struct btrfs_file_extent first, old, replacement;
-	struct btrfs_extent_plan plan;
+	struct btrfs_node *node = op->node;
+	struct btrfs_trans_handle *handle = op->handle;
+	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_path path = { 0 };
-	struct btrfs_root *root;
-	uint8_t *inline_data;
-	uint64_t bytenr, end, lookup_size;
-	uint32_t sectorsize;
-	int error, cancel_error, nodatasum;
+	uint32_t sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	uint64_t end = extent->file_offset + extent->allocated_length;
+	int error;
 
-	if (handle == NULL || handle->bth_transaction == NULL ||
-	    node == NULL || node->bn_vnode == NULL || data == NULL)
-		return (EINVAL);
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
-	trans = handle->bth_transaction;
-	sectorsize = letoh32(trans->bt_mount->bm_super.sectorsize);
-	if (node->bn_mount != trans->bt_mount ||
-	    node->bn_inode.bi_last_dirty_transid > trans->bt_generation ||
-	    (file_offset & (sectorsize - 1)) != 0 ||
-	    length == 0 || length > allocated_length ||
-	    allocated_length > MAXBSIZE ||
-	    (length & (sectorsize - 1)) != 0 ||
-	    (allocated_length & (sectorsize - 1)) != 0 ||
-	    file_offset > UINT64_MAX - length ||
-	    file_size <= file_offset || file_size < node->bn_inode.bi_size ||
-	    file_size > MAX(node->bn_inode.bi_size,
-	    file_offset + length))
-		return (EINVAL);
-	nodatasum = (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0;
-	end = file_offset + length;
-
 	mtx_enter(&trans->bt_lock);
-	ordered = btrfs_find_ordered_sector(trans, node, file_offset);
+	extent->pending = btrfs_find_ordered_sector(trans, node,
+	    extent->file_offset);
 	mtx_leave(&trans->bt_lock);
+	if (extent->pending != NULL) {
+		if (end > extent->pending->boe_file_offset +
+		    extent->pending->boe_file_length)
+			return (EINVAL);
+		return (btrfs_write_extent_cancel(handle, extent));
+	}
+
+	/* Synthetic holes must cover complete sectors for range replacement. */
+	error = btrfs_find_file_extent(node->bn_mount, node->bn_root, &path,
+	    node->bn_ino, extent->file_offset,
+	    roundup(MAX(node->bn_inode.bi_size, end), sectorsize), &extent->old);
+	if (error == 0 && extent->old.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		KASSERT(extent->allocated_length == sectorsize);
+		error = btrfs_check_inline_conversion(node, &extent->old);
+	}
+	extent->old.bfe_inline_data = NULL;
+	btrfs_release_path(&path);
+	if (error != 0)
+		return (error);
+	if (extent->old.bfe_compression != BTRFS_COMPRESS_NONE &&
+	    extent->old.bfe_compression != BTRFS_COMPRESS_ZSTD)
+		return (EOPNOTSUPP);
+	error = btrfs_extent_edit_valid(&extent->old, sectorsize);
+	if (error == 0 && extent->bytenr == 0)
+		error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_DATA,
+		    extent->allocated_length, sectorsize, &extent->bytenr);
+	return (error);
+}
+
+/*
+ * Apply once. Before the first tree edit (or pending-data update), failures
+ * leave allocations cancellable. After it, only transaction abort can recover.
+ * The operation owns inode encoding, including all staged caller attributes.
+ */
+static int
+btrfs_write_extent_apply(struct btrfs_write_operation *op,
+    struct btrfs_write_extent *extent, const void *data, uint32_t length)
+{
+	struct btrfs_node *node = op->node;
+	struct btrfs_trans_handle *handle = op->handle;
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_ordered_extent *ordered, *new_ordered;
+	struct btrfs_file_extent replacement = { 0 };
+	struct btrfs_extent_plan plan;
+	int error, nodatasum;
+
+	KASSERT(length != 0 && length <= extent->allocated_length);
+	nodatasum = (node->bn_inode.bi_flags & BTRFS_INODE_NODATASUM) != 0;
+	ordered = extent->pending;
 	if (ordered != NULL) {
 		KASSERT(ordered->boe_nodatasum == nodatasum);
-		if (end > ordered->boe_file_offset + ordered->boe_file_length)
-			return (EINVAL);
-		if (allocated_bytenr != 0) {
-			error = btrfs_space_cancel_alloc(handle, allocated_bytenr,
-			    allocated_length);
-			if (error != 0)
-				goto abort;
-		}
-		if (file_size > node->bn_inode.bi_size) {
-			node->bn_inode.bi_size = file_size;
-			node->bn_inode.bi_dirty_fields |=
-			    BTRFS_INODE_DIRTY_SIZE;
-			node->bn_inode.bi_last_dirty_transid =
-			    trans->bt_generation;
-		}
-		if (!(flags & BTRFS_WRITE_DEFER_INODE) &&
-		    node->bn_inode.bi_dirty_fields != 0) {
-			node->bn_inode.bi_last_dirty_transid =
-			    trans->bt_generation;
-			error = btrfs_write_inode(handle, node);
-			if (error != 0)
-				goto abort;
-		}
+		KASSERT(extent->bytenr == 0);
+		op->mutated = 1;
 		mtx_enter(&trans->bt_lock);
 		memcpy((uint8_t *)ordered->boe_data +
-		    file_offset - ordered->boe_file_offset, data, length);
+		    extent->file_offset - ordered->boe_file_offset, data, length);
 		mtx_leave(&trans->bt_lock);
 		return (0);
 	}
 
-	/* Synthetic holes must cover complete sectors for range replacement. */
-	lookup_size = roundup(MAX(node->bn_inode.bi_size, end), sectorsize);
-	error = btrfs_get_root(node->bn_mount, node->bn_treeid, &root);
+	KASSERT(extent->bytenr != 0);
+	replacement.bfe_logical = extent->file_offset;
+	replacement.bfe_length = length;
+	replacement.bfe_disk_bytenr = extent->bytenr;
+	replacement.bfe_disk_num_bytes = extent->allocated_length;
+	replacement.bfe_ram_bytes = extent->allocated_length;
+	replacement.bfe_type = BTRFS_FILE_EXTENT_REG;
+	error = btrfs_extent_plan_prepare(&plan, node->bn_root, node->bn_ino,
+	    &extent->old, extent->file_offset, length, &replacement,
+	    node->bn_inode.bi_nbytes);
 	if (error != 0)
 		return (error);
-	if (file_offset != 0 && !(flags & BTRFS_WRITE_NO_INLINE)) {
-		error = btrfs_find_file_extent(node->bn_mount, root, &path,
-		    node->bn_ino, 0, lookup_size, &first);
-		if (error != 0)
-			goto out;
-		if (first.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
-			/*
-			 * Inline files cannot coexist with regular extents.
-			 * Preserve sector zero in the same reserved handle
-			 * before installing a write beyond it.
-			 */
-			error = btrfs_check_inline_conversion(node, &first);
-			if (error != 0)
-				goto out;
-			inline_data = malloc(sectorsize, M_BTRFS,
-			    M_WAITOK | M_ZERO);
-			if (first.bfe_compression == BTRFS_COMPRESS_NONE)
-				memcpy(inline_data, first.bfe_inline_data,
-				    first.bfe_inline_size);
-			else
-				error = btrfs_read_compressed_extent(node,
-				    &first, 0, first.bfe_length, inline_data);
-			btrfs_release_path(&path);
-			if (error == 0)
-				error = btrfs_write_file_sector(handle, node, 0,
-				    inline_data, node->bn_inode.bi_size,
-				    flags);
-			free(inline_data, M_BTRFS, sectorsize);
-			if (error != 0)
-				goto out;
-			error = btrfs_write_file_range(handle, node,
-			    file_offset, data, length, allocated_bytenr,
-			    allocated_length, file_size,
-			    flags | BTRFS_WRITE_NO_INLINE);
-			if (error != 0)
-				goto abort;
-			return (0);
-		}
-		btrfs_release_path(&path);
-	}
-	error = btrfs_find_file_extent(node->bn_mount, root, &path,
-	    node->bn_ino, file_offset, lookup_size, &old);
-	if (error != 0)
-		goto out;
-	btrfs_release_path(&path);
-
-	if (old.bfe_type == BTRFS_FILE_EXTENT_INLINE) {
-		KASSERT(length == sectorsize);
-		/* The caller's sector includes all decoded inline data. */
-		error = btrfs_check_inline_conversion(node, &old);
-		if (error != 0)
-			return (error);
-	}
-	if (old.bfe_compression != BTRFS_COMPRESS_NONE &&
-	    old.bfe_compression != BTRFS_COMPRESS_ZSTD)
-		return (EOPNOTSUPP);
-
 	new_ordered = malloc(sizeof(*new_ordered), M_BTRFS,
 	    M_WAITOK | M_ZERO);
-	new_ordered->boe_data = malloc(allocated_length, M_BTRFS, M_WAITOK);
-	memcpy(new_ordered->boe_data, data, allocated_length);
-	bytenr = allocated_bytenr;
-	if (bytenr == 0)
-		error = btrfs_space_alloc(handle, BTRFS_BLOCK_GROUP_DATA,
-		    allocated_length, sectorsize, &bytenr);
-	if (error != 0)
-		goto out;
+	new_ordered->boe_data = malloc(extent->allocated_length, M_BTRFS,
+	    M_WAITOK);
+	memcpy(new_ordered->boe_data, data, extent->allocated_length);
 	new_ordered->boe_treeid = node->bn_treeid;
 	new_ordered->boe_objectid = node->bn_ino;
-	new_ordered->boe_file_offset = file_offset;
-	new_ordered->boe_bytenr = bytenr;
-	new_ordered->boe_length = allocated_length;
+	new_ordered->boe_file_offset = extent->file_offset;
+	new_ordered->boe_bytenr = extent->bytenr;
+	new_ordered->boe_length = extent->allocated_length;
 	new_ordered->boe_file_length = length;
 	new_ordered->boe_nodatasum = nodatasum;
 
-	memset(&replacement, 0, sizeof(replacement));
-	replacement.bfe_logical = file_offset;
-	replacement.bfe_length = length;
-	replacement.bfe_disk_bytenr = bytenr;
-	replacement.bfe_disk_num_bytes = allocated_length;
-	replacement.bfe_ram_bytes = allocated_length;
-	replacement.bfe_type = BTRFS_FILE_EXTENT_REG;
-	error = btrfs_extent_plan_prepare(&plan, root, node->bn_ino, &old,
-	    file_offset, length, &replacement, node->bn_inode.bi_nbytes);
-	if (error != 0) {
-		/* The caller cancels supplied allocations on preparation failure. */
-		if (allocated_bytenr == 0) {
-			cancel_error = btrfs_space_cancel_alloc(handle, bytenr,
-			    allocated_length);
-			if (cancel_error != 0) {
-				error = cancel_error;
-				goto abort;
-			}
-		}
-		goto out;
-	}
+	op->mutated = 1;
+	extent->bytenr = 0;	/* Transaction now owns allocation cleanup. */
 	error = btrfs_extent_plan_apply(handle, &plan);
 	if (error != 0)
-		goto abort;
+		goto fail;
 
 	mtx_enter(&trans->bt_lock);
 	ordered = RBT_INSERT(btrfs_ordered_tree, &trans->bt_ordered_extents,
@@ -1950,32 +1886,211 @@ btrfs_write_file_range(struct btrfs_trans_handle *handle,
 	mtx_leave(&trans->bt_lock);
 	if (ordered != NULL) {
 		error = EINVAL;
-		goto abort;
+		goto fail;
 	}
-	new_ordered = NULL;
+	/* Transaction now owns the payload too. */
 	if (node->bn_inode.bi_nbytes != plan.nbytes) {
 		node->bn_inode.bi_nbytes = plan.nbytes;
 		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NBYTES;
 	}
-	if (file_size > node->bn_inode.bi_size) {
-		node->bn_inode.bi_size = file_size;
-		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE;
+	return (0);
+
+fail:
+	free(new_ordered->boe_data, M_BTRFS, extent->allocated_length);
+	free(new_ordered, M_BTRFS, sizeof(*new_ordered));
+	return (error);
+}
+
+/* End every owned handle, restore unpublished attributes, and free staging. */
+static int
+btrfs_write_release(struct btrfs_write_operation *op, int error)
+{
+	int end_error, cancel_error;
+
+	if (op->handle != NULL) {
+		if (error != 0 && op->mutated)
+			btrfs_trans_abort(op->handle, error);
+		else {
+			cancel_error = btrfs_write_extent_cancel(op->handle,
+			    &op->prefix);
+			end_error = btrfs_write_extent_cancel(op->handle,
+			    &op->range);
+			if (error == 0)
+				error = cancel_error != 0 ?
+				    cancel_error : end_error;
+		}
+		end_error = btrfs_trans_end(op->handle);
+		op->handle = NULL;
+		if (error == 0)
+			error = end_error;
 	}
-	node->bn_inode.bi_last_dirty_transid = trans->bt_generation;
-	if (!(flags & BTRFS_WRITE_DEFER_INODE)) {
-		error = btrfs_write_inode(handle, node);
+	if (error != 0 || !op->mutated)
+		op->node->bn_inode = op->saved;
+	if (op->data != NULL) {
+		pool_put(&op->node->bn_mount->bm_scratch_pool, op->data);
+		op->data = NULL;
+	}
+	if (op->inline_data != NULL) {
+		free(op->inline_data, M_BTRFS, op->prefix.allocated_length);
+		op->inline_data = NULL;
+	}
+	return (error);
+}
+
+#define BTRFS_WRITE_METADATA_BLOCKS	64
+
+int
+btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
+    uint64_t position, size_t size)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_write_extent *range = &op->range;
+	uint64_t holes, metadata, base_metadata, planned_size;
+	uint32_t sectorsize = letoh32(bmp->bm_super.sectorsize);
+	int error, end_error, prefix;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	memset(op, 0, sizeof(*op));
+	op->node = node;
+	op->saved = node->bn_inode;
+	if (size == 0 || position > LLONG_MAX || size > LLONG_MAX - position)
+		return (EINVAL);
+	op->offset = position & (sectorsize - 1);
+	range->file_offset = position - op->offset;
+	range->allocated_length = roundup(MIN(MAXBSIZE,
+	    op->offset + size), sectorsize);
+	error = btrfs_write_select(node, range->file_offset,
+	    &range->allocated_length, &prefix);
+	if (error != 0)
+		return (error);
+	metadata = (uint64_t)letoh32(bmp->bm_super.nodesize) *
+	    BTRFS_WRITE_METADATA_BLOCKS;
+	base_metadata = metadata * (1 + prefix);
+	if (prefix)
+		op->prefix.allocated_length = sectorsize;
+
+	/*
+	 * One mapping, its retained pieces, inode, checksum run and references.
+	 * Inline conversion and explicit holes add their own budgets. Allocate
+	 * before copying so fragmented space can shorten this operation.
+	 */
+	for (;;) {
+		op->length = MIN(range->allocated_length - op->offset, size);
+		planned_size = MAX(op->saved.bi_size, position + op->length);
+		error = btrfs_count_file_holes(node, planned_size, &holes);
 		if (error != 0)
-			goto abort;
+			break;
+		if (holes > (UINT64_MAX - base_metadata) / metadata) {
+			error = EOVERFLOW;
+			break;
+		}
+		op->reservation.btr_metadata = base_metadata + holes * metadata;
+		op->reservation.btr_data = range->allocated_length +
+		    op->prefix.allocated_length;
+		error = btrfs_trans_join(bmp, &op->reservation, &op->handle);
+		if (error == 0) {
+			error = btrfs_space_alloc(op->handle,
+			    BTRFS_BLOCK_GROUP_DATA, range->allocated_length,
+			    sectorsize, &range->bytenr);
+			if (error != 0) {
+				end_error = btrfs_trans_end(op->handle);
+				op->handle = NULL;
+				if (end_error != 0)
+					error = end_error;
+			}
+		}
+		if (error != ENOSPC || range->allocated_length == sectorsize)
+			break;
+		range->allocated_length = roundup(range->allocated_length / 2,
+		    sectorsize);
+	}
+	if (error != 0)
+		goto fail;
+	error = btrfs_write_extent_stage(op, range);
+	if (error != 0)
+		goto fail;
+	if (prefix) {
+		error = btrfs_write_extent_stage(op, &op->prefix);
+		if (error != 0)
+			goto fail;
+		op->inline_data = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
+		error = btrfs_read_file_range(node, 0, op->saved.bi_size,
+		    op->inline_data);
+		if (error != 0)
+			goto fail;
+	}
+	op->data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
+	memset(op->data, 0, range->allocated_length);
+	if (range->file_offset < op->saved.bi_size) {
+		error = btrfs_read_file_range(node, range->file_offset,
+		    MIN(range->allocated_length,
+		    op->saved.bi_size - range->file_offset), op->data);
+		if (error != 0)
+			goto fail;
 	}
 	return (0);
 
-abort:
-	btrfs_trans_abort(handle, error);
-out:
-	btrfs_release_path(&path);
-	if (new_ordered != NULL) {
-		free(new_ordered->boe_data, M_BTRFS, allocated_length);
-		free(new_ordered, M_BTRFS, sizeof(*new_ordered));
+fail:
+	return (btrfs_write_release(op, error));
+}
+
+int
+btrfs_write_finish(struct btrfs_write_operation *op, size_t copied)
+{
+	struct btrfs_node *node = op->node;
+	uint32_t sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	uint64_t size;
+	int error = 0;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	KASSERT(op->handle != NULL && copied <= op->length);
+	if (copied == 0)
+		return (btrfs_write_release(op, 0));
+	if (op->inline_data != NULL)
+		error = btrfs_write_extent_apply(op, &op->prefix,
+		    op->inline_data, sectorsize);
+	if (error == 0)
+		error = btrfs_write_extent_apply(op, &op->range, op->data,
+		    roundup(op->offset + copied, sectorsize));
+	if (error == 0) {
+		size = MAX(op->saved.bi_size,
+		    op->range.file_offset + op->offset + copied);
+		if (node->bn_inode.bi_size != size) {
+			node->bn_inode.bi_size = size;
+			node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE;
+		}
+		node->bn_inode.bi_last_dirty_transid =
+		    op->handle->bth_transaction->bt_generation;
+		error = btrfs_fill_file_holes(op->handle, node,
+		    op->saved.bi_size, size);
+		if (error == 0)
+			error = btrfs_write_inode(op->handle, node);
 	}
+	return (btrfs_write_release(op, error));
+}
+
+/*
+ * Resize already owns a reserved handle and staged tail bytes. It encodes the
+ * inode after all resize edits. Any failure aborts that enclosing operation;
+ * this helper neither ends its handle nor publishes the new file size.
+ */
+static int
+btrfs_write_tail(struct btrfs_trans_handle *handle, struct btrfs_node *node,
+    uint64_t offset, const void *data)
+{
+	struct btrfs_write_operation op = { 0 };
+	int error;
+
+	op.node = node;
+	op.handle = handle;
+	op.range.file_offset = offset;
+	op.range.allocated_length =
+	    letoh32(node->bn_mount->bm_super.sectorsize);
+	error = btrfs_write_extent_stage(&op, &op.range);
+	if (error == 0)
+		error = btrfs_write_extent_apply(&op, &op.range, data,
+		    op.range.allocated_length);
+	if (error != 0)
+		btrfs_trans_abort(handle, error);
 	return (error);
 }
