@@ -175,6 +175,37 @@ def boundaries(mount):
     command(mount, "delete", "outer-copy")
 
 
+def collisions(mount):
+    from namespace import COLLISIONS
+
+    parent = mount / "collisions"
+    parent.mkdir()
+    first, second = ["collisions/" + name for name in COLLISIONS]
+    command(mount, "create", first)
+    (mount / first / "marker").write_text(first)
+    command(mount, "snapshot", second, "missing-collision", fail=True)
+    command(mount, "delete", second, fail=True)
+    command(mount, "create", second)
+    (mount / second / "marker").write_text(second)
+    for source in (first, second):
+        # Resolve the source and a parent through the same packed hash item.
+        command(mount, "snapshot", source, source + "-copy")
+        assert (mount / (source + "-copy") / "marker").read_text() == source
+        command(mount, "create", source + "/child")
+        assert (mount / source / "child").is_dir()
+        command(mount, "delete", source + "/child")
+        command(mount, "delete", source + "-copy")
+    # Remove each position in the packed bucket, then remove its final entry.
+    command(mount, "delete", first)
+    assert (mount / second / "marker").read_text() == second
+    command(mount, "create", first)
+    command(mount, "delete", second)
+    assert (mount / first).is_dir()
+    command(mount, "delete", first)
+    assert parent.stat().st_size == 0
+    parent.rmdir()
+
+
 def race(mount):
     command(mount, "create", "racing")
     target = mount / "racing/data"
