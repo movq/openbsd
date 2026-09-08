@@ -24,12 +24,19 @@ int
 main(int argc, char *argv[])
 {
 	struct btrfs_args args = { 0 };
+	char *devices[BTRFS_MAX_DEVICES - 1];
 	char mountpoint[PATH_MAX];
 	char *end;
 	int ch, mntflags = 0;
 
-	while ((ch = getopt(argc, argv, "o:s:")) != -1) {
+	args.devices = devices;
+	while ((ch = getopt(argc, argv, "d:o:s:")) != -1) {
 		switch (ch) {
+		case 'd':
+			if (args.ndevices == BTRFS_MAX_DEVICES - 1)
+				errx(1, "too many devices");
+			devices[args.ndevices++] = optarg;
+			break;
 		case 'o':
 			getmntopts(optarg, mopts, &mntflags);
 			break;
@@ -63,6 +70,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: mount_btrfs [-o options] [-s subvolid] special node\n");
+	    "usage: mount_btrfs [-d device] [-o options] [-s subvolid] "
+	    "special node\n");
 	exit(1);
 }

@@ -123,7 +123,7 @@ btrfs_csum_valid(const struct btrfs_super_block *sb, const void *data,
 
 static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
-static int	btrfs_read_mapped(struct vnode *, const struct btrfs_io_map *,
+static int	btrfs_read_mapped(const struct btrfs_io_map *,
 		    uint32_t, uint64_t, btrfs_io_validate_fn, void *,
 		    struct btrfs_io_result *, struct buf **);
 static int	btrfs_validate_data_csum(const void *, size_t, void *);
@@ -159,6 +159,9 @@ btrfs_map_logical(const struct btrfs_chunk_map *chunk, uint64_t logical,
 		if (chunk->physical[i] > UINT64_MAX - delta)
 			return (EINVAL);
 		map->physical[i] = chunk->physical[i] + delta;
+		map->device[i] = chunk->device[i];
+		if (map->device[i] == NULL)
+			return (EINVAL);
 	}
 	return (0);
 }
@@ -226,12 +229,12 @@ btrfs_read_logical(const struct btrfs_root *root,
 		error = EINVAL;
 	if (error != 0)
 		return (error);
-	return (btrfs_read_mapped(root->br_devvp, &map, length, type_mask,
+	return (btrfs_read_mapped(&map, length, type_mask,
 	    validate, validate_arg, result, bpp));
 }
 
 static int
-btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
+btrfs_read_mapped(const struct btrfs_io_map *map,
     uint32_t length, uint64_t type_mask, btrfs_io_validate_fn validate,
     void *validate_arg, struct btrfs_io_result *result, struct buf **bpp)
 {
@@ -239,7 +242,7 @@ btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
 	unsigned int i;
 	int error;
 
-	if (devvp == NULL || length == 0 || type_mask == 0)
+	if (length == 0 || type_mask == 0)
 		return (EINVAL);
 	if ((map->type & type_mask) == 0)
 		return (EINVAL);
@@ -250,7 +253,8 @@ btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
 	for (i = 0; i < map->nmirrors; i++) {
 		for (;;) {
 			bp = NULL;
-			error = bread(devvp, map->physical[i] / DEV_BSIZE,
+			error = bread(map->device[i]->bd_devvp,
+			    map->physical[i] / DEV_BSIZE,
 			    length, &bp);
 			if (bp == NULL || bp->b_bcount == length)
 				break;
@@ -279,8 +283,8 @@ btrfs_read_mapped(struct vnode *devvp, const struct btrfs_io_map *map,
 }
 
 void
-btrfs_invalidate_physical(struct btrfs_fs *bmp, uint64_t physical,
-    uint64_t length)
+btrfs_invalidate_physical(struct btrfs_fs *bmp, struct btrfs_device *device,
+    uint64_t physical, uint64_t length)
 {
 	struct buf *bp;
 	uint64_t offset;
@@ -292,9 +296,9 @@ btrfs_invalidate_physical(struct btrfs_fs *bmp, uint64_t physical,
 	KASSERT(physical <= UINT64_MAX - length);
 	for (offset = 0; offset < length; offset += sectorsize) {
 		block = (physical + offset) / DEV_BSIZE;
-		if (incore(bmp->bm_devvp, block) == NULL)
+		if (incore(device->bd_devvp, block) == NULL)
 			continue;
-		bp = getblk(bmp->bm_devvp, block, sectorsize, 0, INFSLP);
+		bp = getblk(device->bd_devvp, block, sectorsize, 0, INFSLP);
 		KASSERT(!ISSET(bp->b_flags, B_DELWRI));
 		SET(bp->b_flags, B_INVAL);
 		brelse(bp);
@@ -360,13 +364,12 @@ btrfs_write_logical(struct btrfs_fs *bmp,
     uint64_t logical, uint32_t length, uint64_t type_mask,
     const void *data, struct btrfs_write_batch *batch)
 {
-	struct vnode *devvp = bmp->bm_devvp;
 	struct btrfs_io_map map;
 	struct buf *bp;
 	unsigned int i;
 	int error;
 
-	if (devvp == NULL || data == NULL || batch == NULL || length == 0 ||
+	if (data == NULL || batch == NULL || length == 0 ||
 	    length > MAXBSIZE || type_mask == 0)
 		return (EINVAL);
 
@@ -396,9 +399,11 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		 * Writes are always NOCACHE.
 		 */
 		if (type_mask & BTRFS_BLOCK_GROUP_DATA)
-			btrfs_invalidate_physical(bmp, map.physical[i], length);
+			btrfs_invalidate_physical(bmp, map.device[i],
+			    map.physical[i], length);
 		for (;;) {
-			bp = getblk(devvp, map.physical[i] / DEV_BSIZE,
+			bp = getblk(map.device[i]->bd_devvp,
+			    map.physical[i] / DEV_BSIZE,
 			    length, 0, INFSLP);
 			if (bp->b_bcount == length)
 				break;
@@ -477,7 +482,7 @@ btrfs_read_data_sector(struct btrfs_fs *bmp,
 retry:
 	error = btrfs_lookup_fs_logical(bmp, start, length, &map);
 	if (error == 0)
-		error = btrfs_read_mapped(bmp->bm_devvp, &map, length,
+		error = btrfs_read_mapped(&map, length,
 		    BTRFS_BLOCK_GROUP_DATA, validate, &csum,
 		    NULL, bpp);
 	if (error != 0 && length != sectorsize) {

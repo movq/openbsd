@@ -72,6 +72,7 @@ struct btrfs_chunk_map {
 	uint64_t	stripe_len;
 	uint64_t	physical[BTRFS_MAX_MIRRORS];
 	uint64_t	devid[BTRFS_MAX_MIRRORS];
+	struct btrfs_device *device[BTRFS_MAX_MIRRORS];
 	uint32_t	io_align;
 	uint32_t	io_width;
 	uint32_t	sector_size;
@@ -82,6 +83,7 @@ struct btrfs_chunk_map {
 
 struct btrfs_io_map {
 	uint64_t	physical[BTRFS_MAX_MIRRORS];
+	struct btrfs_device *device[BTRFS_MAX_MIRRORS];
 	uint64_t	type;
 	unsigned int	nmirrors;
 };
@@ -448,7 +450,8 @@ LIST_HEAD(btrfs_root_list, btrfs_root_entry);
 
 struct btrfs_root {
 	struct btrfs_fs			*br_mount;
-	struct vnode			*br_devvp;
+	/* Bootstrap trees use private buffers and the opened member set. */
+	struct btrfs_fs			*br_bootstrap_fs;
 	const struct btrfs_super_block	*br_super;
 	/* Only mount bootstrap roots own a fixed mapping table. */
 	const struct btrfs_chunk_map	*br_bootstrap_chunks;
@@ -535,6 +538,19 @@ struct btrfs_super_candidate {
 	int			 bsc_tried;
 };
 
+/*
+ * Members and their vnodes live until the last view is unmounted. Chunk maps
+ * may therefore retain device pointers after releasing the mapping lock.
+ * bd_item is the committed chunk-tree device item, not a stale member super.
+ */
+struct btrfs_device {
+	struct vnode		*bd_devvp;
+	struct btrfs_dev_item	 bd_item;
+	uint64_t		 bd_media_size;
+	struct btrfs_super_mirror bd_mirrors[BTRFS_SUPER_MIRROR_MAX];
+	uint8_t			 bd_in_chunk_tree;
+};
+
 struct btrfs_bootstrap {
 	struct btrfs_chunk_map	*bb_chunks;
 	unsigned int		 bb_nchunks;
@@ -572,15 +588,12 @@ struct btrfs_fs {
 	/* Membership and read-only transitions use bm_trans_mtx. */
 	struct btrfs_mount_list		 bm_mounts;
 	int				 bm_readonly;
-	struct vnode			*bm_devvp;
-	dev_t				 bm_dev;
+	struct btrfs_device		*bm_devices;
+	unsigned int			 bm_ndevices;
 	int				 bm_open_flags;
 	struct pool			 bm_scratch_pool;
 	struct pool			 bm_metadata_pool;
 	struct btrfs_super_block	 bm_super;
-	struct btrfs_super_mirror	 bm_super_mirrors[
-					    BTRFS_SUPER_MIRROR_MAX];
-	unsigned int			 bm_selected_super;
 	uint8_t				 bm_backup_roots_valid;
 	uint8_t				 bm_seeding;
 	/* Protects replaceable indexes; never held over tree operations or I/O. */
@@ -680,17 +693,20 @@ extern const struct vops btrfs_fifo_vops;
 #endif
 
 int	btrfs_read_super_mirrors(struct vnode *, struct proc *,
-	    struct btrfs_super_candidate *, struct btrfs_super_mirror *);
+	    struct btrfs_super_candidate *, struct btrfs_super_mirror *,
+	    uint64_t *);
 int	btrfs_super_same_filesystem(const struct btrfs_super_block *,
 	    const struct btrfs_super_block *);
 int	btrfs_check_super_policy(const struct btrfs_super_block *, int);
-int	btrfs_bootstrap_super(struct vnode *, const struct btrfs_super_block *,
+struct btrfs_device *btrfs_find_device(const struct btrfs_fs *, uint64_t);
+int	btrfs_select_super(struct btrfs_fs *, struct proc *,
 	    struct btrfs_bootstrap *);
+int	btrfs_bootstrap_super(struct btrfs_fs *, struct btrfs_bootstrap *);
 uint8_t	btrfs_validate_backup_roots(const struct btrfs_super_block *);
 int	btrfs_build_super(struct btrfs_transaction *,
 	    struct btrfs_super_block *);
 void	btrfs_fs_set_readonly(struct btrfs_fs *);
-int	btrfs_super_mirror_writable(const struct btrfs_fs *, unsigned int);
+int	btrfs_super_mirror_writable(const struct btrfs_device *, unsigned int);
 int	btrfs_write_super_mirrors(struct btrfs_fs *,
 	    const struct btrfs_super_block *);
 void	btrfs_init_roots(struct btrfs_fs *, const struct btrfs_bootstrap *);
@@ -717,8 +733,9 @@ int	btrfs_write_batch_wait(struct btrfs_write_batch *);
 /* Stable source until return; must not alias a device buffer. */
 int	btrfs_write_logical(struct btrfs_fs *, uint64_t, uint32_t, uint64_t,
 	    const void *, struct btrfs_write_batch *);
-void	btrfs_invalidate_physical(struct btrfs_fs *, uint64_t, uint64_t);
-int	btrfs_decode_chunk_item(const struct btrfs_super_block *,
+void	btrfs_invalidate_physical(struct btrfs_fs *, struct btrfs_device *,
+	    uint64_t, uint64_t);
+int	btrfs_decode_chunk_item(const struct btrfs_fs *,
 	    const struct btrfs_key *, const struct btrfs_chunk *, size_t,
 	    struct btrfs_chunk_map *);
 int	btrfs_extent_buffer_read(const struct btrfs_root *, uint64_t, uint64_t,
@@ -841,6 +858,8 @@ int	btrfs_chunk_removed(struct btrfs_transaction *,
 	    const struct btrfs_block_group *);
 int	btrfs_chunk_update_super(struct btrfs_transaction *,
 	    struct btrfs_super_block *);
+void	btrfs_chunk_device_item(struct btrfs_transaction *,
+	    struct btrfs_device *, struct btrfs_dev_item *);
 void	btrfs_chunk_publish(struct btrfs_transaction *);
 void	btrfs_chunk_abort(struct btrfs_transaction *);
 int	btrfs_space_init(struct btrfs_fs *);

@@ -8,6 +8,7 @@
 .Nd mount a Btrfs file system
 .Sh SYNOPSIS
 .Nm
+.Op Fl d Ar device
 .Op Fl o Ar options
 .Op Fl s Ar subvolid
 .Ar special node
@@ -21,6 +22,15 @@ to the file system namespace at
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
+.It Fl d Ar device
+Supply an additional member of a multi-device file system.
+Repeat this option for each member other than
+.Ar special .
+All members must be supplied for the first mount, in any order.
+Up to 64 members are supported.
+The driver supports SINGLE and DUP profiles; both copies of a DUP
+chunk reside on the same member.
+Missing members and RAID profiles are not supported.
 .It Fl o Ar options
 Specify a comma-separated list of mount options.
 See
@@ -32,20 +42,29 @@ The default, also selected by zero or 5, is the top-level tree.
 The on-disk default subvolume setting is not used.
 .El
 .Pp
-Multiple mounts of the same device may be writable simultaneously if
+Multiple mounts of the same file system may be writable simultaneously if
 their selected subvolume hierarchies are disjoint.
 A selected tree cannot equal, contain, or be contained by another
 mounted tree.
-In particular, a top-level mount excludes all other mounts of that device.
+In particular, a top-level mount excludes all other mounts of that file system.
 Nested subvolumes remain accessible through their containing mount,
 and each subvolume's read-only flag is honored.
 .Pp
-Mounts of one device share allocation and a transaction.
+Later mounts may name any member of the mounted file system without
+repeating the
+.Fl d
+options.
+Mounts of one file system share allocation and a transaction.
 Syncing or unmounting any view may commit changes made through other views.
-The device remains open until the last view is unmounted.
+All member devices remain open until the last view is unmounted.
 A read-only view may join a filesystem opened writable.
 If the first view was read-only, all views must be unmounted before
 mounting a writable view.
+.Sh EXAMPLES
+Mount a file system with three members:
+.Bd -literal -offset indent
+# mount_btrfs -d /dev/sd2c -d /dev/sd3c /dev/sd1c /mnt/btrfs
+.Ed
 .Sh SEE ALSO
 .Xr mount 2 ,
 .Xr fstab 5 ,
@@ -53,5 +72,5 @@ mounting a writable view.
 .Xr umount 8
 .Sh CAVEATS
 The driver supports a limited subset of Btrfs formats and write operations.
-Mount updates, subvolume creation, and subvolume property changes are
+Mount updates and online device addition, removal, and balancing are
 not supported.

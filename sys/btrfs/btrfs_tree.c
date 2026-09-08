@@ -300,7 +300,6 @@ btrfs_root_init(struct btrfs_fs *bmp, struct btrfs_root *root,
 {
 	memset(root, 0, sizeof(*root));
 	root->br_mount = bmp;
-	root->br_devvp = bmp->bm_devvp;
 	root->br_dev = NODEV;
 	root->br_super = &bmp->bm_super;
 	root->br_lock = lock;
