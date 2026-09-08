@@ -78,6 +78,23 @@ metadata copy before the independent checks.
 Individual procedures
 ---------------------
 
+`uuid-lookup` checks UUID/transaction-ID selection, received-identity preference,
+ambiguity, writable-root exclusion, creation/deletion index maintenance, and
+read-only and writable remounts. Its `streams` phase exercises receive's
+snapshot-parent and external clone lookups with native and received identities.
+The standalone uuid_lookup.py create/verify
+phases can also run on a filesystem initialized by Linux, which supplies a
+current UUID tree. Newly formatted filesystems may have no UUID tree.
+For targeted fallback checks, its `disk image stale|absent|hide journal` command
+edits an unmounted disposable image and saves the original blocks. `stale`
+invalidates the generation marker, `absent` hides the UUID root, and `hide`
+replaces indexed IDs with nonexistent IDs. On a read-only mount, `verify`
+must pass for stale/absent trees; `missing` must pass for a hidden current
+index, proving negative lookups use the index. Combining hide then stale must
+restore successful `verify` lookups. Unmount and run `disk image restore journal`
+in reverse edit order before independent filesystem checks. Do not mount these
+deliberately modified fixtures writable.
+
 `make regress` in this directory on OpenBSD runs the reference decoder and
 tree primitive tests without a mount. The decoder test links the actual
 decoder from `btrfs_ref.c`, discarding
