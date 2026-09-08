@@ -391,13 +391,17 @@ The planner halves the target down to 1 MiB when device gaps are smaller.
 Chunk size does not change extent size or the pending-payload watermark.
 Logical ranges append beyond a mount-lifetime high-water mark.
 Low system space triggers system growth first.
-One reserved handle updates chunk and device trees, device usage, block-group
-records, and optional extent-format free-space records. Chunk-tree COW uses
-system space. System growth also appends a bootstrap mapping to the superblock
-system array, whose capacity is checked before mutation. The new group remains
-private until those records are durable; transaction completion publishes the
-mapping and group indexes before establishing the next generation's reserves.
-Aborted growth frees the private group and exposes no new allocation space.
+`btrfs_chunk.c` owns changes to the group set through a chunk operation.
+Preparation owns replacement mapping/group indexes, the added group or removal
+exclusion, device accounting, any system-array addition, and the reservation.
+One handle applies chunk/device, block-group, and optional free-space records.
+Its `btr_chunk` reservation prevents recursive growth during transaction join.
+Chunk-tree COW uses system space; system growth prepares a bootstrap mapping
+after checking superblock-array capacity. Successful application transfers the
+operation to the transaction. Durable publication installs its indexes before
+establishing the next generation's reserves; abort discards private growth
+space or restores removal eligibility. Callers relinquish ownership before
+completion, including when reserve replenishment fails after publication.
 
 If physical growth fails, the allocator excludes an empty group of another
 type from new reservations, then atomically deletes its chunk, device extent,
