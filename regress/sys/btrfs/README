@@ -192,7 +192,7 @@ cluster, truncate, orphan and space-pressure suites against coalescing too.
 For publication tests use a fresh create fixture, break at
 btrfs_write_super_mirrors, run crash_write, and reset before the superblock
 write. Check independently and use verify_original after remount. Repeat
-crash_write with a breakpoint at btrfs_space_publish_chunk to reset after
+crash_write with a breakpoint at btrfs_chunk_publish to reset after
 durable publication, then check independently and use verify_crash.
 
 Writable images must meet the feature restrictions in
@@ -247,7 +247,7 @@ image to convert a single free-space leaf containing the grown empty groups;
 check independently before continuing. This exercises additional deletion
 reservations for groups containing several bitmap records.
 To check durable retirement before in-memory publication, break first at
-btrfs_free_chunk_items, switch to btrfs_space_publish_chunk, and reset when the
+btrfs_free_chunk_items, switch to btrfs_chunk_publish, and reset when the
 removal commit stops there. Independently check before remounting.
 
 free_space.py's host `seed directory` phase prepares imported data. Format

@@ -667,7 +667,7 @@ def publication(r, after=False):
     directory = r.path("recovery")
     r.mount()
     r.test("coalesce", "create", directory)
-    target = "btrfs_space_publish_chunk" if after else "btrfs_write_super_mirrors"
+    target = "btrfs_chunk_publish" if after else "btrfs_write_super_mirrors"
     r.crash_break(r.test_argv("coalesce", "crash_write", directory), [target])
     r.checks()
     r.boot()
@@ -682,7 +682,7 @@ def reclaim_recovery(r):
     r.test("reclaim_chunks", "prepare", directory)
     r.test("reclaim_chunks", "free_data", directory)
     r.crash_break(r.test_argv("reclaim_chunks", "metadata_bounded", directory),
-                  ["btrfs_free_chunk_items", "btrfs_space_publish_chunk"])
+                  ["btrfs_free_chunk_items", "btrfs_chunk_publish"])
     r.checks()
     r.boot()
     r.mount()
