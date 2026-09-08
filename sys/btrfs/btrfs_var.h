@@ -33,6 +33,7 @@
 #include <sys/tree.h>
 
 #include <btrfs/btrfs.h>
+#include <btrfs/btrfs_ref.h>
 
 #define BTRFS_MAX_LEVEL		8
 #define BTRFS_MAX_COMPRESSED	(128 * 1024)
@@ -208,8 +209,8 @@ struct btrfs_delayed_tree_ref {
 	TAILQ_ENTRY(btrfs_delayed_tree_ref) bdr_entry;
 	RBT_ENTRY(btrfs_delayed_tree_ref) bdr_index;
 	uint64_t			 bdr_bytenr;
-	uint64_t			 bdr_parent;
-	uint64_t			 bdr_root;
+	struct btrfs_ref_owner		 bdr_owner;
+	enum btrfs_tree_ref_operation	 bdr_operation;
 	int64_t				 bdr_ref_mod;
 	uint8_t				 bdr_level;
 };
@@ -223,9 +224,7 @@ struct btrfs_delayed_data_ref {
 	RBT_ENTRY(btrfs_delayed_data_ref) bdr_index;
 	uint64_t			 bdr_bytenr;
 	uint64_t			 bdr_length;
-	uint64_t			 bdr_root;
-	uint64_t			 bdr_objectid;
-	uint64_t			 bdr_offset;
+	struct btrfs_ref_owner		 bdr_owner;
 	int64_t				 bdr_ref_mod;
 };
 TAILQ_HEAD(btrfs_delayed_data_ref_list, btrfs_delayed_data_ref);
@@ -656,7 +655,7 @@ int	btrfs_drop_subvolume_tree(struct btrfs_trans_handle *, struct btrfs_root *);
 int	btrfs_count_tree(struct btrfs_root *, uint64_t *, uint64_t *);
 int	btrfs_block_refs(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_buffer *, uint64_t *, uint64_t *);
-int	btrfs_block_full(struct btrfs_trans_handle *,
+int	btrfs_ref_convert_full(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_buffer *);
 int	btrfs_block_children(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_buffer *, uint64_t, int, int);
@@ -725,14 +724,14 @@ void	btrfs_extent_buffers_purge(struct btrfs_fs *);
 int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
 int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
 int	btrfs_delayed_ref_add(struct btrfs_trans_handle *, uint64_t,
-	    uint64_t, uint64_t, uint8_t, int);
+	    struct btrfs_ref_owner, uint8_t, int);
 int	btrfs_delayed_data_ref_add(struct btrfs_trans_handle *, uint64_t,
-	    uint64_t, uint64_t, uint64_t, uint64_t, int);
+	    uint64_t, struct btrfs_ref_owner, int);
+int	btrfs_delete_data_csums(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t);
 int	btrfs_run_delayed_refs(struct btrfs_trans_handle *);
-int	btrfs_run_delayed_data_refs(struct btrfs_trans_handle *);
 int	btrfs_prepare_metadata_commit(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
-int	btrfs_delayed_data_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_ordered_extents_finish(struct btrfs_transaction *, int);
 int	btrfs_write_ordered_extents(struct btrfs_trans_handle *);
 int	btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *);

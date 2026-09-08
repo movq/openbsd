@@ -37,8 +37,8 @@ static int	btrfs_first_item(struct btrfs_root *, struct btrfs_path *);
 static int	btrfs_find_chunk(const struct btrfs_fs *, uint64_t,
 		    uint64_t, unsigned int *);
 static int	btrfs_finish_extent(uint64_t, uint64_t, int);
-static int	btrfs_emit_backref(uint64_t, uint8_t, uint64_t,
-		    const uint8_t *, size_t, int, uint64_t *,
+static int	btrfs_emit_backref(uint64_t, uint64_t,
+		    const struct btrfs_ref_decoded *, int, uint64_t *,
 		    btrfs_backref_iter_fn, void *);
 static int	btrfs_read_extent_item(struct btrfs_fs *,
 		    const struct btrfs_key *, const uint8_t *, uint32_t,
@@ -86,80 +86,29 @@ btrfs_finish_extent(uint64_t expected, uint64_t found, int active)
 }
 
 static int
-btrfs_emit_backref(uint64_t bytenr, uint8_t type, uint64_t key_offset,
-    const uint8_t *data, size_t size, int is_inline, uint64_t *refsp,
+btrfs_emit_backref(uint64_t bytenr, uint64_t key_offset,
+    const struct btrfs_ref_decoded *ref, int is_inline, uint64_t *refsp,
     btrfs_backref_iter_fn callback, void *arg)
 {
-	const struct btrfs_extent_data_ref *data_ref;
-	const struct btrfs_extent_ref_v0 *ref_v0;
-	const struct btrfs_shared_data_ref *shared_data;
 	struct btrfs_backref_record record;
-	uint64_t count;
-	size_t expected;
 
 	memset(&record, 0, sizeof(record));
 	record.bbr_bytenr = bytenr;
-	record.bbr_type = type;
+	record.bbr_type = ref->type;
 	record.bbr_inline = is_inline;
 	record.bbr_key_offset = key_offset;
-	expected = 0;
-	switch (type) {
-	case BTRFS_TREE_BLOCK_REF_KEY:
-		if (size != 0)
-			return (EINVAL);
-		record.bbr_root = key_offset;
-		record.bbr_count = 1;
-		break;
-	case BTRFS_SHARED_BLOCK_REF_KEY:
-		if (size != 0)
-			return (EINVAL);
-		record.bbr_parent = key_offset;
-		record.bbr_count = 1;
-		break;
-	case BTRFS_EXTENT_DATA_REF_KEY:
-		expected = sizeof(*data_ref);
-		if (size != expected)
-			return (EINVAL);
-		data_ref = (const struct btrfs_extent_data_ref *)data;
-		record.bbr_root = letoh64(data_ref->root);
-		record.bbr_objectid = letoh64(data_ref->objectid);
-		record.bbr_offset = letoh64(data_ref->offset);
-		record.bbr_count = letoh32(data_ref->count);
-		break;
-	case BTRFS_SHARED_DATA_REF_KEY:
-		expected = sizeof(*shared_data);
-		if (size != expected)
-			return (EINVAL);
-		shared_data = (const struct btrfs_shared_data_ref *)data;
-		record.bbr_parent = key_offset;
-		record.bbr_count = letoh32(shared_data->count);
-		break;
-	case BTRFS_EXTENT_REF_V0_KEY:
-		expected = sizeof(*ref_v0);
-		if (is_inline || size != expected)
-			return (EINVAL);
-		ref_v0 = (const struct btrfs_extent_ref_v0 *)data;
-		record.bbr_root = letoh64(ref_v0->root);
-		record.bbr_objectid = letoh64(ref_v0->objectid);
-		record.bbr_generation = letoh64(ref_v0->generation);
-		record.bbr_count = letoh32(ref_v0->count);
-		break;
-	default:
-		return (EINVAL);
+	record.bbr_count = ref->count;
+	record.bbr_generation = ref->generation;
+	if (ref->owner.kind == BTRFS_REF_SHARED)
+		record.bbr_parent = ref->owner.u.parent;
+	else {
+		record.bbr_root = ref->owner.u.implicit.root;
+		record.bbr_objectid = ref->owner.u.implicit.objectid;
+		record.bbr_offset = ref->owner.u.implicit.offset;
 	}
-
-	if (record.bbr_count == 0 ||
-	    (record.bbr_root == 0 &&
-	    type != BTRFS_SHARED_BLOCK_REF_KEY &&
-	    type != BTRFS_SHARED_DATA_REF_KEY) ||
-	    ((type == BTRFS_SHARED_BLOCK_REF_KEY ||
-	    type == BTRFS_SHARED_DATA_REF_KEY) &&
-	    record.bbr_parent == 0))
+	if (*refsp > UINT64_MAX - ref->count)
 		return (EINVAL);
-	count = record.bbr_count;
-	if (*refsp > UINT64_MAX - count)
-		return (EINVAL);
-	*refsp += count;
+	*refsp += ref->count;
 	if (callback != NULL)
 		return (callback(&record, arg));
 	return (0);
@@ -177,10 +126,11 @@ btrfs_read_extent_item(struct btrfs_fs *bmp,
 	const struct btrfs_extent_item_v0 *item_v0;
 	const struct btrfs_tree_block_info *tree_info;
 	const struct btrfs_chunk_map *chunk;
+	struct btrfs_ref_decoded ref;
 	const uint8_t *p;
 	uint64_t flags, offset;
 	uint32_t sectorsize;
-	size_t body_size, header_size, remain;
+	size_t body_size, remain;
 	unsigned int chunk_index;
 	int error;
 
@@ -301,44 +251,18 @@ btrfs_read_extent_item(struct btrfs_fs *bmp,
 	}
 
 	while (remain != 0) {
-		header_size = offsetof(struct btrfs_extent_inline_ref, offset);
-		if (remain < header_size)
-			return (EINVAL);
-		inline_ref = (const struct btrfs_extent_inline_ref *)p;
-		body_size = 0;
-		switch (inline_ref->type) {
-		case BTRFS_TREE_BLOCK_REF_KEY:
-		case BTRFS_SHARED_BLOCK_REF_KEY:
-			if ((flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) == 0)
-				return (EINVAL);
-			header_size = sizeof(*inline_ref);
-			break;
-		case BTRFS_EXTENT_DATA_REF_KEY:
-			if ((flags & BTRFS_EXTENT_FLAG_DATA) == 0)
-				return (EINVAL);
-			body_size = sizeof(struct btrfs_extent_data_ref);
-			break;
-		case BTRFS_SHARED_DATA_REF_KEY:
-			if ((flags & BTRFS_EXTENT_FLAG_DATA) == 0)
-				return (EINVAL);
-			header_size = sizeof(*inline_ref);
-			body_size = sizeof(struct btrfs_shared_data_ref);
-			break;
-		default:
-			return (EINVAL);
-		}
-		if (header_size > remain || body_size > remain - header_size)
-			return (EINVAL);
-		offset = header_size == sizeof(*inline_ref) ?
-		    letoh64(inline_ref->offset) : 0;
-		error = btrfs_emit_backref(record->ber_bytenr,
-		    inline_ref->type, offset, p + header_size,
-		    body_size, 1, refsp, backref_callback, arg);
+		error = btrfs_ref_inline(data, size, p - data, flags, &ref);
 		if (error != 0)
 			return (error);
-		body_size += header_size;
-		p += body_size;
-		remain -= body_size;
+		offset = ref.owner.kind == BTRFS_REF_SHARED ?
+		    ref.owner.u.parent : (ref.type == BTRFS_TREE_BLOCK_REF_KEY ?
+		    ref.owner.u.implicit.root : 0);
+		error = btrfs_emit_backref(record->ber_bytenr, offset, &ref,
+		    1, refsp, backref_callback, arg);
+		if (error != 0)
+			return (error);
+		p += ref.size;
+		remain -= ref.size;
 	}
 	return (0);
 }
@@ -351,6 +275,7 @@ btrfs_iterate_extent_items(struct btrfs_fs *bmp,
 	const struct btrfs_key *key;
 	const uint8_t *data;
 	struct btrfs_extent_record extent;
+	struct btrfs_ref_decoded ref;
 	struct btrfs_path path = { 0 };
 	struct btrfs_root *root;
 	uint64_t expected = 0, found = 0;
@@ -416,9 +341,12 @@ btrfs_iterate_extent_items(struct btrfs_fs *bmp,
 				error = EINVAL;
 				break;
 			}
-			error = btrfs_emit_backref(extent.ber_bytenr,
-			    key->type, letoh64(key->offset), data, size, 0,
-			    &found, backref_callback, arg);
+			error = btrfs_ref_decode(key->type, letoh64(key->offset),
+			    data, size, &ref);
+			if (error == 0)
+				error = btrfs_emit_backref(extent.ber_bytenr,
+				    letoh64(key->offset), &ref, 0, &found,
+				    backref_callback, arg);
 			break;
 		case BTRFS_BLOCK_GROUP_ITEM_KEY:
 			error = btrfs_finish_extent(expected, found, active);
