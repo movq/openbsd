@@ -717,3 +717,12 @@ including subvolume creation; packed hash collisions; and set/replace/remove
 on files, directories, and symlinks. Successful changes advance ctime, inode
 sequence and transaction ID, and notify kqueue; failed changes preserve
 metadata. Remount checks cover persisted values and timestamps.
+The xattrs-malformed recipe damages the tail of a collision bucket (length,
+name, type, location or hash), checks that enumeration and edits reject it
+without changing inode metadata, then restores the fixture and checks it.
+
+name_records.py fills one directory hash bucket with colliding names. Its
+create/verify phases check unchanged namespace and inode state after failed
+create, link, rename, subvolume and snapshot additions, then same-bucket
+rename/replacement, unlink and subvolume deletion. The name-records recipe
+includes independent checks and remount verification on both node sizes.

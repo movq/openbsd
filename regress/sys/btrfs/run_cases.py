@@ -318,6 +318,25 @@ def xattrs(r):
     r.host_test("xattrs", "disk", r.image)
 
 
+def xattrs_malformed(r):
+    r.format()
+    r.mount()
+    r.test("xattrs", "malformed_seed", r.path("test"))
+    r.unmount()
+    r.checks()
+    journal = r.case_dir / "damage.json"
+    for field in ("length", "name", "type", "location", "hash"):
+        r.host_test("xattrs", "damage", r.image, journal, field)
+        r.mount()
+        r.test("xattrs", "malformed", r.path("test"))
+        r.unmount()
+        r.host_test("xattrs", "repair", r.image, journal)
+        r.checks()
+        r.mount()
+        r.test("xattrs", "malformed_verify", r.path("test"))
+        r.unmount()
+
+
 def shrink_policy(r, policy):
     seed = r.seed("shrink")
     flags = [f"{policy}:{path.name}" for path in sorted(seed.iterdir())]
@@ -696,6 +715,7 @@ def cases():
         "rename-races": partial(basic, script="rename", create="races", verify=None),
         "rename-packed": partial(basic, script="rename", create="packed",
                                   verify=None, extref=False),
+        "name-records": partial(basic, script="name_records"),
         "checksums": checksums, "cluster": cluster, "coalesce": coalesce,
         "xxhash-checksums": partial(checksums, checksum="xxhash"),
         "xxhash-read-import": partial(read_import, checksum="xxhash"),
@@ -738,6 +758,7 @@ def cases():
                             restore="restore"),
         "holes": partial(imported, script="holes", exercise="write", holes=True),
         "nodatasum": nodatasum, "inherit": inherit, "xattrs": xattrs,
+        "xattrs-malformed": xattrs_malformed,
         "free-space": free_space,
         "free-space-bad-count": partial(free_space, damage="bad-count"),
         "free-space-bad-bit": partial(free_space, damage="bad-bit"),

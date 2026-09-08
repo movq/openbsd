@@ -107,6 +107,24 @@ def create(base):
     assert xattr(base, path, "") == {COLLISIONS[1]: b"two".hex()}
     xattr(base, path, COLLISIONS[1], remove=True)
     assert xattr(base, path, "") == {}
+
+    # Grow a packed bucket up to its item limit, retaining both values and
+    # inode metadata on failure. Removing a neighbor must recover capacity.
+    xattr(base, path, COLLISIONS[1], bytes(1024))
+    for length in range(1024, 65536, 1024):
+        before = stable(path.lstat()), xattr(base, path, "")
+        try:
+            xattr(base, path, COLLISIONS[0], bytes(length))
+        except OSError as error:
+            assert error.errno == errno.ENOSPC, error
+            assert (stable(path.lstat()), xattr(base, path, "")) == before
+            break
+    else:
+        raise AssertionError("xattr collision bucket did not fill")
+    xattr(base, path, COLLISIONS[1], remove=True)
+    xattr(base, path, COLLISIONS[0], bytes(length))
+    assert xattr(base, path, "") == {COLLISIONS[0]: bytes(length).hex()}
+    xattr(base, path, COLLISIONS[0], remove=True)
     (base / "state.json").write_text(json.dumps(saved))
     os.sync()
     verify(base)
@@ -160,7 +178,103 @@ def disk(image):
     print("xattr-only transactions advanced inode transid and sequence")
 
 
+def malformed_seed(base):
+    base.mkdir()
+    path = base / "malformed"
+    path.touch()
+    for name in COLLISIONS:
+        xattr(base, path, name, VALUE)
+    os.sync()
+
+
+def malformed_verify(base):
+    assert xattr(base, base / "malformed", "") == {
+        name: VALUE.hex() for name in COLLISIONS}
+
+
+def malformed(base):
+    path = base / "malformed"
+    before = stable(path.lstat())
+    # The damaged record follows the requested name in the same bucket.
+    # Enumeration and both edit operations must validate that tail.
+    denied(errno.EINVAL, base, path, "")
+    denied(errno.EINVAL, base, path, COLLISIONS[0], b"replacement")
+    denied(errno.EINVAL, base, path, COLLISIONS[0], remove=True)
+    assert stable(path.lstat()) == before
+
+
+def damage(image, journal, field):
+    from chunks_fixture import checksum
+    from mirrors import inspect
+    from reclaim_chunks import chunks
+
+    tree = inspect(str(image), "dump-tree", "-t", "fs")
+    nodesize = int(re.search(r"^nodesize\s+(\d+)",
+                            inspect(str(image), "dump-super"), re.M)[1])
+    maps = chunks(image)
+    saved = []
+    fd = os.open(image, os.O_RDWR)
+    try:
+        for logical in map(int, re.findall(r"^leaf (\d+) items", tree, re.M)):
+            chunk = next(c for c in maps if
+                         c["logical"] <= logical < c["logical"] + c["length"])
+            copies = [p + logical - chunk["logical"] for p in chunk["physical"]]
+            block = bytearray(os.pread(fd, nodesize, copies[0]))
+            assert all(os.pread(fd, nodesize, p) == block for p in copies)
+            changed = False
+            for slot in range(struct.unpack_from("<I", block, 96)[0]):
+                _, kind, _, offset, size = struct.unpack_from(
+                    "<QBQII", block, 101 + 25 * slot)
+                if kind != 24:  # XATTR_ITEM
+                    continue
+                pos, end = 101 + offset, 101 + offset + size
+                for name in COLLISIONS:
+                    datalen, namelen = struct.unpack_from("<HH", block, pos + 25)
+                    assert block[pos + 30:pos + 30 + namelen] == name.encode()
+                    if name == COLLISIONS[1]:
+                        if field == "length":
+                            struct.pack_into("<H", block, pos + 25, 65535)
+                        elif field == "name":
+                            block[pos + 30] = 0
+                        elif field == "type":
+                            block[pos + 29] = 1
+                        elif field == "location":
+                            struct.pack_into("<Q", block, pos, 1)
+                        else:
+                            assert field == "hash"
+                            block[pos + 30] ^= 1
+                        changed = True
+                    pos += 30 + namelen + datalen
+                assert pos == end
+            if changed:
+                checksum(block)
+                for address in copies:
+                    saved.append((address, os.pread(fd, nodesize, address).hex()))
+                    assert os.pwrite(fd, block, address) == nodesize
+        assert saved
+        journal.write_text(json.dumps(saved))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def repair(image, journal):
+    fd = os.open(image, os.O_RDWR)
+    try:
+        for address, data in json.loads(journal.read_text()):
+            block = bytes.fromhex(data)
+            assert os.pwrite(fd, block, address) == len(block)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 if __name__ == "__main__":
-    phase, path = sys.argv[1:]
-    globals()[phase](Path(path).resolve())
+    phase = sys.argv[1]
+    if phase == "damage":
+        damage(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4])
+    elif phase == "repair":
+        repair(Path(sys.argv[2]), Path(sys.argv[3]))
+    else:
+        globals()[phase](Path(sys.argv[2]).resolve())
     print("xattrs", phase, "passed", flush=True)
