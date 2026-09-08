@@ -829,6 +829,8 @@ file btrfs/btrfs_disk.c			btrfs
 file btrfs/btrfs_extent_buffer.c	btrfs
 file btrfs/btrfs_io.c			btrfs
 file btrfs/btrfs_inode.c		btrfs
+file btrfs/btrfs_dir.c		btrfs
+file btrfs/btrfs_xattr.c		btrfs
 file btrfs/btrfs_compression.c		btrfs
 file btrfs/btrfs_super.c		btrfs
 file btrfs/btrfs_tree.c			btrfs
