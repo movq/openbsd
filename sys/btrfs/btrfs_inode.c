@@ -155,6 +155,7 @@ out:
 	return (error);
 }
 
+/* Mutable inode state is host-endian; encoding preserves unmodeled fields. */
 int
 btrfs_write_inode(struct btrfs_trans_handle *handle,
     struct btrfs_node *node)
@@ -242,14 +243,18 @@ out:
 	return (error);
 }
 
-/* Btrfs stores Linux new_encode_dev: 12 major and 20 minor bits. */
+/*
+ * Disk inodes store Linux's in-kernel dev_t, (major << 20) | minor; send
+ * streams use the separate userspace new_encode_dev encoding. Preserve the
+ * major/minor values, although driver assignments are OS-specific. Creation
+ * rejects minors above 20 bits; loading rejects majors outside OpenBSD's
+ * 8-bit range.
+ */
 int
 btrfs_decode_rdev(uint64_t disk, dev_t *dev)
 {
 	uint32_t maj, min;
 
-	/* Btrfs stores Linux's in-kernel dev_t, not new_encode_dev().
-	 * The send protocol uses the latter encoding separately. */
 	maj = disk >> 20;
 	min = disk & 0xfffff;
 	if (disk > UINT32_MAX || maj > 0xff)
@@ -264,6 +269,11 @@ btrfs_decode_rdev(uint64_t disk, dev_t *dev)
  * the vnode before mutation and register aliases after ending the handle.
  * Namespace items, the optional symlink extent, and the parent inode belong
  * to one transaction; errors after the first mutation abort it.
+ *
+ * Linux xattrs remain on the parent and do not prevent creation or propagate
+ * to the child. New inodes inherit the parent group, compression flags and
+ * NODATACOW; regular children of NODATACOW directories also get NODATASUM.
+ * Writes nevertheless use uncompressed COW data.
  */
 int
 btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
@@ -476,6 +486,9 @@ out:
  * keyed by inode, not by directory entry.  Parent and source vnode locks
  * serialize directory indexes and the packed per-parent inode references.
  * All capacity checks precede mutation; a later error aborts the transaction.
+ * Packed inode references overflow into extended references only when
+ * EXTENDED_IREF is enabled; otherwise overflow returns EMLINK. Each hash
+ * bucket must still fit in one item.
  */
 int
 btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
@@ -1281,6 +1294,25 @@ out:
 	return (error);
 }
 
+/*
+ * Final-link removal records a zero-link inode and orphan marker with the
+ * namespace removal. Open descriptors and mappings survive until the last
+ * vnode reference, whose cleanup commits any pending data before calling us.
+ * Rmdir uses the same lifecycle. A fragmented shrink instead publishes its
+ * target size and marker first, then commits ordered data before cleanup;
+ * the locked vnode must remain locked through all batches.
+ *
+ * Each truncate batch re-searches from rounded target EOF, including
+ * preallocation beyond the old EOF, and keeps remaining byte accounting
+ * durable. The final batch removes a linked inode's marker; an open unlinked
+ * inode keeps its marker for last close. Failure after target publication cannot
+ * restore the old size: leave the marker recoverable and the filesystem
+ * read-only. Mount recovery uses this same vnode-independent engine before
+ * exposing any view.
+ *
+ * Keep an inode-number high-water mark until filesystem teardown so deleted
+ * vnodes and file handles cannot alias new inodes.
+ */
 static int
 btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
     struct btrfs_node *node)

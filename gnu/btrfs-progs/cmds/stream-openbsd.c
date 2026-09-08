@@ -1,4 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+
+/*
+ * A mountpoint selects the filesystem for send/receive; subvolume and
+ * destination paths start at tree 5 rather than the selected mount root.
+ * Access roots through existing views or temporary disjoint mounts.
+ */
+
 #include "kerncompat.h"
 #include <sys/ioctl.h>
 #include <sys/mount.h>

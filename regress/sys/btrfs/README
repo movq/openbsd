@@ -202,8 +202,10 @@ write. Check independently and use verify_original after remount. Repeat
 crash_write with a breakpoint at btrfs_chunk_publish to reset after
 durable publication, then check independently and use verify_crash.
 
-Writable images must meet the feature restrictions in
-sys/btrfs/WRITE_SUPPORT.md.  The host must not mount an untrusted image.
+Writable images must meet the feature restrictions documented at
+btrfs_validate_writable in sys/btrfs/btrfs_vfsops.c and defined by the
+WRITE_SUPPORTED masks in sys/btrfs/btrfs.h.  The host must not mount an
+untrusted image.
 
 Free-space-tree and block-group-tree writes use the existing namespace, idle,
 statfs, and enospc tests. Run on fresh 4 KiB and 16 KiB SINGLE/DUP images with

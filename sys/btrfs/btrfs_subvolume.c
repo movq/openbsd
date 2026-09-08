@@ -1,4 +1,25 @@
 /* Public domain. */
+
+/*
+ * Privileged /dev/btrfs-control administration selects a filesystem by
+ * mountpoint, but resolves all paths from tree 5, including parents outside
+ * the selected view. These paths do not follow symlinks or "..".
+ *
+ * Administration pins views and serializes ancestry, locks a visible parent
+ * before the namespace lock, then closes joins, drains handles and commits
+ * the source generation. Private creation/snapshot and deletion plans reserve
+ * all metadata and reference work before mutation. Only a successful commit
+ * permits parent inode and name-cache publication, before reopening joins.
+ * Snapshots copy the root block and share lower metadata and file data; nested
+ * subvolumes become empty, immutable boundary directories.
+ *
+ * Deletion rejects mounted hierarchies, active vnodes and nested subvolumes.
+ * Namespace removal and final reference drops publish atomically, so large
+ * deletions can fail ENOSPC before mutation. Bounded deletion and recovery
+ * remain future work. Tombstones and the root-ID high-water mark prevent reuse
+ * until filesystem teardown.
+ */
+
 #include <sys/param.h>
 #include <sys/buf.h>
 #include <sys/systm.h>
@@ -171,6 +192,11 @@ subvol_admin_leave(struct btrfs_fs *bmp, struct proc *p)
  * The caller serializes mounts and namespace changes. Finalization fences
  * vget, proves that no vnode user can still mutate this tree, then publishes
  * the identity and read-only flag in one transaction.
+ * The shared administration gate excludes writers. Receive completion
+ * atomically publishes the received UUID, sender transaction ID and read-only
+ * flag; failed or interrupted replay leaves an incomplete writable tree with
+ * no received identity. The destination must stay private during replay:
+ * finalization requires no active vnodes or mounted descendant views.
  */
 int
 btrfs_identity(struct btrfs_fs *bmp, u_long cmd,

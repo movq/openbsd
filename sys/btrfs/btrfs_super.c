@@ -997,6 +997,10 @@ btrfs_load_root_location(struct btrfs_root *root_tree, uint64_t objectid,
 	return (0);
 }
 
+/*
+ * Select the newest root-item key. Imported Linux snapshots can have nonzero
+ * key offsets; retain the selected offset for subsequent updates and deletion.
+ */
 int
 btrfs_find_root_item(struct btrfs_root *root, uint64_t objectid,
     uint64_t root_dirid, struct btrfs_root_item *result, uint64_t *offset)

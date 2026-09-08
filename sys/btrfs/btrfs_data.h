@@ -30,6 +30,10 @@
  * Discard the plan on preparation error. Apply once under an already reserved
  * handle; any apply error requires abort. Allocation, ordered payloads and
  * inode publication stay with callers.
+ *
+ * Splits preserve allocation and file-base identity, including compressed
+ * decoded offsets. Inline removal accounts for decoded bytes, and replacement
+ * holes follow NO_HOLES. Writes, clone and truncate cleanup share this plan.
  */
 struct btrfs_extent_plan {
 	struct btrfs_root	*root;
@@ -76,6 +80,9 @@ int	btrfs_extent_plan_apply(struct btrfs_trans_handle *,
  * the plan and completes any durable cleanup. Its errors never roll back the
  * target; they leave recovery work on a read-only filesystem.
  * Release alone is for preparation/join/apply/end failure, not published work.
+ *
+ * Setattr owns attribute policy; setattr and clone own VM updates and
+ * notifications. Clone uses this protocol for destination growth.
  */
 struct btrfs_resize_plan {
 	struct btrfs_node	*node;

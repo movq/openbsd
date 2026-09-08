@@ -20,6 +20,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+/*
+ * Inode operations and subvolume administration share directory record
+ * decoding, persistent index allocation, hash/index consistency and capacity
+ * checks. Namespace preparation keeps one private image per key, combining
+ * removals before additions so overlapping buckets are checked as a whole.
+ * Apply under the caller's reserved handle. Inode and root references retain
+ * separate preparation; reservations, inode and cache publication belong to
+ * each operation. Xattrs share packed-record framing and item editing, with
+ * their own name, value and location validation in btrfs_xattr.c.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>
