@@ -64,6 +64,53 @@ int	btrfs_extent_plan_apply(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_plan *);
 
 /*
+ * Private write state. A nonzero bytenr belongs to the operation and can be
+ * cancelled. Once extent mutation starts, the transaction owns allocation
+ * cleanup, including abort. Pending payloads are borrowed only under a handle.
+ */
+struct btrfs_write_extent {
+	struct btrfs_file_extent	old;
+	struct btrfs_ordered_extent *pending;
+	uint64_t		file_offset;
+	uint64_t		bytenr;
+	uint32_t		allocated_length;
+};
+
+/*
+ * Write one chunk of a locked regular file. Keep the vnode locked throughout.
+ * Prepare bounds the write, reserves and allocates space, and reads preserved
+ * data without changing the inode. Its errors leave no resources held.
+ *
+ * The caller copies at most length bytes into data + offset and may then stage
+ * inode attributes. Finish consumes the operation: zero copied bytes cancel
+ * it; otherwise it applies the copied prefix and encodes the inode before
+ * ending the handle. Allocation/payload length survives a short copy.
+ * Preparation failures cancel private allocations; failures after mutation
+ * abort the transaction. Cancellation or any finish error restores the inode.
+ *
+ * Callers use only data, offset and length; all other fields are private.
+ * VFS policy, uiomove state, VM updates and notifications belong
+ * to the caller, which publishes only after successful nonempty finish.
+ */
+struct btrfs_write_operation {
+	uint8_t			*data;
+	uint32_t		offset;
+	uint32_t		length;
+	struct btrfs_node	*node;
+	struct btrfs_trans_handle *handle;
+	struct btrfs_trans_reservation reservation;
+	struct btrfs_inode	saved;
+	struct btrfs_write_extent range;
+	struct btrfs_write_extent prefix;
+	uint8_t			*inline_data;
+	int			mutated;
+};
+
+int	btrfs_write_prepare(struct btrfs_write_operation *,
+	    struct btrfs_node *, uint64_t, size_t);
+int	btrfs_write_finish(struct btrfs_write_operation *, size_t);
+
+/*
  * Resize a locked regular file. Keep the vnode locked through finish/release.
  * Prepare validates mappings and stages a zero-tailed COW sector without
  * changing the inode; its errors leave no resources held. A zeroed plan can
