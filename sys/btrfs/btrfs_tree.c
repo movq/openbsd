@@ -21,6 +21,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * Roots are persistent filesystem-owned objects. Readers snapshot their
+ * locations; writers retain root locks and COW paths from the root downward,
+ * using private extent-buffer storage. Validate blocks against the path's
+ * view generation, and never overwrite committed metadata.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>

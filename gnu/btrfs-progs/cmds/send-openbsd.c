@@ -1,4 +1,26 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+
+/*
+ * Emit Linux version 1 full or incremental streams from read-only roots.
+ * Pathname/inode inventories live in userspace memory and still visit every
+ * name. Paginated tree-item ioctls pin immutable roots with open descriptors;
+ * each call excludes root administration and releases all tree buffers before
+ * returning. Comparing both directions finds changed/deleted items and skips
+ * shared subtrees by block address and generation, even at different heights.
+ *
+ * Extent iterators compare allocation identities and decoded offsets,
+ * including split compressed mappings, and read data only for emitted WRITEs.
+ * Unchanged data is omitted or cloned from the parent; holes and preallocation
+ * are skipped unless retained parent data must be replaced with zero WRITEs,
+ * as version 1 requires. There is no content deduplication or search for clone
+ * sources at other inode/offset pairs.
+ *
+ * Remove old xattrs before creation/data changes and restore them after
+ * ownership and mode changes, avoiding Linux ACL inheritance and capability
+ * loss. Version 2/3 commands, no-data streams, recursive subvolumes and inode
+ * flag preservation are unsupported. Symlink permissions are not transmitted.
+ */
+
 #include "kerncompat.h"
 #include <sys/ioctl.h>
 #include <dirent.h>

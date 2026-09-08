@@ -16,6 +16,33 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*
+ * Writers join the filesystem's single open transaction with typed,
+ * worst-case reservations acquired before visible mutation. Capacity failures
+ * must leave namespace and inode state unchanged so later operations can
+ * proceed. Errors after partial tree mutation abort the transaction and make
+ * every mount view read-only.
+ *
+ * Before ending a handle, encode affected inodes and attach owned data
+ * payloads. Ending a handle does not commit. A committer closes joins and
+ * drains handles; new writers wait for publication. Commit must never acquire
+ * arbitrary vnode locks, since callers may retain them while joining or
+ * requesting a commit. Sync always commits the full transaction; no log tree
+ * is maintained.
+ *
+ * Abort restores saved roots and marks transaction-owned extent buffers stale
+ * before releasing new allocations. Committed metadata is never overwritten,
+ * and freed extents remain pinned until durable publication. Overlapping
+ * transactions would require root versioning and per-generation ownership of
+ * pins, ordered data, and extent buffers.
+ *
+ * Durability changes need independent checks of unmounted filesystems and
+ * data, followed by remount verification (see regress/sys/btrfs/README).
+ * Recovery also needs reservation exhaustion and fault injection around data,
+ * metadata, cache barriers, and superblock mirrors: either old or new committed
+ * state is valid, but mixed generations are not.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>
@@ -316,6 +343,12 @@ btrfs_trans_abort(struct btrfs_trans_handle *handle, int error)
 	mtx_leave(&bmp->bm_trans_mtx);
 }
 
+/*
+ * Reference materialization, block-group accounting and root-item updates
+ * can COW more trees and queue more references. Reach a fixed point before
+ * writing metadata, including allocator change sequence in the stability
+ * check even when the delayed-reference queues appear empty.
+ */
 int
 btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 {
@@ -360,6 +393,7 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 	return (ELOOP);
 }
 
+/* bwrite and device VOP_FSYNC alone do not flush volatile device caches. */
 static int
 btrfs_sync_device(struct btrfs_fs *bmp, struct proc *p)
 {
@@ -375,6 +409,18 @@ btrfs_sync_device(struct btrfs_fs *bmp, struct proc *p)
 	return (error);
 }
 
+/*
+ * The highest valid superblock generation is the commit point. First submit
+ * ordered data, insert its checksums, and wait for every required mirror.
+ * Drain metadata accounting to a fixed point, finalize metadata headers and
+ * checksums, then submit and wait for all metadata mirrors. Drain device
+ * buffers and cache-sync before writing usable superblock mirrors within the
+ * recorded device size. A second drain/cache-sync precedes in-memory
+ * publication and release of pinned space. Every DUP copy is required.
+ *
+ * Once superblock writing is attempted, attempt the final barrier even if a
+ * mirror failed. Ambiguous publication requires an error and read-only views.
+ */
 int
 btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
     struct proc *p)

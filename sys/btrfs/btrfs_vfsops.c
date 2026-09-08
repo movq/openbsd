@@ -21,6 +21,28 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * A filesystem instance owns the device, roots, allocation, caches, and one
+ * open transaction. Mount views select roots and carry VFS mount policy.
+ * Each inode belongs to one view and one vnode, preserving native VM, IPC,
+ * locking, and unmount behavior. Transaction failure makes all views read-only.
+ * Sync or unmount of any view can commit work from every view; unmount flushes
+ * only its own vnodes, and the last view tears down the filesystem services.
+ *
+ * Writable views must select disjoint hierarchies: equal roots and ancestor/
+ * descendant pairs are busy. A read-only view can join a writable filesystem,
+ * but a filesystem opened read-only cannot gain writable views until all
+ * views detach. Nested subvolumes remain traversable subject to their own
+ * read-only flags. Remount updates and subvolume property changes are not
+ * implemented.
+ *
+ * Root backreferences define ancestry; directory traversal checks entries
+ * against them. A copied entry without a backreference is an empty, immutable
+ * snapshot boundary. Trees have distinct anonymous device IDs for stat and
+ * retain their on-disk inode numbers. These IDs last until filesystem teardown,
+ * not across filesystem lifetimes.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
@@ -63,6 +85,10 @@ static int	btrfs_vptofh(struct vnode *, struct fid *);
 /*
  * OpenBSD has sixteen payload bytes in a fid. Never truncate a tree ID or
  * generation to fit: VPTOFH rejects identities outside this encoding.
+ * Local handles identify the tree, inode and creation generation, and lookup
+ * enforces the selected view's hierarchy. They require a mounted filesystem
+ * ID, which does not survive the last view's teardown. NFS export is not
+ * supported.
  */
 struct btrfs_fid {
 	uint16_t	bfid_len;
@@ -803,6 +829,21 @@ btrfs_check_write_orphans(struct btrfs_fs *bmp, int recover)
 	}
 }
 
+/*
+ * Write eligibility is stricter than disk decoding. The writable format is
+ * one device, CRC32C or xxHash64, SINGLE/DUP chunks, and skinny metadata;
+ * btrfs_check_super_policy and the WRITE_SUPPORTED masks define its features.
+ * Free-space-tree writes require VALID and support extent and bitmap records;
+ * block-group-tree accounting is also maintained.
+ *
+ * Mount must use the newest valid superblock, with no pending log, seeding
+ * device, or read-only selected tree. Validate the disk before mutation,
+ * excluding legacy extents and simple-quota owner refs. Before exposing any
+ * view, recover zero-link file-tree orphans and linked regular-file truncate
+ * markers across all file trees. Root-tree orphans and cleanup markers on
+ * other linked inode types remain unsupported. There is no log replay,
+ * qgroup accounting, or zoned support.
+ */
 static int
 btrfs_validate_writable(struct btrfs_fs *bmp)
 {

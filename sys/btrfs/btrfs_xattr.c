@@ -1,4 +1,13 @@
 /* Public domain. */
+
+/*
+ * Privileged control operations preserve Linux xattrs, including on symlinks,
+ * as opaque data. ACLs and security labels are neither enforced nor inherited.
+ * Packed-record framing and item edits are shared with directories, but xattr
+ * names, values and locations have their own validation. Attribute changes
+ * update inode ctime, sequence and transaction ID in the same reserved handle.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>

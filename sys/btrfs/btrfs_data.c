@@ -16,6 +16,30 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*
+ * Range reads, including VM-pager reads, consult ordered data before disk and
+ * use temporary storage bounded by MAXBSIZE, without a second cache of sector
+ * vnode buffers. Vnode-locked writes replace at most one mapping per handle,
+ * with uncompressed COW payloads of at most MAXBSIZE. NODATACOW mappings are
+ * still replaced by COW; NODATASUM is preserved by omitting data checksums.
+ * Larger extents would need bounded payload segments, and repeated compressed
+ * reads could benefit from decompression caching.
+ *
+ * Writes and growth convert uncompressed or Zstd inline data of at most one
+ * decoded sector to regular extents. Larger inline files, other codecs and
+ * encoded mappings remain unsupported. Uncompressed and Zstd regular mappings
+ * and uncompressed preallocation can be split, retaining the allocation,
+ * decoded size and offsets of compressed slices.
+ *
+ * Shrink can discard whole compressed mappings or inline files without
+ * decoding; retaining part of a compressed regular mapping requires Zstd.
+ * Growth converts supported inline data and COWs partial data sectors with
+ * zero tails before exposing the size. It rejects other compressed/encoded
+ * overlap and regular mappings beyond the old rounded EOF; preallocation
+ * stays zero-filled. Small shrinks fit one handle; larger ones publish a
+ * target and recovery marker for bounded cleanup in btrfs_inode.c.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
@@ -97,6 +121,9 @@ btrfs_find_ordered_sector(struct btrfs_transaction *trans,
 /*
  * Commit inserts checksums for new allocations only, in disk byte order.
  * Writers have drained, so no checksum writer can race the overlap searches.
+ * Insertion and final-drop deletion belong to commit; canceled pending
+ * allocations never acquire checksum items. New ranges must not overlap
+ * existing ranges, and packed checksum items are capped at a quarter node.
  */
 static int
 btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
@@ -914,6 +941,14 @@ btrfs_commit_inode_data(struct btrfs_node *node, struct proc *p)
 	return (btrfs_trans_commit(bmp, generation, p));
 }
 
+/*
+ * Reads and repeated writes find a containing live range under bt_lock.
+ * Replacement changes its payload without splitting the private allocation.
+ * A short truncate or copy fault may trim the live prefix: keep the complete
+ * allocation payload for writeback/checksums, but exclude the trimmed suffix
+ * from lookup. Range keys stay fixed until cancellation or teardown; final
+ * mapping deletion cancels the delayed add, payload and allocation together.
+ */
 int
 btrfs_read_ordered_range(struct btrfs_node *node, uint64_t file_offset,
     size_t length, void *data)
