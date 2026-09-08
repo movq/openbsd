@@ -1253,8 +1253,8 @@ btrfs_reap_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 		if (error == 0 && extent.bfe_disk_bytenr != 0)
 			error = btrfs_delayed_data_ref_add(handle,
 			    extent.bfe_disk_bytenr, extent.bfe_disk_num_bytes,
-			    root->br_owner, ino, extent.bfe_logical -
-			    extent.bfe_disk_offset, -1);
+			    btrfs_ref_data(root->br_owner, ino,
+			    extent.bfe_logical - extent.bfe_disk_offset), -1);
 		if (error != 0)
 			return (error);
 	}

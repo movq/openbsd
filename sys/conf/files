@@ -827,6 +827,7 @@ file btrfs/btrfs_chunk.c		btrfs
 file btrfs/btrfs_control.c		btrfs
 file btrfs/btrfs_subvolume.c	btrfs
 file btrfs/btrfs_disk.c			btrfs
+file btrfs/btrfs_ref.c			btrfs
 file btrfs/btrfs_extent_buffer.c	btrfs
 file btrfs/btrfs_io.c			btrfs
 file btrfs/btrfs_inode.c		btrfs
