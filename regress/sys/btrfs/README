@@ -78,12 +78,21 @@ metadata copy before the independent checks.
 Individual procedures
 ---------------------
 
-`make regress` in this directory on OpenBSD runs the reference decoder test
-without a mount. It links the actual decoder from `btrfs_ref.c`, discarding
+`make regress` in this directory on OpenBSD runs the reference decoder and
+tree primitive tests without a mount. The decoder test links the actual
+decoder from `btrfs_ref.c`, discarding
 kernel-only functions, and checks disk ABI fixtures, item locations, truncated
 records, zero owners/counts, mixed inline bodies, and legacy separate refs.
 Use the `subvolume`, `reflink`, and `zstd-cow` VM recipes for ownership changes,
 metadata conversion, split references, and final-drop/checksum verification.
+
+`make run-tree-layout` runs just the tree primitives. It includes the actual
+static helpers from `btrfs_tree.c` and links the extent-buffer accessors,
+discarding unused kernel functions. It checks node and leaf search boundaries,
+packed edits and scratch layouts against expected contents, gapped and aliased
+inputs, two- and three-way splits, and separator validation and propagation
+from both leaf and internal-node levels. Layout checks use 4 KiB and 16 KiB
+nodes. VM recipes still cover locking, COW, allocation and root changes.
 
 These tests require a disposable btrfs image mounted writable, root, and
 Python 3. They leave their files in place for verification after remount.
