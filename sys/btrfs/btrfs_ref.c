@@ -585,11 +585,20 @@ btrfs_materialize_data_ref(struct btrfs_trans_handle *handle,
 	    ref->bdr_length, 0, 0);
 	if (error == ENOENT) {
 		/* A new allocation starts with one implicit file owner. */
-		if (ref->bdr_ref_mod != 1 ||
+		if (ref->bdr_ref_mod < 1 ||
 		    ref->bdr_owner.kind != BTRFS_REF_IMPLICIT)
 			return (EINVAL);
-		return (btrfs_ref_create(handle, &edit, &ref->bdr_owner,
-		    BTRFS_EXTENT_DATA_REF_KEY));
+		error = btrfs_ref_create(handle, &edit, &ref->bdr_owner,
+		    BTRFS_EXTENT_DATA_REF_KEY);
+		if (error == 0 && ref->bdr_ref_mod > 1) {
+			error = btrfs_ref_load(handle, &edit, ref->bdr_bytenr,
+			    ref->bdr_length, 0, 0);
+			if (error == 0)
+				error = btrfs_ref_change(handle, &edit,
+				    &ref->bdr_owner, ref->bdr_ref_mod - 1, 0);
+			free(edit.payload, M_BTRFS, edit.allocsize);
+		}
+		return (error);
 	}
 	if (error == 0)
 		error = btrfs_ref_change(handle, &edit, &ref->bdr_owner,

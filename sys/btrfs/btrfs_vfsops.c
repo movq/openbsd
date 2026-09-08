@@ -353,6 +353,36 @@ btrfs_member_path(char *path, struct vnode **vpp, struct proc *p)
 	return (error);
 }
 
+/* Recovery needs writable devices even when the requested view is read-only. */
+static int
+btrfs_open_recovery(struct btrfs_fs *bmp, struct proc *p)
+{
+	struct vnode *vp;
+	unsigned int i, opened;
+	int error = 0;
+
+	for (opened = 0; opened < bmp->bm_ndevices; opened++) {
+		vp = bmp->bm_devices[opened].bd_devvp;
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+		error = VOP_OPEN(vp, FREAD | FWRITE, FSCRED, p);
+		VOP_UNLOCK(vp);
+		if (error != 0)
+			break;
+	}
+	for (i = 0; i < opened; i++) {
+		vp = bmp->bm_devices[i].bd_devvp;
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+		(void)VOP_CLOSE(vp, error == 0 ? FREAD : FREAD | FWRITE,
+		    FSCRED, p);
+		VOP_UNLOCK(vp);
+	}
+	if (error == 0) {
+		bmp->bm_open_flags = FREAD | FWRITE;
+		bmp->bm_readonly = 0;
+	}
+	return (error);
+}
+
 static int
 btrfs_open_devices(struct btrfs_fs *bmp, struct vnode *primary,
     struct btrfs_args *args, struct proc *p)
@@ -532,6 +562,12 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 			goto out;
 		}
 	}
+	if (readonly && sb->log_root != 0) {
+		stage = "opening devices for tree log recovery";
+		error = btrfs_open_recovery(bmp, p);
+		if (error != 0)
+			goto out;
+	}
 	pool_init(&bmp->bm_scratch_pool, MAXBSIZE, 0, IPL_NONE,
 	    PR_WAITOK, "btrscratch", NULL);
 	pool_sethiwat(&bmp->bm_scratch_pool, 16);
@@ -562,11 +598,12 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 	rw_init(&bmp->bm_namespace_lock, "btrfsns");
 	rw_init(&bmp->bm_rename_lock, "btrfsrename");
 	initialized = 1;
+	TAILQ_INIT(&bmp->bm_log_extents);
 	stage = "building free-space index";
 	error = btrfs_space_init(bmp);
 	if (error != 0)
 		goto out;
-	if (!readonly) {
+	if (!bmp->bm_readonly) {
 		stage = "validating writable image";
 		error = btrfs_validate_writable(bmp);
 		if (error != 0)
@@ -576,12 +613,17 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 	error = btrfs_trans_init(bmp);
 	if (error != 0)
 		goto out;
-	if (!readonly) {
+	stage = "replaying tree log";
+	error = btrfs_log_recover(bmp, p);
+	if (error != 0)
+		goto out;
+	if (!bmp->bm_readonly) {
 		stage = "recovering orphaned inodes";
 		error = btrfs_check_write_orphans(bmp, 1);
 		if (error != 0)
 			goto out;
 	}
+	bmp->bm_readonly = readonly;
 
 	stage = "selecting subvolume";
 	error = btrfs_attach_view(bmp, mp, args->subvolid);
@@ -862,13 +904,14 @@ btrfs_check_write_orphans(struct btrfs_fs *bmp, int recover)
  * Free-space-tree writes require VALID and support extent and bitmap records;
  * block-group-tree accounting is also maintained.
  *
- * Mount must use the newest valid superblock, with no pending log, seeding
+ * Mount must use the newest valid superblock, with no seeding
  * device, or read-only selected tree. Validate the disk before mutation,
  * excluding legacy extents and simple-quota owner refs. Before exposing any
  * view, recover zero-link file-tree orphans and linked regular-file truncate
  * markers across all file trees. Root-tree orphans and cleanup markers on
- * other linked inode types remain unsupported. There is no log replay,
- * qgroup accounting, or zoned support.
+ * other linked inode types remain unsupported. Tree logs are replayed before
+ * orphan cleanup, including for read-only views. There is no qgroup accounting
+ * or zoned support.
  */
 static int
 btrfs_validate_writable(struct btrfs_fs *bmp)

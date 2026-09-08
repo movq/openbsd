@@ -1796,7 +1796,7 @@ btrfs_fsync(void *v)
 	mtx_leave(&bmp->bm_trans_mtx);
 	if (error != 0 || generation == 0)
 		return (error);
-	return (btrfs_trans_commit(bmp, generation, ap->a_p));
+	return (btrfs_log_fsync(node, generation, ap->a_p));
 }
 
 static int

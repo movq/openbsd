@@ -368,6 +368,8 @@ struct btrfs_transaction {
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
 	uint8_t				 bt_commit_handle;
+	/* Namespace and root changes require a full transaction commit. */
+	uint8_t				 bt_log_full_commit;
 };
 
 struct btrfs_trans_handle {
@@ -607,6 +609,8 @@ struct btrfs_fs {
 	unsigned int			 bm_nblock_groups;
 	uint64_t			 bm_chunk_logical_end;
 	struct btrfs_transaction	*bm_transaction;
+	struct btrfs_trans_extent_list	 bm_log_extents;
+	struct btrfs_log			*bm_log;
 	struct mutex			 bm_trans_mtx;
 	uint64_t			 bm_last_transid;
 	int				 bm_committer;
@@ -874,6 +878,10 @@ int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
 	    uint64_t, uint64_t *);
 int	btrfs_space_cancel_alloc(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t);
+int	btrfs_space_log_alloc(struct btrfs_fs *, uint64_t *);
+int	btrfs_space_log_claim(struct btrfs_fs *, uint64_t, uint64_t, int);
+void	btrfs_space_log_release(struct btrfs_fs *);
+int	btrfs_space_replay_reserve(struct btrfs_trans_handle *);
 int	btrfs_space_discard_alloc(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t);
 int	btrfs_space_release_discarded(struct btrfs_trans_handle *);
@@ -895,6 +903,17 @@ void	btrfs_trans_abort(struct btrfs_trans_handle *, int);
 int	btrfs_trans_close(struct btrfs_fs *, uint64_t,
 	    struct btrfs_transaction **);
 int	btrfs_trans_commit(struct btrfs_fs *, uint64_t, struct proc *);
+int	btrfs_sync_device(struct btrfs_fs *, struct proc *);
+int	btrfs_log_fsync(struct btrfs_node *, uint64_t, struct proc *);
+int	btrfs_log_write(struct btrfs_trans_handle *, struct btrfs_node *,
+	    struct proc *);
+int	btrfs_log_recover(struct btrfs_fs *, struct proc *);
+void	btrfs_log_destroy(struct btrfs_fs *);
+int	btrfs_insert_data_csums(struct btrfs_trans_handle *, uint64_t,
+	    const uint8_t *, uint32_t);
+int	btrfs_decode_file_extent(const struct btrfs_fs *,
+	    uint64_t, const struct btrfs_key *, const uint8_t *, uint32_t,
+	    struct btrfs_file_extent *);
 int	btrfs_trans_finish(struct btrfs_fs *, struct btrfs_transaction *,
 	    int);
 int	btrfs_read_data_csums(struct btrfs_fs *, uint64_t, uint64_t,

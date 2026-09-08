@@ -2274,6 +2274,21 @@ btrfs_mutate_item(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 	    (operation != BTRFS_LEAF_DELETE && size != 0 && data == NULL))
 		return (EINVAL);
 
+	/*
+	 * The log writer relies on committed ancestry and inode references.
+	 * Set this before mutation, under the handle which close will drain.
+	 */
+	if (root->br_owner == BTRFS_ROOT_TREE_OBJECTID ||
+	    (btrfs_file_tree(root->br_owner) &&
+	    (key->type == BTRFS_INODE_REF_KEY ||
+	    key->type == BTRFS_INODE_EXTREF_KEY ||
+	    key->type == BTRFS_DIR_ITEM_KEY ||
+	    key->type == BTRFS_DIR_INDEX_KEY ||
+	    key->type == BTRFS_ORPHAN_ITEM_KEY))) {
+		mtx_enter(&handle->bth_transaction->bt_lock);
+		handle->bth_transaction->bt_log_full_commit = 1;
+		mtx_leave(&handle->bth_transaction->bt_lock);
+	}
 	error = btrfs_search_slot_write(handle, root, key, &path);
 	if (operation == BTRFS_LEAF_INSERT) {
 		if (error == 0) {
