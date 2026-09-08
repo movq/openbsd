@@ -432,6 +432,15 @@ Only the final drop pins an
 extent; for data it also removes its checksum range, preserving neighbors.
 Hard links change inode references, not data ownership `(root, inode, file-base)`.
 
+Writes, clones and truncate cleanup use a bounded extent-edit plan for one old
+mapping. Preparation validates the replacement range, retained slices, allocation
+reference deltas and inode byte accounting; application edits the tree and queues
+references under the caller's existing reservation. Splits preserve allocation
+and file-base identity, including compressed decoded offsets. Inline removal
+accounts for decoded bytes, and replacement holes follow `NO_HOLES`. Callers
+retain data allocation, inline decoding, ordered payload handling and inode
+publication; shrink and recovery keep their separate cleanup orchestration.
+
 Range cloning locks both regular-file vnodes without waiting on one while
 holding the other. It commits their ordered writes before sharing: pending
 payloads may otherwise still change in place or mask a replaced mapping.

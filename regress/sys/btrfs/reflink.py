@@ -279,6 +279,12 @@ def imported(base):
     (base / "compressed-slice").touch()
     link_range(base / "compressed", base / "compressed-slice",
                3 * SECTOR, 21 * SECTOR)
+    # Retain two compressed slices with the same allocation and file-base,
+    # then install another owner of that allocation between them.
+    (base / "compressed-split").touch()
+    link_range(base / "compressed", base / "compressed-split")
+    link_range(base / "compressed", base / "compressed-split",
+               3 * SECTOR, 5 * SECTOR, 7 * SECTOR)
     link_range(base / "compressed", base / "inline-dst", 0, SECTOR)
     link_range(base / "compressed", base / "inline-gap", 0, SECTOR, 4 * SECTOR)
     # Replace the middle of imported preallocation, preserving both sides.
@@ -300,6 +306,10 @@ def verify_imported(base):
     assert (base / "compressedcopy").read_bytes() == payload()
     assert (base / "compressed-slice").read_bytes() == payload()[
         3 * SECTOR:24 * SECTOR]
+    assert (base / "compressed-split").read_bytes() == (
+        payload()[:7 * SECTOR] + payload()[3 * SECTOR:8 * SECTOR] +
+        payload()[12 * SECTOR:])
+    assert (base / "compressed-split").stat().st_blocks * 512 == SIZE
     assert (base / "inlinecopy").read_bytes() == bytes(range(37))
     assert (base / "zinlinecopy").read_bytes() == b"inline" * 100
     assert (base / "inline-dst").read_bytes() == payload()[:SECTOR]
@@ -332,6 +342,11 @@ def disk_imported(image):
     for offset in range(0, 21 * SECTOR, SECTOR):
         assert identity(files["compressed-slice"], offset) == identity(
             files["compressed"], offset + 3 * SECTOR)
+    for offset in range(0, SIZE, SECTOR):
+        source_offset = offset - 4 * SECTOR if (
+            7 * SECTOR <= offset < 12 * SECTOR) else offset
+        assert identity(files["compressed-split"], offset) == identity(
+            files["compressed"], source_offset)
     assert not files["prealloccopy"]
     print("10 GiB and compressed mappings share allocations; preallocation is sparse")
 
