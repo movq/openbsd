@@ -31,6 +31,7 @@
 #include <sys/vnode.h>
 
 #include <btrfs/btrfs_var.h>
+#include <btrfs/btrfs_data.h>
 #include <btrfs/btrfs_dir.h>
 #include <lib/libkern/crc32c.h>
 
@@ -1116,12 +1117,11 @@ btrfs_truncate_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 {
 	struct btrfs_inode_item inode;
 	struct btrfs_file_extent extent;
-	struct btrfs_file_extent_item item;
+	struct btrfs_extent_plan plan;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key key = { 0 };
-	const uint8_t *data;
 	uint64_t cursor, cut, end, left, nbytes;
-	uint32_t size, sectorsize;
+	uint32_t sectorsize;
 	unsigned int count = 0;
 	int error;
 
@@ -1153,43 +1153,16 @@ btrfs_truncate_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 			goto out;
 		}
 		left = cut > extent.bfe_logical ? cut - extent.bfe_logical : 0;
-		if (extent.bfe_type != BTRFS_FILE_EXTENT_HOLE) {
-			if (extent.bfe_length - left > nbytes) {
-				error = EINVAL;
-				goto out;
-			}
-			nbytes -= extent.bfe_length - left;
-		}
-		key.objectid = htole64(ino);
-		key.type = BTRFS_EXTENT_DATA_KEY;
-		key.offset = htole64(extent.bfe_logical);
-		if (left != 0) {
-			error = btrfs_path_item(&path, NULL, &data, &size);
-			if (error != 0)
-				goto out;
-			if (size != sizeof(item)) {
-				error = EINVAL;
-				goto out;
-			}
-			memcpy(&item, data, sizeof(item));
-			item.num_bytes = htole64(left);
-			item.generation =
-			    htole64(handle->bth_transaction->bt_generation);
-		}
 		btrfs_release_path(&path);
-		if (left != 0)
-			error = btrfs_replace_item(handle, root, &key, &item,
-			    sizeof(item));
-		else {
-			error = btrfs_delete_item(handle, root, &key);
-			if (error == 0 && extent.bfe_disk_bytenr != 0)
-				error = btrfs_delayed_data_ref_add(handle,
-				    extent.bfe_disk_bytenr, extent.bfe_disk_num_bytes,
-				    root->br_owner, ino, extent.bfe_logical -
-				    extent.bfe_disk_offset, -1);
-		}
+		error = btrfs_extent_plan_prepare(&plan, root, ino, &extent,
+		    extent.bfe_logical + left, extent.bfe_length - left,
+		    NULL, nbytes);
 		if (error != 0)
 			return (error);
+		error = btrfs_extent_plan_apply(handle, &plan);
+		if (error != 0)
+			return (error);
+		nbytes = plan.nbytes;
 		count++;
 	}
 	*finished = cursor == UINT64_MAX;
