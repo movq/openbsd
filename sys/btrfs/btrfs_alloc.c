@@ -16,6 +16,32 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*
+ * Free-space indexes subtract allocated extents and physical superblock
+ * stripes from block-group bounds. Stripe exclusions have no extent items
+ * and are separate from disk usage. Free, reserved, allocated, and pinned
+ * space are distinct; typed reservations account for mixed groups.
+ *
+ * The commit metadata reserve is excluded from ordinary handles. A second
+ * protected reserve covers unlink/rmdir, a minimum truncate/orphan-cleanup
+ * batch, or chunk allocation/removal, including system space for chunk-tree
+ * COW. These operations can borrow it at ordinary exhaustion; unused space
+ * follows delayed work to commit and is replenished at publication. Larger
+ * reclaim plans combine it with ordinary space, restoring the protected
+ * promise if reservation fails. Partial EOF COW still needs ordinary data
+ * and metadata space.
+ *
+ * Mount needs existing free space to establish these reserves. Failure to
+ * replenish them after publication leaves that generation durable and the
+ * filesystem read-only. A failed reservation can publish pending work and
+ * retry, but concurrent operations may claim the next generation's space
+ * first, so large namespace plans can fail under transient pressure.
+ *
+ * The mapping lock protects the group pointer index. Handles, commit
+ * ownership, or the chunk-allocation lock protect borrowed group pointers;
+ * publication drains handles before replacing indexes and freeing groups.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>
@@ -516,6 +542,10 @@ btrfs_space_add_extent(const struct btrfs_extent_record *record, void *arg)
 	return (0);
 }
 
+/*
+ * Validate free-space records against the extent tree's complement before
+ * excluding superblock stripes from the in-memory index.
+ */
 int
 btrfs_space_init(struct btrfs_fs *bmp)
 {
@@ -662,6 +692,14 @@ btrfs_space_destroy(struct btrfs_fs *bmp)
 	btrfs_space_destroy_groups(bmp, 1);
 }
 
+/*
+ * Report logical capacity of allocated groups, counting DUP once. Free blocks
+ * include reservations but exclude pending allocations, pins and superblock
+ * stripes. Available blocks include only unreserved data-capable space.
+ * Capacity changes as chunks are allocated or returned; metadata exhaustion
+ * and fragmentation can still limit writes. Hold the mapping lock throughout
+ * traversal so chunk publication cannot retire a group underneath us.
+ */
 int
 btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 {
@@ -1431,6 +1469,9 @@ btrfs_modify_free_space_bitmap(struct btrfs_trans_handle *handle,
  * materialization. This can COW the free-space tree and queue more refs,
  * but never recurses into the extent tree. Pinned space is free on disk in
  * the new generation and remains unavailable in memory until publication.
+ * Bitmap groups retain their representation; their counts describe contiguous
+ * free runs, including runs that cross bitmap boundaries. Usage is recorded
+ * in the block group tree when enabled, otherwise in the extent tree.
  */
 int
 btrfs_update_free_space(struct btrfs_trans_handle *handle, uint64_t bytenr,

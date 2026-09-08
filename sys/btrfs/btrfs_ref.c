@@ -16,6 +16,21 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*
+ * Reference decoding is shared with the disk reader, whose legacy and quota
+ * format support is broader than write eligibility. Writers explicitly name
+ * an implicit tree/file owner or a shared parent block; full-backreference
+ * conversion is a separate metadata operation.
+ *
+ * Delayed metadata and data references have separate indexes keyed by extent
+ * and complete ownership identity. Work queues keep adds and conversions ahead
+ * of drops, including after a data delta changes sign. Cancellation removes
+ * both index and queue entries, and coalescing rekeys the enlarged allocation.
+ * Only a final drop pins space and updates free-space records; data first
+ * removes its checksum range while preserving neighboring checksums. Hard
+ * links change inode references, not data ownership (root, inode, file-base).
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>

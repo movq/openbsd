@@ -3,6 +3,20 @@
  *
  * Native callbacks for the upstream btrfs-progs send-stream decoder.
  * The callback model and receive identity rules follow cmds/receive.c.
+ *
+ * Replay Linux version 1 full and incremental streams through ordinary vnode
+ * operations, with privileged descriptor-based range cloning and opaque
+ * Linux xattr operations (also for symlinks). CLONE shares regular allocations,
+ * including compressed slices, preserves holes, and uses bounded COW copies
+ * for inline data. ACLs/security labels are preserved but not enforced or
+ * inherited. As on Linux receive, ctime is local.
+ *
+ * The destination must remain private during replay. Completion atomically
+ * publishes its received UUID, sender transaction ID and read-only root flag;
+ * it requires no active vnodes or mounted descendant views. Failed/interrupted
+ * receives remain incomplete writable trees without a received identity.
+ * Version 2/3 commands, no-data streams, recursive subvolumes and inode flag
+ * preservation are unsupported; symlink permissions are not transmitted.
  */
 #include "kerncompat.h"
 #include <sys/ioctl.h>

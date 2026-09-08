@@ -21,6 +21,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * Vnodes use native OpenBSD locking, advisory locks and kqueue facilities.
+ * FIFOs use the shared pipe implementation, and device nodes use special
+ * device operations and aliases, including nodev and securelevel policy.
+ * Their I/O remains available on read-only mounts. Size changes to devices,
+ * FIFOs and sockets are no-ops, as on FFS.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
@@ -777,6 +785,14 @@ btrfs_rename_ancestry(struct btrfs_node *node, struct btrfs_node *dir)
 	return (0);
 }
 
+/*
+ * Release incoming vnode locks before taking the filesystem rename lock.
+ * Acquire involved vnodes without blocking, dropping all locks before waiting
+ * on a contended vnode alone, then revalidate names directly. The rename lock
+ * stabilizes ancestry for cycle checks. One reserved handle preserves source
+ * inode identity and atomically replaces the destination using unlink's
+ * orphan lifecycle, so open destination descriptors survive.
+ */
 static int
 btrfs_rename(void *v)
 {
@@ -1049,6 +1065,14 @@ btrfs_getattr(void *v)
 	return (0);
 }
 
+/*
+ * Expose nodump, immutable and append as user flags; owners may clear even
+ * immutable/append, and unmodeled btrfs flags survive encoding. System flags
+ * and opaque directories are unsupported: btrfs has no separate system
+ * immutable/append state for OpenBSD securelevel semantics. New writable
+ * append-only opens require O_APPEND, while existing descriptors must write
+ * at EOF, as on FFS.
+ */
 static int
 btrfs_setattr(void *v)
 {
@@ -1277,6 +1301,11 @@ out:
 	return (error);
 }
 
+/*
+ * Compatibility and pager reads use the same range reader and mark buffers
+ * noncacheable. Strategy writeback lacks the vnode lock required for tree
+ * and inode mutation, so it is disabled.
+ */
 static int
 btrfs_strategy(void *v)
 {
@@ -1638,6 +1667,23 @@ btrfs_write(void *v)
  * CLONE holds both regular-file vnodes throughout replay. Never wait on the
  * second while holding the first: rename can hold either as a target.
  * Open descriptors and the caller's busy mounts pin both identities.
+ *
+ * Commit their ordered writes before sharing: pending payloads could still
+ * change in place or mask a replaced mapping. Source and destination must
+ * share a filesystem and checksum policy. Offsets are sector aligned; a
+ * partial final sector must end at source EOF and at or beyond destination
+ * EOF. Reject same-inode overlaps.
+ *
+ * Each reserved handle replaces at most one destination mapping with a source
+ * slice, preserving prefix/suffix owners and adding a destination file-base
+ * reference to the whole allocation. Compressed slices retain decoded offsets;
+ * preallocation becomes holes, and inline source data uses bounded COW copies.
+ * Regular mappings require no data or checksum copy. Invalidate destination
+ * vnode buffers before unlocking.
+ *
+ * The range is not atomic as a whole: an error can leave a completed prefix
+ * and sparse growth to the destination offset. Growth past an old partial EOF
+ * or inline prefix may require data COW and ordinary space.
  */
 int
 btrfs_clone_range(struct vnode *svp, struct vnode *dvp,
@@ -2085,6 +2131,12 @@ btrfs_readdir_entry(const struct btrfs_dir_entry *entry, void *arg)
 	return (error);
 }
 
+/*
+ * Persistent directory indexes are seek cookies; resume with a tree search,
+ * allowing gaps. An index whose next cookie cannot fit a signed VFS offset
+ * returns EOVERFLOW. Removed directory descriptors report zero links and EOF;
+ * child lookup and creation no longer succeed.
+ */
 static int
 btrfs_readdir(void *v)
 {

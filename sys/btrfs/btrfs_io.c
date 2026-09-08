@@ -80,7 +80,13 @@ btrfs_csum_size(const struct btrfs_super_block *sb)
 	}
 }
 
-/* The caller supplies csum_size bytes; metadata padding is caller-owned. */
+/*
+ * Superblocks, metadata and data use the selected algorithm, and checksum-tree
+ * ranges use its digest width. Directory-name and reference hashes always use
+ * the format's fixed CRC32C, independent of this choice. xxHash64 uses the
+ * shared BSD-licensed implementation with seed zero and little-endian output.
+ * The caller supplies csum_size bytes; metadata padding is caller-owned.
+ */
 void
 btrfs_csum(const struct btrfs_super_block *sb, const void *data, size_t length,
     uint8_t *result)
@@ -178,6 +184,10 @@ btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
 	return (ENOENT);
 }
 
+/*
+ * Copy live mappings under the short mapping lock, released before device
+ * access. Only bootstrap roots use fixed chunk tables.
+ */
 int
 btrfs_lookup_fs_logical(struct btrfs_fs *bmp, uint64_t logical,
     uint32_t length, struct btrfs_io_map *map)
@@ -291,6 +301,13 @@ btrfs_invalidate_physical(struct btrfs_fs *bmp, uint64_t physical,
 	}
 }
 
+/*
+ * Data and metadata phases each queue at most 16 asynchronous physical writes.
+ * Every exit must drain its batch before freeing completion state or any
+ * transaction resources. Completion records errors and short I/O, releases
+ * the buffer, then drops the pending count. A failed phase must not advance
+ * to publication; superblock writes and cache barriers remain synchronous.
+ */
 void
 btrfs_write_batch_init(struct btrfs_write_batch *batch)
 {

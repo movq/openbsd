@@ -21,6 +21,22 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * Device buffers supply physical reads; extent buffers supply logical metadata
+ * identity, validation, locking and transaction ownership. Loading releases
+ * device buffers and retains private bytes. An address index covers active
+ * and cached blocks, with idle validated blocks kept in a bounded 8 MiB LRU.
+ * Hits must match generation, level and permitted owner, and validated child
+ * generations must fit the caller's view. File-tree blocks may retain another
+ * subvolume's on-disk owner; sharing is permitted only between file trees.
+ *
+ * Allocator-authorized reuse may evict an idle old generation, never an active
+ * reference. Aborted blocks are discarded. Last-view teardown purges this
+ * cache after transactions, then destroys the per-filesystem metadata-node
+ * and MAXBSIZE scratch pools. The pools have no cache identity; their idle
+ * high-water marks are 64 and 16 objects respectively.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>

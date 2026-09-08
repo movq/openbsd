@@ -16,6 +16,30 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*
+ * Grow data, metadata and system groups within the recorded device size,
+ * preserving existing profiles. Reservation failure publishes pending work
+ * before entering chunk growth without a handle. Low system space triggers
+ * system growth first. Logical ranges append beyond a filesystem-lifetime
+ * high-water mark; chunk size does not change extent size or the ordered-data
+ * watermark.
+ *
+ * The physical planner starts at 32 MiB for data/metadata or 8 MiB for system
+ * chunks. Data growth can reach 256 MiB, limiting growth above the base to a
+ * tenth of remaining physical space including mirrors. Smaller gaps halve
+ * the target down to 1 MiB.
+ *
+ * If growth fails, empty data/metadata groups can be returned for another
+ * allocation type. Groups with disk usage, reservations, allocations or pins
+ * are ineligible. Removal atomically deletes chunk, device-extent, block-group
+ * and optional free-space records and reduces device usage; publication
+ * returns the stripes, while abort restores eligibility. Evict physical
+ * buffers before reassignment because data and metadata buffer sizes differ.
+ * Imported bitmap records can exceed the available deletion reservation.
+ * There is no device resizing or management; reusing partly occupied groups
+ * would require relocation of live extents.
+ */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>
@@ -41,6 +65,13 @@ enum btrfs_chunk_action {
  * btrfs_chunk_abort may then consume it, even if commit reports an error.
  * Until that transfer, chunk_discard unwinds every preparation/application
  * failure. New groups never serve allocations before durable publication.
+ *
+ * One reserved handle applies chunk/device, block-group and free-space edits.
+ * btr_chunk prevents recursive growth during join. Chunk-tree COW uses system
+ * space; system growth checks superblock-array capacity and prepares a
+ * bootstrap mapping. Publication installs indexes before establishing the next
+ * generation's reserves. Callers must relinquish ownership even if reserve
+ * replenishment fails after durable publication.
  */
 struct btrfs_chunk_operation {
 	enum btrfs_chunk_action		 action;

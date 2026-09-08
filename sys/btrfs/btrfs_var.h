@@ -42,6 +42,20 @@
 #define BTRFS_MIN_SECTORSIZE	0x1000
 #define BTRFS_SUPPORTED_CSUM_MAX	8
 
+/*
+ * Lock order: rename, vnode, namespace allocation, transaction handle, root,
+ * extent buffers from top down, allocator/block group, delayed references.
+ * Release paths bottom-up; queue reference changes instead of recursively
+ * editing the extent tree. The transaction mutex protects transitions and
+ * handles only and must not be held across I/O or tree searches.
+ *
+ * Parent vnode locks protect directory buckets/indexes; source vnode locks
+ * protect link counts/references. Namespace allocation serializes inode-number
+ * selection. Publish name-cache changes and notifications only after successful
+ * mutation. View attachment/detachment uses a separate administration lock
+ * which ordinary vnode and transaction paths never acquire.
+ */
+
 static inline int
 btrfs_file_tree(uint64_t owner)
 {
