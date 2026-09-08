@@ -413,7 +413,7 @@ def subvolume(r):
     r.unmount()
     r.checks()
     r.mount()
-    for phase in ("final", "boundaries", "race", "abi"):
+    for phase in ("final", "boundaries", "collisions", "race", "abi"):
         r.test("subvolume", phase)
     finish(r, verify=None)
 

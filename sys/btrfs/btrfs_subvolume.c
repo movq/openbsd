@@ -19,6 +19,7 @@ struct subvol_entry {
 	uint64_t ino;
 	uint64_t index;
 	int subvol;
+	size_t namelen;
 	char name[BTRFS_NAME_MAX + 1];
 };
 
@@ -30,9 +31,35 @@ subvol_entry(const struct btrfs_dir_entry *entry, void *arg)
 	out->ino = entry->bde_objectid;
 	out->index = entry->bde_index;
 	out->subvol = entry->bde_subvolume;
+	out->namelen = entry->bde_namelen;
 	memcpy(out->name, entry->bde_name, entry->bde_namelen);
 	out->name[entry->bde_namelen] = '\0';
 	return (0);
+}
+
+/* lookup_directory visits every entry in the name's hash bucket. */
+static int
+subvol_lookup_entry(const struct btrfs_dir_entry *entry, void *arg)
+{
+	struct subvol_entry *out = arg;
+
+	if (entry->bde_namelen != out->namelen ||
+	    memcmp(entry->bde_name, out->name, out->namelen) != 0)
+		return (0);
+	return (subvol_entry(entry, out));
+}
+
+static int
+subvol_lookup(struct btrfs_root *root, uint64_t ino, const char *name,
+    size_t namelen, struct subvol_entry *entry)
+{
+	if (namelen > BTRFS_NAME_MAX)
+		return (ENAMETOOLONG);
+	memset(entry, 0, sizeof(*entry));
+	entry->namelen = namelen;
+	memcpy(entry->name, name, namelen);
+	return (btrfs_lookup_directory(root, ino, name, namelen,
+	    subvol_lookup_entry, entry));
 }
 
 /* No symlinks or parent components: these are filesystem paths, not namei. */
@@ -64,9 +91,7 @@ subvol_resolve(struct btrfs_fs *bmp, const char *path,
 			path += len;
 			continue;
 		}
-		memset(&entry, 0, sizeof(entry));
-		error = btrfs_lookup_directory(root, *ino, path, len,
-		    subvol_entry, &entry);
+		error = subvol_lookup(root, *ino, path, len, &entry);
 		if (error != 0)
 			break;
 		if (entry.ino == 0)
@@ -110,6 +135,36 @@ subvol_read(struct btrfs_root *root, const struct btrfs_key *key,
 	}
 	btrfs_release_path(&path);
 	return (error);
+}
+
+/*
+ * The mount administration lock and bm_rename_lock must be held exclusively.
+ * Lock any parent vnode, then bm_namespace_lock if needed, before entering:
+ * a writer waiting at this gate may hold a vnode lock. No transaction handle
+ * may be held. The caller must leave the gate after ending its own handles.
+ */
+static void
+subvol_admin_enter(struct btrfs_fs *bmp, struct proc *p)
+{
+	rw_assert_wrlock(&bmp->bm_rename_lock);
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(bmp->bm_control == NULL);
+	bmp->bm_control = p;
+	while (bmp->bm_transaction->bt_writers != 0)
+		msleep(&bmp->bm_transaction->bt_writers, &bmp->bm_trans_mtx,
+		    PWAIT, "btradmin", 0);
+	mtx_leave(&bmp->bm_trans_mtx);
+}
+
+static void
+subvol_admin_leave(struct btrfs_fs *bmp, struct proc *p)
+{
+	rw_assert_wrlock(&bmp->bm_rename_lock);
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(bmp->bm_control == p);
+	bmp->bm_control = NULL;
+	wakeup(&bmp->bm_control);
+	mtx_leave(&bmp->bm_trans_mtx);
 }
 
 /*
@@ -174,12 +229,7 @@ btrfs_identity(struct btrfs_fs *bmp, u_long cmd,
 	error = btrfs_control_busy(bmp, args->id);
 	if (error != 0)
 		goto out;
-	mtx_enter(&bmp->bm_trans_mtx);
-	bmp->bm_control = p;
-	while (bmp->bm_transaction->bt_writers != 0)
-		msleep(&bmp->bm_transaction->bt_writers, &bmp->bm_trans_mtx,
-		    PWAIT, "btrrecv", 0);
-	mtx_leave(&bmp->bm_trans_mtx);
+	subvol_admin_enter(bmp, p);
 	gated = 1;
 	error = btrfs_commit_current(bmp, p);
 	/* Commit may have changed the root block and generation. */
@@ -256,12 +306,8 @@ out:
 	mtx_enter(&bmp->bm_nodemtx);
 	root->br_finalizing = 0;
 	mtx_leave(&bmp->bm_nodemtx);
-	if (gated) {
-		mtx_enter(&bmp->bm_trans_mtx);
-		bmp->bm_control = NULL;
-		wakeup(&bmp->bm_control);
-		mtx_leave(&bmp->bm_trans_mtx);
-	}
+	if (gated)
+		subvol_admin_leave(bmp, p);
 	return (error);
 }
 
@@ -678,442 +724,586 @@ subvol_uuid(struct btrfs_trans_handle *handle, struct btrfs_root_item *item,
 	return (error);
 }
 
+struct subvol_parent {
+	struct btrfs_root *dir;
+	uint64_t ino;
+	size_t namelen;
+	char name[BTRFS_NAME_MAX + 1];
+};
+
+/* Private copies of the parent items, with the planned size and hash edits. */
+struct subvol_namespace {
+	struct btrfs_inode_item inode;
+	struct btrfs_key ikey, hkey, dkey, backkey, refkey;
+	uint8_t *bucket;
+	uint32_t bucketsize;
+	int bucket_exists;
+};
+
+struct subvol_create {
+	struct btrfs_root *empty_template;
+	struct btrfs_root *snapshot;
+	struct btrfs_root_item item, snapshot_item;
+	uint8_t record[sizeof(struct btrfs_dir_item) + BTRFS_NAME_MAX];
+	uint8_t reference[sizeof(struct btrfs_root_ref) + BTRFS_NAME_MAX];
+};
+
+struct subvol_delete {
+	/* Non-NULL owns temporary br_deleted exclusion until delete_finish. */
+	struct btrfs_root *victim;
+	struct btrfs_root_item item;
+};
+
+/*
+ * Preparation runs behind the administration gate after preceding work is
+ * committed. It changes no reachable tree items: only private item copies,
+ * the root-ID high-water mark, and deletion's temporary vnode exclusion.
+ * The plan starts zeroed; success describes the complete reservation and
+ * namespace edit.
+ * Apply functions require that reservation in a joined handle; the lifecycle
+ * must abort on ANY apply error, end the handle, and commit before publishing.
+ */
+struct subvol_operation {
+	struct subvol_parent parent;
+	struct subvol_namespace ns;
+	struct btrfs_root *roots;
+	uint64_t id;
+	struct btrfs_key rkey;
+	struct btrfs_trans_reservation reservation;
+	union {
+		struct subvol_create create;
+		struct subvol_delete delete;
+	} u;
+};
+
+static int
+subvol_parent_resolve(struct btrfs_fs *bmp, const char *path,
+    struct subvol_parent *parent)
+{
+	char *parentpath, *name;
+	int error;
+
+	parentpath = malloc(BTRFS_CTL_PATH_MAX, M_BTRFS, M_WAITOK);
+	strlcpy(parentpath, path, BTRFS_CTL_PATH_MAX);
+	name = strrchr(parentpath, '/');
+	if (name != NULL)
+		*name++ = '\0';
+	else
+		name = parentpath;
+	parent->namelen = strlen(name);
+	if (parent->namelen == 0 || parent->namelen > BTRFS_NAME_MAX ||
+	    strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+		error = EINVAL;
+		goto out;
+	}
+	memcpy(parent->name, name, parent->namelen + 1);
+	error = subvol_resolve(bmp, name == parentpath ? "" : parentpath,
+	    &parent->dir, &parent->ino);
+	if (error == 0 && parent->dir->br_flags & BTRFS_ROOT_SUBVOL_RDONLY)
+		error = EROFS;
+out:
+	free(parentpath, M_BTRFS, BTRFS_CTL_PATH_MAX);
+	return (error);
+}
+
+static int
+subvol_namespace_prepare(struct subvol_operation *op, uint64_t index)
+{
+	struct subvol_parent *parent = &op->parent;
+	struct subvol_namespace *ns = &op->ns;
+	uint32_t size, nodesize = letoh32(parent->dir->br_super->nodesize);
+	int error;
+
+	ns->ikey.objectid = htole64(parent->ino);
+	ns->ikey.type = BTRFS_INODE_ITEM_KEY;
+	error = subvol_read(parent->dir, &ns->ikey, &ns->inode,
+	    sizeof(ns->inode), &size);
+	if (error != 0)
+		return (error);
+	if (size != sizeof(ns->inode) || letoh32(ns->inode.nlink) == 0)
+		return (EINVAL);
+	if (letoh64(ns->inode.flags) &
+	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND))
+		return (EPERM);
+	ns->backkey.objectid = htole64(op->id);
+	ns->backkey.type = BTRFS_ROOT_BACKREF_KEY;
+	ns->backkey.offset = htole64(parent->dir->br_owner);
+	ns->refkey.objectid = ns->backkey.offset;
+	ns->refkey.type = BTRFS_ROOT_REF_KEY;
+	ns->refkey.offset = ns->backkey.objectid;
+	ns->dkey.objectid = htole64(parent->ino);
+	ns->dkey.type = BTRFS_DIR_INDEX_KEY;
+	ns->dkey.offset = htole64(index);
+	ns->hkey.objectid = htole64(parent->ino);
+	ns->hkey.type = BTRFS_DIR_ITEM_KEY;
+	ns->hkey.offset = htole64(crc32c(1,
+	    (const uint8_t *)parent->name, parent->namelen) ^ 0xffffffffU);
+	ns->bucket = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
+	error = subvol_read(parent->dir, &ns->hkey, ns->bucket, nodesize,
+	    &ns->bucketsize);
+	if (error != 0 && error != ENOENT)
+		return (error);
+	ns->bucket_exists = error == 0;
+	return (0);
+}
+
+/* Root identity and directory index allocation leave no tree paths held. */
+static int
+subvol_create_identity(struct btrfs_fs *bmp, struct subvol_operation *op,
+    uint64_t *index)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	int error;
+
+	target.objectid = htole64(BTRFS_LAST_FREE_OBJECTID);
+	target.type = 0xff;
+	target.offset = htole64(UINT64_MAX);
+	error = btrfs_search_predecessor(op->roots, &target, &path);
+	if (error == 0)
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+	if (error == 0) {
+		op->id = MAX(letoh64(key->objectid) + 1,
+		    BTRFS_FIRST_FREE_OBJECTID);
+		op->id = MAX(op->id, bmp->bm_last_rootid + 1);
+	}
+	btrfs_release_path(&path);
+	if (error != 0)
+		return (error);
+	if (op->id > BTRFS_LAST_FREE_OBJECTID)
+		return (ENOSPC);
+	bmp->bm_last_rootid = op->id;
+	op->rkey.objectid = htole64(op->id);
+	op->rkey.type = BTRFS_ROOT_ITEM_KEY;
+
+	*index = 2;
+	target.objectid = htole64(op->parent.ino);
+	target.type = BTRFS_DIR_INDEX_KEY;
+	target.offset = htole64(UINT64_MAX);
+	error = btrfs_search_predecessor(op->parent.dir, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error == 0 && key->objectid == target.objectid &&
+		    key->type == target.type)
+			*index = letoh64(key->offset) + 1;
+	}
+	btrfs_release_path(&path);
+	if (error != 0 && error != ENOENT)
+		return (error);
+	if (*index < 2 || *index >= INT64_MAX)
+		return (EOVERFLOW);
+	return (0);
+}
+
+static int
+subvol_create_prepare(struct btrfs_fs *bmp, struct subvol_operation *op,
+    u_long cmd, const struct btrfs_ioctl_subvolume *args, struct proc *p)
+{
+	struct subvol_create *create = &op->u.create;
+	struct subvol_parent *parent = &op->parent;
+	struct subvol_namespace *ns = &op->ns;
+	struct btrfs_root_item *item = &create->item;
+	struct btrfs_dir_item *di = (void *)create->record;
+	struct btrfs_root_ref *rr = (void *)create->reference;
+	struct subvol_entry entry;
+	uint64_t sourceino, index;
+	uint32_t nodesize = letoh32(bmp->bm_super.nodesize);
+	uint32_t recordsize = sizeof(*di) + parent->namelen;
+	int error;
+
+	error = subvol_lookup(parent->dir, parent->ino, parent->name,
+	    parent->namelen, &entry);
+	if (error != 0 && error != ENOENT)
+		return (error);
+	if (entry.ino != 0)
+		return (EEXIST);
+	if (cmd == BTRFSIOC_SNAPSHOT) {
+		error = subvol_resolve(bmp, args->source, &create->snapshot,
+		    &sourceino);
+		if (error == 0 && sourceino != BTRFS_FIRST_FREE_OBJECTID)
+			error = EINVAL;
+		if (error == 0)
+			error = btrfs_find_root_item(op->roots,
+			    create->snapshot->br_owner,
+			    BTRFS_FIRST_FREE_OBJECTID, &create->snapshot_item,
+			    NULL);
+		if (error != 0)
+			return (error);
+		*item = create->snapshot_item;
+		memcpy(item->parent_uuid, create->snapshot_item.uuid,
+		    BTRFS_UUID_SIZE);
+	} else {
+		error = btrfs_get_root(bmp, BTRFS_FS_TREE_OBJECTID,
+		    &create->empty_template);
+		if (error != 0)
+			return (error);
+	}
+	error = subvol_create_identity(bmp, op, &index);
+	if (error == 0)
+		error = subvol_namespace_prepare(op, index);
+	if (error != 0)
+		return (error);
+	if (letoh64(ns->inode.size) > UINT64_MAX - parent->namelen * 2)
+		return (EOVERFLOW);
+	if (ns->bucketsize + recordsize > nodesize -
+	    sizeof(struct btrfs_header) - sizeof(struct btrfs_item))
+		return (ENOSPC);
+	ns->inode.size = htole64(letoh64(ns->inode.size) +
+	    parent->namelen * 2);
+	di->location.objectid = htole64(op->id);
+	di->location.type = BTRFS_ROOT_ITEM_KEY;
+	di->location.offset = htole64(UINT64_MAX);
+	di->name_len = htole16(parent->namelen);
+	di->type = BTRFS_FT_DIR;
+	memcpy(di + 1, parent->name, parent->namelen);
+	memcpy(ns->bucket + ns->bucketsize, di, recordsize);
+	ns->bucketsize += recordsize;
+	rr->dirid = htole64(parent->ino);
+	rr->sequence = htole64(index);
+	rr->name_len = htole16(parent->namelen);
+	memcpy(rr + 1, parent->name, parent->namelen);
+
+	if (create->snapshot == NULL) {
+		item->inode.mode = htole32(S_IFDIR |
+		    (0777 & ~p->p_fd->fd_cmask) |
+		    (letoh32(ns->inode.mode) & S_ISGID));
+		item->inode.nlink = htole32(1);
+		item->inode.uid = htole32(p->p_ucred->cr_uid);
+		item->inode.gid = ns->inode.gid;
+		item->inode.flags = htole64(letoh64(ns->inode.flags) &
+		    (BTRFS_INODE_NODATACOW | BTRFS_INODE_COMPRESS |
+		    BTRFS_INODE_NOCOMPRESS));
+	}
+	arc4random_buf(item->uuid, sizeof(item->uuid));
+	item->uuid[6] = (item->uuid[6] & 0x0f) | 0x40;
+	item->uuid[8] = (item->uuid[8] & 0x3f) | 0x80;
+	memset(item->received_uuid, 0, sizeof(item->received_uuid));
+	memset(&item->drop_progress, 0, sizeof(item->drop_progress));
+	item->drop_level = 0;
+	item->root_dirid = htole64(BTRFS_FIRST_FREE_OBJECTID);
+	item->refs = htole32(1);
+	item->flags = htole64(args->flags & BTRFS_CTL_RDONLY ?
+	    BTRFS_ROOT_SUBVOL_RDONLY : 0);
+	item->stransid = item->rtransid = 0;
+	op->reservation.btr_metadata = (256 + 8) * nodesize;
+	return (0);
+}
+
+static int
+subvol_delete_prepare(struct btrfs_fs *bmp, struct subvol_operation *op)
+{
+	struct subvol_delete *delete = &op->u.delete;
+	struct subvol_parent *parent = &op->parent;
+	struct subvol_namespace *ns = &op->ns;
+	struct subvol_entry entry;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	struct btrfs_dir_item *di;
+	struct btrfs_root_ref *rr;
+	uint8_t reference[sizeof(*rr) + BTRFS_NAME_MAX];
+	uint64_t blocks, refs, index;
+	uint32_t nodesize = letoh32(bmp->bm_super.nodesize);
+	uint32_t size, pos, step = 0;
+	int error;
+
+	error = subvol_lookup(parent->dir, parent->ino, parent->name,
+	    parent->namelen, &entry);
+	if (error != 0 && error != ENOENT)
+		return (error);
+	if (entry.ino == 0)
+		return (ENOENT);
+	if (!entry.subvol)
+		return (EINVAL);
+	op->id = entry.ino;
+	bmp->bm_last_rootid = MAX(bmp->bm_last_rootid, op->id);
+	error = btrfs_get_root(bmp, op->id, &delete->victim);
+	if (error != 0)
+		return (error);
+	/* Own the fence even if eligibility or reservation subsequently fails. */
+	mtx_enter(&bmp->bm_nodemtx);
+	delete->victim->br_deleted = 1;
+	mtx_leave(&bmp->bm_nodemtx);
+	error = btrfs_control_busy(bmp, op->id);
+	if (error != 0)
+		return (error);
+	/* A nested subvolume must be removed explicitly first. */
+	target.objectid = htole64(op->id);
+	target.type = BTRFS_ROOT_REF_KEY;
+	error = btrfs_search_lower_bound(op->roots, &target, &path);
+	if (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error == 0 && key->objectid == target.objectid &&
+		    key->type == target.type)
+			error = ENOTEMPTY;
+	}
+	btrfs_release_path(&path);
+	if (error != 0 && error != ENOENT)
+		return (error);
+	error = btrfs_find_root_item(op->roots, op->id,
+	    BTRFS_FIRST_FREE_OBJECTID, &delete->item, NULL);
+	if (error == 0)
+		error = btrfs_count_tree(delete->victim, &blocks, &refs);
+	if (error != 0)
+		return (error);
+	op->rkey.objectid = htole64(op->id);
+	op->rkey.type = BTRFS_ROOT_ITEM_KEY;
+	op->rkey.offset = htole64(delete->victim->br_root_offset);
+	target.type = BTRFS_ROOT_BACKREF_KEY;
+	target.offset = htole64(parent->dir->br_owner);
+	error = subvol_read(op->roots, &target, reference, sizeof(reference),
+	    &size);
+	if (error != 0)
+		return (error);
+	rr = (void *)reference;
+	if (size != sizeof(*rr) + parent->namelen ||
+	    letoh64(rr->dirid) != parent->ino ||
+	    letoh16(rr->name_len) != parent->namelen ||
+	    memcmp(rr + 1, parent->name, parent->namelen) != 0)
+		return (EINVAL);
+	index = letoh64(rr->sequence);
+	error = subvol_namespace_prepare(op, index);
+	if (error != 0)
+		return (error);
+	if (letoh64(ns->inode.size) < parent->namelen * 2)
+		return (EOVERFLOW);
+	for (pos = 0; pos < ns->bucketsize; pos += step) {
+		di = (void *)(ns->bucket + pos);
+		if (ns->bucketsize - pos < sizeof(*di))
+			return (EINVAL);
+		step = sizeof(*di) + letoh16(di->name_len) +
+		    letoh16(di->data_len);
+		if (step > ns->bucketsize - pos)
+			return (EINVAL);
+		if (letoh16(di->name_len) == parent->namelen &&
+		    memcmp(di + 1, parent->name, parent->namelen) == 0)
+			break;
+	}
+	if (pos == ns->bucketsize || step != sizeof(*di) + parent->namelen)
+		return (EINVAL);
+	memmove(ns->bucket + pos, ns->bucket + pos + step,
+	    ns->bucketsize - pos - step);
+	ns->bucketsize -= step;
+	ns->inode.size = htole64(letoh64(ns->inode.size) -
+	    parent->namelen * 2);
+	/* Whole deletion, including all reference drops, is one reservation. */
+	if (blocks > UINT64_MAX / nodesize / 32 ||
+	    refs > UINT64_MAX / nodesize / 32)
+		return (EOVERFLOW);
+	op->reservation.btr_metadata =
+	    (256 + blocks * 8 + refs * 16) * nodesize;
+	return (0);
+}
+
+static int
+subvol_namespace_apply(struct btrfs_trans_handle *handle,
+    struct subvol_operation *op, const struct timespec *now)
+{
+	struct subvol_namespace *ns = &op->ns;
+	struct btrfs_root *dir = op->parent.dir;
+	uint64_t gen = handle->bth_transaction->bt_generation;
+	int error;
+
+	if (ns->bucketsize == 0)
+		error = btrfs_delete_item(handle, dir, &ns->hkey);
+	else if (!ns->bucket_exists)
+		error = btrfs_insert_item(handle, dir, &ns->hkey, ns->bucket,
+		    ns->bucketsize);
+	else
+		error = btrfs_replace_item(handle, dir, &ns->hkey, ns->bucket,
+		    ns->bucketsize);
+	ns->inode.transid = htole64(gen);
+	ns->inode.sequence = htole64(letoh64(ns->inode.sequence) + 1);
+	ns->inode.ctime.sec = ns->inode.mtime.sec = htole64(now->tv_sec);
+	ns->inode.ctime.nsec = ns->inode.mtime.nsec = htole32(now->tv_nsec);
+	if (error == 0)
+		error = btrfs_replace_item(handle, dir, &ns->ikey, &ns->inode,
+		    sizeof(ns->inode));
+	return (error);
+}
+
+static int
+subvol_create_apply(struct btrfs_trans_handle *handle,
+    struct subvol_operation *op)
+{
+	struct subvol_create *create = &op->u.create;
+	struct subvol_namespace *ns = &op->ns;
+	struct btrfs_root_item *item = &create->item;
+	struct btrfs_dir_item *di = (void *)create->record;
+	struct btrfs_key skey = { 0 };
+	struct timespec now;
+	uint64_t gen = handle->bth_transaction->bt_generation;
+	uint32_t recordsize = sizeof(*di) + op->parent.namelen;
+	uint32_t refsize = sizeof(struct btrfs_root_ref) + op->parent.namelen;
+	int error;
+
+	nanotime(&now);
+	if (create->snapshot == NULL) {
+		item->inode.generation = item->inode.transid = htole64(gen);
+		item->inode.atime.sec = item->inode.mtime.sec =
+		    item->inode.ctime.sec = item->inode.otime.sec =
+		    htole64(now.tv_sec);
+		item->inode.atime.nsec = item->inode.mtime.nsec =
+		    item->inode.ctime.nsec = item->inode.otime.nsec =
+		    htole32(now.tv_nsec);
+	}
+	item->ctransid = item->otransid = htole64(gen);
+	item->last_snapshot = create->snapshot != NULL ? htole64(gen) : 0;
+	item->ctime.sec = item->otime.sec = htole64(now.tv_sec);
+	item->ctime.nsec = item->otime.nsec = htole32(now.tv_nsec);
+	error = btrfs_new_subvolume_root(handle,
+	    create->snapshot != NULL ? create->snapshot : create->empty_template,
+	    op->id, item, create->snapshot != NULL);
+	/*
+	 * Linux needs this marker to retain initialized root flags. Set it
+	 * after building the tree so it is not copied into the directory inode.
+	 */
+	item->inode.flags = htole64(letoh64(item->inode.flags) |
+	    BTRFS_INODE_ROOT_ITEM_INIT);
+	if (error == 0)
+		error = btrfs_insert_item(handle, op->roots, &op->rkey, item,
+		    sizeof(*item));
+	if (error == 0)
+		error = subvol_uuid(handle, item, op->id, 0);
+	if (error == 0 && create->snapshot != NULL) {
+		create->snapshot_item.last_snapshot = htole64(gen);
+		skey.objectid = htole64(create->snapshot->br_owner);
+		skey.type = BTRFS_ROOT_ITEM_KEY;
+		skey.offset = htole64(create->snapshot->br_root_offset);
+		error = btrfs_replace_item(handle, op->roots, &skey,
+		    &create->snapshot_item, sizeof(create->snapshot_item));
+	}
+	di->transid = htole64(gen);
+	memcpy(ns->bucket + ns->bucketsize - recordsize, di, recordsize);
+	if (error == 0)
+		error = btrfs_insert_item(handle, op->roots, &ns->backkey,
+		    create->reference, refsize);
+	if (error == 0)
+		error = btrfs_insert_item(handle, op->roots, &ns->refkey,
+		    create->reference, refsize);
+	if (error == 0)
+		error = btrfs_insert_item(handle, op->parent.dir, &ns->dkey,
+		    create->record, recordsize);
+	if (error == 0)
+		error = subvol_namespace_apply(handle, op, &now);
+	return (error);
+}
+
+static int
+subvol_delete_apply(struct btrfs_trans_handle *handle,
+    struct subvol_operation *op)
+{
+	struct subvol_delete *delete = &op->u.delete;
+	struct subvol_namespace *ns = &op->ns;
+	struct timespec now;
+	int error;
+
+	nanotime(&now);
+	error = btrfs_drop_subvolume_tree(handle, delete->victim);
+	if (error == 0)
+		error = btrfs_delete_item(handle, op->roots, &op->rkey);
+	if (error == 0)
+		error = subvol_uuid(handle, &delete->item, op->id, 1);
+	if (error == 0)
+		error = btrfs_delete_item(handle, op->roots, &ns->backkey);
+	if (error == 0)
+		error = btrfs_delete_item(handle, op->roots, &ns->refkey);
+	if (error == 0)
+		error = btrfs_delete_item(handle, op->parent.dir, &ns->dkey);
+	if (error == 0)
+		error = subvol_namespace_apply(handle, op, &now);
+	return (error);
+}
+
+/*
+ * Always release preparation's exclusion, including on preparation failure.
+ * Successful commit transfers it to the root cache as a permanent tombstone.
+ * A later parent-cache refresh error must not undo that transfer.
+ */
+static void
+subvol_delete_finish(struct btrfs_fs *bmp, struct subvol_delete *delete,
+    int committed)
+{
+	if (delete->victim == NULL)
+		return;
+	if (committed)
+		btrfs_forget_root(bmp, delete->victim->br_owner);
+	else {
+		mtx_enter(&bmp->bm_nodemtx);
+		delete->victim->br_deleted = 0;
+		mtx_leave(&bmp->bm_nodemtx);
+	}
+	delete->victim = NULL;
+}
+
 int
 btrfs_subvolume(struct btrfs_fs *bmp, u_long cmd,
     struct btrfs_ioctl_subvolume *args, struct proc *p)
 {
-	struct btrfs_root *roots, *dir, *source = NULL;
-	struct btrfs_root_item item, source_item;
-	struct btrfs_inode_item inode;
-	struct btrfs_trans_reservation reservation = { 0 };
-	struct btrfs_trans_handle *handle = NULL;
-	struct btrfs_path path = { 0 };
-	struct btrfs_key ikey = { 0 }, hkey = { 0 }, dkey = { 0 };
-	struct btrfs_key rkey = { 0 }, backkey = { 0 }, refkey = { 0 };
-	const struct btrfs_key *key;
-	struct btrfs_dir_item *di;
-	struct btrfs_root_ref *rr;
+	struct subvol_operation *op;
+	struct btrfs_trans_handle *handle;
 	struct btrfs_node *node;
-	struct subvol_entry entry;
 	struct vnode *vp = NULL;
-	struct timespec now;
-	char *parentpath, *name;
-	uint8_t *bucket = NULL;
-	uint8_t *record, *reference;
-	uint64_t ino, sourceino, id, index = 2, blocks = 1, refs = 0, gen;
-	uint32_t nodesize = letoh32(bmp->bm_super.nodesize);
-	uint32_t size, bucketsize = 0, recordsize, pos, step;
-	size_t namelen;
-	int error, enderror, remove = cmd == BTRFSIOC_DELETE;
-	int gated = 0, mutated = 0;
-	int deleting = 0;
+	int error, enderror, committed = 0;
 
 	if (cmd == BTRFSIOC_LIST)
 		return (subvol_list(bmp, args));
-	record = malloc(sizeof(*di) + BTRFS_NAME_MAX, M_BTRFS, M_WAITOK);
-	reference = malloc(sizeof(*rr) + BTRFS_NAME_MAX, M_BTRFS, M_WAITOK);
-	parentpath = malloc(BTRFS_CTL_PATH_MAX, M_BTRFS, M_WAITOK);
-	strlcpy(parentpath, args->path, BTRFS_CTL_PATH_MAX);
-	name = strrchr(parentpath, '/');
-	if (name != NULL)
-		*name++ = '\0';
-	else {
-		name = parentpath;
-	}
-	namelen = strlen(name);
-	if (namelen == 0 || namelen > BTRFS_NAME_MAX ||
-	    strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
-		error = EINVAL;
-		goto done;
-	}
-	error = subvol_resolve(bmp, name == parentpath ? "" : parentpath,
-	    &dir, &ino);
+	op = malloc(sizeof(*op), M_BTRFS, M_WAITOK | M_ZERO);
+	error = subvol_parent_resolve(bmp, args->path, &op->parent);
 	if (error != 0)
 		goto done;
-	if (dir->br_flags & BTRFS_ROOT_SUBVOL_RDONLY) {
-		error = EROFS;
-		goto done;
-	}
-	error = btrfs_control_parent(bmp, dir->br_owner, ino, &vp);
+	/* Parent vnode before namespace lock before writer gate. */
+	error = btrfs_control_parent(bmp, op->parent.dir->br_owner,
+	    op->parent.ino, &vp);
 	if (error != 0)
 		goto done;
 	rw_enter_write(&bmp->bm_namespace_lock);
-	/*
-	 * Closing joins after locking the parent avoids waiting for a vnode
-	 * held by a writer asleep at the gate. Existing handles finish before
-	 * the source generation is committed and shared.
-	 */
-	mtx_enter(&bmp->bm_trans_mtx);
-	bmp->bm_control = p;
-	while (bmp->bm_transaction->bt_writers != 0)
-		msleep(&bmp->bm_transaction->bt_writers, &bmp->bm_trans_mtx,
-		    PWAIT, "btrsnap", 0);
-	mtx_leave(&bmp->bm_trans_mtx);
-	gated = 1;
+	subvol_admin_enter(bmp, p);
 	error = btrfs_commit_current(bmp, p);
+	if (error == 0)
+		error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &op->roots);
 	if (error != 0)
 		goto unlock;
-	error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &roots);
-	if (error != 0)
-		goto unlock;
-	memset(&entry, 0, sizeof(entry));
-	error = btrfs_lookup_directory(dir, ino, name, namelen,
-	    subvol_entry, &entry);
-	if (error != 0 && error != ENOENT)
-		goto unlock;
-	if (remove) {
-		if (entry.ino == 0) {
-			error = ENOENT;
-			goto unlock;
-		}
-		if (!entry.subvol) {
-			error = EINVAL;
-			goto unlock;
-		}
-		id = entry.ino;
-		bmp->bm_last_rootid = MAX(bmp->bm_last_rootid, id);
-		error = btrfs_get_root(bmp, id, &source);
-		if (error == 0) {
-			mtx_enter(&bmp->bm_nodemtx);
-			source->br_deleted = 1;
-			deleting = 1;
-			mtx_leave(&bmp->bm_nodemtx);
-			error = btrfs_control_busy(bmp, id);
-		}
-		if (error != 0)
-			goto unlock;
-		/* A nested subvolume must be removed explicitly first. */
-		rkey.objectid = htole64(id);
-		rkey.type = BTRFS_ROOT_REF_KEY;
-		error = btrfs_search_lower_bound(roots, &rkey, &path);
-		if (error == 0) {
-			error = btrfs_path_item(&path, &key, NULL, NULL);
-			if (error == 0 && key->objectid == rkey.objectid &&
-			    key->type == rkey.type)
-				error = ENOTEMPTY;
-		}
-		btrfs_release_path(&path);
-		if (error != 0 && error != ENOENT)
-			goto unlock;
-		error = btrfs_find_root_item(roots, id,
-		    BTRFS_FIRST_FREE_OBJECTID, &item, NULL);
-		if (error == 0)
-			error = btrfs_count_tree(source, &blocks, &refs);
-		if (error != 0)
-			goto unlock;
-		backkey.objectid = htole64(id);
-		backkey.type = BTRFS_ROOT_BACKREF_KEY;
-		backkey.offset = htole64(dir->br_owner);
-		error = subvol_read(roots, &backkey, reference,
-		    sizeof(*rr) + BTRFS_NAME_MAX,
-		    &size);
-		if (error != 0)
-			goto unlock;
-		rr = (struct btrfs_root_ref *)reference;
-		if (size != sizeof(*rr) + namelen ||
-		    letoh64(rr->dirid) != ino ||
-		    letoh16(rr->name_len) != namelen ||
-		    memcmp(rr + 1, name, namelen) != 0) {
-			error = EINVAL;
-			goto unlock;
-		}
-		index = letoh64(rr->sequence);
-	} else {
-		if (entry.ino != 0) {
-			error = EEXIST;
-			goto unlock;
-		}
-		memset(&item, 0, sizeof(item));
-		if (cmd == BTRFSIOC_SNAPSHOT) {
-			error = subvol_resolve(bmp, args->source, &source, &sourceino);
-			if (error == 0 && sourceino != BTRFS_FIRST_FREE_OBJECTID)
-				error = EINVAL;
-			if (error == 0)
-				error = btrfs_find_root_item(roots, source->br_owner,
-				    BTRFS_FIRST_FREE_OBJECTID, &source_item, NULL);
-			if (error != 0)
-				goto unlock;
-			item = source_item;
-			memcpy(item.parent_uuid, source_item.uuid, BTRFS_UUID_SIZE);
-		} else {
-			error = btrfs_get_root(bmp, BTRFS_FS_TREE_OBJECTID, &source);
-			if (error != 0)
-				goto unlock;
-		}
-		rkey.objectid = htole64(BTRFS_LAST_FREE_OBJECTID);
-		rkey.type = 0xff;
-		rkey.offset = htole64(UINT64_MAX);
-		error = btrfs_search_predecessor(roots, &rkey, &path);
-		if (error == 0)
-			error = btrfs_path_item(&path, &key, NULL, NULL);
-		if (error != 0)
-			goto unlock;
-		id = MAX(letoh64(key->objectid) + 1, BTRFS_FIRST_FREE_OBJECTID);
-		id = MAX(id, bmp->bm_last_rootid + 1);
-		btrfs_release_path(&path);
-		if (id > BTRFS_LAST_FREE_OBJECTID) {
-			error = ENOSPC;
-			goto unlock;
-		}
-		bmp->bm_last_rootid = id;
-		dkey.objectid = htole64(ino);
-		dkey.type = BTRFS_DIR_INDEX_KEY;
-		dkey.offset = htole64(UINT64_MAX);
-		error = btrfs_search_predecessor(dir, &dkey, &path);
-		if (error == 0) {
-			error = btrfs_path_item(&path, &key, NULL, NULL);
-			if (error == 0 && key->objectid == dkey.objectid &&
-			    key->type == dkey.type)
-				index = letoh64(key->offset) + 1;
-		}
-		btrfs_release_path(&path);
-		if (error != 0 && error != ENOENT)
-			goto unlock;
-		if (index < 2 || index >= INT64_MAX) {
-			error = EOVERFLOW;
-			goto unlock;
-		}
-	}
-	ikey.objectid = htole64(ino);
-	ikey.type = BTRFS_INODE_ITEM_KEY;
-	error = subvol_read(dir, &ikey, &inode, sizeof(inode), &size);
-	if (error != 0)
-		goto unlock;
-	if (size != sizeof(inode) || letoh32(inode.nlink) == 0) {
-		error = EINVAL;
-		goto unlock;
-	}
-	if (letoh64(inode.flags) &
-	    (BTRFS_INODE_IMMUTABLE | BTRFS_INODE_APPEND)) {
-		error = EPERM;
-		goto unlock;
-	}
-	if ((remove && letoh64(inode.size) < namelen * 2) ||
-	    (!remove && letoh64(inode.size) > UINT64_MAX - namelen * 2)) {
-		error = EOVERFLOW;
-		goto unlock;
-	}
-	bucket = malloc(nodesize, M_BTRFS, M_WAITOK | M_ZERO);
-	hkey.objectid = htole64(ino);
-	hkey.type = BTRFS_DIR_ITEM_KEY;
-	hkey.offset = htole64(crc32c(1, (const uint8_t *)name, namelen) ^
-	    0xffffffffU);
-	error = subvol_read(dir, &hkey, bucket, nodesize, &bucketsize);
-	if (error != 0 && error != ENOENT)
-		goto unlock;
-	recordsize = sizeof(*di) + namelen;
-	if (remove) {
-		for (pos = 0; pos < bucketsize; pos += step) {
-			di = (struct btrfs_dir_item *)(bucket + pos);
-			if (bucketsize - pos < sizeof(*di)) {
-				error = EINVAL;
-				goto unlock;
-			}
-			step = sizeof(*di) + letoh16(di->name_len) +
-			    letoh16(di->data_len);
-			if (step > bucketsize - pos) {
-				error = EINVAL;
-				goto unlock;
-			}
-			if (letoh16(di->name_len) == namelen &&
-			    memcmp(di + 1, name, namelen) == 0)
-				break;
-		}
-		if (pos == bucketsize || step != recordsize) {
-			error = EINVAL;
-			goto unlock;
-		}
-		memmove(bucket + pos, bucket + pos + step,
-		    bucketsize - pos - step);
-		bucketsize -= step;
-	} else {
-		if (bucketsize + recordsize > nodesize -
-		    sizeof(struct btrfs_header) - sizeof(struct btrfs_item)) {
-			error = ENOSPC;
-			goto unlock;
-		}
-		memset(record, 0, recordsize);
-		di = (struct btrfs_dir_item *)record;
-		di->location.objectid = htole64(id);
-		di->location.type = BTRFS_ROOT_ITEM_KEY;
-		di->location.offset = htole64(UINT64_MAX);
-		di->name_len = htole16(namelen);
-		di->type = BTRFS_FT_DIR;
-	}
-	/* Whole deletion is atomic; reserve before changing any reachable item. */
-	if (blocks > UINT64_MAX / nodesize / 32 ||
-	    refs > UINT64_MAX / nodesize / 32) {
-		error = EOVERFLOW;
-		goto unlock;
-	}
-	reservation.btr_metadata = (256 + blocks * 8 + refs * 16) * nodesize;
-	error = btrfs_trans_join(bmp, &reservation, &handle);
-	if (error != 0)
-		goto unlock;
-	gen = handle->bth_transaction->bt_generation;
-	nanotime(&now);
-	if (!remove) {
-		if (cmd == BTRFSIOC_CREATE) {
-			item.inode.generation = htole64(gen);
-			item.inode.transid = htole64(gen);
-			item.inode.mode = htole32(S_IFDIR |
-			    (0777 & ~p->p_fd->fd_cmask) |
-			    (letoh32(inode.mode) & S_ISGID));
-			item.inode.nlink = htole32(1);
-			item.inode.uid = htole32(p->p_ucred->cr_uid);
-			item.inode.gid = inode.gid;
-			item.inode.flags = htole64(letoh64(inode.flags) &
-			    (BTRFS_INODE_NODATACOW | BTRFS_INODE_COMPRESS |
-			    BTRFS_INODE_NOCOMPRESS));
-			item.inode.atime.sec = item.inode.mtime.sec =
-			    item.inode.ctime.sec = item.inode.otime.sec =
-			    htole64(now.tv_sec);
-			item.inode.atime.nsec = item.inode.mtime.nsec =
-			    item.inode.ctime.nsec = item.inode.otime.nsec =
-			    htole32(now.tv_nsec);
-		}
-		arc4random_buf(item.uuid, sizeof(item.uuid));
-		item.uuid[6] = (item.uuid[6] & 0x0f) | 0x40;
-		item.uuid[8] = (item.uuid[8] & 0x3f) | 0x80;
-		memset(item.received_uuid, 0, sizeof(item.received_uuid));
-		memset(&item.drop_progress, 0, sizeof(item.drop_progress));
-		item.drop_level = 0;
-		item.root_dirid = htole64(BTRFS_FIRST_FREE_OBJECTID);
-		item.refs = htole32(1);
-		item.flags = htole64(args->flags & BTRFS_CTL_RDONLY ?
-		    BTRFS_ROOT_SUBVOL_RDONLY : 0);
-		item.ctransid = item.otransid = htole64(gen);
-		item.last_snapshot = cmd == BTRFSIOC_SNAPSHOT ? htole64(gen) : 0;
-		item.stransid = item.rtransid = 0;
-		item.ctime.sec = item.otime.sec = htole64(now.tv_sec);
-		item.ctime.nsec = item.otime.nsec = htole32(now.tv_nsec);
-	}
-	mutated = 1;
-	if (remove)
-		error = btrfs_drop_subvolume_tree(handle, source);
+	if (cmd == BTRFSIOC_DELETE)
+		error = subvol_delete_prepare(bmp, op);
 	else
-		error = btrfs_new_subvolume_root(handle, source, id, &item,
-		    cmd == BTRFSIOC_SNAPSHOT);
-	/*
-	 * Linux uses this marker in the embedded root-item inode to distinguish
-	 * initialized root flags from legacy garbage. Without it Linux clears
-	 * the read-only flag when opening the subvolume. Set it after building
-	 * a new file tree so the marker is not copied into its directory inode.
-	 */
-	if (!remove)
-		item.inode.flags = htole64(letoh64(item.inode.flags) |
-		    BTRFS_INODE_ROOT_ITEM_INIT);
-	rkey.objectid = htole64(id);
-	rkey.type = BTRFS_ROOT_ITEM_KEY;
-	rkey.offset = remove ? htole64(source->br_root_offset) : 0;
-	if (error == 0 && remove)
-		error = btrfs_delete_item(handle, roots, &rkey);
-	else if (error == 0)
-		error = btrfs_insert_item(handle, roots, &rkey, &item, sizeof(item));
-	if (error == 0)
-		error = subvol_uuid(handle, &item, id, remove);
-	if (error == 0 && !remove && cmd == BTRFSIOC_SNAPSHOT) {
-		struct btrfs_key skey = { 0 };
-		source_item.last_snapshot = htole64(gen);
-		skey.objectid = htole64(source->br_owner);
-		skey.type = BTRFS_ROOT_ITEM_KEY;
-		skey.offset = htole64(source->br_root_offset);
-		error = btrfs_replace_item(handle, roots, &skey,
-		    &source_item, sizeof(source_item));
-	}
-	if (!remove) {
-		di = (struct btrfs_dir_item *)record;
-		di->transid = htole64(gen);
-		memcpy(di + 1, name, namelen);
-		memcpy(bucket + bucketsize, record, recordsize);
-		bucketsize += recordsize;
-		memset(reference, 0, sizeof(*rr) + namelen);
-		rr = (struct btrfs_root_ref *)reference;
-		rr->dirid = htole64(ino);
-		rr->sequence = htole64(index);
-		rr->name_len = htole16(namelen);
-		memcpy(rr + 1, name, namelen);
-	}
-	backkey.objectid = htole64(id);
-	backkey.type = BTRFS_ROOT_BACKREF_KEY;
-	backkey.offset = htole64(dir->br_owner);
-	refkey.objectid = backkey.offset;
-	refkey.type = BTRFS_ROOT_REF_KEY;
-	refkey.offset = backkey.objectid;
-	dkey.objectid = htole64(ino);
-	dkey.type = BTRFS_DIR_INDEX_KEY;
-	dkey.offset = htole64(index);
-	if (error == 0 && remove)
-		error = btrfs_delete_item(handle, roots, &backkey);
-	else if (error == 0)
-		error = btrfs_insert_item(handle, roots, &backkey, reference,
-		    sizeof(*rr) + namelen);
-	if (error == 0 && remove)
-		error = btrfs_delete_item(handle, roots, &refkey);
-	else if (error == 0)
-		error = btrfs_insert_item(handle, roots, &refkey, reference,
-		    sizeof(*rr) + namelen);
-	if (error == 0 && remove)
-		error = btrfs_delete_item(handle, dir, &dkey);
-	else if (error == 0)
-		error = btrfs_insert_item(handle, dir, &dkey, record, recordsize);
-	if (error == 0) {
-		if (bucketsize == 0)
-			error = btrfs_delete_item(handle, dir, &hkey);
-		else if (!remove && bucketsize == recordsize)
-			error = btrfs_insert_item(handle, dir, &hkey, bucket, bucketsize);
-		else
-			error = btrfs_replace_item(handle, dir, &hkey, bucket, bucketsize);
-	}
-	inode.size = htole64(letoh64(inode.size) +
-	    (remove ? -(int64_t)(namelen * 2) : namelen * 2));
-	inode.transid = htole64(gen);
-	inode.sequence = htole64(letoh64(inode.sequence) + 1);
-	inode.ctime.sec = inode.mtime.sec = htole64(now.tv_sec);
-	inode.ctime.nsec = inode.mtime.nsec = htole32(now.tv_nsec);
-	if (error == 0)
-		error = btrfs_replace_item(handle, dir, &ikey, &inode, sizeof(inode));
+		error = subvol_create_prepare(bmp, op, cmd, args, p);
+	if (error != 0)
+		goto unlock;
+	error = btrfs_trans_join(bmp, &op->reservation, &handle);
+	if (error != 0)
+		goto unlock;
+
+	/* From apply through end there are no exits that can skip abort/end. */
+	if (cmd == BTRFSIOC_DELETE)
+		error = subvol_delete_apply(handle, op);
+	else
+		error = subvol_create_apply(handle, op);
 	if (error != 0)
 		btrfs_trans_abort(handle, error);
 	enderror = btrfs_trans_end(handle);
-	handle = NULL;
 	if (error == 0)
 		error = enderror;
 	if (error == 0)
 		error = btrfs_commit_current(bmp, p);
-	if (error == 0 && vp != NULL) {
+	committed = error == 0;
+unlock:
+	if (cmd == BTRFSIOC_DELETE)
+		subvol_delete_finish(bmp, &op->u.delete, committed);
+	if (committed && vp != NULL) {
 		node = VTOBTRFS(vp);
-		error = btrfs_find_inode(dir, ino, &node->bn_inode);
+		error = btrfs_find_inode(op->parent.dir, op->parent.ino,
+		    &node->bn_inode);
 		cache_purge(vp);
 		VN_KNOTE(vp, NOTE_WRITE);
 	}
-	if (error == 0 && remove)
-		btrfs_forget_root(bmp, id);
-unlock:
-	if (deleting && error != 0) {
-		mtx_enter(&bmp->bm_nodemtx);
-		source->br_deleted = 0;
-		mtx_leave(&bmp->bm_nodemtx);
-	}
-	btrfs_release_path(&path);
-	if (handle != NULL) {
-		if (mutated)
-			btrfs_trans_abort(handle, error);
-		btrfs_trans_end(handle);
-	}
-	if (gated) {
-		mtx_enter(&bmp->bm_trans_mtx);
-		bmp->bm_control = NULL;
-		wakeup(&bmp->bm_control);
-		mtx_leave(&bmp->bm_trans_mtx);
-	}
+	subvol_admin_leave(bmp, p);
 	rw_exit_write(&bmp->bm_namespace_lock);
 done:
 	if (vp != NULL)
 		vput(vp);
-	free(bucket, M_BTRFS, nodesize);
-	free(parentpath, M_BTRFS, BTRFS_CTL_PATH_MAX);
-	free(record, M_BTRFS, sizeof(*di) + BTRFS_NAME_MAX);
-	free(reference, M_BTRFS, sizeof(*rr) + BTRFS_NAME_MAX);
+	free(op->ns.bucket, M_BTRFS, letoh32(bmp->bm_super.nodesize));
+	free(op, M_BTRFS, sizeof(*op));
 	return (error);
 }

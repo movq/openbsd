@@ -261,12 +261,17 @@ both `(root, inode, file-base)` and leaf-address ownership.
 Administration pins the mount views and serializes directory ancestry. It
 locks a visible parent vnode before the namespace lock, closes transaction
 joins, drains existing handles, and commits the source generation. The
-administrating thread can then reserve and mutate while other joins wait.
-It refreshes parent inode and name caches before reopening joins. Deletion
-first converts outgoing references owned by the disappearing tree, then drops
-edges recursively only when a block loses its last reference. Deleted root
-cache entries remain tombstones until filesystem teardown, and root IDs are
-not reused during that lifetime.
+shared administration gate also excludes writers during receive finalization.
+Separate creation/snapshot and deletion preparation builds private root and
+namespace edits and sizes the complete reservation without changing reachable
+tree items. Mutation runs under that reserved handle; any mutation error aborts.
+Only a successful commit permits parent inode and name-cache publication,
+before reopening joins. Deletion preparation owns temporary vnode exclusion
+and releases it on failure; commit transfers it to a root-cache tombstone,
+even if a later parent-cache refresh fails. Deletion first converts outgoing
+references owned by the disappearing tree, then drops edges recursively only
+when a block loses its last reference. Tombstones and the root-ID high-water
+mark prevent reuse until filesystem teardown.
 
 Live I/O copies physical mappings under a short filesystem mapping lock,
 released before device access. Only bootstrap roots use fixed chunk tables.
