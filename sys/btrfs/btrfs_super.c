@@ -525,28 +525,9 @@ btrfs_build_super(struct btrfs_transaction *trans,
 	sb->chunk_root_generation = htole64(chunk.brl_generation);
 	sb->chunk_root_level = chunk.brl_level;
 	sb->bytes_used = htole64(trans->bt_bytes_used);
-	if (trans->bt_dev_bytes_removed > letoh64(sb->dev_item.bytes_used))
-		return (EINVAL);
-	sb->dev_item.bytes_used = htole64(letoh64(sb->dev_item.bytes_used) -
-	    trans->bt_dev_bytes_removed);
-	if (trans->bt_dev_bytes_added >
-	    letoh64(sb->dev_item.total_bytes) -
-	    letoh64(sb->dev_item.bytes_used))
-		return (EINVAL);
-	sb->dev_item.bytes_used = htole64(letoh64(sb->dev_item.bytes_used) +
-	    trans->bt_dev_bytes_added);
-	if (trans->bt_new_chunk != NULL &&
-	    trans->bt_new_chunk->system_size != 0) {
-		uint32_t size = letoh32(sb->sys_chunk_array_size);
-		uint32_t extra = trans->bt_new_chunk->system_size;
-
-		if (size > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE ||
-		    extra > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE - size)
-			return (ENOSPC);
-		memcpy(sb->sys_chunk_array + size, trans->bt_new_chunk->system,
-		    extra);
-		sb->sys_chunk_array_size = htole32(size + extra);
-	}
+	error = btrfs_chunk_update_super(trans, sb);
+	if (error != 0)
+		return (error);
 	sb->log_root = 0;
 	sb->__unused_log_root_transid = 0;
 	sb->log_root_level = 0;

@@ -284,7 +284,7 @@ struct btrfs_trans_reservation {
 	uint64_t	btr_metadata;
 	uint64_t	btr_system;
 	int		btr_reclaim;
-	int		btr_chunk;
+	int		btr_chunk;	/* Join must not recursively grow chunks. */
 };
 
 /* Covers namespace removal as well as a minimum range-cleanup batch. */
@@ -293,16 +293,7 @@ struct btrfs_trans_reservation {
 /* Close joins at this payload watermark; existing handles may finish. */
 #define BTRFS_ORDERED_BYTES_MAX		(32ULL * 1024 * 1024)
 
-struct btrfs_pending_chunk {
-	struct btrfs_chunk_map	*chunks;
-	struct btrfs_block_group	**groups;
-	unsigned int		count;
-	struct btrfs_block_group	*removed;
-	uint32_t		system_size;
-	uint8_t			system[sizeof(struct btrfs_key) +
-	    offsetof(struct btrfs_chunk, stripe) +
-	    BTRFS_MAX_MIRRORS * sizeof(struct btrfs_stripe)];
-};
+struct btrfs_chunk_operation;
 
 struct btrfs_reserved_space {
 	TAILQ_ENTRY(btrfs_reserved_space) brs_entry;
@@ -356,9 +347,7 @@ struct btrfs_transaction {
 	uint64_t			 bt_ordered_bytes;
 	uint64_t			 bt_pinned_bytes;
 	uint64_t			 bt_bytes_used;
-	uint64_t			 bt_dev_bytes_added;
-	uint64_t			 bt_dev_bytes_removed;
-	struct btrfs_pending_chunk	*bt_new_chunk;
+	struct btrfs_chunk_operation	*bt_chunk_op;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
 	int				 bt_error;
@@ -846,11 +835,16 @@ int	btrfs_iterate_device_extents(struct btrfs_fs *,
 	    btrfs_dev_extent_iter_fn, void *);
 int	btrfs_iterate_free_space(struct btrfs_fs *,
 	    btrfs_free_space_iter_fn, void *);
+int	btrfs_chunk_grow(struct btrfs_fs *, uint64_t, uint64_t);
+int	btrfs_chunk_removed(struct btrfs_transaction *,
+	    const struct btrfs_block_group *);
+int	btrfs_chunk_update_super(struct btrfs_transaction *,
+	    struct btrfs_super_block *);
+void	btrfs_chunk_publish(struct btrfs_transaction *);
+void	btrfs_chunk_abort(struct btrfs_transaction *);
 int	btrfs_space_init(struct btrfs_fs *);
 void	btrfs_space_destroy(struct btrfs_fs *);
 int	btrfs_space_statfs(struct btrfs_fs *, struct statfs *);
-int	btrfs_space_grow(struct btrfs_fs *, uint64_t, uint64_t);
-void	btrfs_space_publish_chunk(struct btrfs_transaction *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);

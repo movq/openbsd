@@ -130,8 +130,11 @@ btrfs_trans_destroy(struct btrfs_fs *bmp)
 	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_data_refs));
 	KASSERT(RBT_EMPTY(btrfs_ordered_tree, &trans->bt_ordered_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
-	if (trans->bt_state != BTRFS_TRANS_COMMITTED)
+	if (trans->bt_state != BTRFS_TRANS_COMMITTED) {
+		btrfs_chunk_abort(trans);
 		btrfs_space_abort(trans);
+	}
+	KASSERT(trans->bt_chunk_op == NULL);
 	KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
 	KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
@@ -236,7 +239,7 @@ retry:
 				    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)
 					needed *= 2;
 			}
-			error = btrfs_space_grow(bmp, failed_type, needed);
+			error = btrfs_chunk_grow(bmp, failed_type, needed);
 			if (error != 0)
 				return (error);
 			grown++;
@@ -888,7 +891,7 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 		(void)btrfs_roots_finish(trans, 1);
 		generation = trans->bt_generation + 1;
 		btrfs_space_commit(trans);
-		btrfs_space_publish_chunk(trans);
+		btrfs_chunk_publish(trans);
 		next = btrfs_trans_alloc(bmp, generation);
 		reserve_error = btrfs_space_reserve_commit(next);
 		if (reserve_error != 0) {
@@ -900,6 +903,7 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 		(void)btrfs_delayed_refs_finish(trans, 0);
 		(void)btrfs_ordered_extents_finish(trans, 0);
 		(void)btrfs_extent_buffers_finish(trans, 0);
+		btrfs_chunk_abort(trans);
 		btrfs_space_abort(trans);
 	}
 
