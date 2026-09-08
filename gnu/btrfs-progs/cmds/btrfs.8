@@ -78,6 +78,8 @@ send changes relative to the named read-only parent.
 The receiver must already have a matching parent, identified by UUID and
 sender transaction ID.
 Parent and clone-source lookup rejects ambiguous read-only received identities.
+These lookups use the filesystem's UUID index when current, falling back to
+a scan of subvolume root items when the index is absent or stale.
 Without
 .Fl f ,
 write to standard output; terminal output is rejected.

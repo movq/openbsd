@@ -437,6 +437,14 @@ def subvolume(r):
     finish(r, verify=None)
 
 
+def uuid_lookup(r):
+    r.format()
+    r.mount()
+    r.test("uuid_lookup", "create")
+    r.test("uuid_lookup", "streams")
+    finish(r, "uuid_lookup")
+
+
 def subvolume_orphans(r):
     r.format()
     r.mount()
@@ -733,6 +741,7 @@ def cases():
         "read-faults": read_faults,
         "lookup": lookup, "readdir": readdir, "subvol": subvol,
         "subvolume": subvolume,
+        "uuid-lookup": uuid_lookup,
         "subvolume-orphans": subvolume_orphans,
         "subvolume-zstd": partial(imported, script="subvolume",
                                   exercise="compressed",

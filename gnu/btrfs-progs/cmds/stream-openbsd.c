@@ -171,34 +171,11 @@ int
 stream_find_uuid(struct stream_fs *fs, const uint8_t *uuid, uint64_t transid,
     struct btrfs_ioctl_identity *info)
 {
-	struct btrfs_ioctl_subvolume list;
-	struct btrfs_ioctl_identity candidate;
-	uint64_t cursor = 0;
-	int ret, found = 0, priority, ambiguous = 0;
-
-	for (;;) {
-		memset(&list, 0, sizeof(list));
-		list.fd = fs->fd;
-		list.cursor = cursor;
-		if (ioctl(fs->control, BTRFSIOC_LIST, &list) == -1)
-			return errno == ENOENT ?
-			    (ambiguous ? -EEXIST : found ? 0 : -ENOENT) : -errno;
-		cursor = list.cursor;
-		ret = stream_info(fs, NULL, list.id, &candidate);
-		if (ret)
-			return ret;
-		if (!(candidate.flags & BTRFS_CTL_RDONLY))
-			continue;
-		priority = !memcmp(candidate.received_uuid, uuid, 16) &&
-		    candidate.stransid == transid ? 2 :
-		    !memcmp(candidate.uuid, uuid, 16) &&
-		    candidate.ctransid == transid ? 1 : 0;
-		if (priority && priority >= found) {
-			ambiguous = priority == found;
-			*info = candidate;
-			found = priority;
-		}
-	}
+	memset(info, 0, sizeof(*info));
+	info->fd = fs->fd;
+	memcpy(info->uuid, uuid, sizeof(info->uuid));
+	info->stransid = transid;
+	return ioctl(fs->control, BTRFSIOC_FIND_UUID, info) == -1 ? -errno : 0;
 }
 
 int

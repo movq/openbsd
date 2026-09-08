@@ -188,6 +188,160 @@ subvol_admin_leave(struct btrfs_fs *bmp, struct proc *p)
 	mtx_leave(&bmp->bm_trans_mtx);
 }
 
+struct subvol_uuid_match {
+	const uint8_t *uuid;
+	uint64_t transid;
+	uint64_t id[2];		/* native identity, received identity */
+	int multiple[2];
+};
+
+static void
+subvol_uuid_match(struct subvol_uuid_match *match, uint64_t id,
+    const struct btrfs_root_item *item)
+{
+	int which;
+
+	if (id < BTRFS_FIRST_FREE_OBJECTID || id > BTRFS_LAST_FREE_OBJECTID ||
+	    letoh32(item->refs) == 0 ||
+	    !(letoh64(item->flags) & BTRFS_ROOT_SUBVOL_RDONLY))
+		return;
+	for (which = 0; which < 2; which++) {
+		if (memcmp(match->uuid, which ? item->received_uuid : item->uuid,
+		    BTRFS_UUID_SIZE) != 0 ||
+		    match->transid != letoh64(which ? item->stransid :
+		    item->ctransid))
+			continue;
+		if (match->id[which] == 0)
+			match->id[which] = id;
+		else if (match->id[which] != id)
+			match->multiple[which] = 1;
+	}
+}
+
+/* No path reconstruction or filesystem-root reads for unrelated subvolumes. */
+static int
+subvol_uuid_scan(struct btrfs_root *roots, struct subvol_uuid_match *match)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	struct btrfs_root_item item;
+	const struct btrfs_key *key;
+	const uint8_t *data;
+	uint32_t size;
+	int error;
+
+	target.objectid = htole64(BTRFS_FIRST_FREE_OBJECTID);
+	error = btrfs_search_lower_bound(roots, &target, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &key, &data, &size);
+		if (error != 0)
+			break;
+		if (letoh64(key->objectid) > BTRFS_LAST_FREE_OBJECTID)
+			break;
+		if (key->type == BTRFS_ROOT_ITEM_KEY) {
+			if (size < offsetof(struct btrfs_root_item, generation_v2)) {
+				error = EINVAL;
+				break;
+			}
+			memset(&item, 0, sizeof(item));
+			memcpy(&item, data, MIN(size, sizeof(item)));
+			subvol_uuid_match(match, letoh64(key->objectid), &item);
+		}
+		error = btrfs_next_item(&path);
+	}
+	btrfs_release_path(&path);
+	return (error == ENOENT ? 0 : error);
+}
+
+static int
+subvol_uuid_index(struct btrfs_root *roots, struct btrfs_root *uuids,
+    struct subvol_uuid_match *match)
+{
+	struct btrfs_key key = { 0 };
+	struct btrfs_root_item item;
+	uint64_t id, *values;
+	uint32_t size, i, nodesize = letoh32(uuids->br_super->nodesize);
+	int error = 0, which;
+
+	memcpy(&key.objectid, match->uuid, 8);
+	memcpy(&key.offset, match->uuid + 8, 8);
+	values = malloc(nodesize, M_BTRFS, M_WAITOK);
+	for (which = 0; which < 2; which++) {
+		key.type = which ? BTRFS_UUID_KEY_RECEIVED_SUBVOL :
+		    BTRFS_UUID_KEY_SUBVOL;
+		error = subvol_read(uuids, &key, values, nodesize, &size);
+		if (error == ENOENT) {
+			error = 0;
+			continue;
+		}
+		if (error != 0)
+			break;
+		if (size == 0 || size % sizeof(*values) != 0) {
+			error = EINVAL;
+			break;
+		}
+		for (i = 0; i < size / sizeof(*values); i++) {
+			id = letoh64(values[i]);
+			if (id < BTRFS_FIRST_FREE_OBJECTID ||
+			    id > BTRFS_LAST_FREE_OBJECTID)
+				continue;
+			error = btrfs_find_root_item(roots, id,
+			    BTRFS_FIRST_FREE_OBJECTID, &item, NULL);
+			if (error == ENOENT) {
+				error = 0;
+				continue;
+			}
+			if (error != 0)
+				break;
+			subvol_uuid_match(match, id, &item);
+		}
+		if (error != 0)
+			break;
+	}
+	free(values, M_BTRFS, nodesize);
+	return (error);
+}
+
+/*
+ * The administration locks keep root identities, index entries and namespace
+ * paths together throughout selection and the subsequent INFO operation.
+ * An old generation can mean missing entries, so even an index hit would
+ * not suffice to establish uniqueness: scan all root items in that case.
+ */
+static int
+subvol_find_uuid(struct btrfs_fs *bmp, struct btrfs_ioctl_identity *args)
+{
+	struct subvol_uuid_match match = {
+	    .uuid = args->uuid, .transid = args->stransid
+	};
+	struct btrfs_root *roots, *uuids = NULL;
+	int error, which;
+
+	if (memcmp(args->uuid, (uint8_t[16]){0}, 16) == 0)
+		return (ENOENT);
+	error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &roots);
+	if (error != 0)
+		return (error);
+	if (bmp->bm_super.uuid_tree_generation == bmp->bm_super.generation) {
+		error = btrfs_get_root(bmp, BTRFS_UUID_TREE_OBJECTID, &uuids);
+		if (error != 0 && error != ENOENT)
+			return (error);
+	}
+	if (uuids != NULL)
+		error = subvol_uuid_index(roots, uuids, &match);
+	else
+		error = subvol_uuid_scan(roots, &match);
+	if (error != 0)
+		return (error);
+	which = match.id[1] != 0;
+	if (match.id[which] == 0)
+		return (ENOENT);
+	if (match.multiple[which])
+		return (EEXIST);
+	args->id = match.id[which];
+	return (0);
+}
+
 /*
  * The caller serializes mounts and namespace changes. Finalization fences
  * vget, proves that no vnode user can still mutate this tree, then publishes
@@ -212,6 +366,12 @@ btrfs_identity(struct btrfs_fs *bmp, u_long cmd,
 	uint32_t size, nodesize = letoh32(bmp->bm_super.nodesize);
 	int error, enderror, gated = 0;
 
+	if (cmd == BTRFSIOC_FIND_UUID) {
+		error = subvol_find_uuid(bmp, args);
+		if (error != 0)
+			return (error);
+		cmd = BTRFSIOC_INFO;
+	}
 	if (args->id != 0)
 		error = btrfs_get_root(bmp, args->id, &root);
 	else {
