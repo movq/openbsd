@@ -565,9 +565,10 @@ Run `boundaries` and `race` on a top-level writable mount for nested snapshot
 boundary directories and administration concurrent with file writes, fsync,
 creation, and unlink. Unmount and check afterward. Repeat at 4 KiB and 16 KiB
 metadata sizes. `abi` checks malformed requests, descriptor access, and
-privilege checks on an inherited control descriptor. `orphans` snapshots an
-open-unlinked file into a read-only tree; unmount/check, remount writable, and
-run `orphan_verify` to check internal recovery and deletion.
+privilege checks on an inherited control descriptor. `collisions` checks
+exact-name parent/source lookup and insertion/removal in packed hash items.
+`orphans` snapshots an open-unlinked file into a read-only tree; unmount/check,
+remount writable, and run `orphan_verify` to check internal recovery and deletion.
 On a fresh 128 MiB image with 16 KiB nodes, `capacity` checks that complete
 deletion reservation fails with ENOSPC while preserving the namespace and
 data, then verifies continued writes and deletion after individual unlinks.
