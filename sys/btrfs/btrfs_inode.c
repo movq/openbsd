@@ -41,9 +41,8 @@ static void	btrfs_encode_timespec(const struct timespec *,
 		    struct btrfs_timespec *);
 static void	btrfs_decode_inode(const struct btrfs_inode_item *,
 		    struct btrfs_inode *);
-static uint8_t	btrfs_dir_type(mode_t);
 
-static uint8_t
+uint8_t
 btrfs_dir_type(mode_t mode)
 {
 	switch (IFTOVT(mode)) {
@@ -583,39 +582,24 @@ btrfs_remove_ref(struct btrfs_key *key,
     uint64_t parent, const char *name, size_t namelen, uint8_t *buffer,
     uint32_t *sizep, uint64_t *indexp)
 {
-	const struct btrfs_inode_ref *ref;
-	const struct btrfs_inode_extref *extref;
-	uint64_t record_parent, index;
-	uint32_t offset, header, length, match = 0, match_size = 0;
-	uint16_t name_len;
-	header = key->type == BTRFS_INODE_REF_KEY ?
-	    sizeof(*ref) : sizeof(*extref);
-	for (offset = 0; offset < *sizep; offset += length) {
-		if (*sizep - offset < header)
-			return (EINVAL);
-		if (key->type == BTRFS_INODE_REF_KEY) {
-			ref = (const struct btrfs_inode_ref *)(buffer + offset);
-			record_parent = letoh64(key->offset);
-			index = letoh64(ref->index);
-			name_len = letoh16(ref->name_len);
-		} else {
-			extref = (const struct btrfs_inode_extref *)
-			    (buffer + offset);
-			record_parent = letoh64(extref->parent_objectid);
-			index = letoh64(extref->index);
-			name_len = letoh16(extref->name_len);
-		}
-		length = header + name_len;
-		if (length > *sizep - offset || index < 2 ||
-		    !btrfs_name_valid(buffer + offset + header, name_len))
-			return (EINVAL);
-		if (record_parent == parent && name_len == namelen &&
-		    memcmp(buffer + offset + header, name, namelen) == 0) {
+	struct btrfs_inode_ref_record ref;
+	uint32_t offset, match = 0, match_size = 0;
+	int error;
+
+	for (offset = 0; offset < *sizep; offset += ref.bytes) {
+		error = btrfs_decode_inode_ref(key, buffer, *sizep, offset,
+		    &ref);
+		if (error == 0)
+			error = btrfs_validate_inode_ref(key, &ref);
+		if (error != 0)
+			return (error);
+		if (ref.parent == parent && ref.len == namelen &&
+		    memcmp(ref.name, name, namelen) == 0) {
 			if (match_size != 0)
 				return (EINVAL);
 			match = offset;
-			match_size = length;
-			*indexp = index;
+			match_size = ref.bytes;
+			*indexp = ref.index;
 		}
 	}
 	if (match_size == 0)
@@ -1435,16 +1419,12 @@ int
 btrfs_find_dir_parent(struct btrfs_root *root, uint64_t objectid,
     uint64_t *parentp)
 {
-	const struct btrfs_inode_extref *extref;
-	const struct btrfs_inode_ref *ref;
+	struct btrfs_inode_ref_record ref;
 	const struct btrfs_key *key;
-	const uint8_t *data, *name;
+	const uint8_t *data;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key target;
-	uint64_t parent;
-	uint32_t item_size;
-	uint16_t namelen;
-	size_t record_size, remaining;
+	uint32_t item_size, offset;
 	unsigned int nrefs = 0;
 	int error;
 
@@ -1465,48 +1445,19 @@ btrfs_find_dir_parent(struct btrfs_root *root, uint64_t objectid,
 		    key->type > BTRFS_INODE_EXTREF_KEY)
 			break;
 
-		remaining = item_size;
-		if (key->type == BTRFS_INODE_REF_KEY) {
-			parent = letoh64(key->offset);
-			while (remaining != 0) {
-				if (remaining < sizeof(*ref))
+		if (key->type == BTRFS_INODE_REF_KEY ||
+		    key->type == BTRFS_INODE_EXTREF_KEY) {
+			for (offset = 0; offset < item_size; offset += ref.bytes) {
+				error = btrfs_decode_inode_ref(key, data,
+				    item_size, offset, &ref);
+				if (error == 0)
+					error = btrfs_validate_inode_ref(key,
+					    &ref);
+				if (error != 0)
+					goto out;
+				if (ref.parent == objectid || ++nrefs != 1)
 					goto invalid;
-				ref = (const struct btrfs_inode_ref *)data;
-				namelen = letoh16(ref->name_len);
-				if (namelen > remaining - sizeof(*ref))
-					goto invalid;
-				record_size = sizeof(*ref) + namelen;
-				name = data + sizeof(*ref);
-				if (!btrfs_name_valid(name, namelen))
-					goto invalid;
-				if (parent < BTRFS_FIRST_FREE_OBJECTID ||
-				    parent > BTRFS_LAST_FREE_OBJECTID ||
-				    parent == objectid || ++nrefs != 1)
-					goto invalid;
-				*parentp = parent;
-				data += record_size;
-				remaining -= record_size;
-			}
-		} else if (key->type == BTRFS_INODE_EXTREF_KEY) {
-			while (remaining != 0) {
-				if (remaining < sizeof(*extref))
-					goto invalid;
-				extref = (const struct btrfs_inode_extref *)data;
-				namelen = letoh16(extref->name_len);
-				if (namelen > remaining - sizeof(*extref))
-					goto invalid;
-				record_size = sizeof(*extref) + namelen;
-				name = data + sizeof(*extref);
-				if (!btrfs_name_valid(name, namelen))
-					goto invalid;
-				parent = letoh64(extref->parent_objectid);
-				if (parent < BTRFS_FIRST_FREE_OBJECTID ||
-				    parent > BTRFS_LAST_FREE_OBJECTID ||
-				    parent == objectid || ++nrefs != 1)
-					goto invalid;
-				*parentp = parent;
-				data += record_size;
-				remaining -= record_size;
+				*parentp = ref.parent;
 			}
 		}
 		error = btrfs_next_item(&path);

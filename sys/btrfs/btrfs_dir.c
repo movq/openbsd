@@ -59,6 +59,58 @@ btrfs_name_hash(const void *name, size_t len)
 	return (crc32c(1, name, len) ^ 0xffffffffU);
 }
 
+/* Decode framing first: recovery also accepts the root's special "..". */
+int
+btrfs_decode_inode_ref(const struct btrfs_key *key, const uint8_t *data,
+    uint32_t size, uint32_t offset, struct btrfs_inode_ref_record *record)
+{
+	const struct btrfs_inode_ref *ref;
+	const struct btrfs_inode_extref *extref;
+	uint32_t header;
+
+	if (key->type == BTRFS_INODE_REF_KEY)
+		header = sizeof(*ref);
+	else if (key->type == BTRFS_INODE_EXTREF_KEY)
+		header = sizeof(*extref);
+	else
+		return (EINVAL);
+	if (offset > size || size - offset < header)
+		return (EINVAL);
+	if (key->type == BTRFS_INODE_REF_KEY) {
+		ref = (const void *)(data + offset);
+		record->parent = letoh64(key->offset);
+		record->index = letoh64(ref->index);
+		record->len = letoh16(ref->name_len);
+	} else {
+		extref = (const void *)(data + offset);
+		record->parent = letoh64(extref->parent_objectid);
+		record->index = letoh64(extref->index);
+		record->len = letoh16(extref->name_len);
+	}
+	record->bytes = header + record->len;
+	if (record->bytes > size - offset)
+		return (EINVAL);
+	record->name = data + offset + header;
+	return (0);
+}
+
+/* Ordinary names must be usable as directory entries and readdir cookies. */
+int
+btrfs_validate_inode_ref(const struct btrfs_key *key,
+    const struct btrfs_inode_ref_record *record)
+{
+	if (record->index < 2 || record->index >= INT64_MAX ||
+	    record->parent < BTRFS_FIRST_FREE_OBJECTID ||
+	    record->parent > BTRFS_LAST_FREE_OBJECTID ||
+	    !btrfs_name_valid(record->name, record->len))
+		return (EINVAL);
+	if (key->type == BTRFS_INODE_EXTREF_KEY &&
+	    letoh64(key->offset) != btrfs_extref_hash(record->parent,
+	    (const char *)record->name, record->len))
+		return (EINVAL);
+	return (0);
+}
+
 /* Directory entries and xattrs share framing, but not name/value semantics. */
 int
 btrfs_decode_dir_record(const uint8_t *data, uint32_t remaining,

@@ -610,6 +610,7 @@ struct btrfs_fs {
 	uint64_t			 bm_chunk_logical_end;
 	struct btrfs_transaction	*bm_transaction;
 	struct btrfs_trans_extent_list	 bm_log_extents;
+	/* Identities to include in the next log publication, never item data. */
 	struct btrfs_log			*bm_log;
 	struct mutex			 bm_trans_mtx;
 	uint64_t			 bm_last_transid;
@@ -903,6 +904,9 @@ void	btrfs_trans_abort(struct btrfs_trans_handle *, int);
 int	btrfs_trans_close(struct btrfs_fs *, uint64_t,
 	    struct btrfs_transaction **);
 int	btrfs_trans_commit(struct btrfs_fs *, uint64_t, struct proc *);
+int	btrfs_trans_commit_closed(struct btrfs_transaction *, struct proc *);
+int	btrfs_trans_recover_begin(struct btrfs_fs *,
+	    struct btrfs_trans_handle **);
 int	btrfs_sync_device(struct btrfs_fs *, struct proc *);
 int	btrfs_log_fsync(struct btrfs_node *, uint64_t, struct proc *);
 int	btrfs_log_write(struct btrfs_trans_handle *, struct btrfs_node *,
