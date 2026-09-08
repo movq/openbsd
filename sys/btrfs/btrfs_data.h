@@ -59,4 +59,42 @@ int	btrfs_extent_plan_prepare(struct btrfs_extent_plan *,
 int	btrfs_extent_plan_apply(struct btrfs_trans_handle *,
 	    const struct btrfs_extent_plan *);
 
+/*
+ * Resize a locked regular file. Keep the vnode locked through finish/release.
+ * Prepare validates mappings and stages a zero-tailed COW sector without
+ * changing the inode; its errors leave no resources held. A zeroed plan can
+ * also be released. Join reserves the initial handle, falling back to
+ * protected, bounded cleanup for a shrink under metadata pressure.
+ *
+ * The caller saves the inode and may stage attribute changes before apply.
+ * Apply encodes those attributes and the initial resize in the supplied handle;
+ * it aborts that handle on error. The caller ends the handle. An apply/end
+ * error requires restoring the saved inode and releasing the plan.
+ *
+ * Successful handle end publishes the target: the caller updates its VM state,
+ * then MUST call finish, even if a later caller operation fails. Finish releases
+ * the plan and completes any durable cleanup. Its errors never roll back the
+ * target; they leave recovery work on a read-only filesystem.
+ * Release alone is for preparation/join/apply/end failure, not published work.
+ */
+struct btrfs_resize_plan {
+	struct btrfs_node	*node;
+	uint64_t		oldsize;
+	uint64_t		size;
+	uint64_t		tail_offset;	/* UINT64_MAX if no tail COW. */
+	uint8_t			*tail;
+	uint64_t		affected_items;	/* Shrink edits or growth hole inserts. */
+	struct btrfs_trans_reservation reservation;
+	int			cleanup;
+};
+
+int	btrfs_resize_prepare(struct btrfs_resize_plan *, struct btrfs_node *,
+	    uint64_t);
+int	btrfs_resize_join(struct btrfs_resize_plan *,
+	    struct btrfs_trans_handle **);
+int	btrfs_resize_apply(struct btrfs_trans_handle *,
+	    const struct btrfs_resize_plan *);
+int	btrfs_resize_finish(struct btrfs_resize_plan *);
+void	btrfs_resize_release(struct btrfs_resize_plan *);
+
 #endif

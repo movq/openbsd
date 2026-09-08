@@ -18,6 +18,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/buf.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/fcntl.h>
@@ -1053,6 +1054,179 @@ btrfs_fill_file_holes(struct btrfs_trans_handle *handle,
 }
 
 static int
+btrfs_read_regular_extent(struct btrfs_node *node,
+    const struct btrfs_file_extent *extent, uint64_t file_offset, size_t size,
+    uint8_t *destination)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct buf *bp = NULL;
+	uint8_t *csums = NULL;
+	uint64_t block, logical, relative;
+	uint64_t csum_length, csum_start;
+	uint64_t inode_flags;
+	const uint8_t *expectedp;
+	uint32_t buffer_offset, sectorsize;
+	size_t chunk, nsectors, offset;
+	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
+	int error = 0;
+
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+	inode_flags = node->bn_inode.bi_flags;
+	if (file_offset < extent->bfe_logical || destination == NULL)
+		return (EINVAL);
+	relative = file_offset - extent->bfe_logical;
+	if (relative > extent->bfe_length ||
+	    size > extent->bfe_length - relative)
+		return (EINVAL);
+	logical = extent->bfe_disk_bytenr + extent->bfe_disk_offset + relative;
+	csum_start = logical & ~((uint64_t)sectorsize - 1);
+	if (size > UINT64_MAX - (logical - csum_start))
+		return (EINVAL);
+	csum_length = logical - csum_start + size;
+	if (csum_length > UINT64_MAX - (sectorsize - 1))
+		return (EINVAL);
+	csum_length = roundup(csum_length, sectorsize);
+	nsectors = csum_length / sectorsize;
+	if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
+		csums = mallocarray(nsectors, csum_size, M_BTRFS,
+		    M_WAITOK);
+		error = btrfs_read_data_csums(bmp, csum_start, csum_length,
+		    csums);
+		if (error != 0) {
+			if (error == ENOENT)
+				error = EINVAL;
+			goto out;
+		}
+	}
+
+	while (size != 0) {
+		block = logical & ~((uint64_t)sectorsize - 1);
+		offset = logical - block;
+		chunk = MIN(size, sectorsize - offset);
+		expectedp = NULL;
+		if (csums != NULL)
+			expectedp = csums +
+			    (block - csum_start) / sectorsize * csum_size;
+		error = btrfs_read_data_sector(bmp, extent, block, expectedp,
+		    &bp, &buffer_offset);
+		if (error != 0)
+			break;
+		memcpy(destination, (uint8_t *)bp->b_data + buffer_offset +
+		    offset, chunk);
+		brelse(bp);
+		bp = NULL;
+		destination += chunk;
+		logical += chunk;
+		size -= chunk;
+	}
+
+out:
+	if (bp != NULL)
+		brelse(bp);
+	if (csums != NULL)
+		free(csums, M_BTRFS, nsectors * csum_size);
+	return (error);
+}
+
+int
+btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
+    uint8_t *destination)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_file_extent extent;
+	struct btrfs_path path = { 0 };
+	struct btrfs_root *root;
+	uint64_t available, end, file_size;
+	uint32_t sectorsize;
+	size_t size;
+	int error = 0;
+
+	file_size = node->bn_inode.bi_size;
+	if (destination == NULL || offset > file_size ||
+	    length > file_size - offset)
+		return (EINVAL);
+	if (length == 0)
+		return (0);
+	end = offset + length;
+	sectorsize = letoh32(bmp->bm_super.sectorsize);
+
+	error = btrfs_get_root(bmp, node->bn_treeid, &root);
+	if (error != 0)
+		return (error);
+
+	while (error == 0 && offset < end) {
+		/*
+		 * Pending mappings are separate sectors until commit, which
+		 * writes their data before merging them. A disk mapping found
+		 * below therefore cannot span an unwritten pending sector.
+		 */
+		size = MIN(end - offset,
+		    sectorsize - (offset & (sectorsize - 1)));
+		error = btrfs_read_ordered_range(node, offset, size,
+		    destination);
+		if (error == 0) {
+			offset += size;
+			destination += size;
+			continue;
+		}
+		if (error != ENOENT)
+			break;
+		error = btrfs_find_file_extent(bmp, root, &path,
+		    node->bn_ino, offset, file_size, &extent);
+		if (error != 0)
+			break;
+		if (extent.bfe_encryption != 0 ||
+		    extent.bfe_other_encoding != 0) {
+			error = EOPNOTSUPP;
+			break;
+		}
+
+		available = extent.bfe_logical + extent.bfe_length - offset;
+		size = end - offset;
+		if (size > available)
+			size = available;
+
+		switch (extent.bfe_type) {
+		case BTRFS_FILE_EXTENT_INLINE:
+			if (extent.bfe_compression == BTRFS_COMPRESS_NONE) {
+				if (extent.bfe_inline_size != extent.bfe_length) {
+					error = EINVAL;
+					break;
+				}
+				memcpy(destination, extent.bfe_inline_data +
+				    offset - extent.bfe_logical, size);
+			} else {
+				error = btrfs_read_compressed_extent(node, &extent,
+				    offset, size, destination);
+			}
+			break;
+		case BTRFS_FILE_EXTENT_REG:
+			if (extent.bfe_compression == BTRFS_COMPRESS_NONE)
+				error = btrfs_read_regular_extent(node, &extent,
+				    offset, size, destination);
+			else
+				error = btrfs_read_compressed_extent(node, &extent,
+				    offset, size, destination);
+			break;
+		case BTRFS_FILE_EXTENT_PREALLOC:
+		case BTRFS_FILE_EXTENT_HOLE:
+			memset(destination, 0, size);
+			break;
+		default:
+			error = EINVAL;
+			break;
+		}
+		if (error == 0) {
+			offset += size;
+			destination += size;
+		}
+	}
+
+	btrfs_release_path(&path);
+	return (error);
+}
+
+static int
 btrfs_check_inline_conversion(struct btrfs_node *node,
     const struct btrfs_file_extent *extent)
 {
@@ -1077,7 +1251,7 @@ btrfs_check_inline_conversion(struct btrfs_node *node,
  * COW to preserve the old prefix and zero its tail, or UINT64_MAX for purely
  * sparse growth.  The caller retains the vnode lock through mutation.
  */
-int
+static int
 btrfs_check_file_extend(struct btrfs_node *node, uint64_t size,
     uint64_t *tail_offset)
 {
@@ -1195,7 +1369,7 @@ btrfs_cancel_ordered_sector(struct btrfs_trans_handle *handle,
  * Walk through the final extent, including preallocation past EOF. The same
  * walk preflights format support and reserves each affected item's worst-case
  * mutation cost. The vnode lock keeps this plan stable across transaction join.
- * Partial EOF data is COWed by setattr before the mutation walk.
+ * Resize application COWs partial EOF data before the mutation walk.
  */
 static int
 btrfs_file_shrink(struct btrfs_trans_handle *handle, struct btrfs_node *node,
@@ -1320,18 +1494,141 @@ out:
 	return (error);
 }
 
+/*
+ * The inode/tail budget covers an unchanged size or sparse growth. Each
+ * affected mapping (or explicit hole to insert) adds one extent-edit budget.
+ * Batched shrink only stages the tail and marker in this first handle.
+ */
+#define BTRFS_RESIZE_METADATA_BLOCKS	64
+#define BTRFS_RESIZE_BATCH_ITEMS		8
+
 int
-btrfs_check_file_shrink(struct btrfs_node *node, uint64_t size,
-    uint64_t *count, uint64_t *tail_offset)
+btrfs_resize_prepare(struct btrfs_resize_plan *plan, struct btrfs_node *node,
+    uint64_t size)
 {
-	return (btrfs_file_shrink(NULL, node, size, count, tail_offset));
+	struct btrfs_fs *bmp = node->bn_mount;
+	uint64_t items, metadata;
+	uint32_t sectorsize = letoh32(bmp->bm_super.sectorsize);
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	memset(plan, 0, sizeof(*plan));
+	plan->node = node;
+	plan->oldsize = node->bn_inode.bi_size;
+	plan->size = size;
+	plan->tail_offset = UINT64_MAX;
+	if (size > LLONG_MAX)
+		return (EFBIG);
+	if (size < plan->oldsize) {
+		error = btrfs_file_shrink(NULL, node, size,
+		    &plan->affected_items, &plan->tail_offset);
+		if (error != 0)
+			return (error);
+		plan->cleanup = plan->affected_items > BTRFS_RESIZE_BATCH_ITEMS;
+	} else if (size > plan->oldsize) {
+		error = btrfs_check_file_extend(node, size, &plan->tail_offset);
+		if (error != 0)
+			return (error);
+		error = btrfs_count_file_holes(node, size, &plan->affected_items);
+		if (error != 0)
+			return (error);
+	}
+	metadata = (uint64_t)letoh32(bmp->bm_super.nodesize) *
+	    BTRFS_RESIZE_METADATA_BLOCKS;
+	items = plan->cleanup ? 1 : plan->affected_items;
+	if (items > UINT64_MAX / metadata - 1)
+		return (EOVERFLOW);
+	plan->reservation.btr_metadata = metadata * (1 + items);
+	plan->reservation.btr_reclaim = plan->cleanup;
+	if (plan->tail_offset != UINT64_MAX) {
+		plan->tail = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
+		error = btrfs_read_file_range(node, plan->tail_offset,
+		    MIN(plan->oldsize, size) - plan->tail_offset, plan->tail);
+		if (error != 0) {
+			btrfs_resize_release(plan);
+			return (error);
+		}
+		plan->reservation.btr_data = sectorsize;
+	}
+	return (0);
 }
 
 int
-btrfs_shrink_file(struct btrfs_trans_handle *handle, struct btrfs_node *node,
-    uint64_t size)
+btrfs_resize_join(struct btrfs_resize_plan *plan,
+    struct btrfs_trans_handle **handle)
 {
-	return (btrfs_file_shrink(handle, node, size, NULL, NULL));
+	struct btrfs_fs *bmp = plan->node->bn_mount;
+	int error;
+
+	KASSERT(VOP_ISLOCKED(plan->node->bn_vnode));
+	error = btrfs_trans_join(bmp, &plan->reservation, handle);
+	if (error == ENOSPC && plan->size < plan->oldsize && !plan->cleanup) {
+		/* One mapping, including inline data, fits the protected handle. */
+		plan->cleanup = plan->affected_items > 1;
+		plan->reservation.btr_metadata =
+		    (uint64_t)letoh32(bmp->bm_super.nodesize) *
+		    BTRFS_RECLAIM_METADATA_BLOCKS;
+		plan->reservation.btr_reclaim = 1;
+		error = btrfs_trans_join(bmp, &plan->reservation, handle);
+	}
+	return (error);
+}
+
+int
+btrfs_resize_apply(struct btrfs_trans_handle *handle,
+    const struct btrfs_resize_plan *plan)
+{
+	struct btrfs_node *node = plan->node;
+	int error = 0;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	KASSERT(node->bn_inode.bi_size == plan->oldsize);
+	if (plan->tail != NULL)
+		error = btrfs_write_file_sector(handle, node, plan->tail_offset,
+		    plan->tail, plan->oldsize, 0);
+	if (error == 0) {
+		if (plan->cleanup)
+			error = btrfs_start_truncate(handle, node);
+		else if (plan->size < plan->oldsize)
+			error = btrfs_file_shrink(handle, node, plan->size,
+			    NULL, NULL);
+		else
+			error = btrfs_fill_file_holes(handle, node,
+			    plan->oldsize, plan->size);
+	}
+	if (error == 0) {
+		node->bn_inode.bi_size = plan->size;
+		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE;
+		node->bn_inode.bi_last_dirty_transid =
+		    handle->bth_transaction->bt_generation;
+		error = btrfs_write_inode(handle, node);
+	}
+	if (error != 0)
+		btrfs_trans_abort(handle, error);
+	return (error);
+}
+
+int
+btrfs_resize_finish(struct btrfs_resize_plan *plan)
+{
+	int error = 0;
+
+	KASSERT(VOP_ISLOCKED(plan->node->bn_vnode));
+	KASSERT(plan->node->bn_inode.bi_size == plan->size);
+	if (plan->cleanup)
+		error = btrfs_finish_truncate(plan->node);
+	btrfs_resize_release(plan);
+	return (error);
+}
+
+void
+btrfs_resize_release(struct btrfs_resize_plan *plan)
+{
+	if (plan->tail != NULL) {
+		free(plan->tail, M_BTRFS,
+		    letoh32(plan->node->bn_mount->bm_super.sectorsize));
+		plan->tail = NULL;
+	}
 }
 
 /*
