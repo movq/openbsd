@@ -802,11 +802,7 @@ int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    uint64_t, struct btrfs_file_extent *);
 int	btrfs_commit_inode_data(struct btrfs_node *, struct proc *);
 int	btrfs_read_ordered_range(struct btrfs_node *, uint64_t, size_t, void *);
-int	btrfs_check_file_extend(struct btrfs_node *, uint64_t, uint64_t *);
-int	btrfs_check_file_shrink(struct btrfs_node *, uint64_t, uint64_t *,
-	    uint64_t *);
-int	btrfs_shrink_file(struct btrfs_trans_handle *, struct btrfs_node *,
-	    uint64_t);
+int	btrfs_read_file_range(struct btrfs_node *, uint64_t, size_t, uint8_t *);
 int	btrfs_count_file_holes(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, uint64_t);

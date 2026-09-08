@@ -451,7 +451,8 @@ references under the caller's existing reservation. Splits preserve allocation
 and file-base identity, including compressed decoded offsets. Inline removal
 accounts for decoded bytes, and replacement holes follow `NO_HOLES`. Callers
 retain data allocation, inline decoding, ordered payload handling and inode
-publication; shrink and recovery keep their separate cleanup orchestration.
+publication. Resize builds on this plan; mount recovery retains its
+vnode-independent cleanup engine.
 
 Range cloning locks both regular-file vnodes without waiting on one while
 holding the other. It commits their ordered writes before sharing: pending
@@ -468,11 +469,21 @@ Large ranges need bounded metadata reservations, but are not atomic as a whole:
 an error can leave a completed prefix and sparse growth to the destination
 offset. Growing past an old partial EOF or inline prefix can require data COW.
 
-Shrinking COWs a retained partial data sector with a zero tail, removes mappings
-through the last extent (including preallocation beyond EOF), and invalidates
-vnode buffers and mapped pages. Pending allocations that are removed cancel their
-delayed adds, payloads, and unpublished allocations together.
-Small shrinks fit one handle. Larger deletions first persist the target size
+Resizing has a prepare/apply/finish protocol below the vnode interface.
+Preparation validates mappings, stages a zero-tailed COW sector when needed,
+and records the target size, affected-item count, reservation and cleanup need.
+Joining can switch a small shrink to protected, bounded cleanup on `ENOSPC`.
+Application uses the caller's reserved handle and encodes any staged attributes
+with the initial resize. Setattr owns attribute policy; setattr and clone own
+VM updates and notifications. Clone uses the resize API for destination growth.
+Before successful handle end, failure restores the saved inode and releases
+the plan. After it, the target is published: the caller updates VM state and
+must finish the resize; cleanup errors cannot restore the old size.
+
+Shrinking removes mappings through the last extent, including preallocation
+beyond EOF. Removed pending allocations cancel their delayed adds, payloads,
+and unpublished allocations together. Small shrinks fit one handle.
+Larger deletions first persist the target size
 and an orphan marker, then commit ordered data and delete in reserved batches,
 reducing the batch to one item under space pressure. Each batch re-searches
 from rounded target EOF and updates remaining byte accounting. The final batch
