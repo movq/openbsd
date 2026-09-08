@@ -20,6 +20,8 @@ static const uint64_t superblock_addrs[BTRFS_SUPER_MIRROR_MAX] = {
 #define BTRFS_INODE_EXTREF_KEY          0x0D
 #define BTRFS_XATTR_ITEM_KEY            0x18
 #define BTRFS_ORPHAN_ITEM_KEY           0x30
+#define BTRFS_DIR_LOG_ITEM_KEY          0x3C
+#define BTRFS_DIR_LOG_INDEX_KEY         0x48
 #define BTRFS_DIR_ITEM_KEY              0x54
 #define BTRFS_DIR_INDEX_KEY             0x60
 #define BTRFS_EXTENT_DATA_KEY           0x6C
@@ -64,6 +66,7 @@ static const uint64_t superblock_addrs[BTRFS_SUPER_MIRROR_MAX] = {
 #define BTRFS_EXTENT_CSUM_OBJECTID       0xFFFFFFFFFFFFFFF6
 #define BTRFS_DATA_RELOC_TREE_OBJECTID   0xFFFFFFFFFFFFFFF7
 #define BTRFS_ORPHAN_OBJECTID            0xFFFFFFFFFFFFFFFB
+#define BTRFS_TREE_LOG_OBJECTID          0xFFFFFFFFFFFFFFFA
 #define BTRFS_BALANCE_OBJECTID           0xFFFFFFFFFFFFFFFC
 
 #define BTRFS_COMPRESS_NONE  0
@@ -196,6 +199,10 @@ struct btrfs_key {
     uint64_t objectid;
     uint8_t type;
     uint64_t offset;
+} __packed;
+
+struct btrfs_dir_log_item {
+    uint64_t end;
 } __packed;
 
 #define BTRFS_HEADER_FLAG_WRITTEN         0x000000000000001

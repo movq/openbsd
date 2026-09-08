@@ -248,7 +248,8 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 			error = EINVAL;
 			goto out;
 		}
-		error = btrfs_check_super_policy(sb, bmp->bm_readonly);
+		error = btrfs_check_super_policy(sb,
+		    bmp->bm_readonly && sb->log_root == 0);
 		if (error != 0)
 			goto out;
 		bmp->bm_super = *sb;
@@ -278,7 +279,7 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 			goto out;
 		}
 		if (mirror->bsm_generation > selected_generation &&
-		    !bmp->bm_readonly) {
+		    (!bmp->bm_readonly || bmp->bm_super.log_root != 0)) {
 			error = EROFS;
 			goto out;
 		}
@@ -296,8 +297,6 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 		    sb->num_devices != bmp->bm_super.num_devices ||
 		    sb->incompat_flags != bmp->bm_super.incompat_flags ||
 		    sb->compat_ro_flags != bmp->bm_super.compat_ro_flags ||
-		    sb->log_root != bmp->bm_super.log_root ||
-		    sb->log_root_level != bmp->bm_super.log_root_level ||
 		    sb->sys_chunk_array_size !=
 		    bmp->bm_super.sys_chunk_array_size ||
 		    memcmp(sb->sys_chunk_array, bmp->bm_super.sys_chunk_array,
@@ -375,8 +374,6 @@ btrfs_check_super_policy(const struct btrfs_super_block *sb, int readonly)
 		    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID)) !=
 		    (BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE |
 		    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID))
-			return (EROFS);
-		if (letoh64(sb->log_root) != 0)
 			return (EROFS);
 		if (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING)
 			return (EROFS);

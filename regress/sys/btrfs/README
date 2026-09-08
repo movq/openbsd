@@ -796,3 +796,92 @@ create/verify phases check unchanged namespace and inode state after failed
 create, link, rename, subvolume and snapshot additions, then same-bucket
 rename/replacement, unlink and subvolume deletion. The name-records recipe
 includes independent checks and remount verification on both node sizes.
+
+Tree logs and crash interoperability
+-----------------------------------
+
+log_tree.py is a targeted host runner for the shared OpenBSD/Alpine setup.
+It reformats scratch1.img as a 1 GiB filesystem and uses /dev/sd1c in OpenBSD
+and /dev/sdb in Linux. Both guests must have all btrfs filesystems unmounted.
+The matching kernel must already be installed. Run from the host:
+
+    python3 regress/sys/btrfs/log_tree.py
+    python3 regress/sys/btrfs/log_tree.py --writers linux \
+        --cases create unlink rename replace hardlink xattr symlink \
+        compressed prealloc shared
+    python3 regress/sys/btrfs/log_tree.py --writers openbsd \
+        --cases overwrite resize concurrent
+    python3 regress/sys/btrfs/log_tree.py --cases subvol
+    python3 regress/sys/btrfs/log_tree.py --nodesize 16384 --csum xxhash \
+        --cases data sparse --readonly --results /home/mike/obj/log-16k
+    python3 regress/sys/btrfs/log_tree.py --writers openbsd \
+        --cases create unlink rename hardlink --expect-commit
+
+Each log test asserts a nonzero superblock log pointer after fsync, pauses
+the writer, saves the crash image, and resets the guest without unmounting.
+It restores that same image independently for Linux and OpenBSD replay,
+checks file contents and namespace, unmounts, runs Linux's read-only
+filesystem/data-checksum check, and verifies again after remount. --readonly
+requests read-only recovery mounts. --expect-commit instead asserts that the
+operation published a full transaction; Linux can also choose this fallback,
+for example for the combined namespace and crossdir workloads.
+
+The extref case checks link-count repair with committed extended references.
+The subvol case logs files in two subvolumes in the same transaction.
+The overwrite, resize and concurrent cases exercise repeated fsync and the
+transition from logged data to a later full commit.
+
+For malformed-log and empty-log recovery, use a saved CRC32C crash image:
+
+    python3 regress/sys/btrfs/log_tree.py --fault-image \
+        /home/mike/obj/btrfs-log-tests/openbsd-data-4096.img
+
+This corrupts every DUP copy of the log root, checking bad checksums, wrong
+generations, and a recursive log-root reference. Both mount modes must reject
+these fixtures without changing the primary superblock. An empty log must
+mount successfully, clear its log pointer, preserve committed file contents,
+and pass the independent checker.
+
+To interrupt recovery after COW metadata reaches disk, before publishing its
+superblock, use the DDB breakpoint runner with a saved log and its matching
+verification case:
+
+    python3 regress/sys/btrfs/log_tree.py --interrupt-image \
+        /home/mike/obj/btrfs-log-tests/linux-create-4096.img --cases create
+
+This resets OpenBSD at btrfs_write_super_mirrors, verifies that the original
+superblock still names the log, then mounts and checks recovery again.
+The runner preserves the backing-file inode and size during restoration
+because both QEMU processes keep the file open. Failures retain snapshots
+and command output; a timeout may leave the writer mounted or stopped, so
+inspect both guests before rerunning.
+
+The implementation in sys/btrfs/btrfs_log.c uses the Linux disk protocol:
+the committed generation and root pointers stay in the superblock, while
+log_root points to a forest at the next generation. Log metadata has no
+extent-tree references. In-memory exclusions prevent normal allocation from
+reusing any published or unpublished log blocks until full commit. Data and
+log blocks reach all required mirrors and pass a device-cache barrier before
+the superblock is written, followed by another barrier.
+
+The fsync optimization currently covers existing regular files with committed
+namespace. New inodes, namespace/root changes, orphan handling, and chunk
+operations force a full transaction commit. Exhausting log allocation space
+before publication also falls back to commit. The writer logs complete inode
+metadata, xattrs and extent mappings, including explicit holes and checksums,
+and rebuilds the set of previously logged inodes on each publication. Its
+memory and I/O costs therefore scale with those files' mappings; this is more
+conservative than Linux's incremental fast-fsync implementation. Pending data
+that has already been submitted is immutable: overlapping writes and resizing
+commit first. fsync publication uses the existing transaction close/drain
+gate and never acquires unrelated vnode locks.
+
+Recovery validates and excludes the complete log forest and its new data
+allocations before any COW. It creates inodes, removes logged directory
+ranges, reconciles names/references and mapping ranges, restores checksums,
+and repairs link counts, directory sizes and allocated-byte accounting.
+Orphan cleanup follows replay. All replay changes commit together; failure
+does not publish partial recovery. Read-only views with a pending log require
+writable devices and a supported writable filesystem format for recovery,
+then expose the recovered filesystem read-only. The existing driver's
+checksum, allocation-profile and feature restrictions still apply.

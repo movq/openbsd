@@ -837,6 +837,7 @@ file btrfs/btrfs_compression.c		btrfs
 file btrfs/btrfs_super.c		btrfs
 file btrfs/btrfs_tree.c			btrfs
 file btrfs/btrfs_transaction.c		btrfs
+file btrfs/btrfs_log.c			btrfs
 file btrfs/btrfs_data.c			btrfs
 file btrfs/btrfs_vfsops.c		btrfs
 file btrfs/btrfs_vnops.c		btrfs

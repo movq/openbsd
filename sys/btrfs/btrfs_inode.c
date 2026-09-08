@@ -41,15 +41,6 @@ static void	btrfs_encode_timespec(const struct timespec *,
 		    struct btrfs_timespec *);
 static void	btrfs_decode_inode(const struct btrfs_inode_item *,
 		    struct btrfs_inode *);
-static int	btrfs_decode_file_extent(const struct btrfs_fs *,
-		    uint64_t, const struct btrfs_key *, const uint8_t *,
-		    uint32_t, struct btrfs_file_extent *);
-static int	btrfs_plan_remove(struct btrfs_name_plan *,
-		    struct btrfs_node *, struct btrfs_node *, const char *,
-		    size_t, uint64_t *, struct btrfs_dir_item *);
-static int	btrfs_plan_add(struct btrfs_name_plan *, uint64_t, uint64_t,
-		    const char *, size_t, uint64_t,
-		    const struct btrfs_dir_item *);
 static uint8_t	btrfs_dir_type(mode_t);
 
 static uint8_t
@@ -706,7 +697,8 @@ btrfs_unlink_inode(struct btrfs_node *dir, struct btrfs_node *node,
 		return (EINVAL);
 	nodesize = letoh32(bmp->bm_super.nodesize);
 	plan = btrfs_name_plan_alloc(root);
-	error = btrfs_plan_remove(plan, dir, node, name, namelen, &index,
+	error = btrfs_plan_remove(plan, dir->bn_ino, node->bn_ino,
+	    name, namelen, &index,
 	    NULL);
 	if (error != 0)
 		goto out;
@@ -767,7 +759,7 @@ out:
 	return (error);
 }
 
-static uint64_t
+uint64_t
 btrfs_extref_hash(uint64_t parent, const char *name, size_t len)
 {
 	/* Extended inode references seed raw CRC32C with the parent ID. */
@@ -776,37 +768,37 @@ btrfs_extref_hash(uint64_t parent, const char *name, size_t len)
 }
 
 /* Inode references supply the index; directory preparation checks its pair. */
-static int
-btrfs_plan_remove(struct btrfs_name_plan *plan, struct btrfs_node *dir,
-    struct btrfs_node *node, const char *name, size_t len, uint64_t *indexp,
+int
+btrfs_plan_remove(struct btrfs_name_plan *plan, uint64_t parent,
+    uint64_t ino, const char *name, size_t len, uint64_t *indexp,
     struct btrfs_dir_item *record)
 {
 	struct btrfs_name_edit *ref;
 	int error;
 
-	error = btrfs_name_edit(plan, node->bn_ino, BTRFS_INODE_REF_KEY,
-	    dir->bn_ino, &ref);
+	error = btrfs_name_edit(plan, ino, BTRFS_INODE_REF_KEY,
+	    parent, &ref);
 	if (error == 0)
-		error = btrfs_remove_ref(&ref->key, dir->bn_ino, name, len,
+		error = btrfs_remove_ref(&ref->key, parent, name, len,
 		    ref->data, &ref->size, indexp);
 	if (error == ENOENT &&
 	    (letoh64(plan->root->br_super->incompat_flags) &
 	    BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF)) {
-		error = btrfs_name_edit(plan, node->bn_ino,
+		error = btrfs_name_edit(plan, ino,
 		    BTRFS_INODE_EXTREF_KEY,
-		    btrfs_extref_hash(dir->bn_ino, name, len), &ref);
+		    btrfs_extref_hash(parent, name, len), &ref);
 		if (error == 0)
-			error = btrfs_remove_ref(&ref->key, dir->bn_ino, name,
+			error = btrfs_remove_ref(&ref->key, parent, name,
 			    len, ref->data, &ref->size, indexp);
 	}
 	if (error != 0)
 		return (error);
 	ref->dirty = 1;
-	return (btrfs_plan_dir_remove(plan, dir->bn_ino, name, len,
-	    *indexp, node->bn_ino, BTRFS_INODE_ITEM_KEY, record));
+	return (btrfs_plan_dir_remove(plan, parent, name, len,
+	    *indexp, ino, BTRFS_INODE_ITEM_KEY, record));
 }
 
-static int
+int
 btrfs_plan_add(struct btrfs_name_plan *plan, uint64_t parent, uint64_t ino,
     const char *name, size_t len, uint64_t cookie,
     const struct btrfs_dir_item *record)
@@ -906,12 +898,14 @@ btrfs_rename_inode(struct btrfs_node *fdir, struct btrfs_node *node,
 		return (EOVERFLOW);
 	tsize += tlen * 2;
 	plan = btrfs_name_plan_alloc(fdir->bn_root);
-	error = btrfs_plan_remove(plan, fdir, node, fname, flen, &cookie,
+	error = btrfs_plan_remove(plan, fdir->bn_ino, node->bn_ino,
+	    fname, flen, &cookie,
 	    &record);
 	if (error != 0)
 		goto out;
 	if (target != NULL) {
-		error = btrfs_plan_remove(plan, tdir, target, tname, tlen,
+		error = btrfs_plan_remove(plan, tdir->bn_ino, target->bn_ino,
+		    tname, tlen,
 		    &tcookie, NULL);
 		if (error != 0)
 			goto out;
@@ -1738,7 +1732,7 @@ btrfs_lookup_directory(struct btrfs_root *root, uint64_t objectid,
 	return (error);
 }
 
-static int
+int
 btrfs_decode_file_extent(const struct btrfs_fs *bmp,
     uint64_t view_generation, const struct btrfs_key *key,
     const uint8_t *data, uint32_t item_size, struct btrfs_file_extent *decoded)
