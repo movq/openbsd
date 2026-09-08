@@ -810,12 +810,12 @@ The matching kernel must already be installed. Run from the host:
         --cases create unlink rename replace hardlink xattr symlink \
         compressed prealloc shared
     python3 regress/sys/btrfs/log_tree.py --writers openbsd \
-        --cases overwrite resize concurrent
+        --cases overwrite resize concurrent unsynced
     python3 regress/sys/btrfs/log_tree.py --cases subvol
     python3 regress/sys/btrfs/log_tree.py --nodesize 16384 --csum xxhash \
         --cases data sparse --readonly --results /home/mike/obj/log-16k
     python3 regress/sys/btrfs/log_tree.py --writers openbsd \
-        --cases create unlink rename hardlink --expect-commit
+        --cases create unlink rename hardlink fallback --expect-commit
 
 Each log test asserts a nonzero superblock log pointer after fsync, pauses
 the writer, saves the crash image, and resets the guest without unmounting.
@@ -830,6 +830,11 @@ The extref case checks link-count repair with committed extended references.
 The subvol case logs files in two subvolumes in the same transaction.
 The overwrite, resize and concurrent cases exercise repeated fsync and the
 transition from logged data to a later full commit.
+The OpenBSD-only unsynced writer case repeats fsync on a tracked inode, then
+appends and renames without another fsync. Both readers must recover the
+published contents and original name after the crash.
+The fallback case follows those edits with fsync of the renamed file, checking
+that a full commit publishes the new contents/name and retires the old log.
 
 For malformed-log and empty-log recovery, use a saved CRC32C crash image:
 
@@ -856,7 +861,8 @@ because both QEMU processes keep the file open. Failures retain snapshots
 and command output; a timeout may leave the writer mounted or stopped, so
 inspect both guests before rerunning.
 
-The implementation in sys/btrfs/btrfs_log.c uses the Linux disk protocol:
+The writer in sys/btrfs/btrfs_log.c and recovery in btrfs_log_replay.c share
+the Linux disk protocol and temporary item collection in btrfs_log.h:
 the committed generation and root pointers stay in the superblock, while
 log_root points to a forest at the next generation. Log metadata has no
 extent-tree references. In-memory exclusions prevent normal allocation from
@@ -869,19 +875,30 @@ namespace. New inodes, namespace/root changes, orphan handling, and chunk
 operations force a full transaction commit. Exhausting log allocation space
 before publication also falls back to commit. The writer logs complete inode
 metadata, xattrs and extent mappings, including explicit holes and checksums,
-and rebuilds the set of previously logged inodes on each publication. Its
-memory and I/O costs therefore scale with those files' mappings; this is more
-conservative than Linux's incremental fast-fsync implementation. Pending data
-that has already been submitted is immutable: overlapping writes and resizing
-commit first. fsync publication uses the existing transaction close/drain
-gate and never acquires unrelated vnode locks.
+and rebuilds the set of previously logged inodes on each publication. Between
+publications it retains only (subvolume, inode) identities. Temporary item
+memory covers one subvolume at a time and is freed after packing; log block
+exclusions last until full commit. Collection and I/O costs still scale with
+those files' mappings; this is more conservative than Linux's incremental
+fast-fsync implementation. Pending data that has already been submitted is
+immutable: overlapping writes and resizing commit first. fsync publication
+uses the existing transaction close/drain
+gate and never acquires unrelated vnode locks. A fallback keeps joins closed
+through full commit; successful log publication reopens the same generation.
 
 Recovery validates and excludes the complete log forest and its new data
 allocations before any COW. It creates inodes, removes logged directory
 ranges, reconciles names/references and mapping ranges, restores checksums,
 and repairs link counts, directory sizes and allocated-byte accounting.
+These named phases run across the whole forest in order. Mutation helpers
+replenish replay reservations where needed; phases which do not apply an item
+do not reserve space. Inode references and xattrs use the same record decoders
+as normal filesystem operations, with the root's special reference handled
+explicitly by recovery.
 Orphan cleanup follows replay. All replay changes commit together; failure
-does not publish partial recovery. Read-only views with a pending log require
-writable devices and a supported writable filesystem format for recovery,
-then expose the recovered filesystem read-only. The existing driver's
+does not publish partial recovery. The transaction layer owns recovery entry,
+including publication of an empty log, and commits without reopening joins.
+Read-only views with a pending log require writable devices and a supported
+writable filesystem format for recovery, then expose the recovered filesystem
+read-only. The existing driver's
 checksum, allocation-profile and feature restrictions still apply.

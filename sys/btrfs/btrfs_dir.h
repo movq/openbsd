@@ -34,6 +34,14 @@ struct btrfs_dir_record {
 	uint16_t	datalen;
 };
 
+struct btrfs_inode_ref_record {
+	const uint8_t	*name;
+	uint64_t	parent;
+	uint64_t	index;
+	uint32_t	bytes;
+	uint16_t	len;
+};
+
 /*
  * A namespace operation keeps one private image per key. Callers serialize
  * the affected names, indexes and references through preparation and apply.
@@ -65,10 +73,17 @@ struct btrfs_name_plan {
 };
 
 int	btrfs_name_valid(const uint8_t *, size_t);
+uint8_t	btrfs_dir_type(mode_t);
 uint64_t btrfs_name_hash(const void *, size_t);
 uint64_t btrfs_extref_hash(uint64_t, const char *, size_t);
+int	btrfs_decode_inode_ref(const struct btrfs_key *, const uint8_t *,
+	    uint32_t, uint32_t, struct btrfs_inode_ref_record *);
+int	btrfs_validate_inode_ref(const struct btrfs_key *,
+	    const struct btrfs_inode_ref_record *);
 int	btrfs_decode_dir_record(const uint8_t *, uint32_t,
 	    struct btrfs_dir_record *);
+int	btrfs_decode_xattr(const struct btrfs_key *, const uint8_t *,
+	    uint32_t, struct btrfs_dir_record *);
 int	btrfs_validate_dir_record(const struct btrfs_key *, uint64_t,
 	    uint32_t, const struct btrfs_dir_record *);
 int	btrfs_next_dir_index(struct btrfs_root *, uint64_t, uint64_t *);

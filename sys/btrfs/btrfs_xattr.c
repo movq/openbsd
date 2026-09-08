@@ -22,7 +22,7 @@
 #include <btrfs/btrfs_dir.h>
 
 /* Linux xattrs remain opaque; their names need not be path components. */
-static int
+int
 btrfs_decode_xattr(const struct btrfs_key *key, const uint8_t *data,
     uint32_t size, struct btrfs_dir_record *record)
 {
