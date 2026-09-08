@@ -29,7 +29,7 @@
 #include <btrfs/btrfs_var.h>
 
 static int	btrfs_insert_data_csums(struct btrfs_trans_handle *, uint64_t,
-		    const uint32_t *, uint32_t);
+		    const uint8_t *, uint32_t);
 static int	btrfs_delete_data_csums(struct btrfs_trans_handle *, uint64_t,
 		    uint64_t);
 static void	btrfs_encode_file_extent(struct btrfs_file_extent_item *,
@@ -127,7 +127,7 @@ btrfs_find_ordered_sector(struct btrfs_transaction *trans,
  */
 static int
 btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
-    const uint32_t *csums, uint32_t count)
+    const uint8_t *csums, uint32_t count)
 {
 	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
 	const struct btrfs_key *found_key;
@@ -138,6 +138,7 @@ btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 	uint8_t *payload = NULL;
 	uint64_t item_end, span, start, end;
 	uint32_t item_size, sectorsize, capacity, bytes;
+	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
 	int error;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
@@ -145,14 +146,14 @@ btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 	KASSERT(handle->bth_transaction->bt_writers == 0);
 	/* Bound copying and leave room for neighboring items in the leaf. */
 	capacity = letoh32(bmp->bm_super.nodesize) / 4;
-	if (count == 0 || count > capacity / sizeof(*csums) ||
+	if (count == 0 || count > capacity / csum_size ||
 	    (logical & (sectorsize - 1)) != 0)
 		return (EINVAL);
 	span = (uint64_t)count * sectorsize;
 	if (logical > UINT64_MAX - span)
 		return (EINVAL);
 	end = logical + span;
-	bytes = count * sizeof(*csums);
+	bytes = count * csum_size;
 	error = btrfs_get_root(bmp, BTRFS_CSUM_TREE_OBJECTID, &root);
 	if (error != 0)
 		return (error);
@@ -185,12 +186,12 @@ btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 		if (letoh64(found_key->objectid) !=
 		    BTRFS_EXTENT_CSUM_OBJECTID ||
 		    found_key->type != BTRFS_EXTENT_CSUM_KEY ||
-		    item_size == 0 || item_size % sizeof(*csums) != 0) {
+		    item_size == 0 || item_size % csum_size != 0) {
 			error = EINVAL;
 			goto out;
 		}
 		start = letoh64(found_key->offset);
-		span = (uint64_t)(item_size / sizeof(*csums)) * sectorsize;
+		span = (uint64_t)(item_size / csum_size) * sectorsize;
 		if ((start & (sectorsize - 1)) != 0 ||
 		    start > UINT64_MAX - span) {
 			error = EINVAL;
@@ -250,6 +251,7 @@ btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 	uint8_t *payload = NULL;
 	uint64_t cursor, end, item_end, span, start;
 	uint32_t item_size, prefix_size, sectorsize, suffix_size;
+	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
 	int error;
 
 	KASSERT(handle->bth_commit);
@@ -281,9 +283,9 @@ btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 			    BTRFS_EXTENT_CSUM_OBJECTID ||
 			    found_key->type != BTRFS_EXTENT_CSUM_KEY ||
 			    item_size == 0 ||
-			    item_size % sizeof(uint32_t) != 0)
+			    item_size % csum_size != 0)
 				goto invalid;
-			span = (uint64_t)(item_size / sizeof(uint32_t)) *
+			span = (uint64_t)(item_size / csum_size) *
 			    sectorsize;
 			if ((start & (sectorsize - 1)) != 0 ||
 			    start > UINT64_MAX - span)
@@ -313,10 +315,10 @@ btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 			goto out;
 		}
 		start = letoh64(found_key->offset);
-		if (item_size == 0 || item_size % sizeof(uint32_t) != 0 ||
+		if (item_size == 0 || item_size % csum_size != 0 ||
 		    (start & (sectorsize - 1)) != 0)
 			goto invalid;
-		span = (uint64_t)(item_size / sizeof(uint32_t)) * sectorsize;
+		span = (uint64_t)(item_size / csum_size) * sectorsize;
 		if (start > UINT64_MAX - span)
 			goto invalid;
 		item_end = start + span;
@@ -330,11 +332,11 @@ btrfs_delete_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 		prefix_size = 0;
 		if (start < logical)
 			prefix_size = (logical - start) / sectorsize *
-			    sizeof(uint32_t);
+			    csum_size;
 		suffix_size = 0;
 		if (item_end > end)
 			suffix_size = (item_end - end) / sectorsize *
-			    sizeof(uint32_t);
+			    csum_size;
 		payload = malloc(item_size, M_BTRFS, M_WAITOK);
 		memcpy(payload, data, item_size);
 		memcpy(&key, found_key, sizeof(key));
@@ -966,13 +968,16 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 	const void *data;
 	uint64_t bytenr;
 	uint32_t length, sectorsize, pos;
-	uint32_t csums[MAXBSIZE / DEV_BSIZE];
+	uint8_t csums[MAXBSIZE / BTRFS_MIN_SECTORSIZE *
+	    BTRFS_SUPPORTED_CSUM_MAX];
+	size_t csum_size;
 	int error = 0, end_error;
 
 	if (handle == NULL || !handle->bth_commit)
 		return (EINVAL);
 	trans = handle->bth_transaction;
 	bmp = trans->bt_mount;
+	csum_size = btrfs_csum_size(&bmp->bm_super);
 	mtx_enter(&bmp->bm_trans_mtx);
 	if (bmp->bm_transaction != trans || !bmp->bm_committer ||
 	    trans->bt_state != BTRFS_TRANS_COMMITTING ||
@@ -1030,9 +1035,10 @@ btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 			}
 			for (pos = 0; !first->boe_nodatasum &&
 			    pos < ordered->boe_length; pos += sectorsize)
-				csums[(length + pos) / sectorsize] =
-				    htole32(btrfs_crc32c(
-				    (uint8_t *)ordered->boe_data + pos, sectorsize));
+				btrfs_csum(&bmp->bm_super,
+				    (uint8_t *)ordered->boe_data + pos,
+				    sectorsize, csums +
+				    (length + pos) / sectorsize * csum_size);
 			length += ordered->boe_length;
 			next = RBT_NEXT(btrfs_ordered_io, ordered);
 			if (next == NULL ||

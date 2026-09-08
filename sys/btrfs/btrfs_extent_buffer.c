@@ -598,7 +598,7 @@ btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 	struct btrfs_fs *bmp = trans->bt_mount;
 	struct btrfs_header *header;
 	uint64_t flags;
-	uint32_t csum, nodesize;
+	uint32_t nodesize;
 	int error;
 
 	mtx_enter(&bmp->bm_trans_mtx);
@@ -634,10 +634,9 @@ btrfs_write_dirty_metadata(struct btrfs_transaction *trans)
 		flags = letoh64(header->flags);
 		header->flags = htole64(flags | BTRFS_HEADER_FLAG_WRITTEN);
 		memset(header->csum, 0, sizeof(header->csum));
-		csum = htole32(btrfs_crc32c(
+		btrfs_csum(&bmp->bm_super,
 		    (const uint8_t *)header + sizeof(header->csum),
-		    nodesize - sizeof(header->csum)));
-		memcpy(header->csum, &csum, sizeof(csum));
+		    nodesize - sizeof(header->csum), header->csum);
 		error = btrfs_validate_tree_block(&bmp->bm_super, header,
 		    eb->eb_bytenr, eb->eb_generation, trans->bt_generation,
 		    eb->eb_owner, eb->eb_level);
@@ -783,15 +782,13 @@ btrfs_validate_tree_block(const struct btrfs_super_block *sb,
 	const struct btrfs_item *items;
 	const struct btrfs_key_ptr *ptrs;
 	const uint8_t *fsid;
-	uint32_t csum, disk_csum, i, nritems, nodesize, offset, size;
+	uint32_t i, nritems, nodesize, offset, size;
 	size_t array_end, data_end;
 
 	nodesize = letoh32(sb->nodesize);
-	memcpy(&disk_csum, header->csum, sizeof(disk_csum));
-	disk_csum = letoh32(disk_csum);
-	csum = btrfs_crc32c((const uint8_t *)header + sizeof(header->csum),
-	    nodesize - sizeof(header->csum));
-	if (csum != disk_csum)
+	if (!btrfs_csum_valid(sb,
+	    (const uint8_t *)header + sizeof(header->csum),
+	    nodesize - sizeof(header->csum), header->csum))
 		return (EINVAL);
 
 	fsid = sb->fsid;

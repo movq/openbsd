@@ -1338,13 +1338,14 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 {
 	struct btrfs_fs *bmp = node->bn_mount;
 	struct buf *bp = NULL;
-	uint32_t *csums = NULL;
+	uint8_t *csums = NULL;
 	uint64_t block, logical, relative;
 	uint64_t csum_length, csum_start;
 	uint64_t inode_flags;
-	const uint32_t *expectedp;
+	const uint8_t *expectedp;
 	uint32_t buffer_offset, sectorsize;
 	size_t chunk, nsectors, offset;
+	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
 	int error = 0;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
@@ -1365,7 +1366,7 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 	csum_length = roundup(csum_length, sectorsize);
 	nsectors = csum_length / sectorsize;
 	if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
-		csums = mallocarray(nsectors, sizeof(*csums), M_BTRFS,
+		csums = mallocarray(nsectors, csum_size, M_BTRFS,
 		    M_WAITOK);
 		error = btrfs_read_data_csums(bmp, csum_start, csum_length,
 		    csums);
@@ -1382,7 +1383,8 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 		chunk = MIN(size, sectorsize - offset);
 		expectedp = NULL;
 		if (csums != NULL)
-			expectedp = &csums[(block - csum_start) / sectorsize];
+			expectedp = csums +
+			    (block - csum_start) / sectorsize * csum_size;
 		error = btrfs_read_data_sector(bmp, extent, block, expectedp,
 		    &bp, &buffer_offset);
 		if (error != 0)
@@ -1400,7 +1402,7 @@ out:
 	if (bp != NULL)
 		brelse(bp);
 	if (csums != NULL)
-		free(csums, M_BTRFS, nsectors * sizeof(*csums));
+		free(csums, M_BTRFS, nsectors * csum_size);
 	return (error);
 }
 

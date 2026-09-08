@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Shrink a fresh image's system group to exercise protected system growth."""
+import ctypes
+import ctypes.util
 import os
 from pathlib import Path
 import re
@@ -9,7 +11,18 @@ import sys
 from mirrors import inspect, SUPERS
 
 
-def checksum(block):
+def checksum(block, csum_type=0):
+    block[:32] = bytes(32)
+    if csum_type == 1:
+        library = ctypes.util.find_library("xxhash")
+        assert library, "xxHash fixtures require host libxxhash"
+        xxhash = ctypes.CDLL(library).XXH64
+        xxhash.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64)
+        xxhash.restype = ctypes.c_uint64
+        struct.pack_into("<Q", block, 0,
+                         xxhash(bytes(block[32:]), len(block) - 32, 0))
+        return
+    assert csum_type == 0, csum_type
     crc = 0xffffffff
     for byte in block[32:]:
         crc ^= byte

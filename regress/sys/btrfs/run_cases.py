@@ -89,9 +89,9 @@ def read_cluster(r):
     finish(r, "read_cluster", directory, "verify_again")
 
 
-def read_import(r, compressed=False):
+def read_import(r, compressed=False, checksum="crc32c"):
     seed = r.seed("read_cluster", "seed_compressed" if compressed else "seed")
-    r.format(seed, compress="zstd" if compressed else None)
+    r.format(seed, compress="zstd" if compressed else None, checksum=checksum)
     if compressed:
         r.host_test("read_cluster", "disk_compressed", r.image)
     r.mount()
@@ -101,9 +101,9 @@ def read_import(r, compressed=False):
     finish(r, "read_cluster", verify="compressed" if compressed else "verify_split")
 
 
-def read_faults(r):
+def read_faults(r, checksum="crc32c"):
     # Bitmap DUP imports can exceed one 4 KiB free-space leaf.
-    r.format(data="dup", free_space="extent")
+    r.format(data="dup", free_space="extent", checksum=checksum)
     directory = r.path("test")
     r.mount()
     r.test("read_cluster", "create", directory)
@@ -122,8 +122,8 @@ def read_faults(r):
     finish(r, "read_cluster", directory, "measure")
 
 
-def checksums(r):
-    r.format()
+def checksums(r, checksum="crc32c"):
+    r.format(checksum=checksum)
     r.mount()
     r.test("checksums", "create", r.path("test"))
     r.unmount()
@@ -131,6 +131,21 @@ def checksums(r):
     r.host_test("checksums", "disk", r.image)
     r.mount()
     finish(r, "checksums", r.path("test"))
+
+
+def xxhash_metadata(r):
+    r.format(checksum="xxhash")
+    journal = r.case_dir / "damage.json"
+    for kind in ("super", "metadata"):
+        for copies in ("one", "all"):
+            r.host_test("xxhash", "damage", r.image, journal, kind, copies)
+            if copies == "one":
+                r.mount("ro")
+                r.unmount()
+            else:
+                r.test("xxhash", "reject", r.args.device, r.mountpoint)
+            r.host_test("xxhash", "repair", r.image, journal)
+            r.checks()
 
 
 def hardlink_limit(r):
@@ -682,6 +697,12 @@ def cases():
         "rename-packed": partial(basic, script="rename", create="packed",
                                   verify=None, extref=False),
         "checksums": checksums, "cluster": cluster, "coalesce": coalesce,
+        "xxhash-checksums": partial(checksums, checksum="xxhash"),
+        "xxhash-read-import": partial(read_import, checksum="xxhash"),
+        "xxhash-read-compressed": partial(read_import, compressed=True,
+                                          checksum="xxhash"),
+        "xxhash-read-faults": partial(read_faults, checksum="xxhash"),
+        "xxhash-metadata": xxhash_metadata,
         "reflink": reflink,
         "read-cluster": read_cluster,
         "read-range": partial(basic, script="read_range"),

@@ -37,7 +37,6 @@
 #include <btrfs/btrfs_var.h>
 
 #define BTRFS_SUPER_SIZE		0x1000
-#define BTRFS_MIN_SECTORSIZE		0x1000
 #define BTRFS_MAX_SECTORSIZE		0x10000
 
 #define BTRFS_BLOCK_GROUP_PROFILE_MASK	(BTRFS_BLOCK_GROUP_RAID0 |	\
@@ -131,8 +130,7 @@ btrfs_read_super_mirrors(struct vnode *devvp, struct proc *p,
 			    mirrors[i].bsm_error != EOPNOTSUPP)
 				continue;
 			sb = &candidates[i].bsc_super;
-			if (letoh16(sb->csum_type) !=
-			    BTRFS_CSUM_TYPE_CRC32) {
+			if (btrfs_csum_size(sb) == 0) {
 				printf("btrfs: unsupported checksum type %u\n",
 				    letoh16(sb->csum_type));
 			} else if (letoh64(sb->num_devices) != 1) {
@@ -468,13 +466,9 @@ btrfs_snapshot_root(struct btrfs_transaction *trans, uint64_t owner,
 static void
 btrfs_set_super_csum(struct btrfs_super_block *sb)
 {
-	uint32_t csum;
-
 	memset(sb->csum, 0, sizeof(sb->csum));
-	csum = htole32(btrfs_crc32c(
-	    (const uint8_t *)sb + sizeof(sb->csum),
-	    sizeof(*sb) - sizeof(sb->csum)));
-	memcpy(sb->csum, &csum, sizeof(csum));
+	btrfs_csum(sb, (const uint8_t *)sb + sizeof(sb->csum),
+	    sizeof(*sb) - sizeof(sb->csum), sb->csum);
 }
 
 int
@@ -652,20 +646,17 @@ btrfs_validate_super(const struct btrfs_super_block *sb, uint64_t bytenr)
 {
 	uint64_t bytes_used, chunk_generation, chunk_root, generation;
 	uint64_t log_root, root, total_bytes;
-	uint32_t csum, disk_csum, nodesize, sectorsize;
+	uint32_t nodesize, sectorsize;
 
 	if (letoh64(sb->magic) != BTRFS_MAGIC)
 		return (EINVAL);
 	if (letoh64(sb->bytenr) != bytenr)
 		return (EINVAL);
-	if (letoh16(sb->csum_type) != BTRFS_CSUM_TYPE_CRC32)
+	if (btrfs_csum_size(sb) == 0)
 		return (EOPNOTSUPP);
 
-	memcpy(&disk_csum, sb->csum, sizeof(disk_csum));
-	disk_csum = letoh32(disk_csum);
-	csum = btrfs_crc32c((const uint8_t *)sb + sizeof(sb->csum),
-	    BTRFS_SUPER_SIZE - sizeof(sb->csum));
-	if (csum != disk_csum)
+	if (!btrfs_csum_valid(sb, (const uint8_t *)sb + sizeof(sb->csum),
+	    BTRFS_SUPER_SIZE - sizeof(sb->csum), sb->csum))
 		return (EINVAL);
 
 	sectorsize = letoh32(sb->sectorsize);

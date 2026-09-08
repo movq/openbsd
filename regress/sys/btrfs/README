@@ -26,8 +26,8 @@ The default matrix runs every recipe on four layouts:
     4k-dup       4 KiB nodes, DUP data, no free-space tree
     16k-bitmap   16 KiB nodes, DUP data, bitmap free space, holes
 
-All use CRC32C, 4 KiB sectors and DUP metadata. A recipe can override a format
-requirement, such as DUP for mirror faults or SINGLE for the small imported
+All default to CRC32C, 4 KiB sectors and DUP metadata. A recipe can override a
+format requirement, such as DUP for mirror faults or SINGLE for the small imported
 bitmap fixture. Exact mkfs options appear in its command log. Capacity recipes
 use small recorded device sizes while retaining the backing file's sparse size.
 statfs first fills physical growth capacity and releases a small data range,
@@ -120,6 +120,17 @@ pending replacements, checksum-range splitting, and pending tail cancellation.
 Run disk on the unmounted image to check checksum packing, alongside both
 independent checkers, then verify after writable and read-only remounts.
 Cover both metadata node sizes and SINGLE/DUP data.
+
+The xxhash-checksums, xxhash-read-import, xxhash-read-compressed and
+xxhash-read-faults recipes select xxHash64 on those same layouts. They cover
+packed checksum insertion/splitting/deletion, imported regular and Zstd reads,
+and sector-level DUP fallback and EIO when both copies are damaged.
+xxhash-metadata corrupts only the upper digest bytes in superblocks and
+chunk-tree blocks, checking fallback with one damaged copy and mount rejection
+with all copies damaged. Bitmap xxHash fixtures require host libxxhash.
+Run, e.g.:
+
+    ./regress/sys/btrfs/run-all.sh --layouts 4k,16k,4k-dup --select 'xxhash-*'
 
 write_range.py uses create/verify for multi-sector pending writes, overlapping
 replacement, short truncation followed by sparse growth, and writev copy faults

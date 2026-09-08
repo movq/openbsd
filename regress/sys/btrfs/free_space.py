@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from mirrors import inspect
+from chunks_fixture import checksum
 
 
 def seed(directory):
@@ -25,6 +26,7 @@ def rewrite(image, mode):
     sb = inspect(image, "dump-super")
     nodesize = int(re.search(r"^nodesize\s+(\d+)", sb, re.M)[1])
     sector = int(re.search(r"^sectorsize\s+(\d+)", sb, re.M)[1])
+    csum_type = int(re.search(r"^csum_type\s+(\d+)", sb, re.M)[1])
     tree = inspect(image, "dump-tree", "-t", "free-space")
     leaves = re.findall(r"^leaf (\d+) items", tree, re.M)
     assert len(leaves) == 1 and not re.search(r"^node ", tree, re.M)
@@ -132,12 +134,7 @@ def rewrite(image, mode):
                              start, kind, length, offset, len(payload))
             block[101 + offset:101 + offset + len(payload)] = payload
         struct.pack_into("<I", block, 96, len(records))
-        crc = 0xffffffff
-        for byte in block[32:]:
-            crc ^= byte
-            for _ in range(8):
-                crc = (crc >> 1) ^ (0x82f63b78 if crc & 1 else 0)
-        struct.pack_into("<I", block, 0, crc ^ 0xffffffff)
+        checksum(block, csum_type)
         for address in addresses:
             assert os.pwrite(fd, block, address) == nodesize
         os.fsync(fd)
