@@ -52,8 +52,6 @@
 #include <btrfs/btrfs_var.h>
 #include <btrfs/btrfs_data.h>
 
-static int	btrfs_insert_data_csums(struct btrfs_trans_handle *, uint64_t,
-		    const uint8_t *, uint32_t);
 static void	btrfs_encode_file_extent(struct btrfs_file_extent_item *,
 		    const struct btrfs_file_extent *, uint64_t);
 static inline int btrfs_ordered_compare(const struct btrfs_ordered_extent *,
@@ -127,7 +125,7 @@ btrfs_find_ordered_sector(struct btrfs_transaction *trans,
  * allocations never acquire checksum items. New ranges must not overlap
  * existing ranges, and packed checksum items are capped at a quarter node.
  */
-static int
+int
 btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
     const uint8_t *csums, uint32_t count)
 {
@@ -1595,9 +1593,13 @@ btrfs_resize_join(struct btrfs_resize_plan *plan,
     struct btrfs_trans_handle **handle)
 {
 	struct btrfs_fs *bmp = plan->node->bn_mount;
+	struct btrfs_transaction *trans;
+	struct btrfs_ordered_extent *ordered;
+	int written;
 	int error;
 
 	KASSERT(VOP_ISLOCKED(plan->node->bn_vnode));
+retry:
 	error = btrfs_trans_join(bmp, &plan->reservation, handle);
 	if (error == ENOSPC && plan->size < plan->oldsize && !plan->cleanup) {
 		/* One mapping, including inline data, fits the protected handle. */
@@ -1607,6 +1609,27 @@ btrfs_resize_join(struct btrfs_resize_plan *plan,
 		    BTRFS_RECLAIM_METADATA_BLOCKS;
 		plan->reservation.btr_reclaim = 1;
 		error = btrfs_trans_join(bmp, &plan->reservation, handle);
+	}
+	if (error == 0) {
+		trans = (*handle)->bth_transaction;
+		written = 0;
+		mtx_enter(&trans->bt_lock);
+		RBT_FOREACH(ordered, btrfs_ordered_tree, &trans->bt_ordered_extents)
+			if (ordered->boe_treeid == plan->node->bn_treeid &&
+			    ordered->boe_objectid == plan->node->bn_ino &&
+			    ordered->boe_written) {
+				written = 1;
+				break;
+			}
+		mtx_leave(&trans->bt_lock);
+		if (written) {
+			error = btrfs_trans_end(*handle);
+			*handle = NULL;
+			if (error == 0)
+				error = btrfs_commit_inode_data(plan->node, curproc);
+			if (error == 0)
+				goto retry;
+		}
 	}
 	return (error);
 }
@@ -1788,6 +1811,9 @@ btrfs_write_extent_stage(struct btrfs_write_operation *op,
 	    extent->file_offset);
 	mtx_leave(&trans->bt_lock);
 	if (extent->pending != NULL) {
+		/* Log publication makes this payload immutable. */
+		if (extent->pending->boe_written)
+			return (EAGAIN);
 		if (end > extent->pending->boe_file_offset +
 		    extent->pending->boe_file_length)
 			return (EINVAL);
@@ -1950,6 +1976,7 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 	int error, end_error, prefix;
 
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+retry:
 	memset(op, 0, sizeof(*op));
 	op->node = node;
 	op->saved = node->bn_inode;
@@ -2031,7 +2058,13 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 	return (0);
 
 fail:
-	return (btrfs_write_release(op, error));
+	error = btrfs_write_release(op, error);
+	if (error == EAGAIN) {
+		error = btrfs_commit_inode_data(node, curproc);
+		if (error == 0)
+			goto retry;
+	}
+	return (error);
 }
 
 int

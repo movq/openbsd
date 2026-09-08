@@ -66,6 +66,7 @@ struct btrfs_name_plan {
 
 int	btrfs_name_valid(const uint8_t *, size_t);
 uint64_t btrfs_name_hash(const void *, size_t);
+uint64_t btrfs_extref_hash(uint64_t, const char *, size_t);
 int	btrfs_decode_dir_record(const uint8_t *, uint32_t,
 	    struct btrfs_dir_record *);
 int	btrfs_validate_dir_record(const struct btrfs_key *, uint64_t,
@@ -82,5 +83,9 @@ int	btrfs_plan_dir_remove(struct btrfs_name_plan *, uint64_t,
 	    struct btrfs_dir_item *);
 int	btrfs_name_plan_apply(struct btrfs_trans_handle *,
 	    struct btrfs_name_plan *);
+int	btrfs_plan_remove(struct btrfs_name_plan *, uint64_t, uint64_t,
+	    const char *, size_t, uint64_t *, struct btrfs_dir_item *);
+int	btrfs_plan_add(struct btrfs_name_plan *, uint64_t, uint64_t,
+	    const char *, size_t, uint64_t, const struct btrfs_dir_item *);
 
 #endif

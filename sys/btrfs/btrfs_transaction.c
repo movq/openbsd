@@ -27,8 +27,8 @@
  * payloads. Ending a handle does not commit. A committer closes joins and
  * drains handles; new writers wait for publication. Commit must never acquire
  * arbitrary vnode locks, since callers may retain them while joining or
- * requesting a commit. Sync always commits the full transaction; no log tree
- * is maintained.
+ * requesting a commit. Sync commits the full transaction; fsync may publish
+ * a log while retaining the open transaction and its allocations.
  *
  * Abort restores saved roots and marks transaction-owned extent buffers stale
  * before releasing new allocations. Committed metadata is never overwritten,
@@ -53,13 +53,13 @@
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/proc.h>
+#include <sys/stat.h>
 #include <sys/vnode.h>
 
 #include <btrfs/btrfs_var.h>
 
 static struct btrfs_transaction *
 	btrfs_trans_alloc(struct btrfs_fs *, uint64_t);
-static int	btrfs_sync_device(struct btrfs_fs *, struct proc *);
 
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
@@ -130,6 +130,7 @@ btrfs_trans_destroy(struct btrfs_fs *bmp)
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!bmp->bm_committer);
 	KASSERT(!trans->bt_commit_handle);
+	btrfs_log_destroy(bmp);
 	(void)btrfs_roots_finish(trans, 0);
 	(void)btrfs_delayed_refs_finish(trans, 0);
 	(void)btrfs_ordered_extents_finish(trans, 0);
@@ -394,7 +395,7 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 }
 
 /* bwrite and device VOP_FSYNC alone do not flush volatile device caches. */
-static int
+int
 btrfs_sync_device(struct btrfs_fs *bmp, struct proc *p)
 {
 	struct vnode *vp;
@@ -599,6 +600,7 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 		(void)btrfs_roots_finish(trans, 1);
 		generation = trans->bt_generation + 1;
 		btrfs_space_commit(trans);
+		btrfs_log_destroy(bmp);
 		btrfs_chunk_publish(trans);
 		next = btrfs_trans_alloc(bmp, generation);
 		reserve_error = btrfs_space_reserve_commit(next);
@@ -638,4 +640,50 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 	if (error == 0)
 		free(trans, M_BTRFS, sizeof(*trans));
 	return (error);
+}
+
+/*
+ * Use the same close/drain protocol as commit. No vnode other than the
+ * caller's is acquired. A successful log publication reopens this generation;
+ * a fallback reopens it before entering the ordinary full commit path.
+ */
+int
+btrfs_log_fsync(struct btrfs_node *node, uint64_t generation, struct proc *p)
+{
+	struct btrfs_fs *bmp = node->bn_mount;
+	struct btrfs_transaction *trans;
+	struct btrfs_trans_handle *handle = NULL;
+	int error, end_error;
+
+	if (IFTOVT(node->bn_inode.bi_mode) != VREG)
+		return (btrfs_trans_commit(bmp, generation, p));
+	error = btrfs_trans_close(bmp, generation, &trans);
+	if (error != 0 || trans == NULL)
+		return (error);
+	if (trans->bt_error != 0)
+		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
+	if (trans->bt_log_full_commit || trans->bt_chunk_op != NULL ||
+	    node->bn_inode.bi_generation > bmp->bm_last_transid ||
+	    node->bn_inode.bi_nlink == 0)
+		error = EAGAIN;
+	else {
+		error = btrfs_trans_commit_handle(trans, &handle);
+		if (error == 0)
+			error = btrfs_log_write(handle, node, p);
+		if (handle != NULL) {
+			end_error = btrfs_trans_end(handle);
+			if (end_error != 0)
+				error = end_error;
+		}
+	}
+	if (error != 0 && error != EAGAIN)
+		return (btrfs_trans_finish(bmp, trans, error));
+	mtx_enter(&bmp->bm_trans_mtx);
+	trans->bt_state = BTRFS_TRANS_OPEN;
+	bmp->bm_committer = 0;
+	wakeup(&bmp->bm_transaction);
+	mtx_leave(&bmp->bm_trans_mtx);
+	if (error == EAGAIN)
+		return (btrfs_trans_commit(bmp, generation, p));
+	return (0);
 }

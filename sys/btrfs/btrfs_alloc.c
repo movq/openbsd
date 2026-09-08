@@ -693,6 +693,148 @@ btrfs_space_destroy(struct btrfs_fs *bmp)
 }
 
 /*
+ * Log blocks have no extent items. Keep them out of the allocator without
+ * changing on-disk block-group/free-space accounting. During recovery, new
+ * data allocations instead enter the transaction's ordinary allocation list;
+ * replay will supply their references. All callers own the closed transaction
+ * or the as-yet unpublished mount.
+ */
+int
+btrfs_space_log_claim(struct btrfs_fs *bmp, uint64_t bytenr,
+    uint64_t length, int data)
+{
+	struct btrfs_transaction *trans = bmp->bm_transaction;
+	struct btrfs_block_group *group;
+	struct btrfs_free_extent *space, *split = NULL;
+	struct btrfs_trans_extent *extent;
+	uint64_t end, left, right;
+	uint32_t sector = letoh32(bmp->bm_super.sectorsize);
+
+	if (length == 0 || bytenr > UINT64_MAX - length ||
+	    ((bytenr | length) & (sector - 1)) != 0)
+		return (EINVAL);
+	group = btrfs_space_find_group(bmp, bytenr, length);
+	if (group == NULL ||
+	    !(group->bbg_flags & (data ? BTRFS_BLOCK_GROUP_DATA :
+	    BTRFS_BLOCK_GROUP_METADATA)))
+		return (EINVAL);
+	if (data) {
+		TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry)
+			if (extent->bte_bytenr == bytenr &&
+			    extent->bte_length == length &&
+			    extent->bte_type == BTRFS_BLOCK_GROUP_DATA)
+				return (0);
+	}
+	end = bytenr + length;
+	extent = malloc(sizeof(*extent), M_BTRFS, M_WAITOK | M_ZERO);
+	split = malloc(sizeof(*split), M_BTRFS, M_WAITOK | M_ZERO);
+	mtx_enter(&group->bbg_lock);
+	TAILQ_FOREACH(space, &group->bbg_free_extents, bfe_entry)
+		if (space->bfe_bytenr <= bytenr &&
+		    space->bfe_bytenr + space->bfe_length >= end)
+			break;
+	if (space == NULL || group->bbg_free_bytes < length) {
+		mtx_leave(&group->bbg_lock);
+		free(extent, M_BTRFS, sizeof(*extent));
+		free(split, M_BTRFS, sizeof(*split));
+		return (space == NULL ? EINVAL : ENOSPC);
+	}
+	left = bytenr - space->bfe_bytenr;
+	right = space->bfe_bytenr + space->bfe_length - end;
+	if (left != 0 && right != 0) {
+		split->bfe_bytenr = end;
+		split->bfe_length = right;
+		TAILQ_INSERT_AFTER(&group->bbg_free_extents, space, split,
+		    bfe_entry);
+		split = NULL;
+		space->bfe_length = left;
+	} else if (left != 0)
+		space->bfe_length = left;
+	else if (right != 0) {
+		space->bfe_bytenr = end;
+		space->bfe_length = right;
+	} else {
+		TAILQ_REMOVE(&group->bbg_free_extents, space, bfe_entry);
+		free(space, M_BTRFS, sizeof(*space));
+	}
+	group->bbg_free_bytes -= length;
+	extent->bte_group = group;
+	extent->bte_bytenr = bytenr;
+	extent->bte_length = length;
+	extent->bte_type = data ? BTRFS_BLOCK_GROUP_DATA :
+	    BTRFS_BLOCK_GROUP_METADATA;
+	if (data) {
+		group->bbg_allocated_bytes += length;
+		trans->bt_allocated_bytes += length;
+		trans->bt_space_seq++;
+		TAILQ_INSERT_TAIL(&trans->bt_allocated_extents, extent,
+		    bte_entry);
+	} else {
+		group->bbg_excluded_bytes += length;
+		TAILQ_INSERT_TAIL(&bmp->bm_log_extents, extent, bte_entry);
+	}
+	btrfs_space_check_group(group);
+	mtx_leave(&group->bbg_lock);
+	free(split, M_BTRFS, sizeof(*split));
+	return (0);
+}
+
+int
+btrfs_space_log_alloc(struct btrfs_fs *bmp, uint64_t *bytenr)
+{
+	struct btrfs_block_group *group;
+	struct btrfs_free_extent *space;
+	uint64_t size = letoh32(bmp->bm_super.nodesize), found = 0;
+	unsigned int i;
+
+	for (i = 0; i < bmp->bm_nblock_groups && found == 0; i++) {
+		group = bmp->bm_block_groups[i];
+		if (!(group->bbg_flags & BTRFS_BLOCK_GROUP_METADATA) ||
+		    group->bbg_removing)
+			continue;
+		mtx_enter(&group->bbg_lock);
+		if (group->bbg_free_bytes >= size) {
+			TAILQ_FOREACH(space, &group->bbg_free_extents, bfe_entry)
+				if (space->bfe_length >= size) {
+					found = space->bfe_bytenr;
+					break;
+				}
+		}
+		mtx_leave(&group->bbg_lock);
+	}
+	if (found == 0)
+		return (ENOSPC);
+	*bytenr = found;
+	return (btrfs_space_log_claim(bmp, found, size, 0));
+}
+
+void
+btrfs_space_log_release(struct btrfs_fs *bmp)
+{
+	struct btrfs_trans_extent *extent;
+	struct btrfs_block_group *group;
+	struct btrfs_free_extent *space, *garbage[2];
+	unsigned int i, count;
+
+	while ((extent = TAILQ_FIRST(&bmp->bm_log_extents)) != NULL) {
+		TAILQ_REMOVE(&bmp->bm_log_extents, extent, bte_entry);
+		group = extent->bte_group;
+		space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
+		space->bfe_bytenr = extent->bte_bytenr;
+		space->bfe_length = extent->bte_length;
+		mtx_enter(&group->bbg_lock);
+		group->bbg_excluded_bytes -= extent->bte_length;
+		group->bbg_free_bytes += extent->bte_length;
+		count = btrfs_space_insert_free_locked(group, space, garbage);
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		for (i = 0; i < count; i++)
+			free(garbage[i], M_BTRFS, sizeof(*garbage[i]));
+		free(extent, M_BTRFS, sizeof(*extent));
+	}
+}
+
+/*
  * Report logical capacity of allocated groups, counting DUP once. Free blocks
  * include reservations but exclude pending allocations, pins and superblock
  * stripes. Available blocks include only unreserved data-capable space.
@@ -959,6 +1101,39 @@ btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 	trans->bt_commit_reserve_target = bytes;
 	trans->bt_commit_reserved_bytes = bytes;
 	btrfs_space_check_commit_reserve(trans);
+	return (0);
+}
+
+/* Recovery cannot publish partial progress to replenish its reservation. */
+int
+btrfs_space_replay_reserve(struct btrfs_trans_handle *handle)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_reserved_space_list extra;
+	struct btrfs_reserved_space *space;
+	uint64_t bytes, target;
+	int error;
+
+	KASSERT(handle->bth_commit);
+	target = (uint64_t)letoh32(trans->bt_mount->bm_super.nodesize) *
+	    BTRFS_RECLAIM_METADATA_BLOCKS;
+	if (trans->bt_commit_reserved_bytes >= target)
+		return (0);
+	bytes = target - trans->bt_commit_reserved_bytes;
+	TAILQ_INIT(&extra);
+	error = btrfs_space_reserve_type(trans->bt_mount, &extra,
+	    BTRFS_BLOCK_GROUP_METADATA, bytes);
+	if (error != 0) {
+		btrfs_space_release_list(&extra);
+		return (error);
+	}
+	while ((space = TAILQ_FIRST(&extra)) != NULL) {
+		TAILQ_REMOVE(&extra, space, brs_entry);
+		TAILQ_INSERT_TAIL(&trans->bt_commit_reservations, space,
+		    brs_entry);
+	}
+	trans->bt_commit_reserved_bytes += bytes;
+	trans->bt_commit_reserve_target += bytes;
 	return (0);
 }
 
