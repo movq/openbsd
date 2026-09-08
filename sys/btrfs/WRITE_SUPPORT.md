@@ -428,12 +428,20 @@ failure may commit pending work and retry once before returning `ENOSPC`.
 Concurrent operations can claim the next generation's space before that retry.
 Large namespace reservations may therefore fail under transient pressure.
 
+`btrfs_ref.c` owns reference decoding, delayed references, and extent-item edits.
+Owners explicitly identify an implicit tree/file reference or a shared parent
+block; full-backreference conversion is a separate metadata operation. The disk
+reader shares the decoder but retains its broader legacy and quota format
+support, independent of write eligibility. Edits validate the complete inline
+body and locate separate references before changing counts; implicit data keys
+retain their hash-collision probing rules.
+
 Delayed references use separate metadata and data indexes keyed by extent and
 complete ownership identity. Work queues keep adds and conversions before drops,
 including after a data delta changes sign; cancellation removes both index and
 queue entries. Coalescing rekeys the enlarged allocation reference.
-Only the final drop pins an
-extent; for data it also removes its checksum range, preserving neighbors.
+One final-drop path pins the extent and updates free space; for data it first
+asks the data layer to remove its checksum range, preserving neighbors.
 Hard links change inode references, not data ownership `(root, inode, file-base)`.
 
 Writes, clones and truncate cleanup use a bounded extent-edit plan for one old

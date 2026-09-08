@@ -78,6 +78,13 @@ metadata copy before the independent checks.
 Individual procedures
 ---------------------
 
+`make regress` in this directory on OpenBSD runs the reference decoder test
+without a mount. It links the actual decoder from `btrfs_ref.c`, discarding
+kernel-only functions, and checks disk ABI fixtures, item locations, truncated
+records, zero owners/counts, mixed inline bodies, and legacy separate refs.
+Use the `subvolume`, `reflink`, and `zstd-cow` VM recipes for ownership changes,
+metadata conversion, split references, and final-drop/checksum verification.
+
 These tests require a disposable btrfs image mounted writable, root, and
 Python 3. They leave their files in place for verification after remount.
 Use a new test directory for each run.  For example, inside the test VM:

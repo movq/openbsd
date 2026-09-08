@@ -599,8 +599,9 @@ btrfs_block_children(struct btrfs_trans_handle *handle,
 		ptr = (const struct btrfs_key_ptr *)(header + 1);
 		for (i = 0; i < n; i++) {
 			error = btrfs_delayed_ref_add(handle,
-			    letoh64(ptr[i].blockptr), full ? eb->eb_bytenr : 0,
-			    owner, eb->eb_level - 1, delta);
+			    letoh64(ptr[i].blockptr), full ?
+			    btrfs_ref_shared(eb->eb_bytenr) :
+			    btrfs_ref_tree(owner), eb->eb_level - 1, delta);
 			if (error != 0)
 				return (error);
 		}
@@ -630,9 +631,10 @@ btrfs_block_children(struct btrfs_trans_handle *handle,
 			base = letoh64(items[i].key.offset) -
 			    letoh64(fi->offset);
 			error = btrfs_delayed_data_ref_add(handle, disk,
-			    letoh64(fi->disk_num_bytes), full ? 0 : owner,
-			    full ? eb->eb_bytenr : letoh64(items[i].key.objectid),
-			    full ? 0 : base, delta);
+			    letoh64(fi->disk_num_bytes), full ?
+			    btrfs_ref_shared(eb->eb_bytenr) :
+			    btrfs_ref_data(owner, letoh64(items[i].key.objectid),
+			    base), delta);
 			if (error != 0)
 				return (error);
 		}
@@ -704,7 +706,7 @@ btrfs_walk_drop(struct btrfs_root *root, uint64_t bytenr, uint64_t gen,
 				error = btrfs_block_children(handle, eb,
 				    root->br_owner, 0, -1);
 			if (error == 0)
-				error = btrfs_block_full(handle, eb);
+				error = btrfs_ref_convert_full(handle, eb);
 			if (error != 0)
 				goto out;
 			flags |= BTRFS_BLOCK_FLAG_FULL_BACKREF;
@@ -730,8 +732,9 @@ btrfs_walk_drop(struct btrfs_root *root, uint64_t bytenr, uint64_t gen,
 	}
 drop:
 	if (operation == -1)
-		error = btrfs_delayed_ref_add(handle, bytenr, parent,
-		    root->br_owner, level, -1);
+		error = btrfs_delayed_ref_add(handle, bytenr, parent != 0 ?
+		    btrfs_ref_shared(parent) : btrfs_ref_tree(root->br_owner),
+		    level, -1);
 out:
 	btrfs_extent_buffer_put(eb);
 	return (error);
@@ -793,8 +796,8 @@ btrfs_new_subvolume_root(struct btrfs_trans_handle *handle,
 	if (snapshot) {
 		error = btrfs_block_children(handle, copy, owner, 0, 1);
 		if (error == 0)
-			error = btrfs_delayed_ref_add(handle, bytenr, 0,
-			    owner, copy->eb_level, 1);
+			error = btrfs_delayed_ref_add(handle, bytenr,
+			    btrfs_ref_tree(owner), copy->eb_level, 1);
 		item->level = copy->eb_level;
 		btrfs_extent_buffer_put(copy);
 		if (error != 0)
@@ -822,7 +825,8 @@ btrfs_new_subvolume_root(struct btrfs_trans_handle *handle,
 	ref = (struct btrfs_inode_ref *)((uint8_t *)(header + 1) + end);
 	ref->name_len = htole16(2);
 	memcpy(ref + 1, "..", 2);
-	error = btrfs_delayed_ref_add(handle, bytenr, 0, owner, 0, 1);
+	error = btrfs_delayed_ref_add(handle, bytenr, btrfs_ref_tree(owner),
+	    0, 1);
 	btrfs_extent_buffer_put(copy);
 	if (error != 0)
 		return (error);
@@ -1030,7 +1034,7 @@ btrfs_cow_block(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 			error = btrfs_block_children(handle, source,
 			    root->br_owner, 1, 1);
 			if (error == 0)
-				error = btrfs_block_full(handle, source);
+				error = btrfs_ref_convert_full(handle, source);
 		} else if (error == 0 && (refs > 1 ||
 		    (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF))) {
 			error = btrfs_block_children(handle, cow,
@@ -1045,12 +1049,12 @@ btrfs_cow_block(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 		    btrfs_extent_buffer_data_mutable(handle, cow);
 		header->owner = htole64(root->br_owner);
 		cow->eb_owner = root->br_owner;
-		error = btrfs_delayed_ref_add(handle, cow->eb_bytenr, 0,
-		    root->br_owner, cow->eb_level, 1);
+		error = btrfs_delayed_ref_add(handle, cow->eb_bytenr,
+		    btrfs_ref_tree(root->br_owner), cow->eb_level, 1);
 	}
 	if (error == 0)
 		error = btrfs_delayed_ref_add(handle, source->eb_bytenr,
-		    0, root->br_owner, source->eb_level, -1);
+		    btrfs_ref_tree(root->br_owner), source->eb_level, -1);
 	if (error != 0) {
 		btrfs_trans_abort(handle, error);
 		btrfs_extent_buffer_put(cow);
@@ -1307,8 +1311,8 @@ btrfs_leaf_delete_empty(struct btrfs_path *path,
 		for (level = 1; level <= path->bp_level; level++) {
 			child = path->bp_eb[level];
 			error = btrfs_delayed_ref_add(handle,
-			    child->eb_bytenr, 0,
-			    root->br_owner, child->eb_level, -1);
+			    child->eb_bytenr, btrfs_ref_tree(root->br_owner),
+			    child->eb_level, -1);
 			if (error != 0)
 				goto fail;
 			error = btrfs_extent_buffer_discard(handle, child);
@@ -1341,7 +1345,7 @@ btrfs_leaf_delete_empty(struct btrfs_path *path,
 		}
 		memcpy(&old_first, &ptrs[0].key, sizeof(old_first));
 		error = btrfs_delayed_ref_add(handle, child->eb_bytenr,
-		    0, root->br_owner, child->eb_level, -1);
+		    btrfs_ref_tree(root->br_owner), child->eb_level, -1);
 		if (error != 0)
 			goto fail;
 		error = btrfs_extent_buffer_discard(handle, child);
@@ -1373,7 +1377,7 @@ btrfs_leaf_delete_empty(struct btrfs_path *path,
 			bytenr = promoted->eb_bytenr;
 			generation = promoted->eb_generation;
 			error = btrfs_delayed_ref_add(handle,
-			    parent->eb_bytenr, 0, root->br_owner,
+			    parent->eb_bytenr, btrfs_ref_tree(root->br_owner),
 			    parent->eb_level, -1);
 			if (error != 0)
 				goto fail;
@@ -1864,8 +1868,9 @@ btrfs_insert_split_pointers(struct btrfs_path *path,
 			    htole32(nritems + carry_count);
 			for (i = 0; i < carry_count; i++) {
 				error = btrfs_delayed_ref_add(handle,
-				    carry[i]->eb_bytenr, 0,
-				    root->br_owner, carry[i]->eb_level, 1);
+				    carry[i]->eb_bytenr,
+				    btrfs_ref_tree(root->br_owner),
+				    carry[i]->eb_level, 1);
 				if (error != 0)
 					goto fail;
 			}
@@ -1925,8 +1930,8 @@ btrfs_insert_split_pointers(struct btrfs_path *path,
 		/* Existing children retain their implicit root references. */
 		for (i = 0; error == 0 && i < carry_count; i++)
 			error = btrfs_delayed_ref_add(handle,
-			    carry[i]->eb_bytenr, 0,
-			    root->br_owner, level - 1, 1);
+			    carry[i]->eb_bytenr, btrfs_ref_tree(root->br_owner),
+			    level - 1, 1);
 		memcpy(&carry_keys[0], &combined[left_count].key,
 		    sizeof(carry_keys[0]));
 		free(combined, M_BTRFS, total * sizeof(*combined));
@@ -2032,11 +2037,10 @@ btrfs_grow_root(struct btrfs_path *path,
 	error = 0;
 	for (i = 0; error == 0 && i < nrights; i++)
 		error = btrfs_delayed_ref_add(handle, rights[i]->eb_bytenr,
-		    0, root->br_owner,
-		    rights[i]->eb_level, 1);
+		    btrfs_ref_tree(root->br_owner), rights[i]->eb_level, 1);
 	if (error == 0)
-		error = btrfs_delayed_ref_add(handle, new_root->eb_bytenr, 0,
-		    root->br_owner, new_root->eb_level, 1);
+		error = btrfs_delayed_ref_add(handle, new_root->eb_bytenr,
+		    btrfs_ref_tree(root->br_owner), new_root->eb_level, 1);
 	if (error != 0)
 		goto fail_new;
 
