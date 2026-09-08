@@ -185,6 +185,14 @@ namespace and inode state unchanged and allow later operations. Errors after
 partial tree mutation abort the transaction and make the mount read-only.
 Mutable inode state is host-endian; encoding preserves unmodeled fields.
 
+Namespace preparation keeps one private item image per key, combining removals
+before additions. Inode operations and subvolume administration share directory
+record decoding, index allocation, hash/index consistency and capacity checks,
+and application under the caller's reserved handle. Inode references and root
+references retain separate preparation; reservations, inode and cache updates
+remain with each operation. Xattrs share packed-record framing and item editing,
+with their own name, value and location validation in `btrfs_xattr.c`.
+
 The highest valid superblock generation is the commit point:
 
 1. Submit ordered data and insert its checksums, then wait for every required
