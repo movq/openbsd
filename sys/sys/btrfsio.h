@@ -49,6 +49,16 @@ struct btrfs_ioctl_identity {
 #define BTRFSIOC_INFO	_IOWR('B', 5, struct btrfs_ioctl_identity)
 #define BTRFSIOC_FINISH	_IOW('B', 6, struct btrfs_ioctl_identity)
 
+/*
+ * FIND_UUID accepts fd, uuid and stransid (the stream transaction ID).
+ * Returns INFO for a live read-only subvolume matching received_uuid/stransid,
+ * or uuid/ctransid if no received identity matches. Multiple matches at the
+ * preferred priority return EEXIST; no match returns ENOENT. Other input
+ * fields must be zero. Uses the UUID index when current, otherwise scans
+ * root items. The returned stransid is the root's stransid, as with INFO.
+ */
+#define BTRFSIOC_FIND_UUID _IOWR('B', 12, struct btrfs_ioctl_identity)
+
 /* fd selects the inode's tree; ino may identify a symlink. GET enumerates
  * attributes in tree order, advancing cursor. ENOENT denotes the end.
  * SET/RM update inode ctime and revision in the same transaction as the xattr.

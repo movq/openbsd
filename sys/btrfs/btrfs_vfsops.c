@@ -232,7 +232,7 @@ btrfs_identity_control(struct mount *mp, u_long cmd,
 	}
 	rw_enter_write(&bmp->bm_rename_lock);
 	error = btrfs_identity(bmp, cmd, args, p);
-	if (error != 0 || cmd != BTRFSIOC_INFO)
+	if (error != 0 || cmd == BTRFSIOC_FINISH)
 		goto out;
 	args->access[0] = '\0';
 	path = malloc(BTRFS_CTL_PATH_MAX, M_BTRFS, M_WAITOK);

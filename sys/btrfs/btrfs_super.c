@@ -518,6 +518,13 @@ btrfs_build_super(struct btrfs_transaction *trans,
 		return (EINVAL);
 
 	memcpy(sb, &bmp->bm_super, sizeof(*sb));
+	/*
+	 * Every subvolume identity change maintains an existing UUID index in
+	 * the same transaction. Preserve its currency, but do not certify an
+	 * index which already needed a rescan when we mounted the filesystem.
+	 */
+	if (sb->uuid_tree_generation == sb->generation)
+		sb->uuid_tree_generation = htole64(trans->bt_generation);
 	sb->generation = htole64(trans->bt_generation);
 	sb->root = htole64(root.brl_bytenr);
 	sb->root_level = root.brl_level;

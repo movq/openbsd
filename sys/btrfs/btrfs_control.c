@@ -101,11 +101,13 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 			return (EBADF);
 		return (btrfs_clone_ioctl((void *)data, p));
 	}
-	isidentity = cmd == BTRFSIOC_INFO || cmd == BTRFSIOC_FINISH;
+	isidentity = cmd == BTRFSIOC_INFO || cmd == BTRFSIOC_FINISH ||
+	    cmd == BTRFSIOC_FIND_UUID;
 	isxattr = cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_SETXATTR ||
 	    cmd == BTRFSIOC_RMXATTR;
 	readonly = cmd == BTRFSIOC_LIST || cmd == BTRFSIOC_INFO ||
-	    cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_TREE;
+	    cmd == BTRFSIOC_FIND_UUID || cmd == BTRFSIOC_GETXATTR ||
+	    cmd == BTRFSIOC_TREE;
 	if (!isidentity && !isxattr && cmd != BTRFSIOC_TREE &&
 	    cmd != BTRFSIOC_LIST && cmd != BTRFSIOC_CREATE &&
 	    cmd != BTRFSIOC_DELETE && cmd != BTRFSIOC_SNAPSHOT)
@@ -133,6 +135,12 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 			return (ENAMETOOLONG);
 		if (identity->flags != 0 ||
 		    (identity->id != 0 && identity->path[0] != '\0'))
+			return (EINVAL);
+		if (cmd == BTRFSIOC_FIND_UUID &&
+		    (identity->id != 0 || identity->ctransid != 0 ||
+		    identity->fd_treeid != 0 || identity->path[0] != '\0' ||
+		    identity->access[0] != '\0' ||
+		    memcmp(identity->received_uuid, (uint8_t[16]){0}, 16)))
 			return (EINVAL);
 		fd = identity->fd;
 	} else {
@@ -172,7 +180,7 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 				error = btrfs_control_xattr(vp, cmd, xattr, p);
 			else if (isidentity) {
 				error = btrfs_identity_control(mp, cmd, identity, p);
-				if (error == 0 && cmd == BTRFSIOC_INFO)
+				if (error == 0 && cmd != BTRFSIOC_FINISH)
 					identity->fd_treeid = VTOBTRFS(vp)->bn_treeid;
 			} else
 				error = btrfs_control(mp, cmd, args, p);
