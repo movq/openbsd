@@ -32,6 +32,7 @@
 #endif
 
 #include <btrfs/btrfs_var.h>
+#include <btrfs/zstd/common/xxhash.h>
 
 /*
  * CRC32 uses general-purpose registers, so it needs no kernel FPU context.
@@ -66,6 +67,54 @@ btrfs_crc32c(const void *buffer, size_t length)
 	return (crc32c(0, data, length));
 }
 
+size_t
+btrfs_csum_size(const struct btrfs_super_block *sb)
+{
+	switch (letoh16(sb->csum_type)) {
+	case BTRFS_CSUM_TYPE_CRC32:
+		return (4);
+	case BTRFS_CSUM_TYPE_XXHASH:
+		return (8);
+	default:
+		return (0);
+	}
+}
+
+/* The caller supplies csum_size bytes; metadata padding is caller-owned. */
+void
+btrfs_csum(const struct btrfs_super_block *sb, const void *data, size_t length,
+    uint8_t *result)
+{
+	uint64_t xxhash;
+	uint32_t crc;
+
+	switch (letoh16(sb->csum_type)) {
+	case BTRFS_CSUM_TYPE_CRC32:
+		crc = htole32(btrfs_crc32c(data, length));
+		memcpy(result, &crc, sizeof(crc));
+		break;
+	case BTRFS_CSUM_TYPE_XXHASH:
+		xxhash = htole64(XXH64(data, length, 0));
+		memcpy(result, &xxhash, sizeof(xxhash));
+		break;
+	default:
+		panic("btrfs_csum: unsupported checksum type");
+	}
+}
+
+int
+btrfs_csum_valid(const struct btrfs_super_block *sb, const void *data,
+    size_t length, const uint8_t *expected)
+{
+	uint8_t csum[BTRFS_SUPPORTED_CSUM_MAX];
+	size_t size = btrfs_csum_size(sb);
+
+	if (size == 0)
+		return (0);
+	btrfs_csum(sb, data, length, csum);
+	return (memcmp(csum, expected, size) == 0);
+}
+
 static int	btrfs_map_logical(const struct btrfs_chunk_map *, uint64_t,
 		    uint32_t, struct btrfs_io_map *);
 static int	btrfs_read_mapped(struct vnode *, const struct btrfs_io_map *,
@@ -74,7 +123,8 @@ static int	btrfs_read_mapped(struct vnode *, const struct btrfs_io_map *,
 static int	btrfs_validate_data_csum(const void *, size_t, void *);
 
 struct btrfs_data_csum {
-	const uint32_t	*expected;
+	const struct btrfs_super_block *super;
+	const uint8_t	*expected;
 	uint32_t	 offset;
 	uint32_t	 sectorsize;
 };
@@ -362,8 +412,9 @@ btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 
 	if (csum->offset > length || csum->sectorsize > length - csum->offset)
 		return (EINVAL);
-	if (btrfs_crc32c((const uint8_t *)data + csum->offset,
-	    csum->sectorsize) != *csum->expected)
+	if (!btrfs_csum_valid(csum->super,
+	    (const uint8_t *)data + csum->offset, csum->sectorsize,
+	    csum->expected))
 		return (EIO);
 	return (0);
 }
@@ -371,7 +422,7 @@ btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 int
 btrfs_read_data_sector(struct btrfs_fs *bmp,
     const struct btrfs_file_extent *extent, uint64_t logical,
-    const uint32_t *expected_csum, struct buf **bpp, uint32_t *offsetp)
+    const uint8_t *expected_csum, struct buf **bpp, uint32_t *offsetp)
 {
 	btrfs_io_validate_fn validate = NULL;
 	struct btrfs_data_csum csum;
@@ -401,6 +452,7 @@ btrfs_read_data_sector(struct btrfs_fs *bmp,
 	length = MIN((uint64_t)MAXBSIZE, bytes - window);
 	start += window;
 	csum.offset = logical - start;
+	csum.super = &bmp->bm_super;
 	csum.sectorsize = sectorsize;
 	csum.expected = expected_csum;
 	if (expected_csum != NULL)

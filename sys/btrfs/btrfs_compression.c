@@ -49,11 +49,12 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 {
 	struct btrfs_fs *bmp = node->bn_mount;
 	struct buf *bp = NULL;
-	uint32_t *csums = NULL;
+	uint8_t *csums = NULL;
 	uint64_t inode_flags, logical;
-	const uint32_t *expectedp;
+	const uint8_t *expectedp;
 	uint32_t buffer_offset, sectorsize;
 	size_t nsectors;
+	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
 	size_t offset;
 	int error = 0;
 
@@ -63,7 +64,7 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 		return (EINVAL);
 	nsectors = extent->bfe_disk_num_bytes / sectorsize;
 	if ((inode_flags & BTRFS_INODE_NODATASUM) == 0) {
-		csums = mallocarray(nsectors, sizeof(*csums), M_BTRFS,
+		csums = mallocarray(nsectors, csum_size, M_BTRFS,
 		    M_WAITOK);
 		error = btrfs_read_data_csums(bmp, extent->bfe_disk_bytenr,
 		    extent->bfe_disk_num_bytes, csums);
@@ -79,7 +80,7 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 		logical = extent->bfe_disk_bytenr + offset;
 		expectedp = NULL;
 		if (csums != NULL)
-			expectedp = &csums[offset / sectorsize];
+			expectedp = csums + offset / sectorsize * csum_size;
 		error = btrfs_read_data_sector(bmp, extent, logical, expectedp,
 		    &bp, &buffer_offset);
 		if (error != 0)
@@ -94,7 +95,7 @@ out:
 	if (bp != NULL)
 		brelse(bp);
 	if (csums != NULL)
-		free(csums, M_BTRFS, nsectors * sizeof(*csums));
+		free(csums, M_BTRFS, nsectors * csum_size);
 	return (error);
 }
 

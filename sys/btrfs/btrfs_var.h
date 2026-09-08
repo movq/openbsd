@@ -38,6 +38,8 @@
 #define BTRFS_MAX_COMPRESSED	(128 * 1024)
 #define BTRFS_MAX_UNCOMPRESSED	(128 * 1024)
 #define BTRFS_MAX_MIRRORS	2
+#define BTRFS_MIN_SECTORSIZE	0x1000
+#define BTRFS_SUPPORTED_CSUM_MAX	8
 
 static inline int
 btrfs_file_tree(uint64_t owner)
@@ -699,6 +701,12 @@ int	btrfs_lookup_logical(const struct btrfs_chunk_map *, unsigned int,
 int	btrfs_lookup_fs_logical(struct btrfs_fs *, uint64_t, uint32_t,
 	    struct btrfs_io_map *);
 uint32_t btrfs_crc32c(const void *, size_t);
+/* Checksums are packed bytes in disk order, including in-memory data arrays. */
+size_t	btrfs_csum_size(const struct btrfs_super_block *);
+void	btrfs_csum(const struct btrfs_super_block *, const void *, size_t,
+	    uint8_t *);
+int	btrfs_csum_valid(const struct btrfs_super_block *, const void *, size_t,
+	    const uint8_t *);
 int	btrfs_read_logical(const struct btrfs_root *, uint64_t, uint32_t,
 	    uint64_t, btrfs_io_validate_fn, void *, struct btrfs_io_result *,
 	    struct buf **);
@@ -876,10 +884,10 @@ int	btrfs_trans_commit(struct btrfs_fs *, uint64_t, struct proc *);
 int	btrfs_trans_finish(struct btrfs_fs *, struct btrfs_transaction *,
 	    int);
 int	btrfs_read_data_csums(struct btrfs_fs *, uint64_t, uint64_t,
-	    uint32_t *);
-int	btrfs_lookup_data_csum(struct btrfs_fs *, uint64_t, uint32_t *);
+	    uint8_t *);
+int	btrfs_lookup_data_csum(struct btrfs_fs *, uint64_t, uint8_t *);
 int	btrfs_read_data_sector(struct btrfs_fs *,
-	    const struct btrfs_file_extent *, uint64_t, const uint32_t *,
+	    const struct btrfs_file_extent *, uint64_t, const uint8_t *,
 	    struct buf **, uint32_t *);
 int	btrfs_read_compressed_extent(struct btrfs_node *,
 	    const struct btrfs_file_extent *, uint64_t, size_t, void *);

@@ -2486,7 +2486,7 @@ btrfs_search_predecessor(struct btrfs_root *root,
 
 int
 btrfs_read_data_csums(struct btrfs_fs *bmp, uint64_t logical,
-    uint64_t length, uint32_t *csums)
+    uint64_t length, uint8_t *csums)
 {
 	const struct btrfs_key *key;
 	const uint8_t *data;
@@ -2494,8 +2494,9 @@ btrfs_read_data_csums(struct btrfs_fs *bmp, uint64_t logical,
 	struct btrfs_root *root;
 	struct btrfs_key target;
 	uint64_t cursor, end, item_end, span, start;
-	uint32_t csum, item_size, sectorsize;
-	size_t csum_index, csum_offset, navailable, ncopy, i;
+	uint32_t item_size, sectorsize;
+	size_t csum_index, csum_offset, navailable, ncopy;
+	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
 	int first = 1;
 	int error;
 
@@ -2538,11 +2539,11 @@ btrfs_read_data_csums(struct btrfs_fs *bmp, uint64_t logical,
 
 		start = letoh64(key->offset);
 		if ((start & (sectorsize - 1)) != 0 || item_size == 0 ||
-		    item_size % sizeof(csum) != 0) {
+		    item_size % csum_size != 0) {
 			error = EINVAL;
 			goto out;
 		}
-		span = (uint64_t)(item_size / sizeof(csum)) * sectorsize;
+		span = (uint64_t)(item_size / csum_size) * sectorsize;
 		if (start > UINT64_MAX - span) {
 			error = EINVAL;
 			goto out;
@@ -2561,13 +2562,10 @@ btrfs_read_data_csums(struct btrfs_fs *bmp, uint64_t logical,
 		}
 
 		csum_offset = (cursor - start) / sectorsize;
-		navailable = item_size / sizeof(csum) - csum_offset;
+		navailable = item_size / csum_size - csum_offset;
 		ncopy = MIN(navailable, (size_t)((end - cursor) / sectorsize));
-		for (i = 0; i < ncopy; i++) {
-			memcpy(&csum, data +
-			    (csum_offset + i) * sizeof(csum), sizeof(csum));
-			csums[csum_index + i] = letoh32(csum);
-		}
+		memcpy(csums + csum_index * csum_size,
+		    data + csum_offset * csum_size, ncopy * csum_size);
 		csum_index += ncopy;
 		cursor += (uint64_t)ncopy * sectorsize;
 		if (cursor == end)
@@ -2585,7 +2583,7 @@ out:
 
 int
 btrfs_lookup_data_csum(struct btrfs_fs *bmp, uint64_t logical,
-    uint32_t *csump)
+    uint8_t *csump)
 {
 	return (btrfs_read_data_csums(bmp, logical,
 	    letoh32(bmp->bm_super.sectorsize), csump));
