@@ -60,6 +60,7 @@
 
 static struct btrfs_transaction *
 	btrfs_trans_alloc(struct btrfs_fs *, uint64_t);
+static void	btrfs_trans_reopen(struct btrfs_transaction *);
 
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
@@ -436,21 +437,39 @@ int
 btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
     struct proc *p)
 {
-	struct btrfs_super_block *super = NULL;
-	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_transaction *trans = NULL;
-	struct btrfs_super_mirror *mirror;
-	unsigned int d, i;
-	int end_error, error, finish_error, write_error;
+	int error;
 
 	if (bmp == NULL || p == NULL)
 		return (EINVAL);
 	error = btrfs_trans_close(bmp, minimum_generation, &trans);
 	if (error != 0 || trans == NULL)
 		return (error);
+	return (btrfs_trans_commit_closed(trans, p));
+}
 
-	if (trans->bt_error != 0)
-		error = trans->bt_error;
+/*
+ * Consume close ownership without reopening joins. Recovery and a log
+ * fallback use this same publication path after ending their private handle.
+ */
+int
+btrfs_trans_commit_closed(struct btrfs_transaction *trans, struct proc *p)
+{
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_super_block *super = NULL;
+	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_super_mirror *mirror;
+	unsigned int d, i;
+	int end_error, error, finish_error, write_error;
+
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(p != NULL);
+	KASSERT(bmp->bm_transaction == trans && bmp->bm_committer);
+	KASSERT(trans->bt_writers == 0 && !trans->bt_commit_handle);
+	KASSERT(trans->bt_state == BTRFS_TRANS_COMMITTING ||
+	    trans->bt_state == BTRFS_TRANS_ABORTED);
+	error = trans->bt_error;
+	mtx_leave(&bmp->bm_trans_mtx);
 	if (error == 0)
 		error = btrfs_trans_commit_handle(trans, &handle);
 	if (error == 0)
@@ -508,6 +527,72 @@ btrfs_trans_commit(struct btrfs_fs *bmp, uint64_t minimum_generation,
 	return (error);
 }
 
+/*
+ * Mount has loaded and excluded the entire recovery forest before entering
+ * here. There are no writers or published views. Even an empty log needs a
+ * new root-tree generation so commit can clear the superblock's log pointer.
+ * On success the caller owns the closed transaction and its commit handle;
+ * on failure this function finishes the transaction.
+ */
+int
+btrfs_trans_recover_begin(struct btrfs_fs *bmp,
+    struct btrfs_trans_handle **handlep)
+{
+	struct btrfs_transaction *trans = bmp->bm_transaction;
+	struct btrfs_trans_handle *handle;
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	int error;
+
+	*handlep = NULL;
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(!bmp->bm_readonly && bmp->bm_super.log_root != 0);
+	KASSERT(!bmp->bm_committer && trans->bt_state == BTRFS_TRANS_OPEN);
+	KASSERT(trans->bt_writers == 0 && !trans->bt_commit_handle);
+	KASSERT(trans->bt_error == 0);
+	bmp->bm_committer = 1;
+	trans->bt_state = BTRFS_TRANS_COMMITTING;
+	mtx_leave(&bmp->bm_trans_mtx);
+
+	error = btrfs_trans_commit_handle(trans, &handle);
+	if (error == 0) {
+		error = btrfs_get_root(bmp, BTRFS_ROOT_TREE_OBJECTID, &root);
+		if (error == 0)
+			error = btrfs_search_slot_write(handle, root, &key,
+			    &path);
+		btrfs_release_path(&path);
+		if (error == ENOENT)
+			error = 0;
+	}
+	if (error != 0) {
+		if (handle != NULL) {
+			btrfs_trans_abort(handle, error);
+			(void)btrfs_trans_end(handle);
+		}
+		return (btrfs_trans_finish(bmp, trans, error));
+	}
+	*handlep = handle;
+	return (0);
+}
+
+/* Release close ownership under bm_trans_mtx, retaining this generation. */
+static void
+btrfs_trans_reopen(struct btrfs_transaction *trans)
+{
+	struct btrfs_fs *bmp = trans->bt_mount;
+
+	MUTEX_ASSERT_LOCKED(&bmp->bm_trans_mtx);
+	KASSERT(bmp->bm_transaction == trans && bmp->bm_committer);
+	KASSERT(trans->bt_writers == 0 && !trans->bt_commit_handle);
+	KASSERT(trans->bt_error == 0);
+	KASSERT(trans->bt_state == BTRFS_TRANS_CLOSING ||
+	    trans->bt_state == BTRFS_TRANS_COMMITTING);
+	trans->bt_state = BTRFS_TRANS_OPEN;
+	bmp->bm_committer = 0;
+	wakeup(&bmp->bm_transaction);
+}
+
 int
 btrfs_trans_close(struct btrfs_fs *bmp, uint64_t minimum_generation,
     struct btrfs_transaction **transp)
@@ -552,9 +637,7 @@ btrfs_trans_close(struct btrfs_fs *bmp, uint64_t minimum_generation,
 		    &trans->bt_ordered_extents));
 		KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
 		KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
-		trans->bt_state = BTRFS_TRANS_OPEN;
-		bmp->bm_committer = 0;
-		wakeup(&bmp->bm_transaction);
+		btrfs_trans_reopen(trans);
 		mtx_leave(&bmp->bm_trans_mtx);
 		return (0);
 	}
@@ -645,7 +728,7 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 /*
  * Use the same close/drain protocol as commit. No vnode other than the
  * caller's is acquired. A successful log publication reopens this generation;
- * a fallback reopens it before entering the ordinary full commit path.
+ * a fallback retains close ownership through the ordinary full commit path.
  */
 int
 btrfs_log_fsync(struct btrfs_node *node, uint64_t generation, struct proc *p)
@@ -678,12 +761,10 @@ btrfs_log_fsync(struct btrfs_node *node, uint64_t generation, struct proc *p)
 	}
 	if (error != 0 && error != EAGAIN)
 		return (btrfs_trans_finish(bmp, trans, error));
-	mtx_enter(&bmp->bm_trans_mtx);
-	trans->bt_state = BTRFS_TRANS_OPEN;
-	bmp->bm_committer = 0;
-	wakeup(&bmp->bm_transaction);
-	mtx_leave(&bmp->bm_trans_mtx);
 	if (error == EAGAIN)
-		return (btrfs_trans_commit(bmp, generation, p));
+		return (btrfs_trans_commit_closed(trans, p));
+	mtx_enter(&bmp->bm_trans_mtx);
+	btrfs_trans_reopen(trans);
+	mtx_leave(&bmp->bm_trans_mtx);
 	return (0);
 }

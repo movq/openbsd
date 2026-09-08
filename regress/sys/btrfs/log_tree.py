@@ -159,6 +159,19 @@ def mutate(root, case):
         os.ftruncate(fd, 10001)
         os.fsync(fd)
         os.close(fd)
+    elif case in ("unsynced", "fallback"):
+        # Exercise an already tracked inode, then edit mappings and namespace.
+        # Either crash with the old publication or force a full fsync commit.
+        assert not sys.platform.startswith("linux")
+        fd = os.open(root / "file", os.O_RDWR)
+        os.pwrite(fd, data("first", 8192), 4096)
+        os.fsync(fd)
+        os.fsync(fd)
+        os.pwrite(fd, data("unpublished", 8192), 256 * 1024)
+        os.close(fd)
+        os.rename(root / "file", root / "renamed")
+        if case == "fallback":
+            fsync(root / "renamed")
     elif case == "concurrent":
         from concurrent.futures import ThreadPoolExecutor
 
@@ -178,6 +191,7 @@ def mutate(root, case):
 
 def verify(root, case):
     root = Path(root)
+    file_path = root / "file"
     expected = bytearray(data("file"))
     second = bytearray(data("second"))
     if case == "data":
@@ -253,7 +267,15 @@ def verify(root, case):
         for name, content in (("file", expected), ("second", second)):
             for i in range(8):
                 content[i * 4096:(i + 1) * 4096] = data(name + str(i), 4096)
-    assert (root / "file").read_bytes() == expected
+    elif case == "unsynced":
+        expected[4096:12288] = data("first", 8192)
+        assert not (root / "renamed").exists()
+    elif case == "fallback":
+        expected[4096:12288] = data("first", 8192)
+        expected.extend(data("unpublished", 8192))
+        assert not file_path.exists()
+        file_path = root / "renamed"
+    assert file_path.read_bytes() == expected
     assert (root / "second").read_bytes() == second
     print(f"verified {case}", flush=True)
 
