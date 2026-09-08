@@ -39,7 +39,7 @@ through existing descriptors must start at EOF, as on FFS.
 System flags and opaque directories are unsupported: btrfs has no separate
 system immutable/append state to enforce OpenBSD securelevel semantics.
 
-The writable format is one device, CRC32C, SINGLE/DUP chunks, and
+The writable format is one device, CRC32C or xxHash64, SINGLE/DUP chunks, and
 skinny metadata. Only `MIXED_BACKREF`, `COMPRESS_ZSTD`, `BIG_METADATA`,
 `EXTENDED_IREF`, `SKINNY_METADATA`, and `NO_HOLES` incompat bits are accepted.
 The free-space-tree (with VALID set) and block-group-tree compat-ro features
@@ -232,6 +232,10 @@ after validating capacity and affected ancestor separators. Leaves with gaps
 or inputs that alias the leaf use a scratch rebuild. Both paths compact size
 changes and zero unused space. Data and metadata CRC32C use the general-register
 instruction on amd64 CPUs with SSE4.2, with a portable fallback.
+xxHash64 uses the shared BSD-licensed xxHash implementation, with seed zero
+and little-endian output. Superblocks, metadata and data use the selected
+algorithm; checksum-tree ranges use its digest width. Directory-name and
+reference hashes retain the format's fixed CRC32C algorithm.
 
 Idle validated metadata retains private bytes in a bounded 8 MiB LRU; device
 buffers are released after loading. An address index finds active and cached

@@ -67,15 +67,19 @@ def verify(base):
 
 
 def disk(image):
+    superblock = subprocess.check_output(
+        ["btrfs", "inspect-internal", "dump-super", str(image)], text=True)
+    csum_size = int(re.search(r"^csum_size\s+(\d+)", superblock, re.M)[1])
     tree = subprocess.check_output(
         ["btrfs", "inspect-internal", "dump-tree", "-t", "csum", str(image)],
         text=True)
     sizes = [int(size) for size in re.findall(
         r"key \(\S+ EXTENT_CSUM \d+\) itemoff \d+ itemsize (\d+)", tree)]
     assert sizes and max(sizes) >= 512, sizes
-    assert sum(sizes) > len(sizes) * 4 * 4, (
+    assert all(size % csum_size == 0 for size in sizes), sizes
+    assert sum(sizes) > len(sizes) * csum_size * 4, (
         "expected multiple sectors per checksum item", len(sizes), sum(sizes))
-    print(f"{sum(sizes) // 4} checksums in {len(sizes)} items")
+    print(f"{sum(sizes) // csum_size} checksums in {len(sizes)} items")
 
 
 if __name__ == "__main__":

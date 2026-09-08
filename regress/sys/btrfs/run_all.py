@@ -258,7 +258,8 @@ class Runner:
 
     def format(self, seed=None, *, size=None, data=None, free_space=None,
                block_groups=None, holes=None, extref=True, compress=None,
-               subvols=(), flags=(), system=False, nodesize=None):
+               subvols=(), flags=(), system=False, nodesize=None,
+               checksum="crc32c"):
         self.unmounted()
         layout = self.layout
         data = data or layout.data
@@ -277,7 +278,7 @@ class Runner:
             raise Failure("block-group tree requires free-space tree")
         argv = ["mkfs.btrfs", "-f", "-b", size or "256M", "-s", "4096",
                 "-n", str(nodesize or layout.nodesize), "-d", data, "-m", "dup",
-                "-O", ",".join(features)]
+                "-O", ",".join(features), "--checksum", checksum]
         if seed is not None:
             argv += ["--rootdir", str(seed)]
         if compress:
