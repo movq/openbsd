@@ -8,6 +8,15 @@
 .Nd inspect and administer Btrfs filesystems
 .Sh SYNOPSIS
 .Nm
+.Cm device add
+.Op Fl f
+.Ar device ...
+.Ar mountpoint
+.Nm
+.Cm device remove
+.Ar device-or-id ...
+.Ar mountpoint
+.Nm
 .Cm subvolume list
 .Ar mountpoint
 .Nm
@@ -35,10 +44,51 @@
 .Sh DESCRIPTION
 The
 .Nm
-utility inspects Btrfs filesystems and administers their subvolumes.
+utility inspects Btrfs filesystems and administers their devices and subvolumes.
 Use
 .Fl Fl help
 after a command to display its usage.
+.Pp
+Device commands select a writable filesystem by
+.Ar mountpoint
+and require superuser privileges.
+Device paths name block devices, such as
+.Pa /dev/sd2a ,
+rather than raw character devices.
+Multiple devices are processed in order, stopping at the first failure.
+.Bl -tag -width "device remove"
+.It Cm device add
+Add devices to a mounted SINGLE/DUP filesystem.
+Devices may have different sizes.
+Each device contributes its partition size, rounded down to a filesystem
+sector boundary.
+Existing chunks retain their profiles and placement; subsequent chunk growth
+can use the added space.
+Both copies of a DUP chunk reside on one device.
+The
+.Xr df 1
+display reports allocated chunk capacity; it grows as chunks are allocated
+from the device pool.
+.Pp
+By default, nonzero bytes preceding the first superblock or in any superblock
+location prevent addition.
+The
+.Fl f
+option permits overwriting those signatures.
+Mounted or busy devices are rejected even with
+.Fl f .
+.It Cm device remove
+Move allocated chunks onto remaining devices, then detach the selected member.
+Specify a block-device path or a numeric device ID.
+The last device cannot be removed.
+Removal preserves logical extent addresses, snapshots, reflinks, compression,
+and checksums.
+Live extents are copied and checksummed copies are validated before each new
+chunk mapping is committed.
+System chunks, device accounting, and bootstrap mappings are updated as part
+of the same commit.
+Successful detachment clears the removed device's superblocks.
+.El
 .Pp
 For subvolume, send, and receive commands,
 .Ar mountpoint
@@ -115,6 +165,25 @@ Filesystem administration device.
 .Sh SEE ALSO
 .Xr mount_btrfs 8
 .Sh CAVEATS
+Device commands are synchronous.
+Filesystem writers wait during device administration; reads may continue.
+Removal requires enough unallocated physical space on a remaining member
+for each whole chunk, including both DUP copies.
+It does not compact partially used chunks or change profiles.
+Device resizing and balance are not implemented.
+.Pp
+A failed removal can leave a completed prefix of chunk moves.
+The member stays attached until the final membership commit succeeds.
+An I/O or metadata error can make all views read-only.
+If clearing the removed device fails after detachment, the command reports an
+error but the device is already detached.
+After an interrupted addition, supply both the old members and the new member
+when recovering a published addition.
+After detachment, supply only the remaining members.
+Update explicit device lists in mount commands or
+.Xr fstab 5
+to reflect membership changes.
+.Pp
 Subvolume deletion currently reserves metadata for the complete operation.
 It may fail for lack of metadata space even when deleting the subvolume
 would eventually free enough space.

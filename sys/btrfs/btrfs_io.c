@@ -189,7 +189,9 @@ btrfs_lookup_logical(const struct btrfs_chunk_map *chunks,
 
 /*
  * Copy live mappings under the short mapping lock, released before device
- * access. Only bootstrap roots use fixed chunk tables.
+ * access. Readers hold bm_io_lock across lookup and I/O; transaction handles
+ * or closed commit ownership pin mappings for writers and relocation.
+ * Only bootstrap roots use fixed chunk tables.
  */
 int
 btrfs_lookup_fs_logical(struct btrfs_fs *bmp, uint64_t logical,
@@ -219,18 +221,21 @@ btrfs_read_logical(const struct btrfs_root *root,
 		memset(result, 0, sizeof(*result));
 		result->bir_mirror = -1;
 	}
-	if (root->br_mount != NULL)
+	if (root->br_mount != NULL) {
+		rw_enter_read(&root->br_mount->bm_io_lock);
 		error = btrfs_lookup_fs_logical(root->br_mount, logical,
 		    length, &map);
-	else if (root->br_bootstrap_chunks != NULL)
+	} else if (root->br_bootstrap_chunks != NULL)
 		error = btrfs_lookup_logical(root->br_bootstrap_chunks,
 		    root->br_bootstrap_nchunks, logical, length, &map);
 	else
 		error = EINVAL;
-	if (error != 0)
-		return (error);
-	return (btrfs_read_mapped(&map, length, type_mask,
-	    validate, validate_arg, result, bpp));
+	if (error == 0)
+		error = btrfs_read_mapped(&map, length, type_mask,
+		    validate, validate_arg, result, bpp);
+	if (root->br_mount != NULL)
+		rw_exit_read(&root->br_mount->bm_io_lock);
+	return (error);
 }
 
 static int
@@ -359,23 +364,19 @@ btrfs_write_done(struct buf *bp)
  * metadata. Each submitted buffer owns its copy before this call returns;
  * asynchronous completion never accesses the caller's storage.
  */
-int
-btrfs_write_logical(struct btrfs_fs *bmp,
-    uint64_t logical, uint32_t length, uint64_t type_mask,
-    const void *data, struct btrfs_write_batch *batch)
+static int
+btrfs_write_mapped(struct btrfs_fs *bmp, struct btrfs_io_map map,
+    uint32_t length, uint64_t type_mask, const void *data,
+    struct btrfs_write_batch *batch)
 {
-	struct btrfs_io_map map;
 	struct buf *bp;
 	unsigned int i;
-	int error;
+	int error = 0;
 
 	if (data == NULL || batch == NULL || length == 0 ||
 	    length > MAXBSIZE || type_mask == 0)
 		return (EINVAL);
 
-	error = btrfs_lookup_fs_logical(bmp, logical, length, &map);
-	if (error != 0)
-		return (error);
 	if ((map.type & type_mask) == 0)
 		return (EINVAL);
 
@@ -425,6 +426,106 @@ btrfs_write_logical(struct btrfs_fs *bmp,
 		(void)bwrite(bp);
 	}
 	return (error);
+}
+
+int
+btrfs_write_logical(struct btrfs_fs *bmp, uint64_t logical, uint32_t length,
+    uint64_t type_mask, const void *data, struct btrfs_write_batch *batch)
+{
+	struct btrfs_io_map map;
+	int error;
+
+	/* A transaction handle or closed committer pins the device set. */
+	error = btrfs_lookup_fs_logical(bmp, logical, length, &map);
+	if (error != 0)
+		return (error);
+	return (btrfs_write_mapped(bmp, map, length, type_mask, data, batch));
+}
+
+struct btrfs_copy_check {
+	struct btrfs_fs *fs;
+	uint64_t logical;
+	uint64_t generation;
+	int level;
+};
+
+static int
+btrfs_copy_metadata_valid(const void *data, size_t length, void *arg)
+{
+	struct btrfs_copy_check *check = arg;
+	const struct btrfs_header *header = data;
+
+	if (length != letoh32(check->fs->bm_super.nodesize) ||
+	    btrfs_validate_tree_block(&check->fs->bm_super, header,
+	    check->logical, check->generation,
+	    check->fs->bm_transaction->bt_generation,
+	    letoh64(header->owner), check->level) != 0)
+		return (EIO);
+	return (0);
+}
+
+/*
+ * Closed-commit relocation reads final live bytes through the old mapping.
+ * Validate each checksummed sector independently so DUP can repair different
+ * bad sectors from different mirrors. NODATASUM and preallocation have no
+ * checksum to validate. Metadata retains its logical bytenr and checksum.
+ */
+int
+btrfs_copy_extent(struct btrfs_fs *bmp, const struct btrfs_chunk_map *target,
+    uint64_t logical, uint64_t length, int level, uint64_t generation)
+{
+	struct btrfs_write_batch batch;
+	struct btrfs_io_map source, dest;
+	struct btrfs_copy_check check = { bmp, logical, generation, level };
+	struct btrfs_data_csum csum = { .super = &bmp->bm_super };
+	struct buf *bp;
+	btrfs_io_validate_fn validate;
+	void *arg, *data;
+	uint8_t expected[BTRFS_SUPPORTED_CSUM_MAX];
+	int metadata = level >= 0;
+	uint32_t unit = letoh32(metadata ? bmp->bm_super.nodesize :
+	    bmp->bm_super.sectorsize);
+	int error = 0, enderror;
+
+	if (length == 0 || length % unit != 0)
+		return (EINVAL);
+	data = malloc(unit, M_BTRFS, M_WAITOK);
+	btrfs_write_batch_init(&batch);
+	while (length != 0) {
+		check.logical = logical;
+		validate = metadata ? btrfs_copy_metadata_valid : NULL;
+		arg = &check;
+		if (!metadata) {
+			error = btrfs_lookup_data_csum(bmp, logical, expected);
+			if (error != 0 && error != ENOENT)
+				break;
+			if (error == 0) {
+				csum.expected = expected;
+				csum.sectorsize = unit;
+				validate = btrfs_validate_data_csum;
+				arg = &csum;
+			}
+		}
+		error = btrfs_lookup_fs_logical(bmp, logical, unit, &source);
+		if (error == 0)
+			error = btrfs_map_logical(target, logical, unit, &dest);
+		if (error == 0)
+			error = btrfs_read_mapped(&source, unit, target->type,
+			    validate, arg, NULL, &bp);
+		if (error != 0)
+			break;
+		memcpy(data, bp->b_data, unit);
+		brelse(bp);
+		error = btrfs_write_mapped(bmp, dest, unit, target->type,
+		    data, &batch);
+		if (error != 0)
+			break;
+		logical += unit;
+		length -= unit;
+	}
+	enderror = btrfs_write_batch_wait(&batch);
+	free(data, M_BTRFS, unit);
+	return (error != 0 ? error : enderror);
 }
 
 static int
@@ -479,6 +580,7 @@ btrfs_read_data_sector(struct btrfs_fs *bmp,
 	csum.expected = expected_csum;
 	if (expected_csum != NULL)
 		validate = btrfs_validate_data_csum;
+	rw_enter_read(&bmp->bm_io_lock);
 retry:
 	error = btrfs_lookup_fs_logical(bmp, start, length, &map);
 	if (error == 0)
@@ -496,5 +598,6 @@ retry:
 		*offsetp = csum.offset;
 	if (error == ENOENT)
 		error = EINVAL;
+	rw_exit_read(&bmp->bm_io_lock);
 	return (error);
 }

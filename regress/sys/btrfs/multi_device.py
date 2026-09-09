@@ -73,6 +73,8 @@ def inspect(devices):
         generation = current if generation is None else generation
         assert generation == current, "member super generations differ"
         for offset in SUPERS:
+            if offset + 4096 > size:
+                continue
             mirror = os.pread(fd, 4096, offset)
             assert struct.unpack_from("<Q", mirror, 72)[0] == generation
             assert mirror[201:299] == sb[201:299], "device super items differ"

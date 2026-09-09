@@ -400,12 +400,13 @@ int
 btrfs_sync_device(struct btrfs_fs *bmp, struct proc *p)
 {
 	struct vnode *vp;
+	struct btrfs_device *device;
 	unsigned int i;
 	int error, flush_error, first_error = 0, force = 1;
 
 	/* Complete every member's barrier, including after a write error. */
-	for (i = 0; i < bmp->bm_ndevices; i++) {
-		vp = bmp->bm_devices[i].bd_devvp;
+	for (i = 0; (device = btrfs_commit_device(bmp, i)) != NULL; i++) {
+		vp = device->bd_devvp;
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		error = VOP_FSYNC(vp, FSCRED, MNT_WAIT, p);
 		flush_error = VOP_IOCTL(vp, DIOCCACHESYNC, &force,
@@ -459,6 +460,7 @@ btrfs_trans_commit_closed(struct btrfs_transaction *trans, struct proc *p)
 	struct btrfs_super_block *super = NULL;
 	struct btrfs_trans_handle *handle = NULL;
 	struct btrfs_super_mirror *mirror;
+	struct btrfs_device *device;
 	unsigned int d, i;
 	int end_error, error, finish_error, write_error;
 
@@ -489,6 +491,8 @@ btrfs_trans_commit_closed(struct btrfs_transaction *trans, struct proc *p)
 	if (error == 0)
 		error = btrfs_write_dirty_metadata(trans);
 	if (error == 0)
+		error = btrfs_chunk_copy(trans);
+	if (error == 0)
 		error = btrfs_sync_device(bmp, p);
 	if (error == 0) {
 		super = malloc(sizeof(*super), M_BTRFS, M_WAITOK);
@@ -503,12 +507,13 @@ btrfs_trans_commit_closed(struct btrfs_transaction *trans, struct proc *p)
 		memcpy(&bmp->bm_super, super, sizeof(bmp->bm_super));
 		bmp->bm_backup_roots_valid =
 		    btrfs_validate_backup_roots(&bmp->bm_super);
-		for (d = 0; d < bmp->bm_ndevices; d++) {
+		for (d = 0; (device = btrfs_commit_device(bmp, d)) != NULL;
+		    d++) {
 			for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
 				if (!btrfs_super_mirror_writable(
-				    &bmp->bm_devices[d], i))
+				    device, i))
 					continue;
-				mirror = &bmp->bm_devices[d].bd_mirrors[i];
+				mirror = &device->bd_mirrors[i];
 				mirror->bsm_generation = trans->bt_generation;
 				mirror->bsm_flags |= BTRFS_SUPER_MIRROR_VALID |
 				    BTRFS_SUPER_MIRROR_CONSISTENT;

@@ -31,6 +31,10 @@ The executables are written to `mkfs/mkfs.btrfs` and `cmds/btrfs`.
 - Offline `btrfs inspect-internal tree-stats` for basic node, level, inline
   data, size, and disk-spread statistics
 - Native subvolume list/create/delete and writable/read-only snapshots
+- Native online `device add` and `device remove` for SINGLE/DUP filesystems,
+  including unequal device sizes and physical relocation of occupied chunks.
+  Removal needs unallocated space for each whole chunk on a remaining member;
+  balance, profile conversion, and device resizing are not implemented.
 - Linux version 1 full and incremental send/receive, including hard links,
   special files, timestamps, and opaque extended attributes. Commands select
   a filesystem by mountpoint and interpret subvolume paths from tree 5;

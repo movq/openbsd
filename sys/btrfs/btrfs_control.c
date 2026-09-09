@@ -89,10 +89,11 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	struct btrfs_ioctl_identity *identity = (void *)data;
 	struct btrfs_ioctl_xattr *xattr = (void *)data;
 	struct btrfs_ioctl_tree *tree = (void *)data;
+	struct btrfs_ioctl_device *device = (void *)data;
 	struct file *fp, *parent = NULL;
 	struct vnode *vp, *pvp = NULL;
 	struct mount *mp;
-	int error, isidentity, isxattr, readonly, fd;
+	int error, isidentity, isxattr, isdevice, readonly, fd;
 
 	if ((error = suser(p)) != 0)
 		return (error);
@@ -105,16 +106,28 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	    cmd == BTRFSIOC_FIND_UUID;
 	isxattr = cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_SETXATTR ||
 	    cmd == BTRFSIOC_RMXATTR;
+	isdevice = cmd == BTRFSIOC_DEV_ADD || cmd == BTRFSIOC_DEV_REMOVE;
 	readonly = cmd == BTRFSIOC_LIST || cmd == BTRFSIOC_INFO ||
 	    cmd == BTRFSIOC_FIND_UUID || cmd == BTRFSIOC_GETXATTR ||
 	    cmd == BTRFSIOC_TREE;
-	if (!isidentity && !isxattr && cmd != BTRFSIOC_TREE &&
+	if (!isidentity && !isxattr && !isdevice && cmd != BTRFSIOC_TREE &&
 	    cmd != BTRFSIOC_LIST && cmd != BTRFSIOC_CREATE &&
 	    cmd != BTRFSIOC_DELETE && cmd != BTRFSIOC_SNAPSHOT)
 		return (ENOTTY);
 	if (!readonly && !(flags & FWRITE))
 		return (EBADF);
-	if (cmd == BTRFSIOC_TREE) {
+	if (isdevice) {
+		if (memchr(device->path, '\0', sizeof(device->path)) == NULL)
+			return (ENAMETOOLONG);
+		if (device->flags & ~(cmd == BTRFSIOC_DEV_ADD ?
+		    BTRFS_DEVICE_FORCE : 0))
+			return (EINVAL);
+		if (cmd == BTRFSIOC_DEV_ADD ? device->devid != 0 ||
+		    device->path[0] == '\0' :
+		    (device->devid == 0) == (device->path[0] == '\0'))
+			return (EINVAL);
+		fd = device->fd;
+	} else if (cmd == BTRFSIOC_TREE) {
 		fd = tree->fd;
 		if (tree->parent_fd != -1) {
 			parent = fd_getfile(p->p_fd, tree->parent_fd);
@@ -174,7 +187,9 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	else {
 		error = vfs_busy(mp, VB_READ | VB_NOWAIT);
 		if (error == 0) {
-			if (cmd == BTRFSIOC_TREE)
+			if (isdevice)
+				error = btrfs_device_control(mp, cmd, device, p);
+			else if (cmd == BTRFSIOC_TREE)
 				error = btrfs_tree_control(vp, pvp, tree);
 			else if (isxattr)
 				error = btrfs_control_xattr(vp, cmd, xattr, p);

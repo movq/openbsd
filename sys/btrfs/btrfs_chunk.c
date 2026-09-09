@@ -36,8 +36,10 @@
  * returns the stripes, while abort restores eligibility. Evict physical
  * buffers before reassignment because data and metadata buffer sizes differ.
  * Imported bitmap records can exceed the available deletion reservation.
- * There is no device resizing or management; reusing partly occupied groups
- * would require relocation of live extents.
+ * Device removal moves physical chunks without changing logical extent
+ * addresses. A closed commit copies the final live extent set after metadata
+ * writeout and before super publication. Both old storage and old mappings
+ * remain usable until publication; failed copies never expose new mappings.
  */
 
 #include <sys/param.h>
@@ -45,13 +47,17 @@
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/malloc.h>
+#include <sys/mount.h>
 #include <sys/proc.h>
 
 #include <btrfs/btrfs_var.h>
 
 enum btrfs_chunk_action {
 	BTRFS_CHUNK_ADD,
-	BTRFS_CHUNK_REMOVE
+	BTRFS_CHUNK_REMOVE,
+	BTRFS_CHUNK_MOVE,
+	BTRFS_DEVICE_ADD,
+	BTRFS_DEVICE_REMOVE
 };
 
 /*
@@ -59,6 +65,9 @@ enum btrfs_chunk_action {
  * Preparation owns replacement indexes and either a private new group or an
  * existing group's exclusion from reservations. Other indexed groups are
  * borrowed. Roots belong to the filesystem; no tree paths survive preparation.
+ * A move borrows its existing group and stages both device items and one
+ * mapping. An add owns its unpublished device; a device removal borrows its
+ * member until the ioctl caller can erase and close it after detachment.
  *
  * After application, chunk_execute transfers the whole operation to the
  * transaction before dropping its handle. Only btrfs_chunk_publish or
@@ -74,6 +83,7 @@ enum btrfs_chunk_action {
  * replenishment fails after durable publication.
  */
 struct btrfs_chunk_operation {
+	struct btrfs_fs			*fs;
 	enum btrfs_chunk_action		 action;
 	struct btrfs_chunk_map		 chunk;
 	struct btrfs_chunk_map		*chunks;
@@ -87,6 +97,10 @@ struct btrfs_chunk_operation {
 	struct btrfs_trans_reservation	 reservation;
 	struct btrfs_dev_item		 device;
 	struct btrfs_device		*member;
+	struct btrfs_device		*source;
+	struct btrfs_dev_item		 source_item;
+	struct btrfs_chunk_map		 oldchunk;
+	unsigned int			 index;
 	unsigned int			 nfree;
 	uint32_t			 itemsize;
 	uint8_t				 record[offsetof(struct btrfs_chunk,
@@ -115,6 +129,8 @@ chunk_free_group(struct btrfs_block_group *group)
 static void
 chunk_discard(struct btrfs_chunk_operation *op)
 {
+	if (op->action == BTRFS_DEVICE_ADD && op->member != NULL)
+		btrfs_close_member(op->fs, op->member, curproc);
 	if (op->group != NULL) {
 		if (op->action == BTRFS_CHUNK_REMOVE) {
 			mtx_enter(&op->group->bbg_lock);
@@ -222,7 +238,9 @@ chunk_place(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op,
 	int error;
 
 	for (i = 0; i < bmp->bm_ndevices; i++) {
-		device = &bmp->bm_devices[i];
+		device = bmp->bm_devices[i];
+		if (device == op->source)
+			continue;
 		available = letoh64(device->bd_item.total_bytes) -
 		    letoh64(device->bd_item.bytes_used);
 		if (available > most) {
@@ -231,14 +249,17 @@ chunk_place(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op,
 		}
 	}
 	for (d = 0; d < bmp->bm_ndevices; d++) {
-		device = &bmp->bm_devices[(first + d) % bmp->bm_ndevices];
+		device = bmp->bm_devices[(first + d) % bmp->bm_ndevices];
+		if (device == op->source)
+			continue;
 		device_size = letoh64(device->bd_item.total_bytes);
 		available = device_size - letoh64(device->bd_item.bytes_used);
 		if (needed > available / chunk->nmirrors)
 			continue;
 		chunk->length = base;
 		/* Leave headroom for metadata and small growth trials. */
-		if (chunk->type & BTRFS_BLOCK_GROUP_DATA)
+		if (op->action != BTRFS_CHUNK_MOVE &&
+		    (chunk->type & BTRFS_BLOCK_GROUP_DATA))
 			chunk->length = MAX(base, MIN(256ULL * 1024 * 1024,
 			    (available / (10 * chunk->nmirrors)) & ~65535ULL));
 		for (j = 0; j < chunk->nmirrors; j++) {
@@ -265,7 +286,8 @@ chunk_place(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op,
 				op->member = device;
 				return (0);
 			}
-			if (chunk->length <= 1024 * 1024)
+			if (op->action == BTRFS_CHUNK_MOVE ||
+			    chunk->length <= 1024 * 1024)
 				break;
 			chunk->length = (chunk->length / 2) & ~65535ULL;
 		}
@@ -381,7 +403,8 @@ chunk_prepare(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 	    sizeof(op->device)) != 0)
 		return (EINVAL);
 	bytes = op->chunk.length * op->chunk.nmirrors;
-	if (op->action == BTRFS_CHUNK_ADD) {
+	if (op->action == BTRFS_CHUNK_ADD ||
+	    op->action == BTRFS_CHUNK_MOVE) {
 		if (used > letoh64(op->device.total_bytes) ||
 		    bytes > letoh64(op->device.total_bytes) - used)
 			return (EINVAL);
@@ -405,15 +428,40 @@ chunk_prepare(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 	return (0);
 }
 
+static void
+chunk_encode(struct btrfs_chunk_operation *op)
+{
+	struct btrfs_chunk_map *chunk = &op->chunk;
+	struct btrfs_chunk *item = (struct btrfs_chunk *)op->record;
+	unsigned int j;
+
+	item->length = htole64(chunk->length);
+	item->owner = htole64(chunk->owner);
+	item->stripe_len = htole64(chunk->stripe_len);
+	item->type = htole64(chunk->type);
+	item->io_align = htole32(chunk->io_align);
+	item->io_width = htole32(chunk->io_width);
+	item->sector_size = htole32(chunk->sector_size);
+	item->num_stripes = htole16(chunk->nmirrors);
+	item->sub_stripes = htole16(chunk->sub_stripes);
+	for (j = 0; j < chunk->nmirrors; j++) {
+		item->stripe[j].devid = htole64(chunk->devid[j]);
+		item->stripe[j].offset = htole64(chunk->physical[j]);
+		memcpy(item->stripe[j].dev_uuid, chunk->dev_uuid[j],
+		    BTRFS_UUID_SIZE);
+	}
+	op->itemsize = offsetof(struct btrfs_chunk, stripe) +
+	    chunk->nmirrors * sizeof(struct btrfs_stripe);
+}
+
 static int
 chunk_add_prepare(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 {
 	struct btrfs_chunk_map *chunk = &op->chunk;
 	struct btrfs_block_group *group;
 	struct btrfs_free_extent *space;
-	struct btrfs_chunk *item = (struct btrfs_chunk *)op->record;
 	struct btrfs_key key = { 0 };
-	unsigned int count = bmp->bm_nchunks, j;
+	unsigned int count = bmp->bm_nchunks;
 
 	op->count = count + 1;
 	op->chunks = mallocarray(op->count, sizeof(*op->chunks),
@@ -437,23 +485,7 @@ chunk_add_prepare(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 	group->bbg_free_bytes = chunk->length;
 	op->groups[count] = group;
 
-	item->length = htole64(chunk->length);
-	item->owner = htole64(chunk->owner);
-	item->stripe_len = htole64(chunk->stripe_len);
-	item->type = htole64(chunk->type);
-	item->io_align = htole32(chunk->io_align);
-	item->io_width = htole32(chunk->io_width);
-	item->sector_size = htole32(chunk->sector_size);
-	item->num_stripes = htole16(chunk->nmirrors);
-	item->sub_stripes = htole16(chunk->sub_stripes);
-	for (j = 0; j < chunk->nmirrors; j++) {
-		item->stripe[j].devid = htole64(chunk->devid[j]);
-		item->stripe[j].offset = htole64(chunk->physical[j]);
-		memcpy(item->stripe[j].dev_uuid, chunk->dev_uuid[j],
-		    BTRFS_UUID_SIZE);
-	}
-	op->itemsize = offsetof(struct btrfs_chunk, stripe) +
-	    chunk->nmirrors * sizeof(struct btrfs_stripe);
+	chunk_encode(op);
 	if (chunk->type & BTRFS_BLOCK_GROUP_SYSTEM) {
 		op->system_size = sizeof(key) + op->itemsize;
 		if (letoh32(bmp->bm_super.sys_chunk_array_size) >
@@ -594,6 +626,46 @@ chunk_remove_apply(struct btrfs_trans_handle *handle,
 	return (error);
 }
 
+static int
+chunk_move_apply(struct btrfs_trans_handle *handle,
+    struct btrfs_chunk_operation *op)
+{
+	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_key key = { 0 };
+	struct btrfs_dev_extent extent = { 0 };
+	unsigned int i;
+	int error;
+
+	key.objectid = htole64(BTRFS_DEV_ITEMS_OBJECTID);
+	key.type = BTRFS_DEV_ITEM_KEY;
+	key.offset = op->source_item.devid;
+	error = btrfs_replace_item(handle, op->chunk_root, &key,
+	    &op->source_item, sizeof(op->source_item));
+	key.objectid = htole64(BTRFS_FIRST_CHUNK_TREE_OBJECTID);
+	key.type = BTRFS_CHUNK_ITEM_KEY;
+	key.offset = htole64(op->chunk.logical);
+	if (error == 0)
+		error = btrfs_replace_item(handle, op->chunk_root, &key,
+		    op->record, op->itemsize);
+	extent.chunk_tree = htole64(BTRFS_CHUNK_TREE_OBJECTID);
+	extent.chunk_objectid = htole64(BTRFS_FIRST_CHUNK_TREE_OBJECTID);
+	extent.chunk_offset = htole64(op->chunk.logical);
+	extent.length = htole64(op->chunk.length);
+	memcpy(extent.chunk_tree_uuid, bmp->bm_chunk_tree_uuid, BTRFS_UUID_SIZE);
+	for (i = 0; error == 0 && i < op->chunk.nmirrors; i++) {
+		key.objectid = htole64(op->oldchunk.devid[i]);
+		key.type = BTRFS_DEV_EXTENT_KEY;
+		key.offset = htole64(op->oldchunk.physical[i]);
+		error = btrfs_delete_item(handle, op->dev_root, &key);
+		key.objectid = htole64(op->chunk.devid[i]);
+		key.offset = htole64(op->chunk.physical[i]);
+		if (error == 0)
+			error = btrfs_insert_item(handle, op->dev_root, &key,
+			    &extent, sizeof(extent));
+	}
+	return (error);
+}
+
 /*
  * Consumes a prepared operation on every return. Join failure is pre-mutation;
  * application failure aborts the transaction before releasing the operation.
@@ -631,13 +703,21 @@ chunk_execute(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 	key.objectid = htole64(BTRFS_DEV_ITEMS_OBJECTID);
 	key.type = BTRFS_DEV_ITEM_KEY;
 	key.offset = op->member->bd_item.devid;
-	error = btrfs_replace_item(handle, op->chunk_root, &key, &op->device,
-	    sizeof(op->device));
+	if (op->action == BTRFS_DEVICE_ADD)
+		error = btrfs_insert_item(handle, op->chunk_root, &key,
+		    &op->device, sizeof(op->device));
+	else if (op->action == BTRFS_DEVICE_REMOVE)
+		error = btrfs_delete_item(handle, op->chunk_root, &key);
+	else
+		error = btrfs_replace_item(handle, op->chunk_root, &key,
+		    &op->device, sizeof(op->device));
 	if (error == 0) {
 		if (op->action == BTRFS_CHUNK_ADD)
 			error = chunk_add_apply(handle, op);
-		else
+		else if (op->action == BTRFS_CHUNK_REMOVE)
 			error = chunk_remove_apply(handle, op);
+		else if (op->action == BTRFS_CHUNK_MOVE)
+			error = chunk_move_apply(handle, op);
 	}
 	if (error != 0) {
 		btrfs_trans_abort(handle, error);
@@ -651,6 +731,180 @@ chunk_execute(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 	if (error == 0)
 		error = btrfs_trans_commit(bmp, generation, curproc);
 	return (error);
+}
+
+/*
+ * Caller owns the mount administration lock, chunk lock and writer gate.
+ * One chunk per commit bounds reservations and makes interrupted evacuation
+ * restartable without a separate relocation tree or persistent cursor.
+ * ADD consumes the new member on every return.
+ */
+int
+btrfs_device_change(struct btrfs_fs *bmp, struct btrfs_device *device, int add)
+{
+	struct btrfs_chunk_operation *op;
+	uint64_t bytes;
+	unsigned int i;
+	int error;
+
+	rw_assert_wrlock(&bmp->bm_chunk_alloc_lock);
+	if (!add) {
+		for (i = 0; i < bmp->bm_nchunks; i++) {
+			if (bmp->bm_chunks[i].device[0] != device)
+				continue;
+			op = malloc(sizeof(*op), M_BTRFS, M_WAITOK | M_ZERO);
+			op->action = BTRFS_CHUNK_MOVE;
+			op->index = i;
+			op->source = device;
+			op->oldchunk = op->chunk = bmp->bm_chunks[i];
+			error = chunk_place(bmp, op, op->chunk.length);
+			if (error == 0)
+				error = chunk_prepare(bmp, op);
+			if (error != 0) {
+				chunk_discard(op);
+				return (error);
+			}
+			bytes = op->chunk.length * op->chunk.nmirrors;
+			op->source_item = device->bd_item;
+			KASSERT(letoh64(op->source_item.bytes_used) >= bytes);
+			op->source_item.bytes_used = htole64(
+			    letoh64(op->source_item.bytes_used) - bytes);
+			chunk_encode(op);
+			error = chunk_execute(bmp, op);
+			if (error != 0)
+				return (error);
+		}
+		KASSERT(device->bd_item.bytes_used == 0);
+	}
+	op = malloc(sizeof(*op), M_BTRFS, M_WAITOK | M_ZERO);
+	op->fs = bmp;
+	op->action = add ? BTRFS_DEVICE_ADD : BTRFS_DEVICE_REMOVE;
+	op->member = device;
+	op->device = device->bd_item;
+	error = btrfs_get_root(bmp, BTRFS_CHUNK_TREE_OBJECTID, &op->chunk_root);
+	if (error != 0) {
+		chunk_discard(op);
+		return (error);
+	}
+	op->reservation.btr_metadata =
+	    (uint64_t)letoh32(bmp->bm_super.nodesize) *
+	    BTRFS_RECLAIM_METADATA_BLOCKS;
+	op->reservation.btr_system =
+	    (uint64_t)letoh32(bmp->bm_super.nodesize) * BTRFS_CHUNK_SYSTEM_BLOCKS;
+	op->reservation.btr_reclaim = op->reservation.btr_chunk = 1;
+	return (chunk_execute(bmp, op));
+}
+
+/* Super publication includes a pending add, and omits a pending removal. */
+struct btrfs_device *
+btrfs_commit_device(struct btrfs_fs *bmp, unsigned int index)
+{
+	struct btrfs_chunk_operation *op = bmp->bm_transaction == NULL ?
+	    NULL : bmp->bm_transaction->bt_chunk_op;
+	unsigned int i;
+
+	/*
+	 * Publish the new member first. Once an old member advertises the new
+	 * count, the new device must already have a discoverable UUID/super.
+	 */
+	if (op != NULL && op->action == BTRFS_DEVICE_ADD) {
+		if (index == 0)
+			return (op->member);
+		index--;
+	}
+	for (i = 0; i < bmp->bm_ndevices; i++) {
+		if (op != NULL && op->action == BTRFS_DEVICE_REMOVE &&
+		    bmp->bm_devices[i] == op->member)
+			continue;
+		if (index-- == 0)
+			return (bmp->bm_devices[i]);
+	}
+	return (NULL);
+}
+
+int
+btrfs_chunk_copy(struct btrfs_transaction *trans)
+{
+	struct btrfs_chunk_operation *op = trans->bt_chunk_op;
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	const struct btrfs_key *found;
+	const struct btrfs_extent_item *item;
+	const struct btrfs_tree_block_info *info;
+	const uint8_t *data;
+	uint64_t logical, length, flags, end, generation;
+	uint32_t size;
+	int error, metadata, level;
+
+	if (op == NULL || op->action != BTRFS_CHUNK_MOVE)
+		return (0);
+	KASSERT(trans->bt_writers == 0 && !trans->bt_commit_handle);
+	error = btrfs_get_root(bmp, BTRFS_EXTENT_TREE_OBJECTID, &root);
+	if (error != 0)
+		return (error);
+	end = op->chunk.logical + op->chunk.length;
+	key.objectid = htole64(op->chunk.logical);
+	error = btrfs_search_lower_bound(root, &key, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &found, &data, &size);
+		if (error != 0 || letoh64(found->objectid) >= end)
+			break;
+		if (found->type != BTRFS_EXTENT_ITEM_KEY &&
+		    found->type != BTRFS_METADATA_ITEM_KEY) {
+			error = btrfs_next_item(&path);
+			continue;
+		}
+		if (size < sizeof(*item)) {
+			error = EINVAL;
+			break;
+		}
+		item = (const void *)data;
+		flags = letoh64(item->flags);
+		metadata = (flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) != 0;
+		generation = letoh64(item->generation);
+		logical = letoh64(found->objectid);
+		length = found->type == BTRFS_METADATA_ITEM_KEY ?
+		    letoh32(bmp->bm_super.nodesize) : letoh64(found->offset);
+		if (letoh64(item->refs) == 0 || generation == 0 ||
+		    generation > trans->bt_generation ||
+		    (flags & (BTRFS_EXTENT_FLAG_TREE_BLOCK |
+		    BTRFS_EXTENT_FLAG_DATA)) != (metadata ?
+		    BTRFS_EXTENT_FLAG_TREE_BLOCK : BTRFS_EXTENT_FLAG_DATA) ||
+		    length > end - logical ||
+		    (metadata && length != letoh32(bmp->bm_super.nodesize))) {
+			error = EINVAL;
+			break;
+		}
+		level = -1;
+		if (metadata) {
+			if (found->type == BTRFS_METADATA_ITEM_KEY)
+				level = letoh64(found->offset);
+			else {
+				if (size < sizeof(*item) + sizeof(*info)) {
+					error = EINVAL;
+					break;
+				}
+				info = (const void *)(item + 1);
+				level = info->level;
+			}
+			if (level < 0 || level >= BTRFS_MAX_LEVEL) {
+				error = EINVAL;
+				break;
+			}
+		} else if (found->type == BTRFS_METADATA_ITEM_KEY) {
+			error = EINVAL;
+			break;
+		}
+		error = btrfs_copy_extent(bmp, &op->chunk, logical, length,
+		    level, generation);
+		if (error != 0)
+			break;
+		error = btrfs_next_item(&path);
+	}
+	btrfs_release_path(&path);
+	return (error == ENOENT ? 0 : error);
 }
 
 /*
@@ -789,12 +1043,53 @@ btrfs_chunk_update_super(struct btrfs_transaction *trans,
     struct btrfs_super_block *sb)
 {
 	struct btrfs_chunk_operation *op = trans->bt_chunk_op;
-	uint32_t size;
+	struct btrfs_key *key;
+	struct btrfs_chunk *chunk;
+	uint32_t size, offset, length;
 
 	if (op == NULL)
 		return (0);
 	if (sb->dev_item.devid == op->device.devid)
 		sb->dev_item = op->device;
+	if (op->action == BTRFS_DEVICE_ADD) {
+		sb->num_devices = htole64(letoh64(sb->num_devices) + 1);
+		sb->total_bytes = htole64(letoh64(sb->total_bytes) +
+		    letoh64(op->device.total_bytes));
+	} else if (op->action == BTRFS_DEVICE_REMOVE) {
+		sb->num_devices = htole64(letoh64(sb->num_devices) - 1);
+		sb->total_bytes = htole64(letoh64(sb->total_bytes) -
+		    letoh64(op->device.total_bytes));
+		/* The template identity must itself still be a live member. */
+		if (sb->dev_item.devid == op->device.devid)
+			sb->dev_item = btrfs_commit_device(trans->bt_mount, 0)->
+			    bd_item;
+	} else if (op->action == BTRFS_CHUNK_MOVE) {
+		if (sb->dev_item.devid == op->source_item.devid)
+			sb->dev_item = op->source_item;
+		if (!(op->chunk.type & BTRFS_BLOCK_GROUP_SYSTEM))
+			return (0);
+		size = letoh32(sb->sys_chunk_array_size);
+		for (offset = 0; offset < size; offset += length) {
+			if (size - offset < sizeof(*key) +
+			    offsetof(struct btrfs_chunk, stripe))
+				return (EINVAL);
+			key = (void *)(sb->sys_chunk_array + offset);
+			chunk = (void *)(key + 1);
+			length = sizeof(*key) +
+			    offsetof(struct btrfs_chunk, stripe) +
+			    letoh16(chunk->num_stripes) *
+			    sizeof(struct btrfs_stripe);
+			if (length > size - offset)
+				return (EINVAL);
+			if (letoh64(key->offset) != op->chunk.logical)
+				continue;
+			if (length != sizeof(*key) + op->itemsize)
+				return (EINVAL);
+			memcpy(chunk, op->record, op->itemsize);
+			return (0);
+		}
+		return (EINVAL);
+	}
 	if (op->system_size != 0) {
 		size = letoh32(sb->sys_chunk_array_size);
 		if (size > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE ||
@@ -815,6 +1110,8 @@ btrfs_chunk_device_item(struct btrfs_transaction *trans,
 
 	*item = op != NULL && op->member == device ?
 	    op->device : device->bd_item;
+	if (op != NULL && op->source == device)
+		*item = op->source_item;
 }
 
 /* Called only after durable commit, before the next generation's reserves. */
@@ -831,6 +1128,40 @@ btrfs_chunk_publish(struct btrfs_transaction *trans)
 		return;
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!trans->bt_commit_handle);
+	/*
+	 * Old-map reads finish before a stripe can be reused or a member closed.
+	 * Busy returned buffers are drained by invalidate/close below.
+	 */
+	rw_enter_write(&bmp->bm_io_lock);
+	if (op->action == BTRFS_DEVICE_ADD) {
+		bmp->bm_devices[bmp->bm_ndevices++] = op->member;
+		op->member = NULL;
+		goto done;
+	}
+	if (op->action == BTRFS_DEVICE_REMOVE) {
+		for (count = 0; bmp->bm_devices[count] != op->member; count++)
+			KASSERT(count + 1 < bmp->bm_ndevices);
+		bmp->bm_ndevices--;
+		memmove(&bmp->bm_devices[count], &bmp->bm_devices[count + 1],
+		    (bmp->bm_ndevices - count) * sizeof(*bmp->bm_devices));
+		bmp->bm_devices[bmp->bm_ndevices] = NULL;
+		/* The ioctl caller now owns erasure and closure of this member. */
+		op->member = NULL;
+		goto done;
+	}
+	if (op->action == BTRFS_CHUNK_MOVE) {
+		rw_enter_write(&bmp->bm_mapping_lock);
+		bmp->bm_chunks[op->index] = op->chunk;
+		op->member->bd_item = op->device;
+		op->source->bd_item = op->source_item;
+		rw_exit_write(&bmp->bm_mapping_lock);
+		btrfs_space_moved(bmp, bmp->bm_block_groups[op->index],
+		    &op->oldchunk);
+		for (count = 0; count < op->oldchunk.nmirrors; count++)
+			btrfs_invalidate_physical(bmp, op->source,
+			    op->oldchunk.physical[count], op->oldchunk.length);
+		goto done;
+	}
 	rw_enter_write(&bmp->bm_mapping_lock);
 	count = bmp->bm_nchunks;
 	KASSERT(bmp->bm_nblock_groups == count);
@@ -853,6 +1184,8 @@ btrfs_chunk_publish(struct btrfs_transaction *trans)
 	op->group = NULL;
 	free(oldchunks, M_BTRFS, count * sizeof(*oldchunks));
 	free(oldgroups, M_BTRFS, count * sizeof(*oldgroups));
+done:
+	rw_exit_write(&bmp->bm_io_lock);
 	trans->bt_chunk_op = NULL;
 	chunk_discard(op);
 }
