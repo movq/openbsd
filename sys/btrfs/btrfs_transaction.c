@@ -746,7 +746,6 @@ btrfs_log_fsync(struct btrfs_node *node, uint64_t generation, struct proc *p)
 	if (trans->bt_error != 0)
 		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
 	if (trans->bt_log_full_commit || trans->bt_chunk_op != NULL ||
-	    node->bn_inode.bi_generation > bmp->bm_last_transid ||
 	    node->bn_inode.bi_nlink == 0)
 		error = EAGAIN;
 	else {

@@ -376,6 +376,7 @@ btrfs_create_inode(struct btrfs_node *dir, const char *name, size_t namelen,
 	if (error != 0)
 		goto out;
 	generation = handle->bth_transaction->bt_generation;
+	handle->bth_log_create = 1;
 	getnanotime(&now);
 	memset(&inode, 0, sizeof(inode));
 	inode.generation = inode.transid = htole64(generation);

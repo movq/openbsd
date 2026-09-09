@@ -1883,6 +1883,25 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
 		if (btrfs_space_ranges_overlap(bytenr, length,
 		    extent->bte_bytenr, extent->bte_length)) {
+			/*
+			 * Submitted data may have been logged and overwritten
+			 * within this generation. Its last reference is gone,
+			 * but a published log can still name it. Hold it outside
+			 * allocation accounting until durable full commit.
+			 */
+			if (extent->bte_type == BTRFS_BLOCK_GROUP_DATA &&
+			    extent->bte_bytenr == bytenr &&
+			    extent->bte_length == length) {
+				TAILQ_REMOVE(&trans->bt_allocated_extents,
+				    extent, bte_entry);
+				group->bbg_allocated_bytes -= length;
+				trans->bt_allocated_bytes -= length;
+				group->bbg_excluded_bytes += length;
+				trans->bt_space_seq++;
+				TAILQ_INSERT_TAIL(&bmp->bm_log_extents,
+				    extent, bte_entry);
+				goto unlock;
+			}
 			/* New, detached metadata has no committed owner. */
 			if (extent->bte_discarded &&
 			    (extent->bte_type == BTRFS_BLOCK_GROUP_METADATA ||

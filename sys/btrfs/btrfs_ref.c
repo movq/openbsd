@@ -642,6 +642,38 @@ btrfs_materialize_tree_ref(struct btrfs_trans_handle *handle,
 	return (error);
 }
 
+/*
+ * A logged payload leaves the ordered index and becomes ordinary COW data.
+ * Materialize its add so a later overwrite cannot cancel the allocation's
+ * only reference without retiring its checksums and protecting its storage.
+ */
+int
+btrfs_materialize_ordered_ref(struct btrfs_trans_handle *handle,
+    const struct btrfs_ordered_extent *ordered)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_delayed_data_ref match = { 0 }, *ref;
+	int error;
+
+	KASSERT(handle->bth_commit && trans->bt_writers == 0);
+	match.bdr_bytenr = ordered->boe_bytenr;
+	match.bdr_length = ordered->boe_length;
+	match.bdr_owner = btrfs_ref_data(ordered->boe_treeid,
+	    ordered->boe_objectid, ordered->boe_file_offset);
+	mtx_enter(&trans->bt_lock);
+	ref = RBT_FIND(btrfs_data_ref_tree, &trans->bt_data_ref_index, &match);
+	if (ref == NULL || ref->bdr_ref_mod != 1) {
+		mtx_leave(&trans->bt_lock);
+		return (EINVAL);
+	}
+	RBT_REMOVE(btrfs_data_ref_tree, &trans->bt_data_ref_index, ref);
+	TAILQ_REMOVE(&trans->bt_delayed_data_refs, ref, bdr_entry);
+	mtx_leave(&trans->bt_lock);
+	error = btrfs_materialize_data_ref(handle, ref);
+	free(ref, M_BTRFS, sizeof(*ref));
+	return (error);
+}
+
 static int
 btrfs_ref_owner_valid(const struct btrfs_ref_owner *owner, uint32_t sectorsize,
     int metadata)

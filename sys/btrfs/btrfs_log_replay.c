@@ -387,12 +387,14 @@ log_replay_csums(struct btrfs_trans_handle *handle, struct log_tree *tree,
 	struct btrfs_inode inode;
 	struct log_item match, *item;
 	uint8_t csum[BTRFS_SUPPORTED_CSUM_MAX];
-	uint64_t start, end, delta, span;
+	uint64_t start, end, delta, span, length;
 	uint32_t sector = letoh32(bmp->bm_super.sectorsize);
+	uint32_t capacity = letoh32(bmp->bm_super.nodesize) / 4;
 	size_t csum_size = btrfs_csum_size(&bmp->bm_super);
 	int error;
 
-	if (extent->bfe_type != BTRFS_FILE_EXTENT_REG)
+	if (extent->bfe_type != BTRFS_FILE_EXTENT_REG ||
+	    extent->bfe_disk_bytenr == 0)
 		return (0);
 	error = btrfs_find_inode(tree->root, ino, &inode);
 	if (error != 0 || (inode.bi_flags & BTRFS_INODE_NODATASUM))
@@ -407,7 +409,7 @@ log_replay_csums(struct btrfs_trans_handle *handle, struct log_tree *tree,
 	memset(&match, 0, sizeof(match));
 	match.key.objectid = htole64(BTRFS_EXTENT_CSUM_OBJECTID);
 	match.key.type = BTRFS_EXTENT_CSUM_KEY;
-	for (; start < end; start += sector) {
+	while (start < end) {
 		match.key.offset = htole64(start);
 		item = RBT_NFIND(log_items, &tree->items, &match);
 		if (item == NULL)
@@ -422,20 +424,25 @@ log_replay_csums(struct btrfs_trans_handle *handle, struct log_tree *tree,
 		delta = start - letoh64(item->key.offset);
 		if (delta >= span)
 			goto committed;
+		length = MIN(end - start, span - delta);
+		length = MIN(length, capacity / csum_size * sector);
 		error = btrfs_space_replay_reserve(handle);
 		if (error == 0)
-			error = btrfs_delete_data_csums(handle, start, sector);
+			error = btrfs_delete_data_csums(handle, start, length);
 		if (error == 0)
 			error = btrfs_insert_data_csums(handle, start,
-			    item->data + delta / sector * csum_size, 1);
+			    item->data + delta / sector * csum_size,
+			    length / sector);
 		if (error != 0)
 			return (error);
+		start += length;
 		continue;
 committed:
 		/* Unchanged mappings may borrow their committed checksums. */
 		error = btrfs_lookup_data_csum(bmp, start, csum);
 		if (error != 0)
 			return (error);
+		start += sector;
 	}
 	return (0);
 }
