@@ -30,7 +30,7 @@
  * extent-tree references. Data references are created only during replay.
  *
  * Writer and recovery share this owned, sorted item collection. The writer
- * collects one subvolume at a time; recovery retains the validated forest.
+ * collects one inode at a time; recovery retains the validated forest.
  * Neither collection survives its operation.
  */
 struct log_item {
