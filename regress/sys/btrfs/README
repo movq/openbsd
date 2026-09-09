@@ -811,11 +811,15 @@ The matching kernel must already be installed. Run from the host:
         compressed prealloc shared
     python3 regress/sys/btrfs/log_tree.py --writers openbsd \
         --cases overwrite resize concurrent unsynced
+    python3 regress/sys/btrfs/log_tree.py --writers openbsd \
+        --cases create newfiles incremental isolation cycles
+    python3 regress/sys/btrfs/log_tree.py --writers openbsd --cases deep
+    python3 regress/sys/btrfs/log_tree.py --writers openbsd --cases commit-crash
     python3 regress/sys/btrfs/log_tree.py --cases subvol
     python3 regress/sys/btrfs/log_tree.py --nodesize 16384 --csum xxhash \
         --cases data sparse --readonly --results /home/mike/obj/log-16k
     python3 regress/sys/btrfs/log_tree.py --writers openbsd \
-        --cases create unlink rename hardlink fallback --expect-commit
+        --cases unlink rename hardlink fallback --expect-commit
 
 Each log test asserts a nonzero superblock log pointer after fsync, pauses
 the writer, saves the crash image, and resets the guest without unmounting.
@@ -829,7 +833,28 @@ for example for the combined namespace and crossdir workloads.
 The extref case checks link-count repair with committed extended references.
 The subvol case logs files in two subvolumes in the same transaction.
 The overwrite, resize and concurrent cases exercise repeated fsync and the
-transition from logged data to a later full commit.
+transition from logged data to a later full commit. OpenBSD's overwrite and
+resize workers assert that every fsync publishes a log without advancing the
+committed generation. The concurrent case also reads an unrelated pending
+payload while the writers publish and retire ordered extents.
+The incremental case changes permissions and fsyncs 48 distinct 1 MiB files
+in one generation. It inspects each retained forest in the crash image,
+checks reuse of earlier log blocks, and checks bounded checksum records.
+The deep variant uses 384 files to exercise internal-node splits and a
+multi-level log. Use 4 KiB nodes and CRC32C for these two layout assertions.
+The isolation case leaves an unrelated file dirty before fsync, overwrites
+that pending data and previously logged data, and fsyncs a second file.
+Recovery must preserve the first file's earlier publication and the unrelated
+file's committed contents, without any intervening full commit.
+The cycles case performs eight write/fsync/overwrite/fsync/truncate/fsync
+cycles in one generation, checks live reads, explicitly commits, then logs
+another overwrite. The newfiles case logs siblings beneath new nested
+directories and leaves a final sibling unsynced; recovery must recreate only
+the published names.
+The commit-crash case overwrites an entire logged allocation without fsync,
+then interrupts a full commit at superblock publication. Both readers must
+still recover the earlier logged payload after allocation-reference and
+free-space updates have reached disk.
 The OpenBSD-only unsynced writer case repeats fsync on a tracked inode, then
 appends and renames without another fsync. Both readers must recover the
 published contents and original name after the crash.
@@ -870,21 +895,37 @@ reusing any published or unpublished log blocks until full commit. Data and
 log blocks reach all required mirrors and pass a device-cache barrier before
 the superblock is written, followed by another barrier.
 
-The fsync optimization currently covers existing regular files with committed
-namespace. New inodes, namespace/root changes, orphan handling, and chunk
-operations force a full transaction commit. Exhausting log allocation space
-before publication also falls back to commit. The writer logs complete inode
-metadata, xattrs and extent mappings, including explicit holes and checksums,
-and rebuilds the set of previously logged inodes on each publication. Between
-publications it retains only (subvolume, inode) identities. Temporary item
-memory covers one subvolume at a time and is freed after packing; log block
-exclusions last until full commit. Collection and I/O costs still scale with
-those files' mappings; this is more conservative than Linux's incremental
-fast-fsync implementation. Pending data that has already been submitted is
-immutable: overlapping writes and resizing commit first. fsync publication
-uses the existing transaction close/drain
-gate and never acquires unrelated vnode locks. A fallback keeps joins closed
-through full commit; successful log publication reopens the same generation.
+The fsync optimization covers existing and newly created regular files.
+Creation records the new inode's reference and any new parent ancestry,
+ending at an existence-only record for a committed ancestor. It does not log
+unrelated directory entries. Other namespace/root changes, orphan handling,
+and chunk operations force a full transaction commit. Exhausting log
+allocation space before publication also falls back to commit; ordinary
+transaction reservation pressure can still commit before a write joins.
+
+The writer collects the target inode's complete metadata, xattrs and extent
+mappings, including explicit holes. It replaces that inode's key range by
+copying only affected paths in the previous immutable log. Other inodes and
+subvolumes retain their published items and disk blocks. There is no retained
+inode identity set or full-forest rebuild. Temporary item memory covers one
+inode and its checksum ranges; normal extent-buffer caching supplies old log
+paths. Collection still scales with the target inode's mappings.
+
+Checksums use contiguous records bounded to a quarter of a node, deduplicating
+shared/compressed ranges and preserving the prefixes/suffixes of older ranges
+when updating the log. Replay replaces checksums in bounded ranges as well.
+At 4 KiB nodes and sectors with CRC32C, a full record covers 1 MiB of data.
+
+Fsync submits only the target inode's ordered extents. After successful data
+I/O it materializes their allocation references and removes their payloads
+from the ordered index. Subsequent overlapping writes and ordinary truncation
+use normal COW without requiring a full commit. If the last reference to data
+allocated in this generation is dropped, its space moves from allocated to
+excluded accounting until full commit, protecting any earlier published log.
+Log block exclusions have the same lifetime. Fsync publication uses the
+existing transaction close/drain gate and never acquires unrelated vnode
+locks. A fallback keeps joins closed through full commit; successful log
+publication reopens the same generation.
 
 Recovery validates and excludes the complete log forest and its new data
 allocations before any COW. It creates inodes, removes logged directory

@@ -22,6 +22,10 @@ import time
 MIB = 1024 * 1024
 
 
+def incremental_files(case):
+    return 384 if case == "deep" else 48
+
+
 def data(tag, size=256 * 1024):
     return hashlib.shake_256(tag.encode()).digest(size)
 
@@ -49,11 +53,26 @@ def seed(root, case):
             subprocess.run(["btrfs", "subvolume", "create", str(root / name)],
                            check=True)
             (root / name / "file").write_bytes(data(name))
+    if case in ("incremental", "deep"):
+        for i in range(incremental_files(case)):
+            (root / f"many-{i:03d}").write_bytes(data(f"seed-{i}", MIB))
     os.sync()
 
 
 def mutate(root, case):
     root = Path(root)
+    publications = []
+
+    def published(fd):
+        os.fsync(fd)
+        if not sys.platform.startswith("linux"):
+            info = super_info("/dev/rsd1c")
+            assert info["log_root"], info
+            if publications:
+                assert info["generation"] == publications[0]["generation"], (
+                    "unexpected full commit", publications[-1], info)
+            publications.append(info)
+
     if sys.platform.startswith("linux"):
         # Finish Linux's first-write chunk allocation before testing a log.
         (root / "unsynced").write_bytes(data("unsynced"))
@@ -61,7 +80,66 @@ def mutate(root, case):
         (root / "warmup" / "child").write_bytes(data("warmup", 17001))
         fsync(root / "warmup" / "child")
         os.sync()
-    if case == "data":
+    if case in ("incremental", "deep"):
+        for i in range(incremental_files(case)):
+            # Isolate log collection/publication from data allocation and
+            # transaction reservation pressure.
+            os.chmod(root / f"many-{i:03d}", 0o600)
+            fd = os.open(root / f"many-{i:03d}", os.O_RDWR)
+            published(fd)
+            os.close(fd)
+    elif case in ("isolation", "commit-crash"):
+        # Neither unrelated pending data nor an overwrite of a previously
+        # logged inode belongs to the second file's publication.
+        other = os.open(root / "unsynced", os.O_RDWR)
+        os.pwrite(other, data("pending", 4096), 0)
+        fd = os.open(root / "file", os.O_RDWR)
+        os.pwrite(fd, data("published", 65536), 0)
+        published(fd)
+        if case == "commit-crash":
+            # The full commit drops the last reference to this new logged
+            # allocation. Its storage must stay excluded until publication.
+            os.pwrite(fd, data("not-published", 65536), 0)
+        else:
+            os.pwrite(fd, data("not-published", 4096), 4096)
+        os.pwrite(other, data("still-pending", 4096), 0)
+        os.close(fd)
+        os.close(other)
+        fd = os.open(root / "second", os.O_RDWR)
+        os.pwrite(fd, data("second-change", 8192), 8192)
+        published(fd)
+        os.close(fd)
+    elif case == "cycles":
+        fd = os.open(root / "file", os.O_RDWR)
+        for i in range(8):
+            os.pwrite(fd, data(f"cycle-{i}", 65536), 0)
+            published(fd)
+            os.pwrite(fd, data(f"partial-{i}", 4096), 4096)
+            published(fd)
+            os.ftruncate(fd, 17001)
+            published(fd)
+            assert os.pread(fd, 17001, 0) == (
+                data(f"cycle-{i}", 4096) + data(f"partial-{i}", 4096) +
+                data(f"cycle-{i}", 65536)[8192:17001])
+        # Exercise retirement of overwritten logged allocations during the
+        # live full commit, then publish another log in the next generation.
+        os.sync()
+        assert super_info("/dev/rsd1c")["log_root"] == 0
+        publications.clear()
+        os.pwrite(fd, data("after-commit", 4096), 8192)
+        published(fd)
+        os.close(fd)
+    elif case == "newfiles":
+        (root / "newdir").mkdir()
+        (root / "newdir" / "nested").mkdir()
+        for i in range(8):
+            path = root / "newdir" / "nested" / f"child-{i}"
+            path.write_bytes(data(f"child-{i}", 17001))
+            fd = os.open(path, os.O_RDONLY)
+            published(fd)
+            os.close(fd)
+        (root / "newdir" / "nested" / "unpublished").write_bytes(b"unsynced")
+    elif case == "data":
         for name, offset, tag in (("file", 4096, "first"),
                                   ("second", 8192, "second-change"),
                                   ("file", 256 * 1024, "append")):
@@ -148,16 +226,16 @@ def mutate(root, case):
     elif case == "overwrite":
         fd = os.open(root / "file", os.O_RDWR)
         os.pwrite(fd, data("first", 8192), 4096)
-        os.fsync(fd)
+        published(fd)
         os.pwrite(fd, data("last", 4096), 8192)
-        os.fsync(fd)
+        published(fd)
         os.close(fd)
     elif case == "resize":
         fd = os.open(root / "file", os.O_RDWR)
         os.pwrite(fd, data("first", 8192), 4096)
-        os.fsync(fd)
+        published(fd)
         os.ftruncate(fd, 10001)
-        os.fsync(fd)
+        published(fd)
         os.close(fd)
     elif case in ("unsynced", "fallback"):
         # Exercise an already tracked inode, then edit mappings and namespace.
@@ -174,6 +252,21 @@ def mutate(root, case):
             fsync(root / "renamed")
     elif case == "concurrent":
         from concurrent.futures import ThreadPoolExecutor
+        import threading
+
+        pending = data("pending-reader")
+        other = os.open(root / "unsynced", os.O_RDWR)
+        assert os.pwrite(other, pending, 0) == len(pending)
+        ready, stop = threading.Event(), threading.Event()
+
+        def read():
+            count = 0
+            ready.set()
+            while not stop.is_set():
+                offset = count % (len(pending) // 4096) * 4096
+                assert os.pread(other, 4096, offset) == pending[offset:offset + 4096]
+                count += 1
+            assert count > 0
 
         def write(name):
             fd = os.open(root / name, os.O_RDWR)
@@ -182,10 +275,21 @@ def mutate(root, case):
                 os.fsync(fd)
             os.close(fd)
 
-        with ThreadPoolExecutor(2) as pool:
-            list(pool.map(write, ("file", "second")))
+        try:
+            with ThreadPoolExecutor(3) as pool:
+                reader = pool.submit(read)
+                ready.wait()
+                try:
+                    list(pool.map(write, ("file", "second")))
+                finally:
+                    stop.set()
+                reader.result()
+        finally:
+            os.close(other)
     else:
         raise ValueError(case)
+    if publications:
+        print("LOG_PUBLICATIONS " + json.dumps(publications), flush=True)
     print("FSYNC_COMPLETE", flush=True)
 
 
@@ -194,7 +298,25 @@ def verify(root, case):
     file_path = root / "file"
     expected = bytearray(data("file"))
     second = bytearray(data("second"))
-    if case == "data":
+    if case in ("incremental", "deep"):
+        for i in range(incremental_files(case)):
+            path = root / f"many-{i:03d}"
+            assert path.read_bytes() == data(f"seed-{i}", MIB)
+            assert path.stat().st_mode & 0o777 == 0o600
+    elif case in ("isolation", "commit-crash"):
+        expected[:65536] = data("published", 65536)
+        second[8192:16384] = data("second-change", 8192)
+        assert (root / "unsynced").read_bytes() == data("unsynced")
+    elif case == "cycles":
+        expected = bytearray(data("cycle-7", 17001))
+        expected[4096:8192] = data("partial-7", 4096)
+        expected[8192:12288] = data("after-commit", 4096)
+    elif case == "newfiles":
+        for i in range(8):
+            assert (root / "newdir" / "nested" / f"child-{i}").read_bytes() == (
+                data(f"child-{i}", 17001))
+        assert not (root / "newdir" / "nested" / "unpublished").exists()
+    elif case == "data":
         expected[4096:12288] = data("first", 8192)
         expected.extend(data("append", 8192))
         second[8192:16384] = data("second-change", 8192)
@@ -267,6 +389,7 @@ def verify(root, case):
         for name, content in (("file", expected), ("second", second)):
             for i in range(8):
                 content[i * 4096:(i + 1) * 4096] = data(name + str(i), 4096)
+        assert (root / "unsynced").read_bytes() == data("unsynced")
     elif case == "unsynced":
         expected[4096:12288] = data("first", 8192)
         assert not (root / "renamed").exists()
@@ -343,7 +466,66 @@ def mount(guest, readonly=False):
 def worker(guest, phase, case):
     command(["scp", __file__,
              f"root@10.77.0.{2 if guest == 'openbsd' else 3}:/tmp/log_tree.py"])
-    ssh(guest, f"python3 /tmp/log_tree.py {phase} /mnt/log {case}")
+    return ssh(guest, f"python3 /tmp/log_tree.py {phase} /mnt/log {case}")
+
+
+def check_incremental(image, output, nodesize, case):
+    """Inspect every published forest, including now-obsolete COW blocks."""
+    from reclaim_chunks import chunks
+
+    maps = chunks(image)
+    publications = json.loads(next(line.split(" ", 1)[1]
+                                  for line in output.splitlines()
+                                  if line.startswith("LOG_PUBLICATIONS ")))
+    previous = set()
+    counts = []
+    files = incremental_files(case)
+    with image.open("rb", buffering=0) as disk:
+        disk.seek(65536 + 196)
+        csum_type = struct.unpack("<H", disk.read(2))[0]
+        csum_size = (4, 8, 32, 32)[csum_type]
+
+        def walk(logical, blocks, records):
+            assert logical not in blocks
+            blocks.add(logical)
+            chunk = next(c for c in maps
+                         if c["logical"] <= logical < c["logical"] + c["length"])
+            disk.seek(chunk["physical"][0] + logical - chunk["logical"])
+            block = disk.read(nodesize)
+            count = struct.unpack_from("<I", block, 96)[0]
+            level = block[100]
+            levels.append(level)
+            for i in range(count):
+                if level:
+                    child = struct.unpack_from("<Q", block, 101 + i * 33 + 17)[0]
+                    walk(child, blocks, records)
+                else:
+                    ino, kind, offset, pos, size = struct.unpack_from(
+                        "<QBQII", block, 101 + i * 25)
+                    payload = block[101 + pos:101 + pos + size]
+                    if kind == 132:  # ROOT_ITEM in the log-root tree
+                        walk(struct.unpack_from("<Q", payload, 176)[0],
+                             blocks, records)
+                    elif kind == 128:  # EXTENT_CSUM
+                        records.append(size // csum_size)
+
+        for publication in publications:
+            blocks, records, levels = set(), [], []
+            walk(publication["log_root"], blocks, records)
+            counts.append(dict(blocks=len(blocks), new=len(blocks - previous),
+                               reused=len(blocks & previous),
+                               csum_records=len(records), sectors=sum(records),
+                               level=max(levels)))
+            previous = blocks
+    assert len(counts) == files
+    assert counts[-1]["reused"] > counts[-1]["blocks"] * 0.7, counts[-1]
+    assert counts[-1]["csum_records"] <= files * 3, counts[-1]
+    assert counts[-1]["sectors"] == files * MIB // 4096, counts[-1]
+    if case == "deep":
+        assert counts[-1]["level"] >= 2, counts[-1]
+    # A complete rebuild would write the final forest at every publication.
+    assert sum(c["new"] for c in counts) < sum(c["blocks"] for c in counts) / 3
+    print("INCREMENTAL_COUNTS " + json.dumps(counts), flush=True)
 
 
 def faults(args):
@@ -440,6 +622,27 @@ def interrupt_recovery(args):
     print("PASS interrupted recovery", flush=True)
 
 
+def interrupt_commit(args, image):
+    from run_all import Runner, Serial
+
+    before = super_info(image)
+    assert before["log_root"]
+    settings = argparse.Namespace(
+        image=str(image), mountpoint="/mnt/log", device="/dev/sd1c",
+        vm_source="/mnt/src", vm="root@10.77.0.2",
+        monitor="/tmp/monitor.sock", timeout=60, boot_timeout=120)
+    runner = Runner(settings, Path(args.results))
+    runner.log = sys.stdout
+    runner.serial = Serial("/tmp/serial.sock", sys.stdout)
+    try:
+        runner.crash_break(["sync"], ["btrfs_write_super_mirrors"])
+        assert super_info(image) == before
+    finally:
+        runner.serial.close()
+        if runner.monitor is not None:
+            runner.monitor.close()
+
+
 def run(args):
     if args.fault_image:
         return faults(args)
@@ -464,12 +667,17 @@ def run(args):
             worker("linux", "seed", case)
             ssh("linux", "umount /mnt/log")
             mount(writer)
-            worker(writer, "mutate", case)
+            output = worker(writer, "mutate", case)
+            if case == "commit-crash":
+                assert writer == "openbsd"
+                interrupt_commit(args, image)
             monitor(writer, "stop")
             info = super_info(image)
             (results / f"{name}.json").write_text(json.dumps(info, indent=2))
             snapshot = results / f"{name}.img"
             command(["cp", "--sparse=always", "--reflink=auto", image, snapshot])
+            if case in ("incremental", "deep") and writer == "openbsd":
+                check_incremental(snapshot, output, args.nodesize, case)
             boot(writer)
             assert bool(info["log_root"]) != args.expect_commit, (
                 f"{name}: unexpected publication {info}")

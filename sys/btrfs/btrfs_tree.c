@@ -2275,11 +2275,12 @@ btrfs_mutate_item(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 		return (EINVAL);
 
 	/*
-	 * The log writer relies on committed ancestry and inode references.
+	 * Creation can log fresh ancestry and inode references. Other namespace
+	 * edits require reconciliation with names in the committed tree.
 	 * Set this before mutation, under the handle which close will drain.
 	 */
 	if (root->br_owner == BTRFS_ROOT_TREE_OBJECTID ||
-	    (btrfs_file_tree(root->br_owner) &&
+	    (btrfs_file_tree(root->br_owner) && !handle->bth_log_create &&
 	    (key->type == BTRFS_INODE_REF_KEY ||
 	    key->type == BTRFS_INODE_EXTREF_KEY ||
 	    key->type == BTRFS_DIR_ITEM_KEY ||

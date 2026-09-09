@@ -368,7 +368,7 @@ struct btrfs_transaction {
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
 	uint8_t				 bt_commit_handle;
-	/* Namespace and root changes require a full transaction commit. */
+	/* Namespace edits other than creation, and root changes, require commit. */
 	uint8_t				 bt_log_full_commit;
 };
 
@@ -377,6 +377,8 @@ struct btrfs_trans_handle {
 	struct btrfs_reserved_space_list bth_reservations;
 	uint8_t				 bth_commit;
 	uint8_t				 bth_delayed;
+	/* Creation adds a fresh name; other namespace edits invalidate logging. */
+	uint8_t				 bth_log_create;
 	uint64_t			 bth_failed_type;
 };
 
@@ -610,8 +612,6 @@ struct btrfs_fs {
 	uint64_t			 bm_chunk_logical_end;
 	struct btrfs_transaction	*bm_transaction;
 	struct btrfs_trans_extent_list	 bm_log_extents;
-	/* Identities to include in the next log publication, never item data. */
-	struct btrfs_log			*bm_log;
 	struct mutex			 bm_trans_mtx;
 	uint64_t			 bm_last_transid;
 	int				 bm_committer;
@@ -770,6 +770,10 @@ int	btrfs_prepare_metadata_commit(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_ordered_extents_finish(struct btrfs_transaction *, int);
 int	btrfs_write_ordered_extents(struct btrfs_trans_handle *);
+int	btrfs_write_inode_ordered(struct btrfs_trans_handle *,
+	    struct btrfs_node *);
+int	btrfs_materialize_ordered_ref(struct btrfs_trans_handle *,
+	    const struct btrfs_ordered_extent *);
 int	btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *);
 int	btrfs_roots_finish(struct btrfs_transaction *, int);
 int	btrfs_update_dirty_root_items(struct btrfs_trans_handle *);
