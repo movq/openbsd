@@ -28,7 +28,6 @@ cmd_unsupported(const struct cmd_struct *cmd, int argc, char **argv)
 
 DEFINE_UNSUPPORTED(balance, "balance");
 DEFINE_UNSUPPORTED(check, "check");
-DEFINE_UNSUPPORTED(device, "device");
 DEFINE_UNSUPPORTED(filesystem, "filesystem");
 DEFINE_UNSUPPORTED(property, "property");
 DEFINE_UNSUPPORTED(qgroup, "qgroup");

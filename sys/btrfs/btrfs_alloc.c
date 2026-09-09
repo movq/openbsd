@@ -74,7 +74,7 @@ static int	btrfs_space_validate_free(
 static int	btrfs_space_add_free(struct btrfs_block_group *, uint64_t,
 		    uint64_t);
 static int	btrfs_space_exclude_supers(struct btrfs_fs *,
-		    struct btrfs_block_group *, const struct btrfs_chunk_map *);
+		    struct btrfs_block_group *, const struct btrfs_chunk_map *, int);
 static int	btrfs_space_check_type(uint64_t);
 static int	btrfs_space_group_matches(const struct btrfs_block_group *,
 		    uint64_t, int);
@@ -185,20 +185,23 @@ btrfs_space_check_type(uint64_t type)
  * Superblock stripes have no extent items.  Reverse-map each physical mirror
  * into the chunk and remove the entire 64 KiB stripe from allocatable gaps.
  * Merge the exclusions first: different DUP mirrors can map to the same
- * logical range.  This runs while constructing the mount's free-space index.
+ * logical range. Mount excludes these ranges; physical relocation restores
+ * them after publication when the new stripes contain no superblocks.
  */
 static int
 btrfs_space_exclude_supers(struct btrfs_fs *bmp,
-    struct btrfs_block_group *group, const struct btrfs_chunk_map *chunk)
+    struct btrfs_block_group *group, const struct btrfs_chunk_map *chunk,
+    int restore)
 {
 	struct {
 		uint64_t start, end;
 	} ranges[BTRFS_MAX_MIRRORS * BTRFS_SUPER_MIRROR_MAX + 1], range;
 	struct btrfs_free_extent *space, *next, *suffix;
+	struct btrfs_free_extent *garbage[2];
 	uint64_t start, end, cut_start, cut_end, removed, space_end;
-	unsigned int i, j, mirror, count = 0, merged = 0;
+	unsigned int i, j, mirror, ngarbage, count = 0, merged = 0;
 
-	if (group->bbg_bytenr < superblock_addrs[0]) {
+	if (!restore && group->bbg_bytenr < superblock_addrs[0]) {
 		ranges[count].start = group->bbg_bytenr;
 		ranges[count++].end = MIN(superblock_addrs[0],
 		    group->bbg_bytenr + group->bbg_length);
@@ -232,6 +235,26 @@ btrfs_space_exclude_supers(struct btrfs_fs *bmp,
 	for (i = 0; i < merged; i++) {
 		start = ranges[i].start;
 		end = ranges[i].end;
+		if (restore) {
+			/* Low logical addresses remain excluded after any move. */
+			start = MAX(start, superblock_addrs[0]);
+			if (start >= end)
+				continue;
+			space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
+			space->bfe_bytenr = start;
+			space->bfe_length = end - start;
+			mtx_enter(&group->bbg_lock);
+			KASSERT(group->bbg_excluded_bytes >= end - start);
+			group->bbg_excluded_bytes -= end - start;
+			group->bbg_free_bytes += end - start;
+			ngarbage = btrfs_space_insert_free_locked(group, space,
+			    garbage);
+			btrfs_space_check_group(group);
+			mtx_leave(&group->bbg_lock);
+			for (j = 0; j < ngarbage; j++)
+				free(garbage[j], M_BTRFS, sizeof(*garbage[j]));
+			continue;
+		}
 		removed = 0;
 		TAILQ_FOREACH_SAFE(space, &group->bbg_free_extents, bfe_entry,
 		    next) {
@@ -271,6 +294,14 @@ btrfs_space_exclude_supers(struct btrfs_fs *bmp,
 		}
 	}
 	return (0);
+}
+
+/* The physical planner guarantees the new stripes contain no supers. */
+void
+btrfs_space_moved(struct btrfs_fs *bmp, struct btrfs_block_group *group,
+    const struct btrfs_chunk_map *oldchunk)
+{
+	(void)btrfs_space_exclude_supers(bmp, group, oldchunk, 1);
 }
 
 static int
@@ -623,7 +654,7 @@ btrfs_space_init(struct btrfs_fs *bmp)
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
 		group = bmp->bm_block_groups[i];
 		error = btrfs_space_exclude_supers(bmp, group,
-		    &bmp->bm_chunks[i]);
+		    &bmp->bm_chunks[i], 0);
 		if (error != 0)
 			goto fail;
 		if (group->bbg_free_bytes !=

@@ -59,9 +59,6 @@ static const void *
 static void	btrfs_extent_buffer_fail_transaction(
 		    struct btrfs_transaction *, int);
 static int	btrfs_extent_buffer_validate(const void *, size_t, void *);
-static int	btrfs_validate_tree_block(const struct btrfs_super_block *,
-		    const struct btrfs_header *, uint64_t, uint64_t, uint64_t,
-		    uint64_t, uint8_t);
 static int	btrfs_key_cmp(const struct btrfs_key *,
 		    const struct btrfs_key *);
 
@@ -790,7 +787,7 @@ btrfs_extent_buffer_validate(const void *data, size_t length, void *arg)
 	    validation->ebv_level));
 }
 
-static int
+int
 btrfs_validate_tree_block(const struct btrfs_super_block *sb,
     const struct btrfs_header *header, uint64_t bytenr, uint64_t generation,
     uint64_t view_generation, uint64_t owner, uint8_t level)

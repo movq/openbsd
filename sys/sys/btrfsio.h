@@ -135,4 +135,21 @@ struct btrfs_ioctl_clone {
 };
 #define BTRFSIOC_CLONE	_IOW('B', 11, struct btrfs_ioctl_clone)
 
+/*
+ * fd selects any directory on a writable mount. ADD accepts a block-device
+ * path; REMOVE accepts either a path or a nonzero devid. Reserved fields
+ * must be zero. FORCE permits overwriting existing signatures on ADD.
+ * Each device command is synchronous. A failed removal can leave completed
+ * chunk moves; the member remains attached until its final removal commits.
+ */
+#define BTRFS_DEVICE_FORCE	1
+struct btrfs_ioctl_device {
+	int32_t		fd;
+	uint32_t	flags;
+	uint64_t	devid;
+	char		path[BTRFS_CTL_PATH_MAX];
+};
+#define BTRFSIOC_DEV_ADD		_IOW('B', 13, struct btrfs_ioctl_device)
+#define BTRFSIOC_DEV_REMOVE	_IOW('B', 14, struct btrfs_ioctl_device)
+
 #endif

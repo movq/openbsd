@@ -56,7 +56,9 @@ repeating the
 options.
 Mounts of one file system share allocation and a transaction.
 Syncing or unmounting any view may commit changes made through other views.
-All member devices remain open until the last view is unmounted.
+Member devices remain open until removed with
+.Xr btrfs 8
+or until the last view is unmounted.
 A read-only view may join a filesystem opened writable.
 If the first view was read-only, all views must be unmounted before
 mounting a writable view.
@@ -68,9 +70,11 @@ Mount a file system with three members:
 .Sh SEE ALSO
 .Xr mount 2 ,
 .Xr fstab 5 ,
+.Xr btrfs 8 ,
 .Xr mount 8 ,
 .Xr umount 8
 .Sh CAVEATS
 The driver supports a limited subset of Btrfs formats and write operations.
-Mount updates and online device addition, removal, and balancing are
-not supported.
+Online device addition and removal are available through
+.Xr btrfs 8 .
+Mount updates, device resizing, and balancing are not supported.
