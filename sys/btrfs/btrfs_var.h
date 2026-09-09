@@ -543,8 +543,8 @@ struct btrfs_super_candidate {
 };
 
 /*
- * Members and their vnodes live until the last view is unmounted. Chunk maps
- * may therefore retain device pointers after releasing the mapping lock.
+ * Members have stable addresses. bm_io_lock pins mapped devices through I/O;
+ * relocation publication drains readers before reusing physical storage.
  * bd_item is the committed chunk-tree device item, not a stale member super.
  */
 struct btrfs_device {
@@ -592,7 +592,7 @@ struct btrfs_fs {
 	/* Membership and read-only transitions use bm_trans_mtx. */
 	struct btrfs_mount_list		 bm_mounts;
 	int				 bm_readonly;
-	struct btrfs_device		*bm_devices;
+	struct btrfs_device		**bm_devices;
 	unsigned int			 bm_ndevices;
 	int				 bm_open_flags;
 	struct pool			 bm_scratch_pool;
@@ -602,6 +602,7 @@ struct btrfs_fs {
 	uint8_t				 bm_seeding;
 	/* Protects replaceable indexes; never held over tree operations or I/O. */
 	struct rwlock			 bm_mapping_lock;
+	struct rwlock			 bm_io_lock;
 	/* Serializes chunk planning through durable index publication. */
 	struct rwlock			 bm_chunk_alloc_lock;
 	struct btrfs_chunk_map		*bm_chunks;
@@ -869,6 +870,21 @@ int	btrfs_chunk_update_super(struct btrfs_transaction *,
 	    struct btrfs_super_block *);
 void	btrfs_chunk_device_item(struct btrfs_transaction *,
 	    struct btrfs_device *, struct btrfs_dev_item *);
+struct btrfs_ioctl_device;
+int	btrfs_device_control(struct mount *, u_long,
+	    struct btrfs_ioctl_device *, struct proc *);
+int	btrfs_device_change(struct btrfs_fs *, struct btrfs_device *, int);
+void	btrfs_close_member(struct btrfs_fs *, struct btrfs_device *,
+	    struct proc *);
+struct btrfs_device *btrfs_commit_device(struct btrfs_fs *, unsigned int);
+int	btrfs_chunk_copy(struct btrfs_transaction *);
+int	btrfs_copy_extent(struct btrfs_fs *, const struct btrfs_chunk_map *,
+	    uint64_t, uint64_t, int, uint64_t);
+int	btrfs_validate_tree_block(const struct btrfs_super_block *,
+	    const struct btrfs_header *, uint64_t, uint64_t, uint64_t,
+	    uint64_t, uint8_t);
+void	btrfs_space_moved(struct btrfs_fs *, struct btrfs_block_group *,
+	    const struct btrfs_chunk_map *);
 void	btrfs_chunk_publish(struct btrfs_transaction *);
 void	btrfs_chunk_abort(struct btrfs_transaction *);
 int	btrfs_space_init(struct btrfs_fs *);

@@ -594,12 +594,14 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		}
 		seen[index] |= 1U << stripe;
 		last_end = end;
-		if (used[device - bmp->bm_devices] >
+		for (i = 0; bmp->bm_devices[i] != device; i++)
+			KASSERT(i + 1 < bmp->bm_ndevices);
+		if (used[i] >
 		    UINT64_MAX - record.bde_length) {
 			error = EINVAL;
 			break;
 		}
-		used[device - bmp->bm_devices] += record.bde_length;
+		used[i] += record.bde_length;
 		if (callback != NULL) {
 			error = callback(&record, arg);
 			if (error != 0)
@@ -611,7 +613,7 @@ btrfs_iterate_device_extents(struct btrfs_fs *bmp,
 		error = 0;
 		for (i = 0; i < bmp->bm_ndevices; i++)
 			if (used[i] !=
-			    letoh64(bmp->bm_devices[i].bd_item.bytes_used))
+			    letoh64(bmp->bm_devices[i]->bd_item.bytes_used))
 				error = EINVAL;
 		for (i = 0; i < bmp->bm_nchunks; i++) {
 			if (seen[i] != (1U << bmp->bm_chunks[i].nmirrors) - 1) {

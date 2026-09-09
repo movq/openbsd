@@ -47,6 +47,7 @@
 #include <sys/systm.h>
 #include <sys/buf.h>
 #include <sys/conf.h>
+#include <sys/dkio.h>
 #include <sys/endian.h>
 #include <sys/errno.h>
 #include <sys/fcntl.h>
@@ -318,13 +319,24 @@ const struct vfsops btrfs_vfsops = {
 static void
 btrfs_close_devices(struct btrfs_fs *bmp, struct proc *p)
 {
-	struct vnode *vp;
 	unsigned int i;
 
-	for (i = 0; i < bmp->bm_ndevices; i++) {
-		vp = bmp->bm_devices[i].bd_devvp;
-		if (vp == NULL)
-			continue;
+	for (i = 0; i < bmp->bm_ndevices; i++)
+		btrfs_close_member(bmp, bmp->bm_devices[i], p);
+	free(bmp->bm_devices, M_BTRFS,
+	    BTRFS_MAX_DEVICES * sizeof(*bmp->bm_devices));
+}
+
+void
+btrfs_close_member(struct btrfs_fs *bmp, struct btrfs_device *device,
+    struct proc *p)
+{
+	struct vnode *vp;
+
+	if (device == NULL)
+		return;
+	vp = device->bd_devvp;
+	if (vp != NULL) {
 		vp->v_specmountpoint = NULL;
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		(void)vinvalbuf(vp, V_SAVE, NOCRED, p, 0, INFSLP);
@@ -332,8 +344,7 @@ btrfs_close_devices(struct btrfs_fs *bmp, struct proc *p)
 		VOP_UNLOCK(vp);
 		vrele(vp);
 	}
-	free(bmp->bm_devices, M_BTRFS,
-	    bmp->bm_ndevices * sizeof(*bmp->bm_devices));
+	free(device, M_BTRFS, sizeof(*device));
 }
 
 static int
@@ -353,6 +364,212 @@ btrfs_member_path(char *path, struct vnode **vpp, struct proc *p)
 	return (error);
 }
 
+/* Detachment is already durable; an erasure failure must not roll it back. */
+static int
+btrfs_erase_member(struct btrfs_device *device, struct proc *p)
+{
+	struct buf *bp;
+	unsigned int i;
+	int error, first_error = 0, force = 1;
+
+	for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+		if (!btrfs_super_mirror_writable(device, i))
+			continue;
+		bp = getblk(device->bd_devvp, superblock_addrs[i] / DEV_BSIZE,
+		    sizeof(struct btrfs_super_block), 0, INFSLP);
+		memset(bp->b_data, 0, sizeof(struct btrfs_super_block));
+		SET(bp->b_flags, B_NOCACHE);
+		error = bwrite(bp);
+		if (first_error == 0)
+			first_error = error;
+	}
+	vn_lock(device->bd_devvp, LK_EXCLUSIVE | LK_RETRY);
+	error = VOP_IOCTL(device->bd_devvp, DIOCCACHESYNC, &force,
+	    FWRITE, FSCRED, p);
+	VOP_UNLOCK(device->bd_devvp);
+	return (first_error != 0 ? first_error : error);
+}
+
+int
+btrfs_device_control(struct mount *mp, u_long cmd,
+    struct btrfs_ioctl_device *args, struct proc *p)
+{
+	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
+	struct btrfs_device *device = NULL;
+	struct btrfs_super_candidate *candidates;
+	struct nameidata nd;
+	struct vnode *vp = NULL;
+	struct buf *bp = NULL;
+	const uint8_t *bytes;
+	uint64_t devid = 0, size;
+	unsigned int i, j;
+	int error = 0, erase_error, add = cmd == BTRFSIOC_DEV_ADD;
+
+	rw_enter_write(&btrfs_mount_lock);
+	if ((mp->mnt_flag & MNT_RDONLY) || bmp->bm_readonly) {
+		error = EROFS;
+		goto out;
+	}
+	if (add && bmp->bm_ndevices == BTRFS_MAX_DEVICES) {
+		error = E2BIG;
+		goto out;
+	}
+	if (!add && bmp->bm_ndevices == 1) {
+		error = EINVAL;
+		goto out;
+	}
+	if (args->path[0] != '\0') {
+		NDINIT(&nd, LOOKUP, FOLLOW, UIO_SYSSPACE, args->path, p);
+		error = namei(&nd);
+		if (error != 0)
+			goto out;
+		vp = nd.ni_vp;
+		if (vp->v_type != VBLK) {
+			error = ENOTBLK;
+			goto out;
+		}
+	}
+	if (!add) {
+		for (i = 0; i < bmp->bm_ndevices; i++)
+			if (vp != NULL ? bmp->bm_devices[i]->bd_devvp->v_rdev ==
+			    vp->v_rdev : letoh64(bmp->bm_devices[i]->
+			    bd_item.devid) == args->devid)
+				break;
+		if (i == bmp->bm_ndevices) {
+			error = ENOENT;
+			goto out;
+		}
+		device = bmp->bm_devices[i];
+	} else {
+		error = vfs_mountedon(vp);
+		if (error == 0 && vcount(vp) > 1)
+			error = EBUSY;
+		if (error != 0)
+			goto out;
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+		error = vinvalbuf(vp, V_SAVE, p->p_ucred, p, 0, INFSLP);
+		if (error == 0)
+			error = VOP_OPEN(vp, bmp->bm_open_flags, FSCRED, p);
+		VOP_UNLOCK(vp);
+		if (error != 0)
+			goto out;
+		device = malloc(sizeof(*device), M_BTRFS, M_WAITOK | M_ZERO);
+		device->bd_devvp = vp;
+		vp = NULL;
+		device->bd_devvp->v_specmountpoint = mp;
+		candidates = mallocarray(BTRFS_SUPER_MIRROR_MAX,
+		    sizeof(*candidates), M_BTRFS, M_WAITOK | M_ZERO);
+		(void)btrfs_read_super_mirrors(device->bd_devvp, p, candidates,
+		    device->bd_mirrors, &device->bd_media_size);
+		size = device->bd_media_size;
+		if (size == UINT64_MAX || size < 1024 * 1024)
+			error = EINVAL;
+		/* Force never bypasses ownership, size or readable-media checks. */
+		for (i = 0; error == 0 && i < BTRFS_SUPER_MIRROR_MAX; i++) {
+			if (superblock_addrs[i] > size ||
+			    sizeof(struct btrfs_super_block) >
+			    size - superblock_addrs[i])
+				continue;
+			if (!(device->bd_mirrors[i].bsm_flags &
+			    BTRFS_SUPER_MIRROR_READABLE))
+				error = EIO;
+			else if (!(args->flags & BTRFS_DEVICE_FORCE)) {
+				bytes = (const void *)&candidates[i].bsc_super;
+				for (j = 0; j < sizeof(struct btrfs_super_block); j++)
+					if (bytes[j] != 0) {
+						error = EEXIST;
+						break;
+					}
+			}
+		}
+		free(candidates, M_BTRFS,
+		    BTRFS_SUPER_MIRROR_MAX * sizeof(*candidates));
+		if (error == 0 && !(args->flags & BTRFS_DEVICE_FORCE)) {
+			error = bread(device->bd_devvp, 0, MAXBSIZE, &bp);
+			if (error == 0 && bp->b_resid != 0)
+				error = EIO;
+			if (error == 0) {
+				for (i = 0; i < MAXBSIZE; i++)
+					if (((uint8_t *)bp->b_data)[i] != 0) {
+						error = EEXIST;
+						break;
+					}
+			}
+			if (bp != NULL)
+				brelse(bp);
+		}
+		if (error != 0)
+			goto close;
+		size &= ~((uint64_t)letoh32(bmp->bm_super.sectorsize) - 1);
+		for (i = 0; i < bmp->bm_ndevices; i++)
+			devid = MAX(devid,
+			    letoh64(bmp->bm_devices[i]->bd_item.devid));
+		if (devid == UINT64_MAX ||
+		    size > UINT64_MAX - letoh64(bmp->bm_super.total_bytes)) {
+			error = EOVERFLOW;
+			goto close;
+		}
+		/* Remove signatures preceding the first btrfs superblock. */
+		if (args->flags & BTRFS_DEVICE_FORCE) {
+			bp = getblk(device->bd_devvp, 0, MAXBSIZE, 0, INFSLP);
+			memset(bp->b_data, 0, MAXBSIZE);
+			SET(bp->b_flags, B_NOCACHE);
+			error = bwrite(bp);
+			if (error != 0)
+				goto close;
+		}
+		device->bd_item.devid = htole64(devid + 1);
+		device->bd_item.total_bytes = htole64(size);
+		device->bd_item.io_align = bmp->bm_super.sectorsize;
+		device->bd_item.io_width = bmp->bm_super.sectorsize;
+		device->bd_item.sector_size = bmp->bm_super.sectorsize;
+		memcpy(device->bd_item.fsid, bmp->bm_super.fsid, BTRFS_UUID_SIZE);
+		arc4random_buf(device->bd_item.uuid, BTRFS_UUID_SIZE);
+		device->bd_item.uuid[6] = (device->bd_item.uuid[6] & 0x0f) | 0x40;
+		device->bd_item.uuid[8] = (device->bd_item.uuid[8] & 0x3f) | 0x80;
+		device->bd_in_chunk_tree = 1;
+	}
+	/*
+	 * Acquire the chunk lock before closing joins: growth may own that
+	 * lock while joining a transaction. No vnode locks are needed below.
+	 */
+	rw_enter_write(&bmp->bm_chunk_alloc_lock);
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(bmp->bm_control == NULL);
+	bmp->bm_control = p;
+	while (bmp->bm_transaction->bt_writers != 0)
+		msleep(&bmp->bm_transaction->bt_writers, &bmp->bm_trans_mtx,
+		    PWAIT, "btrdev", 0);
+	mtx_leave(&bmp->bm_trans_mtx);
+	error = btrfs_commit_current(bmp, p);
+	if (error == 0) {
+		error = btrfs_device_change(bmp, device, add);
+		if (add)
+			device = NULL;	/* ADD is consumed even on failure. */
+		else if (btrfs_find_device(bmp,
+		    letoh64(device->bd_item.devid)) == NULL) {
+			erase_error = btrfs_erase_member(device, p);
+			btrfs_close_member(bmp, device, p);
+			device = NULL;
+			if (error == 0)
+				error = erase_error;
+		}
+	}
+	mtx_enter(&bmp->bm_trans_mtx);
+	bmp->bm_control = NULL;
+	wakeup(&bmp->bm_control);
+	mtx_leave(&bmp->bm_trans_mtx);
+	rw_exit_write(&bmp->bm_chunk_alloc_lock);
+close:
+	if (add && device != NULL)
+		btrfs_close_member(bmp, device, p);
+out:
+	if (vp != NULL)
+		vrele(vp);
+	rw_exit_write(&btrfs_mount_lock);
+	return (error);
+}
+
 /* Recovery needs writable devices even when the requested view is read-only. */
 static int
 btrfs_open_recovery(struct btrfs_fs *bmp, struct proc *p)
@@ -362,7 +579,7 @@ btrfs_open_recovery(struct btrfs_fs *bmp, struct proc *p)
 	int error = 0;
 
 	for (opened = 0; opened < bmp->bm_ndevices; opened++) {
-		vp = bmp->bm_devices[opened].bd_devvp;
+		vp = bmp->bm_devices[opened]->bd_devvp;
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		error = VOP_OPEN(vp, FREAD | FWRITE, FSCRED, p);
 		VOP_UNLOCK(vp);
@@ -370,7 +587,7 @@ btrfs_open_recovery(struct btrfs_fs *bmp, struct proc *p)
 			break;
 	}
 	for (i = 0; i < opened; i++) {
-		vp = bmp->bm_devices[i].bd_devvp;
+		vp = bmp->bm_devices[i]->bd_devvp;
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		(void)VOP_CLOSE(vp, error == 0 ? FREAD : FREAD | FWRITE,
 		    FSCRED, p);
@@ -393,7 +610,7 @@ btrfs_open_devices(struct btrfs_fs *bmp, struct vnode *primary,
 	int error = 0;
 
 	bmp->bm_ndevices = args->ndevices + 1;
-	bmp->bm_devices = mallocarray(bmp->bm_ndevices,
+	bmp->bm_devices = mallocarray(BTRFS_MAX_DEVICES,
 	    sizeof(*bmp->bm_devices), M_BTRFS, M_WAITOK | M_ZERO);
 	if (args->ndevices != 0) {
 		paths = mallocarray(args->ndevices, sizeof(*paths), M_BTRFS,
@@ -419,7 +636,7 @@ btrfs_open_devices(struct btrfs_fs *bmp, struct vnode *primary,
 		else {
 			for (j = 0; j < i; j++)
 				if (vp->v_rdev ==
-				    bmp->bm_devices[j].bd_devvp->v_rdev)
+				    bmp->bm_devices[j]->bd_devvp->v_rdev)
 					break;
 			if (j != i)
 				error = EINVAL;
@@ -442,7 +659,9 @@ btrfs_open_devices(struct btrfs_fs *bmp, struct vnode *primary,
 			vrele(vp);
 			break;
 		}
-		bmp->bm_devices[i].bd_devvp = vp;
+		bmp->bm_devices[i] = malloc(sizeof(**bmp->bm_devices),
+		    M_BTRFS, M_WAITOK | M_ZERO);
+		bmp->bm_devices[i]->bd_devvp = vp;
 	}
 out:
 	free(paths, M_BTRFS, args->ndevices * sizeof(*paths));
@@ -486,7 +705,7 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 		goto out;
 	LIST_FOREACH(bmp, &btrfs_filesystems, bm_entry) {
 		for (i = 0; i < bmp->bm_ndevices; i++)
-			if (bmp->bm_devices[i].bd_devvp->v_rdev ==
+			if (bmp->bm_devices[i]->bd_devvp->v_rdev ==
 			    devvp->v_rdev)
 				break;
 		if (i != bmp->bm_ndevices)
@@ -504,7 +723,7 @@ btrfs_mount(struct mount *mp, const char *path, void *data,
 				goto out;
 			for (j = 0; j < bmp->bm_ndevices; j++)
 				if (extra->v_type == VBLK && extra->v_rdev ==
-				    bmp->bm_devices[j].bd_devvp->v_rdev)
+				    bmp->bm_devices[j]->bd_devvp->v_rdev)
 					break;
 			vrele(extra);
 			if (j == bmp->bm_ndevices) {
@@ -582,6 +801,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 	bmp->bm_seeding =
 	    (letoh64(sb->flags) & BTRFS_SUPER_FLAG_SEEDING) != 0;
 	rw_init(&bmp->bm_mapping_lock, "btrmap");
+	rw_init(&bmp->bm_io_lock, "btrio");
 	rw_init(&bmp->bm_chunk_alloc_lock, "btrchunk");
 	bmp->bm_chunks = bootstrap.bb_chunks;
 	bmp->bm_nchunks = bootstrap.bb_nchunks;
@@ -631,7 +851,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 		goto out;
 	LIST_INSERT_HEAD(&btrfs_filesystems, bmp, bm_entry);
 	for (i = 0; i < bmp->bm_ndevices; i++)
-		bmp->bm_devices[i].bd_devvp->v_specmountpoint = mp;
+		bmp->bm_devices[i]->bd_devvp->v_specmountpoint = mp;
 	mounted = 1;
 	error = 0;
 out:
@@ -995,7 +1215,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	LIST_REMOVE(view, bmv_entry);
 	if (!LIST_EMPTY(&bmp->bm_mounts)) {
 		for (i = 0; i < bmp->bm_ndevices; i++)
-			bmp->bm_devices[i].bd_devvp->v_specmountpoint =
+			bmp->bm_devices[i]->bd_devvp->v_specmountpoint =
 			    LIST_FIRST(&bmp->bm_mounts)->bmv_mount;
 		mtx_leave(&bmp->bm_trans_mtx);
 		goto detached;

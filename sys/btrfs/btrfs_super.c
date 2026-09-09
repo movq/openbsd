@@ -149,8 +149,8 @@ btrfs_find_device(const struct btrfs_fs *bmp, uint64_t devid)
 	unsigned int i;
 
 	for (i = 0; i < bmp->bm_ndevices; i++)
-		if (letoh64(bmp->bm_devices[i].bd_item.devid) == devid)
-			return (&bmp->bm_devices[i]);
+		if (letoh64(bmp->bm_devices[i]->bd_item.devid) == devid)
+			return (bmp->bm_devices[i]);
 	return (NULL);
 }
 
@@ -176,7 +176,7 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 	candidates = mallocarray(count, sizeof(*candidates), M_BTRFS,
 	    M_WAITOK | M_ZERO);
 	for (d = 0; d < bmp->bm_ndevices; d++) {
-		device = &bmp->bm_devices[d];
+		device = bmp->bm_devices[d];
 		candidate = candidates + d * BTRFS_SUPER_MIRROR_MAX;
 		error = btrfs_read_super_mirrors(device->bd_devvp, p,
 		    candidate, device->bd_mirrors, &device->bd_media_size);
@@ -204,15 +204,15 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 		sb = &candidate[newest].bsc_super;
 		device->bd_item = sb->dev_item;
 		if (d != 0 && memcmp(device->bd_item.fsid,
-		    bmp->bm_devices[0].bd_item.fsid, BTRFS_UUID_SIZE) != 0) {
+		    bmp->bm_devices[0]->bd_item.fsid, BTRFS_UUID_SIZE) != 0) {
 			error = EINVAL;
 			goto out;
 		}
 		for (j = 0; j < d; j++) {
 			if (device->bd_item.devid ==
-			    bmp->bm_devices[j].bd_item.devid ||
+			    bmp->bm_devices[j]->bd_item.devid ||
 			    memcmp(device->bd_item.uuid,
-			    bmp->bm_devices[j].bd_item.uuid,
+			    bmp->bm_devices[j]->bd_item.uuid,
 			    BTRFS_UUID_SIZE) == 0) {
 				error = EINVAL;
 				goto out;
@@ -223,7 +223,7 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 		best = count;
 		generation = 0;
 		for (i = 0; i < count; i++) {
-			mirror = &bmp->bm_devices[i / BTRFS_SUPER_MIRROR_MAX].
+			mirror = &bmp->bm_devices[i / BTRFS_SUPER_MIRROR_MAX]->
 			    bd_mirrors[i % BTRFS_SUPER_MIRROR_MAX];
 			if ((mirror->bsm_flags & (BTRFS_SUPER_MIRROR_VALID |
 			    BTRFS_SUPER_MIRROR_FOREIGN)) !=
@@ -254,7 +254,7 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 			goto out;
 		bmp->bm_super = *sb;
 		for (d = 0; d < bmp->bm_ndevices; d++)
-			bmp->bm_devices[d].bd_in_chunk_tree = 0;
+			bmp->bm_devices[d]->bd_in_chunk_tree = 0;
 		error = btrfs_bootstrap_super(bmp, bootstrap);
 		if (error == 0) {
 			selected = best;
@@ -266,7 +266,7 @@ btrfs_select_super(struct btrfs_fs *bmp, struct proc *p,
 	}
 	selected_generation = letoh64(bmp->bm_super.generation);
 	for (i = 0; i < count; i++) {
-		device = &bmp->bm_devices[i / BTRFS_SUPER_MIRROR_MAX];
+		device = bmp->bm_devices[i / BTRFS_SUPER_MIRROR_MAX];
 		mirror = &device->bd_mirrors[i % BTRFS_SUPER_MIRROR_MAX];
 		if ((mirror->bsm_flags & (BTRFS_SUPER_MIRROR_VALID |
 		    BTRFS_SUPER_MIRROR_FOREIGN)) != BTRFS_SUPER_MIRROR_VALID)
@@ -767,8 +767,7 @@ btrfs_write_super_mirrors(struct btrfs_fs *bmp,
 	if (bmp == NULL || template == NULL)
 		return (EINVAL);
 	sb = malloc(sizeof(*sb), M_BTRFS, M_WAITOK);
-	for (d = 0; d < bmp->bm_ndevices; d++) {
-		device = &bmp->bm_devices[d];
+	for (d = 0; (device = btrfs_commit_device(bmp, d)) != NULL; d++) {
 		nwritten = 0;
 		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
 			mirror = &device->bd_mirrors[i];
@@ -796,6 +795,20 @@ btrfs_write_super_mirrors(struct btrfs_fs *bmp,
 		}
 		if (nwritten == 0 && first_error == 0)
 			first_error = ENXIO;
+		/*
+		 * ADD enumerates its new member first. Its identity must be
+		 * durable before any existing member advertises the new count;
+		 * submission order alone does not order different drive caches.
+		 * A failed new-member publication must leave old supers alone.
+		 */
+		if (d == 0 &&
+		    letoh64(template->num_devices) > bmp->bm_ndevices) {
+			if (first_error != 0)
+				break;
+			first_error = btrfs_sync_device(bmp, curproc);
+			if (first_error != 0)
+				break;
+		}
 	}
 	free(sb, M_BTRFS, sizeof(*sb));
 	return (first_error);
@@ -1109,9 +1122,9 @@ count_out:
 	if (device_items != bmp->bm_ndevices || *nchunksp == 0)
 		return (EINVAL);
 	for (i = 0; i < bmp->bm_ndevices; i++) {
-		if (!bmp->bm_devices[i].bd_in_chunk_tree)
+		if (!bmp->bm_devices[i]->bd_in_chunk_tree)
 			return (EINVAL);
-		bytes = letoh64(bmp->bm_devices[i].bd_item.total_bytes);
+		bytes = letoh64(bmp->bm_devices[i]->bd_item.total_bytes);
 		if (bytes > UINT64_MAX - total_bytes)
 			return (EINVAL);
 		total_bytes += bytes;

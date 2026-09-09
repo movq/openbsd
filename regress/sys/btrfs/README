@@ -1,6 +1,36 @@
 Host orchestration
 ------------------
 
+Online device administration has a separate targeted runner. It REFORMATS
+partitions on all four scratch disks, using OpenBSD sd1a through sd4a and
+matching Linux loop devices at offset 1 MiB. Partition sizes are 512 MiB,
+1536 MiB, 32 MiB, and 2048 MiB. Install the matching kernel, sys/btrfsio.h,
+and gnu/btrfs-progs/cmds/btrfs first. Linux needs util-linux losetup with
+--sizelimit (Alpine: apk add losetup). Both VMs must start with all btrfs
+filesystems unmounted and no leftover test loop devices.
+
+    python3 regress/sys/btrfs/device_online.py
+    python3 regress/sys/btrfs/device_online.py --data dup --metadata single \
+        --nodesize 4096 --csum xxhash
+    python3 regress/sys/btrfs/device_online.py --crash
+    python3 regress/sys/btrfs/device_online.py --data dup --faults
+    python3 regress/sys/btrfs/device_online.py --data dup --faults --bad-mirrors
+
+The default test covers adding, empty and populated removal, primary and
+secondary removal, device IDs and paths, reused devices, allocation onto
+added members, ENOSPC with partial evacuation, and concurrent readers/writers.
+Linux verifies checksums, accounting, bounds, and every allocated DUP copy.
+Imported files include snapshots, reflinks, hard links, compressed data,
+NODATASUM data, and partially written preallocation. --crash runs five DDB
+resets around add, chunk copying, mapping publication, and final detachment.
+--faults corrupts different sectors in the two data copies and a primary
+bootstrap metadata copy; relocation must recover valid bytes for every copy.
+--bad-mirrors instead corrupts both copies of one sector and checks transaction
+abort, read-only transition, retained membership, and recovery after restoring
+the injected damage. Fault bytes and all commands are saved under --results.
+Failures preserve the current disk and VM state. Check mounts and detach test
+loops before starting a fresh run. None of these modes runs the full suite.
+
 For existing multi-device SINGLE/DUP filesystems, multi_device.py is a
 separate targeted runner using both VMs. It REFORMATS scratch1.img through
 scratch2.img (or scratch4.img with --members 4), assumes these are /dev/sd1c
