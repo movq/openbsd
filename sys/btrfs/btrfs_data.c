@@ -142,8 +142,10 @@ btrfs_insert_data_csums(struct btrfs_trans_handle *handle, uint64_t logical,
 	int error;
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	KASSERT(handle->bth_commit);
-	KASSERT(handle->bth_transaction->bt_writers == 0);
+	KASSERT(handle->bth_commit || bmp->bm_relocating == curproc);
+	KASSERT(handle->bth_commit ?
+	    handle->bth_transaction->bt_writers == 0 :
+	    handle->bth_transaction->bt_writers == 1);
 	/* Bound copying and leave room for neighboring items in the leaf. */
 	capacity = letoh32(bmp->bm_super.nodesize) / 4;
 	if (count == 0 || count > capacity / csum_size ||

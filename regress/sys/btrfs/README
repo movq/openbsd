@@ -1,6 +1,33 @@
 Host orchestration
 ------------------
 
+Balance has a separate targeted runner. It REFORMATS scratch1, using OpenBSD
+sd1c and Linux sdb with a 2 GiB recorded filesystem size. --devices also
+REFORMATS scratch2 (sd2c / sdc). Both VMs must begin with no btrfs mounts.
+Install the matching kernel, sys/btrfsio.h, and btrfs command first.
+
+    python3 regress/sys/btrfs/balance.py
+    python3 regress/sys/btrfs/balance.py --data dup --metadata single \
+        --nodesize 4096 --csum xxhash
+    python3 regress/sys/btrfs/balance.py --devices
+    python3 regress/sys/btrfs/balance.py --block-groups
+    python3 regress/sys/btrfs/balance.py --no-free-space-tree
+    python3 regress/sys/btrfs/balance.py --crash
+    python3 regress/sys/btrfs/balance.py --enospc
+
+The test checks usage filters, empty groups, limits, metadata compaction,
+system bootstrap mapping removal, read-only rejection, cancellation, exclusion
+of simultaneous balances, and concurrent file I/O. Linux checks all data
+checksums and filesystem structure between phases. Imported data includes
+read-only snapshots, reflinks, hard links, xattrs, compressed extents,
+NODATASUM files, and partially written preallocation. Results default to
+/tmp/btrfs-balance-TIMESTAMP. Failures preserve mounts and disk state.
+--crash resets at data and metadata relocation publication boundaries,
+including between superblock mirrors, then checks recovery and a restarted
+full balance.
+--enospc uses a full 128 MiB filesystem and verifies that failed data and
+metadata evacuations retain their source groups, data, and writable state.
+
 Online device administration has a separate targeted runner. It REFORMATS
 partitions on all four scratch disks, using OpenBSD sd1a through sd4a and
 matching Linux loop devices at offset 1 MiB. Partition sizes are 512 MiB,

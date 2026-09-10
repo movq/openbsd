@@ -31,6 +31,7 @@
 #include <sys/rwlock.h>
 #include <sys/time.h>
 #include <sys/tree.h>
+#include <sys/btrfsio.h>
 
 #include <btrfs/btrfs.h>
 #include <btrfs/btrfs_ref.h>
@@ -300,6 +301,7 @@ struct btrfs_trans_reservation {
 	uint64_t	btr_system;
 	int		btr_reclaim;
 	int		btr_chunk;	/* Join must not recursively grow chunks. */
+	int		btr_contiguous_data; /* Reserve one complete allocation. */
 };
 
 /* Covers namespace removal as well as a minimum range-cleanup batch. */
@@ -611,6 +613,7 @@ struct btrfs_fs {
 	struct btrfs_block_group		**bm_block_groups;
 	unsigned int			 bm_nblock_groups;
 	uint64_t			 bm_chunk_logical_end;
+	uint64_t			 bm_chunk_profile[3];
 	struct btrfs_transaction	*bm_transaction;
 	struct btrfs_trans_extent_list	 bm_log_extents;
 	struct mutex			 bm_trans_mtx;
@@ -618,6 +621,15 @@ struct btrfs_fs {
 	int				 bm_committer;
 	/* Administrative operations close joins while inspecting whole trees. */
 	struct proc			*bm_control;
+	/*
+	 * Balance drains vnode lock acquisitions before closing writer joins.
+	 * New acquisitions may enter during the drain (nested vnode locks must
+	 * make progress). Once drained, bm_relocating fences new acquisitions.
+	 * Protected by bm_trans_mtx; administration holds the mount lock.
+	 */
+	unsigned int			 bm_vnode_locks;
+	struct proc			*bm_relocating;
+	struct btrfs_ioctl_balance	 bm_balance;
 	uint64_t			 bm_last_rootid;
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
 	struct btrfs_root_list		 bm_roots;
@@ -864,6 +876,14 @@ int	btrfs_iterate_device_extents(struct btrfs_fs *,
 int	btrfs_iterate_free_space(struct btrfs_fs *,
 	    btrfs_free_space_iter_fn, void *);
 int	btrfs_chunk_grow(struct btrfs_fs *, uint64_t, uint64_t);
+int	btrfs_balance_control(struct mount *, u_long,
+	    struct btrfs_ioctl_balance *, struct proc *);
+int	btrfs_balance(struct btrfs_fs *, struct btrfs_ioctl_balance *);
+int	btrfs_balance_relocate(struct btrfs_fs *, struct btrfs_block_group *);
+int	btrfs_balance_interrupted(struct btrfs_fs *);
+int	btrfs_balance_grow(struct btrfs_fs *, uint64_t, uint64_t);
+int	btrfs_relocate_data(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t, uint64_t);
 int	btrfs_chunk_removed(struct btrfs_transaction *,
 	    const struct btrfs_block_group *);
 int	btrfs_chunk_update_super(struct btrfs_transaction *,

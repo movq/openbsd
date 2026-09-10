@@ -209,9 +209,16 @@ chunk_plan(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op,
 		    type)
 			template = i;
 	}
-	if (template == UINT_MAX)
-		return (EOPNOTSUPP);
-	*chunk = bmp->bm_chunks[template];
+	if (template == UINT_MAX) {
+		/* Balance can remove the last empty data group. */
+		i = type == BTRFS_BLOCK_GROUP_DATA ? 0 :
+		    type == BTRFS_BLOCK_GROUP_METADATA ? 1 : 2;
+		*chunk = bmp->bm_chunks[0];
+		chunk->type = type | bmp->bm_chunk_profile[i];
+		chunk->nmirrors = chunk->type & BTRFS_BLOCK_GROUP_DUP ? 2 : 1;
+		chunk->sub_stripes = 0;
+	} else
+		*chunk = bmp->bm_chunks[template];
 	logical = bmp->bm_chunk_logical_end;
 	if (logical > UINT64_MAX - 65535)
 		return (EOVERFLOW);
@@ -957,11 +964,181 @@ chunk_available(struct btrfs_fs *bmp, uint64_t type)
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
 		group = bmp->bm_block_groups[i];
 		mtx_enter(&group->bbg_lock);
-		if (group->bbg_flags & type)
+		if ((group->bbg_flags & type) && !group->bbg_removing)
 			available += group->bbg_free_bytes;
 		mtx_leave(&group->bbg_lock);
 	}
 	return (available);
+}
+
+/* Balance already owns the chunk lock. Force a destination group when an
+ * allocation has enough total free bytes but no sufficiently large gap. */
+int
+btrfs_balance_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
+{
+	struct btrfs_chunk_operation *op;
+	int error;
+
+	rw_assert_wrlock(&bmp->bm_chunk_alloc_lock);
+	op = malloc(sizeof(*op), M_BTRFS, M_WAITOK | M_ZERO);
+	op->action = BTRFS_CHUNK_ADD;
+	error = chunk_plan(bmp, op, type, needed);
+	if (error == 0)
+		error = chunk_place(bmp, op, needed);
+	if (error == 0)
+		error = chunk_add_prepare(bmp, op);
+	if (error != 0)
+		chunk_discard(op);
+	else
+		error = chunk_execute(bmp, op);
+	return (error);
+}
+
+static int
+balance_matches(struct btrfs_block_group *group,
+    const struct btrfs_balance_filter *filter)
+{
+	uint64_t used = group->bbg_disk_used, length = group->bbg_length;
+	uint64_t lower, upper;
+
+	/* Percent arithmetic without multiplying a filesystem-sized value. */
+	lower = (length / 100) * filter->min +
+	    ((length % 100) * filter->min + 99) / 100;
+	upper = (length / 100) * filter->max +
+	    ((length % 100) * filter->max + 99) / 100;
+	return (used >= lower && (filter->max == 100 ||
+	    (filter->max == 0 ? used == 0 : used < upper)));
+}
+
+/*
+ * Snapshot the selection once. Destinations created by this run must never
+ * become fresh work. Visit high logical addresses first, allowing the usual
+ * allocator's preference for earlier groups to compact sparse allocations.
+ */
+int
+btrfs_balance(struct btrfs_fs *bmp, struct btrfs_ioctl_balance *args)
+{
+	const struct btrfs_balance_filter *filters[] = {
+	    &args->data, &args->metadata, &args->system
+	};
+	const uint64_t types[] = { BTRFS_BLOCK_GROUP_DATA,
+	    BTRFS_BLOCK_GROUP_METADATA, BTRFS_BLOCK_GROUP_SYSTEM };
+	struct btrfs_block_group *group;
+	struct btrfs_chunk_operation *op;
+	struct btrfs_trans_reservation reserve = { .btr_chunk = 1 };
+	struct btrfs_trans_handle *handle;
+	struct btrfs_root *root;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key key = { 0 };
+	uint64_t *selected, limits[3] = { 0 }, needed, type;
+	unsigned int count = bmp->bm_nchunks, n = 0, i, j, k;
+	int error = 0, nospace = 0, enderror;
+
+	rw_assert_wrlock(&bmp->bm_chunk_alloc_lock);
+	selected = mallocarray(count, sizeof(*selected), M_BTRFS, M_WAITOK);
+	for (i = count; i-- != 0;) {
+		group = bmp->bm_block_groups[i];
+		/* Mixed block groups require one common data/metadata filter. */
+		if ((group->bbg_flags & (BTRFS_BLOCK_GROUP_DATA |
+		    BTRFS_BLOCK_GROUP_METADATA)) == (BTRFS_BLOCK_GROUP_DATA |
+		    BTRFS_BLOCK_GROUP_METADATA)) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+		for (j = 0; j < nitems(types); j++)
+			if (group->bbg_flags & types[j])
+				break;
+		if (j == nitems(types) || !(args->flags & (1U << j)) ||
+		    limits[j] >= filters[j]->limit ||
+		    !balance_matches(group, filters[j]))
+			continue;
+		selected[n++] = group->bbg_bytenr;
+		limits[j]++;
+	}
+	mtx_enter(&bmp->bm_trans_mtx);
+	bmp->bm_balance.expected = n;
+	mtx_leave(&bmp->bm_trans_mtx);
+	for (k = 0; k < n; k++) {
+		error = btrfs_balance_interrupted(bmp);
+		if (error != 0)
+			break;
+		mtx_enter(&bmp->bm_trans_mtx);
+		bmp->bm_balance.considered++;
+		mtx_leave(&bmp->bm_trans_mtx);
+		for (i = 0; i < bmp->bm_nchunks; i++)
+			if (bmp->bm_chunks[i].logical == selected[k])
+				break;
+		KASSERT(i < bmp->bm_nchunks);
+		group = bmp->bm_block_groups[i];
+		type = group->bbg_flags & (BTRFS_BLOCK_GROUP_DATA |
+		    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM);
+		mtx_enter(&group->bbg_lock);
+		group->bbg_removing = 1;
+		mtx_leave(&group->bbg_lock);
+
+		/*
+		 * A clean transaction still owns protected promises in this
+		 * group. Supply enough external workspace, then publish a COW
+		 * so the next generation's promises exclude the source.
+		 */
+		if (group->bbg_disk_used != 0 || group->bbg_reserved_bytes != 0) {
+			needed = (uint64_t)letoh32(bmp->bm_super.nodesize) * 1024;
+			if (type != BTRFS_BLOCK_GROUP_DATA &&
+			    chunk_available(bmp, type) < needed)
+				error = btrfs_balance_grow(bmp, type, needed);
+			if (error == 0 && group->bbg_reserved_bytes != 0) {
+				reserve.btr_metadata = needed / 4;
+				error = btrfs_trans_join(bmp, &reserve, &handle);
+				if (error == 0) {
+					error = btrfs_get_root(bmp,
+					    BTRFS_ROOT_TREE_OBJECTID, &root);
+					if (error == 0)
+						error = btrfs_search_slot_write(
+						    handle, root, &key, &path);
+					btrfs_release_path(&path);
+					if (error == ENOENT)
+						error = 0;
+					if (error != 0)
+						btrfs_trans_abort(handle, error);
+					enderror = btrfs_trans_end(handle);
+					if (error == 0)
+						error = enderror;
+					if (error == 0)
+						error = btrfs_commit_current(bmp,
+						    curproc);
+				}
+			}
+			if (error == 0)
+				error = btrfs_balance_relocate(bmp, group);
+		}
+		mtx_enter(&group->bbg_lock);
+		group->bbg_removing = 0;
+		mtx_leave(&group->bbg_lock);
+		if (error == 0) {
+			/* Growth may have replaced the index, but not this group. */
+			for (i = 0; bmp->bm_block_groups[i] != group; i++)
+				KASSERT(i + 1 < bmp->bm_nblock_groups);
+			op = malloc(sizeof(*op), M_BTRFS, M_WAITOK | M_ZERO);
+			error = chunk_remove_prepare(bmp, op, i);
+			if (error != 0)
+				chunk_discard(op);
+			else
+				error = chunk_execute(bmp, op);
+		}
+		if (error == ENOSPC && !bmp->bm_readonly) {
+			nospace = 1;
+			error = 0;
+			continue;
+		}
+		if (error != 0)
+			break;
+		mtx_enter(&bmp->bm_trans_mtx);
+		bmp->bm_balance.completed++;
+		mtx_leave(&bmp->bm_trans_mtx);
+	}
+out:
+	free(selected, M_BTRFS, count * sizeof(*selected));
+	return (error != 0 ? error : nospace ? ENOSPC : 0);
 }
 
 /* Enter without a handle; the protected reserve pays for this operation. */
@@ -1051,6 +1228,31 @@ btrfs_chunk_update_super(struct btrfs_transaction *trans,
 		return (0);
 	if (sb->dev_item.devid == op->device.devid)
 		sb->dev_item = op->device;
+	if (op->action == BTRFS_CHUNK_REMOVE &&
+	    (op->chunk.type & BTRFS_BLOCK_GROUP_SYSTEM)) {
+		size = letoh32(sb->sys_chunk_array_size);
+		for (offset = 0; offset < size; offset += length) {
+			if (size - offset < sizeof(*key) +
+			    offsetof(struct btrfs_chunk, stripe))
+				return (EINVAL);
+			key = (void *)(sb->sys_chunk_array + offset);
+			chunk = (void *)(key + 1);
+			length = sizeof(*key) +
+			    offsetof(struct btrfs_chunk, stripe) +
+			    letoh16(chunk->num_stripes) *
+			    sizeof(struct btrfs_stripe);
+			if (length > size - offset)
+				return (EINVAL);
+			if (letoh64(key->offset) != op->chunk.logical)
+				continue;
+			memmove(key, (uint8_t *)key + length,
+			    size - offset - length);
+			memset(sb->sys_chunk_array + size - length, 0, length);
+			sb->sys_chunk_array_size = htole32(size - length);
+			return (0);
+		}
+		return (EINVAL);
+	}
 	if (op->action == BTRFS_DEVICE_ADD) {
 		sb->num_devices = htole64(letoh64(sb->num_devices) + 1);
 		sb->total_bytes = htole64(letoh64(sb->total_bytes) +

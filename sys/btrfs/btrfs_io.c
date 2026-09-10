@@ -528,6 +528,77 @@ btrfs_copy_extent(struct btrfs_fs *bmp, const struct btrfs_chunk_map *target,
 	return (error != 0 ? error : enderror);
 }
 
+/*
+ * Copy an allocation without decoding compression or filling preallocation.
+ * Preserve checksum holes and validate every present checksum through the
+ * normal mirror fallback path. Wait for the payload before exposing its new
+ * file item; the transaction's device barrier orders it before metadata.
+ */
+int
+btrfs_relocate_data(struct btrfs_trans_handle *handle, uint64_t old,
+    uint64_t new, uint64_t length)
+{
+	struct btrfs_fs *bmp = handle->bth_transaction->bt_mount;
+	struct btrfs_file_extent extent = {
+	    .bfe_disk_bytenr = old, .bfe_disk_num_bytes = length
+	};
+	struct btrfs_write_batch batch;
+	struct buf *bp;
+	uint8_t *data, csums[MAXBSIZE / BTRFS_MIN_SECTORSIZE *
+	    BTRFS_SUPPORTED_CSUM_MAX], present[MAXBSIZE / BTRFS_MIN_SECTORSIZE];
+	uint32_t sector = letoh32(bmp->bm_super.sectorsize);
+	uint32_t bytes, i, j, offset, count;
+	size_t csumsize = btrfs_csum_size(&bmp->bm_super);
+	int error = 0, enderror;
+
+	data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
+	btrfs_write_batch_init(&batch);
+	while (length != 0) {
+		bytes = MIN(length, MAXBSIZE);
+		count = bytes / sector;
+		for (i = 0; i < count; i++) {
+			error = btrfs_lookup_data_csum(bmp, old + i * sector,
+			    csums + i * csumsize);
+			present[i] = error == 0;
+			if (error != 0 && error != ENOENT)
+				break;
+			error = btrfs_read_data_sector(bmp, &extent,
+			    old + i * sector,
+			    present[i] ? csums + i * csumsize : NULL, &bp,
+			    &offset);
+			if (error != 0)
+				break;
+			memcpy(data + i * sector, (uint8_t *)bp->b_data + offset,
+			    sector);
+			brelse(bp);
+		}
+		if (error != 0)
+			break;
+		error = btrfs_write_logical(bmp, new, bytes,
+		    BTRFS_BLOCK_GROUP_DATA, data, &batch);
+		if (error != 0)
+			break;
+		for (i = 0; i < count; i = j) {
+			for (j = i + 1; j < count && present[j] == present[i]; j++)
+				;
+			if (!present[i])
+				continue;
+			error = btrfs_insert_data_csums(handle, new + i * sector,
+			    csums + i * csumsize, j - i);
+			if (error != 0)
+				break;
+		}
+		if (error != 0)
+			break;
+		old += bytes;
+		new += bytes;
+		length -= bytes;
+	}
+	enderror = btrfs_write_batch_wait(&batch);
+	pool_put(&bmp->bm_scratch_pool, data);
+	return (error != 0 ? error : enderror);
+}
+
 static int
 btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 {

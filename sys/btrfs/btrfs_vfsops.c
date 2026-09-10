@@ -56,6 +56,7 @@
 #include <sys/mount.h>
 #include <sys/namei.h>
 #include <sys/proc.h>
+#include <sys/signalvar.h>
 #include <sys/specdev.h>
 #include <sys/stat.h>
 #include <sys/vnode.h>
@@ -388,6 +389,126 @@ btrfs_erase_member(struct btrfs_device *device, struct proc *p)
 	    FWRITE, FSCRED, p);
 	VOP_UNLOCK(device->bd_devvp);
 	return (first_error != 0 ? first_error : error);
+}
+
+int
+btrfs_balance_interrupted(struct btrfs_fs *bmp)
+{
+	int canceled;
+
+	mtx_enter(&bmp->bm_trans_mtx);
+	canceled = bmp->bm_balance.state & BTRFS_BALANCE_CANCELING;
+	mtx_leave(&bmp->bm_trans_mtx);
+	return (canceled || SIGPENDING(curproc) != 0 ? ECANCELED : 0);
+}
+
+int
+btrfs_balance_control(struct mount *mp, u_long cmd,
+    struct btrfs_ioctl_balance *args, struct proc *p)
+{
+	struct btrfs_fs *bmp = VFSTOBTRFS(mp);
+	struct btrfs_balance_filter *filters[] = {
+	    &args->data, &args->metadata, &args->system
+	};
+	unsigned int i;
+	int error = 0, fd = args->fd;
+	int32_t fsid[2];
+
+	memcpy(fsid, args->fsid, sizeof(fsid));
+	if (cmd == BTRFSIOC_BALANCE) {
+		if (args->flags == 0 || args->flags & ~7 ||
+		    args->state || args->error || args->expected ||
+		    args->considered || args->completed)
+			return (EINVAL);
+		for (i = 0; i < nitems(filters); i++) {
+			if (filters[i]->min > filters[i]->max ||
+			    filters[i]->max > 100 ||
+			    (!(args->flags & (1U << i)) &&
+			    (filters[i]->min || filters[i]->max ||
+			    filters[i]->limit)))
+				return (EINVAL);
+		}
+	}
+	mtx_enter(&bmp->bm_trans_mtx);
+	if (cmd == BTRFSIOC_BALANCE_STATUS) {
+		if (bmp->bm_balance.flags == 0)
+			error = ENOTCONN;
+		else {
+			*args = bmp->bm_balance;
+			args->fd = fd;
+			memcpy(args->fsid, fsid, sizeof(fsid));
+		}
+	} else if (cmd == BTRFSIOC_BALANCE_CANCEL) {
+		if (!(bmp->bm_balance.state & BTRFS_BALANCE_RUNNING))
+			error = ENOTCONN;
+		else {
+			bmp->bm_balance.state |= BTRFS_BALANCE_CANCELING;
+			wakeup(&bmp->bm_vnode_locks);
+		}
+	} else if (bmp->bm_balance.state & BTRFS_BALANCE_RUNNING)
+		error = EINPROGRESS;
+	else {
+		bmp->bm_balance = *args;
+		bmp->bm_balance.state = BTRFS_BALANCE_RUNNING;
+	}
+	mtx_leave(&bmp->bm_trans_mtx);
+	if (cmd != BTRFSIOC_BALANCE || error != 0)
+		return (error);
+
+	rw_enter_write(&btrfs_mount_lock);
+	if ((mp->mnt_flag & MNT_RDONLY) || bmp->bm_readonly) {
+		error = EROFS;
+		goto out;
+	}
+	/*
+	 * Drain complete vnode operations, including plans prepared before a
+	 * transaction join and reads retaining old file extents. Do not close
+	 * joins or take the chunk lock until these operations have finished.
+	 */
+	mtx_enter(&bmp->bm_trans_mtx);
+	while (bmp->bm_vnode_locks != 0) {
+		if (bmp->bm_balance.state & BTRFS_BALANCE_CANCELING) {
+			error = ECANCELED;
+			break;
+		}
+		error = msleep(&bmp->bm_vnode_locks, &bmp->bm_trans_mtx,
+		    PWAIT | PCATCH, "btrbal", 0);
+		if (error != 0)
+			break;
+	}
+	if (error == 0)
+		bmp->bm_relocating = p;
+	mtx_leave(&bmp->bm_trans_mtx);
+	if (error != 0)
+		goto out;
+	rw_enter_write(&bmp->bm_chunk_alloc_lock);
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(bmp->bm_control == NULL);
+	bmp->bm_control = p;
+	while (bmp->bm_transaction->bt_writers != 0)
+		msleep(&bmp->bm_transaction->bt_writers, &bmp->bm_trans_mtx,
+		    PWAIT, "btrbalwr", 0);
+	mtx_leave(&bmp->bm_trans_mtx);
+	error = btrfs_commit_current(bmp, p);
+	if (error == 0)
+		error = btrfs_balance(bmp, args);
+	mtx_enter(&bmp->bm_trans_mtx);
+	bmp->bm_control = NULL;
+	bmp->bm_relocating = NULL;
+	wakeup(&bmp->bm_control);
+	wakeup(&bmp->bm_relocating);
+	mtx_leave(&bmp->bm_trans_mtx);
+	rw_exit_write(&bmp->bm_chunk_alloc_lock);
+out:
+	mtx_enter(&bmp->bm_trans_mtx);
+	bmp->bm_balance.state = 0;
+	bmp->bm_balance.error = error;
+	*args = bmp->bm_balance;
+	args->fd = fd;
+	memcpy(args->fsid, fsid, sizeof(fsid));
+	mtx_leave(&bmp->bm_trans_mtx);
+	rw_exit_write(&btrfs_mount_lock);
+	return (error);
 }
 
 int
