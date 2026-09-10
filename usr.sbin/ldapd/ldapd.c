@@ -1,4 +1,4 @@
-/*	$OpenBSD: ldapd.c,v 1.32 2022/02/10 13:06:46 robert Exp $ */
+/*	$OpenBSD: ldapd.c,v 1.32.18.1 2026/09/10 20:24:37 bluhm Exp $ */
 
 /*
  * Copyright (c) 2009, 2010 Martin Hedenfalk <martin@bzero.se>
@@ -355,7 +355,7 @@ ldapd_auth_request(struct imsgev *iev, struct imsg *imsg)
 
 	log_debug("authenticating [%s]", areq->name);
 	ares.ok = ldapd_auth_classful(areq->name, areq->password);
-	ares.fd = areq->fd;
+	ares.id = areq->id;
 	ares.msgid = areq->msgid;
 	memset(areq, 0, sizeof(*areq));
 	imsgev_compose(iev, IMSG_LDAPD_AUTH_RESULT, 0, 0, -1, &ares,
