@@ -2114,17 +2114,48 @@ static int
 btrfs_lock(void *v)
 {
 	struct vop_lock_args *ap = v;
+	struct btrfs_fs *bmp = VTOBTRFS(ap->a_vp)->bn_mount;
+	int error;
 
-	return (rrw_enter(&VTOBTRFS(ap->a_vp)->bn_lock,
-	    ap->a_flags & LK_RWFLAGS));
+	if ((ap->a_flags & LK_RWFLAGS & RW_OPMASK) == RW_UPGRADE ||
+	    (ap->a_flags & LK_RWFLAGS & RW_OPMASK) == RW_DOWNGRADE)
+		return (rrw_enter(&VTOBTRFS(ap->a_vp)->bn_lock,
+		    ap->a_flags & LK_RWFLAGS));
+	mtx_enter(&bmp->bm_trans_mtx);
+	while (bmp->bm_relocating != NULL && bmp->bm_relocating != curproc) {
+		if (ap->a_flags & LK_NOWAIT) {
+			mtx_leave(&bmp->bm_trans_mtx);
+			return (EBUSY);
+		}
+		msleep(&bmp->bm_relocating, &bmp->bm_trans_mtx, PWAIT,
+		    "btrreloc", 0);
+	}
+	KASSERT(bmp->bm_vnode_locks != UINT_MAX);
+	bmp->bm_vnode_locks++;
+	mtx_leave(&bmp->bm_trans_mtx);
+	error = rrw_enter(&VTOBTRFS(ap->a_vp)->bn_lock,
+	    ap->a_flags & LK_RWFLAGS);
+	if (error != 0) {
+		mtx_enter(&bmp->bm_trans_mtx);
+		if (--bmp->bm_vnode_locks == 0)
+			wakeup(&bmp->bm_vnode_locks);
+		mtx_leave(&bmp->bm_trans_mtx);
+	}
+	return (error);
 }
 
 static int
 btrfs_unlock(void *v)
 {
 	struct vop_unlock_args *ap = v;
+	struct btrfs_fs *bmp = VTOBTRFS(ap->a_vp)->bn_mount;
 
 	rrw_exit(&VTOBTRFS(ap->a_vp)->bn_lock);
+	mtx_enter(&bmp->bm_trans_mtx);
+	KASSERT(bmp->bm_vnode_locks != 0);
+	if (--bmp->bm_vnode_locks == 0)
+		wakeup(&bmp->bm_vnode_locks);
+	mtx_leave(&bmp->bm_trans_mtx);
 	return (0);
 }
 

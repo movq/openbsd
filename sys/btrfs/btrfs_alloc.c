@@ -596,7 +596,14 @@ btrfs_space_init(struct btrfs_fs *bmp)
 	bmp->bm_nblock_groups = bmp->bm_nchunks;
 	bmp->bm_chunk_logical_end = bmp->bm_chunks[bmp->bm_nchunks - 1].logical +
 	    bmp->bm_chunks[bmp->bm_nchunks - 1].length;
+	bmp->bm_chunk_profile[1] = bmp->bm_chunk_profile[2] =
+	    BTRFS_BLOCK_GROUP_DUP;
 	for (i = 0; i < bmp->bm_nblock_groups; i++) {
+		uint64_t type = bmp->bm_chunks[i].type;
+		unsigned int slot = type & BTRFS_BLOCK_GROUP_DATA ? 0 :
+		    type & BTRFS_BLOCK_GROUP_METADATA ? 1 : 2;
+
+		bmp->bm_chunk_profile[slot] = type & BTRFS_BLOCK_GROUP_DUP;
 		group = malloc(sizeof(*group), M_BTRFS, M_WAITOK | M_ZERO);
 		bmp->bm_block_groups[i] = group;
 		TAILQ_INIT(&group->bbg_free_extents);
@@ -985,6 +992,51 @@ btrfs_space_release_list(struct btrfs_reserved_space_list *reservations)
 	}
 }
 
+/*
+ * A relocation cannot split the source allocation: compressed slices and
+ * shared file-base backreferences all describe its original full length.
+ * Do not scatter its promise over groups that cannot supply that allocation.
+ */
+static int
+btrfs_space_reserve_contiguous(struct btrfs_fs *bmp,
+    struct btrfs_reserved_space_list *reservations, uint64_t bytes)
+{
+	struct btrfs_reserved_space *reservation;
+	struct btrfs_block_group *group;
+	struct btrfs_free_extent *space;
+	unsigned int i, count = btrfs_space_group_count(bmp);
+	int found = 0;
+
+	if (bytes == 0)
+		return (0);
+	reservation = malloc(sizeof(*reservation), M_BTRFS, M_WAITOK | M_ZERO);
+	for (i = 0; i < count; i++) {
+		group = btrfs_space_group_at(bmp, i);
+		mtx_enter(&group->bbg_lock);
+		if ((group->bbg_flags & BTRFS_BLOCK_GROUP_DATA) &&
+		    !group->bbg_removing && group->bbg_free_bytes >= bytes) {
+			TAILQ_FOREACH(space, &group->bbg_free_extents, bfe_entry)
+				if (space->bfe_length >= bytes) {
+					found = 1;
+					break;
+				}
+		}
+		if (found) {
+			group->bbg_free_bytes -= bytes;
+			group->bbg_reserved_bytes += bytes;
+			reservation->brs_group = group;
+			reservation->brs_bytes = bytes;
+			reservation->brs_type = BTRFS_BLOCK_GROUP_DATA;
+			TAILQ_INSERT_TAIL(reservations, reservation, brs_entry);
+		}
+		mtx_leave(&group->bbg_lock);
+		if (found)
+			return (0);
+	}
+	free(reservation, M_BTRFS, sizeof(*reservation));
+	return (ENOSPC);
+}
+
 int
 btrfs_space_reserve(struct btrfs_trans_handle *handle,
     const struct btrfs_trans_reservation *request)
@@ -1033,9 +1085,13 @@ btrfs_space_reserve(struct btrfs_trans_handle *handle,
 	}
 	if (error == 0) {
 		handle->bth_failed_type = BTRFS_BLOCK_GROUP_DATA;
-		error = btrfs_space_reserve_type(bmp,
-		    &handle->bth_reservations, BTRFS_BLOCK_GROUP_DATA,
-		    request->btr_data);
+		if (request->btr_contiguous_data)
+			error = btrfs_space_reserve_contiguous(bmp,
+			    &handle->bth_reservations, request->btr_data);
+		else
+			error = btrfs_space_reserve_type(bmp,
+			    &handle->bth_reservations, BTRFS_BLOCK_GROUP_DATA,
+			    request->btr_data);
 	}
 	if (error == 0)
 		handle->bth_failed_type = 0;

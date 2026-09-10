@@ -90,10 +90,12 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	struct btrfs_ioctl_xattr *xattr = (void *)data;
 	struct btrfs_ioctl_tree *tree = (void *)data;
 	struct btrfs_ioctl_device *device = (void *)data;
+	struct btrfs_ioctl_balance *balance = (void *)data;
 	struct file *fp, *parent = NULL;
 	struct vnode *vp, *pvp = NULL;
 	struct mount *mp;
-	int error, isidentity, isxattr, isdevice, readonly, fd;
+	fsid_t fsid;
+	int error, isidentity, isxattr, isdevice, isbalance, readonly, fd;
 
 	if ((error = suser(p)) != 0)
 		return (error);
@@ -107,16 +109,36 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	isxattr = cmd == BTRFSIOC_GETXATTR || cmd == BTRFSIOC_SETXATTR ||
 	    cmd == BTRFSIOC_RMXATTR;
 	isdevice = cmd == BTRFSIOC_DEV_ADD || cmd == BTRFSIOC_DEV_REMOVE;
+	isbalance = cmd == BTRFSIOC_BALANCE ||
+	    cmd == BTRFSIOC_BALANCE_STATUS || cmd == BTRFSIOC_BALANCE_CANCEL;
 	readonly = cmd == BTRFSIOC_LIST || cmd == BTRFSIOC_INFO ||
 	    cmd == BTRFSIOC_FIND_UUID || cmd == BTRFSIOC_GETXATTR ||
-	    cmd == BTRFSIOC_TREE;
-	if (!isidentity && !isxattr && !isdevice && cmd != BTRFSIOC_TREE &&
+	    cmd == BTRFSIOC_TREE || cmd == BTRFSIOC_BALANCE_STATUS;
+	if (!isidentity && !isxattr && !isdevice && !isbalance &&
+	    cmd != BTRFSIOC_TREE &&
 	    cmd != BTRFSIOC_LIST && cmd != BTRFSIOC_CREATE &&
 	    cmd != BTRFSIOC_DELETE && cmd != BTRFSIOC_SNAPSHOT)
 		return (ENOTTY);
 	if (!readonly && !(flags & FWRITE))
 		return (EBADF);
-	if (isdevice) {
+	if (isbalance) {
+		fd = balance->fd;
+		if (fd == -1) {
+			memcpy(fsid.val, balance->fsid, sizeof(fsid.val));
+			mp = vfs_getvfs(&fsid);
+			if (mp == NULL ||
+			    strcmp(mp->mnt_vfc->vfc_name, "btrfs") != 0)
+				return (EINVAL);
+			error = vfs_busy(mp, VB_READ | VB_NOWAIT);
+			if (error != 0)
+				return (error);
+			error = btrfs_balance_control(mp, cmd, balance, p);
+			vfs_unbusy(mp);
+			return (error);
+		}
+		if (balance->fsid[0] != 0 || balance->fsid[1] != 0)
+			return (EINVAL);
+	} else if (isdevice) {
 		if (memchr(device->path, '\0', sizeof(device->path)) == NULL)
 			return (ENAMETOOLONG);
 		if (device->flags & ~(cmd == BTRFSIOC_DEV_ADD ?
@@ -187,7 +209,9 @@ btrfsioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	else {
 		error = vfs_busy(mp, VB_READ | VB_NOWAIT);
 		if (error == 0) {
-			if (isdevice)
+			if (isbalance)
+				error = btrfs_balance_control(mp, cmd, balance, p);
+			else if (isdevice)
 				error = btrfs_device_control(mp, cmd, device, p);
 			else if (cmd == BTRFSIOC_TREE)
 				error = btrfs_tree_control(vp, pvp, tree);

@@ -26,7 +26,6 @@ cmd_unsupported(const struct cmd_struct *cmd, int argc, char **argv)
 	DEFINE_COMMAND(name, token, cmd_unsupported,			\
 	    cmd_ ## name ## _usage, NULL, 0)
 
-DEFINE_UNSUPPORTED(balance, "balance");
 DEFINE_UNSUPPORTED(check, "check");
 DEFINE_UNSUPPORTED(filesystem, "filesystem");
 DEFINE_UNSUPPORTED(property, "property");
