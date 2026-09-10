@@ -8,6 +8,18 @@
 .Nd inspect and administer Btrfs filesystems
 .Sh SYNOPSIS
 .Nm
+.Cm balance start
+.Op Fl d Ns Op Ar filters
+.Op Fl m Ns Op Ar filters
+.Op Fl s Ns Op Ar filters
+.Ar mountpoint
+.Nm
+.Cm balance status
+.Ar mountpoint
+.Nm
+.Cm balance cancel
+.Ar mountpoint
+.Nm
 .Cm device add
 .Op Fl f
 .Ar device ...
@@ -48,6 +60,69 @@ utility inspects Btrfs filesystems and administers their devices and subvolumes.
 Use
 .Fl Fl help
 after a command to display its usage.
+.Pp
+Balance commands select a writable filesystem by
+.Ar mountpoint
+and require superuser privileges.
+.Bl -tag -width "balance cancel"
+.It Cm balance start
+Relocate live allocations from selected block groups, then release the emptied
+groups to the device pool.
+Existing free space in other groups is used first; new groups are allocated
+when necessary.
+This also works on single-device filesystems.
+Data sharing across snapshots and reflinks, compression, preallocation,
+checksums, and file attributes are preserved.
+Both SINGLE and DUP profiles are supported.
+.Pp
+The
+.Fl d ,
+.Fl m ,
+and
+.Fl s
+options select data, metadata, and system groups respectively.
+An option without filters selects every group of that type.
+Without any type options, all groups are selected.
+Metadata filters also apply to system groups unless
+.Fl s
+is explicitly supplied.
+Filters follow the option letter without a space and are separated by commas:
+.Bl -tag -width "usage=MIN..MAX"
+.It Cm usage=N
+Select groups with usage strictly below
+.Ar N
+percent.
+The value 0 selects only empty groups, and 100 includes full groups.
+.It Cm usage=MIN..MAX
+Select usage from
+.Ar MIN
+percent inclusive to
+.Ar MAX
+percent exclusive.
+An omitted lower bound means 0; an omitted upper bound means 100.
+An upper bound of 100 includes full groups.
+.It Cm limit=N
+Relocate at most
+.Ar N
+matching groups of that type.
+Zero selects none; the default has no limit.
+.El
+.Pp
+For example:
+.Bd -literal -offset indent
+btrfs balance start -dusage=20 -musage=10 /mnt/btrfs
+btrfs balance start -dusage=0 /mnt/btrfs
+btrfs balance start -dusage=10..50,limit=2 /mnt/btrfs
+.Ed
+.It Cm balance status
+Report the current or last balance's selected, considered, and completed group
+counts, and its last error.
+Progress is retained until another balance starts or the filesystem unmounts.
+.It Cm balance cancel
+Request cancellation at the next relocation transaction boundary.
+Completed work is retained.
+The start command returns an error when it observes cancellation.
+.El
 .Pp
 Device commands select a writable filesystem by
 .Ar mountpoint
@@ -170,7 +245,24 @@ Filesystem writers wait during device administration; reads may continue.
 Removal requires enough unallocated physical space on a remaining member
 for each whole chunk, including both DUP copies.
 It does not compact partially used chunks or change profiles.
-Device resizing and balance are not implemented.
+Device resizing is not implemented.
+.Pp
+Balance is synchronous.
+File I/O and filesystem writers wait during relocation.
+Use the absolute mountpoint name for status and cancellation.
+These commands use the cached mount table to select the filesystem without
+waiting for suspended vnode operations.
+Selection is made once at the start; groups allocated during relocation
+are not added to that run.
+Relocation needs workspace outside the source group and may report insufficient
+space even when the filesystem has free space inside that group.
+A data allocation requires a contiguous destination of its original size.
+Space failures retain completed work and attempt other selected groups.
+An interrupted balance leaves a consistent committed prefix and can be
+restarted with the same filters.
+An I/O or metadata error may make the filesystem read-only.
+Balance does not support profile conversion, mixed data/metadata groups,
+pause/resume, or automatic resumption after reboot.
 .Pp
 A failed removal can leave a completed prefix of chunk moves.
 The member stays attached until the final membership commit succeeds.

@@ -543,7 +543,8 @@ btrfs_get_root(struct btrfs_fs *bmp, uint64_t owner,
 	root_tree = btrfs_root_lookup(bmp, BTRFS_ROOT_TREE_OBJECTID);
 	KASSERT(root_tree != NULL);
 	error = btrfs_find_root_item(root_tree, owner,
-	    btrfs_file_tree(owner) ? BTRFS_FIRST_FREE_OBJECTID : 0, &item, &offset);
+	    btrfs_file_tree(owner) || owner == BTRFS_DATA_RELOC_TREE_OBJECTID ?
+	    BTRFS_FIRST_FREE_OBJECTID : 0, &item, &offset);
 	if (error != 0)
 		return (error);
 	location.brl_bytenr = letoh64(item.bytenr);

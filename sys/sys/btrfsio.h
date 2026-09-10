@@ -152,4 +152,43 @@ struct btrfs_ioctl_device {
 #define BTRFSIOC_DEV_ADD		_IOW('B', 13, struct btrfs_ioctl_device)
 #define BTRFSIOC_DEV_REMOVE	_IOW('B', 14, struct btrfs_ioctl_device)
 
+/*
+ * Synchronous balance, preserving SINGLE/DUP profiles. A usage ceiling selects
+ * groups strictly below that percentage; zero selects empty groups and 100
+ * includes full groups. Ranges use an inclusive minimum and exclusive maximum
+ * (100 includes full groups). Unfiltered types use min=0, max=100.
+ * limits bound the number of groups relocated per type; UINT64_MAX is unlimited.
+ * STATUS returns the current/last run, CANCEL requests a stop at a transaction
+ * boundary. No state is retained across unmount or reboot.
+ * fd selects a directory, or fd=-1 selects fsid from getmntinfo(MNT_NOWAIT).
+ * The latter permits status/cancel while vnode operations are suspended.
+ * fsid must be zero when fd is used.
+ */
+#define BTRFS_BALANCE_DATA	1
+#define BTRFS_BALANCE_METADATA	2
+#define BTRFS_BALANCE_SYSTEM	4
+#define BTRFS_BALANCE_RUNNING	1
+#define BTRFS_BALANCE_CANCELING	2
+struct btrfs_balance_filter {
+	uint32_t	min;
+	uint32_t	max;
+	uint64_t	limit;
+};
+struct btrfs_ioctl_balance {
+	int32_t		fd;
+	uint32_t	flags;
+	int32_t		fsid[2];
+	struct btrfs_balance_filter data;
+	struct btrfs_balance_filter metadata;
+	struct btrfs_balance_filter system;
+	uint64_t	expected;
+	uint64_t	considered;
+	uint64_t	completed;
+	uint32_t	state;
+	int32_t		error;
+};
+#define BTRFSIOC_BALANCE		_IOWR('B', 15, struct btrfs_ioctl_balance)
+#define BTRFSIOC_BALANCE_STATUS	_IOWR('B', 16, struct btrfs_ioctl_balance)
+#define BTRFSIOC_BALANCE_CANCEL	_IOW('B', 17, struct btrfs_ioctl_balance)
+
 #endif

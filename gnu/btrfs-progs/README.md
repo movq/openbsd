@@ -34,7 +34,14 @@ The executables are written to `mkfs/mkfs.btrfs` and `cmds/btrfs`.
 - Native online `device add` and `device remove` for SINGLE/DUP filesystems,
   including unequal device sizes and physical relocation of occupied chunks.
   Removal needs unallocated space for each whole chunk on a remaining member;
-  balance, profile conversion, and device resizing are not implemented.
+  profile conversion and device resizing are not implemented.
+- Native online `balance start`, `balance status`, and `balance cancel`.
+  Data, metadata, and system block groups support `usage=N`, `usage=MIN..MAX`,
+  and `limit=N` filters. Balance compacts live allocations and releases emptied
+  groups, including on a single device. It preserves data sharing, compression,
+  preallocation, and checksums. Relocation is synchronous; file I/O and
+  filesystem writers wait while it runs. Profile conversion, mixed block
+  groups, pause/resume, and persistent balance state are not supported.
 - Linux version 1 full and incremental send/receive, including hard links,
   special files, timestamps, and opaque extended attributes. Commands select
   a filesystem by mountpoint and interpret subvolume paths from tree 5;
