@@ -1,4 +1,4 @@
-/*	$OpenBSD: smtpd.h,v 1.694 2026/04/16 19:37:42 op Exp $	*/
+/*	$OpenBSD: smtpd.h,v 1.694.2.1 2026/09/11 14:57:50 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2008 Gilles Chehade <gilles@poolp.org>
@@ -70,11 +70,16 @@
 
 /*
  * RFC 5322 defines these characters as valid, some of them are
- * potentially dangerous and need to be escaped.
+ * potentially dangerous and need to be escaped. Even though we
+ * should be accepting $ ` { | } as valid characters, these are
+ * never present in legitimate envelope addresses and are often
+ * used in exploit attempts so we disallow them.
  */
-#define	MAILADDR_ALLOWED       	"!#$%&'*/?^`{|}~+-=_"
+#define	MAILADDR_ALLOWED       	"!#%&'*/?^~+-=_"
 #define	MAILADDR_ESCAPE		"!#$%&'*?`{|}~"
 
+/* filter out shell metacharacters but retain punctuation */
+#define	MAILADDR_RAW_ESCAPE     "!#$&'*?`{|}~"
 
 #define F_STARTTLS		0x01
 #define F_SMTPS			0x02
