@@ -1,4 +1,4 @@
-/*	$OpenBSD: fw_cfg.h,v 1.3 2025/06/12 21:04:37 dv Exp $	*/
+/*	$OpenBSD: fw_cfg.h,v 1.4 2026/09/17 22:20:06 mlarkin Exp $	*/
 /*
  * Copyright (c) 2018 Claudio Jeker <claudio@openbsd.org>
  *
@@ -29,5 +29,6 @@ void	fw_cfg_init(struct vmop_create_params *);
 uint8_t	vcpu_exit_fw_cfg(struct vm_run_params *);
 uint8_t	vcpu_exit_fw_cfg_dma(struct vm_run_params *);
 void	fw_cfg_add_file(const char *, const void *, size_t);
+void	fw_cfg_add_acpi_rsdp(const void *, size_t);
 
 #endif /* _FW_CFG_H_ */
