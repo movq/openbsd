@@ -1,6 +1,57 @@
 Host orchestration
 ------------------
 
+Random crash testing uses the existing disposable OpenBSD VM and host-side
+btrfs-progs. It REFORMATS scratch1.img as a 1 GiB filesystem, assumes that
+image is attached exclusively to this VM as sd1c, and requires all btrfs
+filesystems to be unmounted at entry. The other scratch disks are unused.
+The VM needs Python 3 and a matching kernel/mount_btrfs.
+
+    python3 regress/sys/btrfs/random_crash.py --seed 20260917 --rounds 12
+    python3 regress/sys/btrfs/random_crash.py --layout 16k-bitmap --rounds 12
+
+Defaults match root@10.77.0.4, /usr/src, and the image and QEMU sockets in
+/home/mike/obj/vm. Override them with --vm, --vm-source, --image, --device,
+--monitor and --serial. --layout accepts the same four layouts as run-all.sh.
+--workers defaults to eight. --min-delay and --max-delay set the random
+interval after all workers are ready (default 0.05 to 3 seconds). The seed
+reproduces operation streams and the chosen delays; thread scheduling and
+the exact crash instruction are not reproducible.
+
+Trials cycle through concurrent append/fsync, namespace, and mixed workloads.
+Namespace workers create a file, perform deterministic random sparse writes,
+overwrites and truncations with intermediate fsyncs, then fsync its final
+contents, rename across directories, create a hard link, remove the old name,
+and fsync both directories. Only then do they acknowledge the epoch over SSH.
+Append workers acknowledge each 64 KiB record after fsync. The host retains
+these acknowledgements outside the guest. Verification requires every
+acknowledged record and namespace operation to survive, including file
+contents, lengths, link counts and removal of old names. Unacknowledged
+operations may be absent, partial or complete; even zero acknowledged epochs
+is valid for a sufficiently early crash and is reported in trial.json.
+
+The host resets QEMU at the chosen time without guest sync, unmount or DDB,
+saves a sparse copy of the crash image while paused, and runs Linux
+btrfs check --readonly --check-data-csum on its committed trees. OpenBSD
+then replays the log and verifies the acknowledged operations. After clean
+unmount the host checks structure, data checksums, and metadata DUP copies;
+a read-only remount verifies the acknowledgements again. The next trial
+deletes the previous workload and reuses the filesystem, exercising freed
+space as well as new allocation.
+
+These are guest reset tests. QEMU and the host page cache survive; the tests
+do not simulate lost/reordered device-cache writes, torn sectors or host
+power loss. The pre-recovery checker does not replace the post-replay data
+oracle. Linux kernel replay is covered separately by log_tree.py.
+
+--results selects the output directory (default /tmp/btrfs-random-TIMESTAMP).
+It contains commands, serial output, seeds, delays, host acknowledgements,
+pre-replay superblocks and a crash image for every trial. Images retain the
+backing disk's logical size and can consume substantial space across a long
+run. Failures preserve the current mount/pause state and disk contents;
+inspect these before retrying. No automatic repair or reformat follows a
+failure. This runner is separate from run-all.sh.
+
 Balance has a separate targeted runner. It REFORMATS scratch1, using OpenBSD
 sd1c and Linux sdb with a 2 GiB recorded filesystem size. --devices also
 REFORMATS scratch2 (sd2c / sdc). Both VMs must begin with no btrfs mounts.
