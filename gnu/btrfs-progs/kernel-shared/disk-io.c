@@ -1443,19 +1443,19 @@ int btrfs_scan_fs_devices(int fd, const char *path,
 			  u64 sb_bytenr, unsigned sbflags,
 			  int skip_devices)
 {
+	struct stat st;
 	u64 total_devs;
 	u64 dev_size;
-	off_t seek_ret;
 	int ret;
 	if (!sb_bytenr)
 		sb_bytenr = BTRFS_SUPER_INFO_OFFSET;
 
-	seek_ret = lseek(fd, 0, SEEK_END);
-	if (seek_ret < 0)
+	if (fstat(fd, &st) < 0)
 		return -errno;
-
-	dev_size = seek_ret;
-	lseek(fd, 0, SEEK_SET);
+	/* SEEK_END does not report device sizes on OpenBSD. */
+	ret = device_get_partition_size_fd_stat(fd, &st, &dev_size);
+	if (ret < 0)
+		return ret;
 	if (sb_bytenr > dev_size) {
 		error("superblock bytenr %llu is larger than device size %llu",
 				(unsigned long long)sb_bytenr,

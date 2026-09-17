@@ -17,6 +17,7 @@
 #include "kernel-shared/disk-io.h"
 #include "kernel-shared/print-tree.h"
 #include "kernel-shared/zoned.h"
+#include "common/device-utils.h"
 #include "common/help.h"
 #include "common/messages.h"
 #include "common/string-utils.h"
@@ -28,24 +29,23 @@ load_and_dump_sb(const char *filename, int fd, u64 sb_bytenr, bool full,
 {
 	struct btrfs_super_block sb;
 	struct stat st;
+	u64 dev_size;
 	size_t bytes;
+	int ret;
 
 	if (fstat(fd, &st) < 0) {
 		error("unable to stat %s when loading superblock: %s", filename,
 		    strerror(errno));
 		return 1;
 	}
-	if (S_ISBLK(st.st_mode) || S_ISREG(st.st_mode)) {
-		off_t last_byte = lseek(fd, 0, SEEK_END);
-
-		if (last_byte == -1) {
-			error("cannot determine size of %s: %s", filename,
-			    strerror(errno));
-			return 1;
-		}
-		if (sb_bytenr > (u64)last_byte)
-			return 0;
+	ret = device_get_partition_size_fd_stat(fd, &st, &dev_size);
+	if (ret < 0) {
+		error("cannot determine size of %s: %s", filename,
+		    strerror(-ret));
+		return 1;
 	}
+	if (sb_bytenr > dev_size)
+		return 0;
 
 	errno = 0;
 	bytes = sbread(fd, &sb, sb_bytenr);
