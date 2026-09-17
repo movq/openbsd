@@ -1,5 +1,6 @@
 PROG=	mkfs.btrfs
 NOMAN=
+BINDIR=/sbin
 
 SRCS=	main.c common.c rootdir.c qgroup-stub.c
 
