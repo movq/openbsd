@@ -67,13 +67,14 @@ enum vtagtype	{
 	VT_NON, VT_UFS, VT_NFS, VT_MFS, VT_MSDOSFS,
 	VT_PORTAL, VT_PROCFS, VT_AFS, VT_ISOFS, VT_ADOSFS,
 	VT_EXT2FS, VT_VFS, VT_NTFS, VT_UDF, VT_FUSEFS, VT_TMPFS,
-	VT_BTRFS,
+	VT_BTRFS, VT_ZFS,
 };
 
 #define	VTAG_NAMES \
     "NON", "UFS", "NFS", "MFS", "MSDOSFS",			\
     "unused", "unused", "unused", "ISOFS", "unused",		\
-    "EXT2FS", "VFS", "NTFS", "UDF", "FUSEFS", "TMPFS", "BTRFS"
+    "EXT2FS", "VFS", "NTFS", "UDF", "FUSEFS", "TMPFS",		\
+    "BTRFS", "ZFS"
 
 /*
  * Each underlying filesystem allocates its own private area and hangs
@@ -93,8 +94,10 @@ RBT_HEAD(namecache_rb_cache, namecache);
  *	B	IPL_BIO
  */
 struct uvm_vnode;
+struct uvn_pagerops;
 struct vnode {
 	struct uvm_vnode *v_uvm;	/* uvm data */
+	const struct uvn_pagerops *v_uvn_ops; /* optional pager backend */
 	const struct vops *v_op;	/* vnode operations vector */
 	enum	vtype v_type;		/* vnode type */
 	enum	vtagtype v_tag;		/* type of underlying data */

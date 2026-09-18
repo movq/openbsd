@@ -109,6 +109,39 @@ void		uvmpd_tune(void);
 void		uvmpd_drop(struct pglist *);
 int		uvmpd_dropswap(struct vm_page *);
 
+static uvm_reclaim_cb *uvm_reclaim_callback;
+static void *uvm_reclaim_arg;
+
+#define	UVM_RECLAIM_STALL	MSEC_TO_NSEC(250)
+#define	UVM_RECLAIM_LIMIT	SEC_TO_NSEC(2)
+
+/*
+ * Register an external cache for page-daemon pressure notifications.
+ * There is currently one such cache, the ZFS ARC.  Both registration and
+ * callback invocation are serialized by the kernel lock.
+ */
+void
+uvm_reclaim_register(uvm_reclaim_cb *callback, void *arg)
+{
+	KERNEL_ASSERT_LOCKED();
+	KASSERT(callback != NULL);
+	KASSERT(uvm_reclaim_callback == NULL);
+
+	uvm_reclaim_arg = arg;
+	uvm_reclaim_callback = callback;
+}
+
+void
+uvm_reclaim_unregister(uvm_reclaim_cb *callback, void *arg)
+{
+	KERNEL_ASSERT_LOCKED();
+	KASSERT(uvm_reclaim_callback == callback);
+	KASSERT(uvm_reclaim_arg == arg);
+
+	uvm_reclaim_callback = NULL;
+	uvm_reclaim_arg = NULL;
+}
+
 /*
  * uvm_wait: wait (sleep) for the page daemon to free some pages
  *
@@ -207,7 +240,8 @@ uvmpd_tune(void)
 void
 uvm_pageout(void *arg)
 {
-	int shortage, inactive_shortage;
+	int error, shortage, inactive_shortage;
+	uint64_t limit, now, timeout;
 
 	/* ensure correct priority and set paging parameters... */
 	uvm.pagedaemon_proc = curproc;
@@ -257,6 +291,45 @@ uvm_pageout(void *arg)
 #endif
 		if (shortage > 0)
 			shortage -= uvm_pmr_cache_drain();
+
+		/*
+		 * Native caches could not satisfy the request.  Give an external
+		 * cache an opportunity to start asynchronous reclamation before we
+		 * scan UVM pages.  The callback must neither allocate nor wait for
+		 * reclamation; it is invoked with the UVM page locks dropped.
+		 */
+		if (shortage > 0 && uvm_reclaim_callback != NULL) {
+			uvm_reclaim_callback(uvm_reclaim_arg, shortage);
+			/*
+			 * Drop the kernel lock while an asynchronous reclaimer
+			 * returns physical pages.  Page returns wake
+			 * &uvmexp.free; recheck after each wake and stop as soon
+			 * as the deficit is satisfied.  Stop after one interval
+			 * without progress, and enforce an absolute time limit
+			 * while pages continue to arrive.
+			 */
+			limit = getnsecuptime() + UVM_RECLAIM_LIMIT;
+			for (;;) {
+				now = getnsecuptime();
+				uvm_lock_fpageq();
+				shortage = uvmexp.freetarg -
+				    atomic_load_sint(&uvmexp.free) +
+				    BUFPAGES_DEFICIT;
+				if (shortage <= 0 || now >= limit) {
+					uvm_unlock_fpageq();
+					break;
+				}
+				timeout = MIN(UVM_RECLAIM_STALL, limit - now);
+				error = msleep_nsec(&uvmexp.free,
+				    &uvm.fpageqlock, PVM, "extrecl",
+				    timeout);
+				uvm_unlock_fpageq();
+				if (error != 0)
+					break;
+			}
+			if (shortage <= 0)
+				size = 128;
+		}
 
 		shortage = MAX(shortage, size);
 		inactive_shortage = MAX(inactive_shortage, shortage);

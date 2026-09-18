@@ -155,6 +155,7 @@ cdev_decl(viocon);
 #include "wsmux.h"
 #include "kexec.h"
 #include "kcov.h"
+#include "zfs.h"
 
 #ifdef USER_PCICONF
 #include "pci.h"
@@ -285,10 +286,11 @@ struct cdevsw	cdevsw[] =
 	cdev_ujoy_init(NUJOY,ujoy),	/* 100: USB joystick/gamecontroller */
 	cdev_psp_init(NPSP,psp),	/* 101: PSP */
 #ifdef BTRFS
-	cdev_bio_init(1,btrfs),	/* 102: Btrfs control */
+	cdev_bio_init(1,btrfs),		/* 102: Btrfs control */
 #else
 	cdev_notdef(),
 #endif
+	cdev_zfs_init(NZFS,zfs),	/* 103: ZFS control device */
 };
 int	nchrdev = nitems(cdevsw);
 

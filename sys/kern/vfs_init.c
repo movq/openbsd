@@ -105,6 +105,11 @@ static struct vfsconf vfsconflist[] = {
 	{ &btrfs_vfsops, MOUNT_BTRFS, 20, 0, MNT_LOCAL,
 	    sizeof(struct btrfs_args) },
 #endif
+
+#ifdef ZFS
+	{ &zfs_vfsops, MOUNT_ZFS, 20, 0, MNT_LOCAL,
+	    sizeof(struct zfs_args) },
+#endif
 };
 
 

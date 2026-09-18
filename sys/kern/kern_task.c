@@ -372,6 +372,50 @@ task_add(struct taskq *tq, struct task *w)
 }
 
 int
+task_add_front(struct taskq *tq, struct task *w)
+{
+	int rv = 0;
+
+	if (ISSET(w->t_flags, TASK_ONQUEUE))
+		return (0);
+
+	mtx_enter(&tq->tq_mtx);
+	if (!ISSET(w->t_flags, TASK_ONQUEUE)) {
+		rv = 1;
+		SET(w->t_flags, TASK_ONQUEUE);
+		TAILQ_INSERT_HEAD(&tq->tq_worklist, w, t_entry);
+#if NKCOV > 0
+		if (!kcov_cold)
+			w->t_process = curproc->p_p;
+#endif
+	}
+	mtx_leave(&tq->tq_mtx);
+
+	if (rv)
+		wakeup_one(tq);
+
+	return (rv);
+}
+
+int
+taskq_is_member(struct taskq *tq, struct proc *thread)
+{
+	struct taskq_thread *tt;
+	int rv = 0;
+
+	mtx_enter(&tq->tq_mtx);
+	SLIST_FOREACH(tt, &tq->tq_threads, tt_entry) {
+		if (tt->tt_thread == thread) {
+			rv = 1;
+			break;
+		}
+	}
+	mtx_leave(&tq->tq_mtx);
+
+	return (rv);
+}
+
+int
 task_del(struct taskq *tq, struct task *w)
 {
 	int rv = 0;

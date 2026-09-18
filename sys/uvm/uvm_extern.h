@@ -408,6 +408,9 @@ void			uvm_aio_aiodone(struct buf *);
 void			uvm_pageout(void *);
 void			uvm_aiodone_daemon(void *);
 void			uvm_wait(const char *);
+typedef void		uvm_reclaim_cb(void *, int);
+void			uvm_reclaim_register(uvm_reclaim_cb *, void *);
+void			uvm_reclaim_unregister(uvm_reclaim_cb *, void *);
 int			uvm_pglistalloc(psize_t, paddr_t, paddr_t,
 			    paddr_t, paddr_t, struct pglist *, int, int);
 void			uvm_pglistfree(struct pglist *);
