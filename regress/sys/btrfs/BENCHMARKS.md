@@ -8,6 +8,8 @@ are retained for historical context.
 The [Linux comparison](LINUX_COMPARISON.md) repeats those workloads on Alpine
 and OpenBSD, records transaction and device-flush counts, and uses restored
 filesystem images to separate extent-layout costs from deletion behavior.
+The follow-up [transaction and extent experiments](TRANSACTION_EXPERIMENTS.md)
+measure larger commit-time extents and reuse of unused metadata reservations.
 
 The separate [sequential-write investigation](SEQUENTIAL_WRITES.md) has
 write controls, phase profiling, and architectural recommendations. The table

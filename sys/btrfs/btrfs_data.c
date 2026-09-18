@@ -769,8 +769,9 @@ btrfs_write_inode_ordered(struct btrfs_trans_handle *handle,
 }
 
 /*
- * Replace a run of private sector mappings and their unmaterialized adds with
- * one durable allocation. The allocator may retain separate sector accounting
+ * Replace a run of complete private mappings and their unmaterialized adds
+ * with one durable allocation, capped at 128 MiB. Payload and I/O buffers
+ * remain bounded by MAXBSIZE. The allocator retains separate accounting
  * records: their disjoint union is unchanged, and commit releases them.
  * No writer or cancellation can run after this transformation.
  */
@@ -787,7 +788,7 @@ btrfs_coalesce_ordered_run(struct btrfs_trans_handle *handle,
 	struct btrfs_path path = { 0 };
 	struct btrfs_key key = { 0 };
 	const uint8_t *data;
-	uint32_t size, sectorsize = first->boe_length;
+	uint32_t size;
 	int error;
 
 	error = btrfs_get_root(trans->bt_mount, first->boe_treeid, &root);
@@ -796,14 +797,14 @@ btrfs_coalesce_ordered_run(struct btrfs_trans_handle *handle,
 	key.objectid = htole64(first->boe_objectid);
 	key.type = BTRFS_EXTENT_DATA_KEY;
 	item.generation = htole64(trans->bt_generation);
-	item.ram_bytes = item.disk_num_bytes = item.num_bytes =
-	    htole64(sectorsize);
 	item.type = BTRFS_FILE_EXTENT_REG;
 	/* Validate every private mapping before changing any of them. */
 	for (ordered = first; ordered != end;
 	    ordered = RBT_NEXT(btrfs_ordered_io, ordered)) {
 		key.offset = htole64(ordered->boe_file_offset);
 		item.disk_bytenr = htole64(ordered->boe_bytenr);
+		item.ram_bytes = item.disk_num_bytes = item.num_bytes =
+		    htole64(ordered->boe_length);
 		error = btrfs_search_slot(root, &key, &path);
 		if (error == 0)
 			error = btrfs_path_item(&path, NULL, &data, &size);
@@ -854,7 +855,7 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 	struct btrfs_delayed_data_ref *ref;
 	struct btrfs_io_map map;
 	struct btrfs_fs *bmp = trans->bt_mount;
-	uint32_t length, sectorsize = letoh32(bmp->bm_super.sectorsize);
+	uint32_t length;
 	int error;
 
 	KASSERT(handle->bth_commit);
@@ -862,8 +863,8 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 	RBT_FOREACH(ordered, btrfs_ordered_tree, &trans->bt_ordered_extents) {
 		KASSERT(ordered->boe_written);
 		ordered->boe_ref = NULL;
-		/* Direct ranges already own one mapping and allocation. */
-		if (ordered->boe_length != sectorsize)
+		/* A shortened mapping does not cover its entire allocation. */
+		if (ordered->boe_file_length != ordered->boe_length)
 			continue;
 		if (RBT_INSERT(btrfs_ordered_io, &io, ordered) != NULL)
 			return (EINVAL);
@@ -878,7 +879,8 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 		ordered = RBT_FIND(btrfs_ordered_io, &io, &probe);
 		if (ordered == NULL)
 			continue;
-		if (ordered->boe_ref != NULL || ref->bdr_length != sectorsize ||
+		if (ordered->boe_ref != NULL ||
+		    ref->bdr_length != ordered->boe_length ||
 		    ref->bdr_owner.kind != BTRFS_REF_IMPLICIT ||
 		    ref->bdr_owner.u.implicit.root != ordered->boe_treeid ||
 		    ref->bdr_owner.u.implicit.objectid != ordered->boe_objectid ||
@@ -888,16 +890,18 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 		ordered->boe_ref = ref;
 	}
 	RBT_FOREACH(ordered, btrfs_ordered_tree, &trans->bt_ordered_extents)
-		if (ordered->boe_length == sectorsize && ordered->boe_ref == NULL)
+		if (ordered->boe_file_length == ordered->boe_length &&
+		    ordered->boe_ref == NULL)
 			return (EINVAL);
 
 	for (ordered = RBT_MIN(btrfs_ordered_io, &io); ordered != NULL;
 	    ordered = next) {
 		first = ordered;
-		length = sectorsize;
+		length = first->boe_length;
 		for (;;) {
 			next = RBT_NEXT(btrfs_ordered_io, ordered);
-			if (next == NULL || length > MAXBSIZE - sectorsize ||
+			if (next == NULL ||
+			    length > 128U * 1024 * 1024 - next->boe_length ||
 			    next->boe_bytenr != first->boe_bytenr + length ||
 			    next->boe_treeid != first->boe_treeid ||
 			    next->boe_objectid != first->boe_objectid ||
@@ -905,15 +909,15 @@ btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *handle)
 			    length)
 				break;
 			error = btrfs_lookup_fs_logical(bmp, first->boe_bytenr,
-			    length + sectorsize, &map);
+			    length + next->boe_length, &map);
 			if (error == ENOENT)
 				break;
 			if (error != 0)
 				return (error);
-			length += sectorsize;
+			length += next->boe_length;
 			ordered = next;
 		}
-		if (length == sectorsize)
+		if (length == first->boe_length)
 			continue;
 		error = btrfs_coalesce_ordered_run(handle, first, next, length);
 		if (error != 0)

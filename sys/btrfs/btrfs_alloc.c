@@ -1191,6 +1191,122 @@ btrfs_space_reserve_commit(struct btrfs_transaction *trans)
 	return (0);
 }
 
+/*
+ * Once all deferred metadata work has been materialized, unused operation
+ * promises can be returned without releasing pins or publishing roots.
+ * Retain the initial commit guarantee and replenish any borrowed protected
+ * reclaim promises before returning space to ordinary writers.
+ */
+int
+btrfs_space_trim_commit(struct btrfs_transaction *trans)
+{
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_reserved_space *space, *next, *refill;
+	struct btrfs_block_group *group;
+	struct btrfs_trans_extent *extent;
+	uint64_t base, reclaim, metadata = 0, system = 0;
+	uint64_t available_metadata = 0, available_system = 0;
+	uint64_t keep, release, target;
+	uint32_t nodesize = letoh32(bmp->bm_super.nodesize);
+
+	KASSERT(bmp->bm_committer &&
+	    trans->bt_state == BTRFS_TRANS_COMMITTING);
+	KASSERT(trans->bt_writers == 0 && !trans->bt_commit_handle);
+	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_tree_refs));
+	KASSERT(TAILQ_EMPTY(&trans->bt_delayed_data_refs));
+	KASSERT(RBT_EMPTY(btrfs_ordered_tree, &trans->bt_ordered_extents));
+	base = (uint64_t)nodesize * BTRFS_COMMIT_METADATA_BLOCKS;
+	reclaim = (uint64_t)nodesize * BTRFS_RECLAIM_METADATA_BLOCKS;
+	if (letoh64(bmp->bm_super.compat_ro_flags) &
+	    BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE) {
+		base *= 2;
+		reclaim *= 2;
+	}
+	TAILQ_FOREACH(space, &trans->bt_reclaim_reservations, brs_entry) {
+		if (space->brs_type == BTRFS_BLOCK_GROUP_METADATA)
+			metadata += space->brs_bytes;
+		if (space->brs_type == BTRFS_BLOCK_GROUP_SYSTEM)
+			system += space->brs_bytes;
+	}
+	TAILQ_FOREACH(space, &trans->bt_commit_reservations, brs_entry) {
+		if (space->brs_type == BTRFS_BLOCK_GROUP_METADATA)
+			available_metadata += space->brs_bytes;
+		if (space->brs_type == BTRFS_BLOCK_GROUP_SYSTEM)
+			available_system += space->brs_bytes;
+	}
+	if (available_metadata < base +
+	    (metadata < reclaim ? reclaim - metadata : 0) ||
+	    available_system + system <
+	    (uint64_t)nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS)
+		return (EAGAIN);
+
+	/*
+	 * A reclaim operation transfers its borrowed promise to the commit
+	 * pool at handle end. Its obligations are now materialized, so move
+	 * the protected portion back before trimming the ordinary surplus.
+	 * This ownership transfer leaves block-group accounting unchanged.
+	 */
+	TAILQ_FOREACH(space, &trans->bt_commit_reservations, brs_entry) {
+		keep = 0;
+		if (space->brs_type == BTRFS_BLOCK_GROUP_METADATA &&
+		    metadata < reclaim) {
+			keep = MIN(space->brs_bytes, reclaim - metadata);
+			metadata += keep;
+		}
+		if (space->brs_type == BTRFS_BLOCK_GROUP_SYSTEM &&
+		    system < (uint64_t)nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS) {
+			keep = MIN(space->brs_bytes,
+			    (uint64_t)nodesize * BTRFS_CHUNK_SYSTEM_BLOCKS -
+			    system);
+			system += keep;
+		}
+		if (keep == 0)
+			continue;
+		refill = malloc(sizeof(*refill), M_BTRFS, M_WAITOK | M_ZERO);
+		refill->brs_group = space->brs_group;
+		refill->brs_type = space->brs_type;
+		refill->brs_bytes = keep;
+		TAILQ_INSERT_TAIL(&trans->bt_reclaim_reservations, refill,
+		    brs_entry);
+		space->brs_bytes -= keep;
+		trans->bt_commit_reserved_bytes -= keep;
+	}
+
+	/*
+	 * Cancellation of an earlier commit-handle allocation returns its
+	 * bytes to this pool without increasing the target. Leave room for
+	 * those returns in the accounting ceiling, as well as the live promise.
+	 */
+	target = base;
+	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry)
+		if (extent->bte_commit)
+			target += extent->bte_length;
+	TAILQ_FOREACH_SAFE(space, &trans->bt_commit_reservations, brs_entry,
+	    next) {
+		keep = space->brs_type == BTRFS_BLOCK_GROUP_METADATA ?
+		    MIN(base, space->brs_bytes) : 0;
+		base -= keep;
+		release = space->brs_bytes - keep;
+		group = space->brs_group;
+		mtx_enter(&group->bbg_lock);
+		KASSERT(group->bbg_reserved_bytes >= release);
+		group->bbg_reserved_bytes -= release;
+		group->bbg_free_bytes += release;
+		space->brs_bytes = keep;
+		trans->bt_commit_reserved_bytes -= release;
+		btrfs_space_check_group(group);
+		mtx_leave(&group->bbg_lock);
+		if (keep == 0) {
+			TAILQ_REMOVE(&trans->bt_commit_reservations, space,
+			    brs_entry);
+			free(space, M_BTRFS, sizeof(*space));
+		}
+	}
+	trans->bt_commit_reserve_target = target;
+	btrfs_space_check_commit_reserve(trans);
+	return (0);
+}
+
 /* Recovery cannot publish partial progress to replenish its reservation. */
 int
 btrfs_space_replay_reserve(struct btrfs_trans_handle *handle)
