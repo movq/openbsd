@@ -3,6 +3,8 @@
 The September 17, 2026 benchmark rerun stopped after its first Btrfs pass
 because deleting the sequential files took minutes. Source-tree deletion
 took 103.457 seconds. The FFS2 and FFS2-async comparisons were not run.
+The subsequent [full comparison](BENCHMARKS_20260918.md) includes all three
+configurations on the patched kernel.
 
 Focused measurements on `5d952a179412` identified excessive intermediate
 cleanup commits. The improvements from `41b71f453d2` and `54e27b73dc33` are
