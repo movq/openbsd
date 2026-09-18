@@ -1356,13 +1356,16 @@ btrfs_cleanup_inode(struct btrfs_root *root, uint64_t ino,
 		if (error == 0)
 			error = end_error;
 		/*
-		 * Publish intermediate batches to bound reservations and
-		 * release pinned space. A completed unlink can share the open
-		 * transaction with later namespace operations; the inode and
-		 * marker disappear atomically when that transaction commits.
-		 * Publish protected-reserve cleanup promptly to replenish it.
+		 * Keep each handle bounded, but let later joins publish when
+		 * retained reservations or pinned space exhaust the available
+		 * budget. An intermediate batch need not commit on its own:
+		 * its inode accounting, marker and remaining mappings become
+		 * durable together whenever the transaction is published.
+		 * A completed unlink can share the open transaction with later
+		 * namespace operations. Finish a truncate before returning,
+		 * and replenish protected cleanup reservations promptly.
 		 */
-		if (error == 0 && (!finished || truncate ||
+		if (error == 0 && ((finished && truncate) ||
 		    reservation.btr_reclaim))
 			error = btrfs_trans_commit(bmp, generation, curproc);
 		if (error != 0)

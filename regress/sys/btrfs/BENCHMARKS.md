@@ -1,5 +1,9 @@
 # Btrfs / FFS2 performance
 
+The September 2026 rerun paused to investigate slow deletion. See the
+[cleanup measurements and change](CLEANUP_PERFORMANCE.md) for current
+before/after results; the FFS2/default/async matrix remains incomplete.
+
 The later [sequential-write investigation](SEQUENTIAL_WRITES.md) has fresh
 write controls, phase profiling, and architectural recommendations. The table
 below retains the complete workload comparison from the validated build.

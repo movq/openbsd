@@ -456,6 +456,11 @@ It also deletes committed mappings alongside unrelated pending writes and
 closes an unlinked inode whose pending data starts beyond sector zero.
 Batch-boundary cases cover empty and fragmented files, directories, inline
 symlinks, and packed xattrs, checking reclamation and a surviving neighbor.
+Ordinary batches may share a transaction until reservation pressure requires
+publication; the eight-item handle bound does not require a commit per batch.
+The final truncate batch and protected-reserve cleanup still commit promptly.
+See CLEANUP_PERFORMANCE.md for the measured effect on recursive and large-file
+deletion.
 Its capacity phase holds an unlinked inode open, exhausts metadata with both
 creation and writes, then checks close-time reclamation using the protected
 cleanup reserve. Use a rootdir fixture with at least 64 MiB of imported data,
@@ -844,8 +849,9 @@ Use capacity_verify after remount.
 For recovery, run prepare, set a DDB breakpoint on btrfs_cleanup_inode, then run
 truncate and reset when it stops after target-size publication. Check the
 unmounted image and marker, mount writable, and run recovered. Repeat after
-several batch commits to exercise a persisted deletion cursor. Test both node
-sizes and explicit holes, with independent checks and both remount modes.
+reservation pressure publishes intermediate batches to exercise a persisted
+deletion cursor. Test both node sizes and explicit holes, with independent
+checks and both remount modes.
 
 shrink_compressed.py uses seed/exercise/verify_metadata with `--compress zlib`
 fixtures and exercise_zstd with `--compress zstd`. It tests O_TRUNC without decoding,
