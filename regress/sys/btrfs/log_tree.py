@@ -22,8 +22,11 @@ import time
 MIB = 1024 * 1024
 
 
-def incremental_files(case):
-    return 384 if case == "deep" else 48
+def incremental_files(case, nodesize=4096):
+    # Keep enough leaves to measure reuse after the initial tree growth.
+    # With 16 KiB nodes, 48 files spend most publications growing a tiny
+    # forest whose mandatory COW paths dominate the aggregate block count.
+    return 384 if case == "deep" else 48 * (nodesize // 4096)
 
 
 def data(tag, size=256 * 1024):
@@ -38,7 +41,7 @@ def fsync(path):
         os.close(fd)
 
 
-def seed(root, case):
+def seed(root, case, nodesize=4096):
     root = Path(root)
     for name in ("file", "second", "unsynced", "source", "victim"):
         (root / name).write_bytes(data(name))
@@ -54,12 +57,12 @@ def seed(root, case):
                            check=True)
             (root / name / "file").write_bytes(data(name))
     if case in ("incremental", "deep"):
-        for i in range(incremental_files(case)):
+        for i in range(incremental_files(case, nodesize)):
             (root / f"many-{i:03d}").write_bytes(data(f"seed-{i}", MIB))
     os.sync()
 
 
-def mutate(root, case):
+def mutate(root, case, nodesize=4096):
     root = Path(root)
     publications = []
 
@@ -81,7 +84,7 @@ def mutate(root, case):
         fsync(root / "warmup" / "child")
         os.sync()
     if case in ("incremental", "deep"):
-        for i in range(incremental_files(case)):
+        for i in range(incremental_files(case, nodesize)):
             # Isolate log collection/publication from data allocation and
             # transaction reservation pressure.
             os.chmod(root / f"many-{i:03d}", 0o600)
@@ -293,13 +296,13 @@ def mutate(root, case):
     print("FSYNC_COMPLETE", flush=True)
 
 
-def verify(root, case):
+def verify(root, case, nodesize=4096):
     root = Path(root)
     file_path = root / "file"
     expected = bytearray(data("file"))
     second = bytearray(data("second"))
     if case in ("incremental", "deep"):
-        for i in range(incremental_files(case)):
+        for i in range(incremental_files(case, nodesize)):
             path = root / f"many-{i:03d}"
             assert path.read_bytes() == data(f"seed-{i}", MIB)
             assert path.stat().st_mode & 0o777 == 0o600
@@ -463,10 +466,10 @@ def mount(guest, readonly=False):
         ssh(guest, f"mkdir -p /mnt/log; mount_btrfs {option}/dev/sd1c /mnt/log")
 
 
-def worker(guest, phase, case):
+def worker(guest, phase, case, nodesize=4096):
     command(["scp", __file__,
              f"root@10.77.0.{2 if guest == 'openbsd' else 3}:/tmp/log_tree.py"])
-    return ssh(guest, f"python3 /tmp/log_tree.py {phase} /mnt/log {case}")
+    return ssh(guest, f"python3 /tmp/log_tree.py {phase} /mnt/log {case} {nodesize}")
 
 
 def check_incremental(image, output, nodesize, case):
@@ -479,7 +482,7 @@ def check_incremental(image, output, nodesize, case):
                                   if line.startswith("LOG_PUBLICATIONS ")))
     previous = set()
     counts = []
-    files = incremental_files(case)
+    files = incremental_files(case, nodesize)
     with image.open("rb", buffering=0) as disk:
         disk.seek(65536 + 196)
         csum_type = struct.unpack("<H", disk.read(2))[0]
@@ -524,7 +527,9 @@ def check_incremental(image, output, nodesize, case):
     if case == "deep":
         assert counts[-1]["level"] >= 2, counts[-1]
     # A complete rebuild would write the final forest at every publication.
-    assert sum(c["new"] for c in counts) < sum(c["blocks"] for c in counts) / 3
+    new = sum(c["new"] for c in counts)
+    total = sum(c["blocks"] for c in counts)
+    assert new < total / 3, dict(new=new, blocks=total, nodesize=nodesize)
     print("INCREMENTAL_COUNTS " + json.dumps(counts), flush=True)
 
 
@@ -664,10 +669,10 @@ def run(args):
             ssh("linux", f"mkfs.btrfs -f -b {MIB * 1024} -n {args.nodesize} "
                 f"--csum {args.csum} /dev/sdb")
             mount("linux")
-            worker("linux", "seed", case)
+            worker("linux", "seed", case, args.nodesize)
             ssh("linux", "umount /mnt/log")
             mount(writer)
-            output = worker(writer, "mutate", case)
+            output = worker(writer, "mutate", case, args.nodesize)
             if case == "commit-crash":
                 assert writer == "openbsd"
                 interrupt_commit(args, image)
@@ -686,23 +691,24 @@ def run(args):
                 command(["dd", f"if={snapshot}", f"of={image}", "bs=1M",
                          "count=1024", "conv=notrunc,fsync", "status=none"])
                 mount(reader, args.readonly)
-                worker(reader, "verify", case)
+                worker(reader, "verify", case, args.nodesize)
                 ssh(reader, "umount /mnt/log")
                 ssh("linux", "btrfs check --readonly --check-data-csum /dev/sdb")
                 assert super_info(image)["log_root"] == 0
                 mount(reader)
-                worker(reader, "verify", case)
+                worker(reader, "verify", case, args.nodesize)
                 ssh(reader, "umount /mnt/log")
             print(f"PASS {name}", flush=True)
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ("seed", "mutate", "verify"):
-        phase, root, case = sys.argv[1:]
+        phase, root, case = sys.argv[1:4]
+        nodesize = int(sys.argv[4]) if len(sys.argv) > 4 else 4096
         if phase == "seed":
-            seed(root, case)
+            seed(root, case, nodesize)
         else:
-            globals()[phase](root, case)
+            globals()[phase](root, case, nodesize)
     else:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--cases", nargs="+", default=["data", "truncate"])
