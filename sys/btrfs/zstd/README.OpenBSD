@@ -6,6 +6,12 @@ upstream Zstandard 1.5.7 from https://github.com/facebook/zstd.  Dictionary
 building, legacy formats, multithreaded compression, the thread pool, tests,
 programs, and assembly are not imported.
 
+All .c filenames have a btrfs_ prefix because kernel object filenames share
+a flat namespace.  Keep this prefix when updating the import, including
+the common, FSE, HUF, histogram, and xxhash sources.  OpenZFS builds its own
+zstd version and already prefixes its linker symbols with zfs_, so the
+Btrfs copy retains the upstream symbol names.
+
 Local kernel adaptations are confined to:
 
 	common/zstd_kernel.h
