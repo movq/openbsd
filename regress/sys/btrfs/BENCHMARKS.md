@@ -5,6 +5,10 @@ Btrfs, default FFS2 and FFS2 with `async`, including the
 [cleanup batching fix](CLEANUP_PERFORMANCE.md). The older measurements below
 are retained for historical context.
 
+The [Linux comparison](LINUX_COMPARISON.md) repeats those workloads on Alpine
+and OpenBSD, records transaction and device-flush counts, and uses restored
+filesystem images to separate extent-layout costs from deletion behavior.
+
 The separate [sequential-write investigation](SEQUENTIAL_WRITES.md) has
 write controls, phase profiling, and architectural recommendations. The table
 below retains the complete workload comparison from the validated build.

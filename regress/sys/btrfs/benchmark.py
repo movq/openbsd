@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OpenBSD workload runner for a freshly formatted, unmounted scratch FS.
+"""OpenBSD/Linux workload runner for a freshly formatted, unmounted scratch FS.
 
 Creates and removes "tree" and "large" beneath the mountpoint. Formatting is
 deliberately external; see BENCHMARKS.md for the measured setup. Run under an
@@ -39,6 +39,8 @@ p.add_argument("--verify-data", action="store_true",
                help="compare extracted files with the archive and I/O files with zeroes")
 p.add_argument("--checkpoints", action="store_true",
                help="emit unmounted checkpoints and wait for 'continue' on stdin")
+p.add_argument("--observe", action="store_true",
+               help="pause before/after measurements for external counter collection")
 a = p.parse_args()
 if not a.io_only and not a.archive:
     p.error("--archive is required unless --io-only")
@@ -76,8 +78,16 @@ def checkpoint(label):
             raise RuntimeError("checkpoint was not acknowledged")
 
 
+def observe(label, phase):
+    if a.observe:
+        emit({"event": "observation", "workload": label, "phase": phase})
+        if sys.stdin.readline().strip() != "continue":
+            raise RuntimeError("observation was not acknowledged")
+
+
 def measure(label, argv, durable=False, output=None):
     emit({"event": "start", "workload": label, "argv": argv})
+    observe(label, "before")
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     start = time.monotonic()
     with open(out / (a.name + "-" + label + ".stderr"), "wb") as err:
@@ -92,6 +102,7 @@ def measure(label, argv, durable=False, output=None):
         start = time.monotonic()
         unmount()
         drain = time.monotonic() - start
+    observe(label, "after")
     result = {
         "event": "result", "workload": label, "command_seconds": elapsed,
         "unmount_seconds": drain, "total_seconds": elapsed + drain,
@@ -121,15 +132,15 @@ def sequential_io():
     for iteration in range(1, a.io_iterations + 1):
         mount()
         measure("write-" + size + "-" + str(iteration),
-                ["dd", "if=/dev/zero", "of=" + str(mp / "large"), "bs=1m",
+                ["dd", "if=/dev/zero", "of=" + str(mp / "large"), "bs=1048576",
                  "count=" + str(a.io_mib)], durable=True)
         checkpoint("write-" + str(iteration))
         mount()
         measure("read-" + size + "-" + str(iteration),
-                ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1m"])
+                ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1048576"])
         if a.read_repeat:
             measure("read-repeat-" + size + "-" + str(iteration),
-                    ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1m"])
+                    ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1048576"])
         unmount()
         if a.verify_data:
             mount()
