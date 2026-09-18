@@ -378,9 +378,8 @@ static uint_t zfs_arc_evict_batch_limit = 10;
  */
 #if defined(__OpenBSD__)
 /*
- * OpenBSD's taskq_wait() uses a full native taskq barrier.  Amortize that
- * substantially higher synchronization cost while retaining the ten-header
- * sublist lock batch and periodic scheduler yields.
+ * Amortize OpenBSD taskq dispatch and wait costs while retaining the
+ * ten-header sublist lock batch and periodic scheduler yields.
  */
 static uint_t zfs_arc_evict_batches_limit = 64;
 #else
