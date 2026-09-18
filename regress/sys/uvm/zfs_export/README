@@ -1,0 +1,34 @@
+ZFS import/export ARC regression
+
+export.py exercises the parallel ARC eviction and asynchronous pool flush
+paths by importing a disposable pool, checking every regular file of an
+extracted source archive, and exporting the pool repeatedly without an idle
+period.  Reading the tree populates the ARC; successive exports can overlap
+the previous pool instance's asynchronous flush and background eviction.
+
+This caught a mismatch between OpenZFS taskq_wait() and native taskq barriers:
+concurrent barriers could return with entries still queued, allowing ARC to
+redispatch or free them.  The observed panic was:
+
+    VERIFY(zfs_taskq_empty_ent(ent))
+    zfs_taskq_dispatch_ent -> arc_evict_state -> arc_flush_impl -> arc_flush_task
+
+Requires Python 3.11 or later and root.  This standalone test is not included
+in the recursive uvm regress run.  It imports and exports the entire named
+pool, which must be disposable and initially exported.  It does not create
+or destroy pools, datasets, or files.
+
+Prepare a dataset with its mountpoint configured, extract an uncompressed
+tar archive beneath MOUNTPOINT/tree, then export the pool.  Use a large source
+tree (the measured fixture has 86,196 files and 1.44 GiB of file contents), at
+least six vCPUs to exercise parallel ARC eviction, and multiple iterations:
+
+    python3 /usr/src/regress/sys/uvm/zfs_export/export.py \
+        fsbench/bench /dev/sd1c /mnt/bench /root/src.tar --iterations 12
+
+Run under a timeout on the VM's host and capture the serial console, since a
+kernel panic can block the guest process.  Each completed iteration reports
+its verified file count, elapsed time, and number of transient export EBUSY
+retries.  All retries are bounded; export is never forced.  Any mismatch or
+command failure aborts the test and leaves the filesystem for diagnosis.
+Success leaves the pool exported.
