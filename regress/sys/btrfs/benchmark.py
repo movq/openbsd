@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 import resource
 import subprocess
+import sys
+import tarfile
 import time
 
 
@@ -31,6 +33,12 @@ workloads.add_argument("--io-only", action="store_true",
 p.add_argument("--io-mib", type=int, default=2048,
                help="size of each sequential I/O file in MiB (default: 2048)")
 p.add_argument("--io-iterations", type=int, default=2)
+p.add_argument("--read-repeat", action="store_true",
+               help="also time an immediate sequential read repeat")
+p.add_argument("--verify-data", action="store_true",
+               help="compare extracted files with the archive and I/O files with zeroes")
+p.add_argument("--checkpoints", action="store_true",
+               help="emit unmounted checkpoints and wait for 'continue' on stdin")
 a = p.parse_args()
 if not a.io_only and not a.archive:
     p.error("--archive is required unless --io-only")
@@ -59,6 +67,13 @@ def mount():
 
 def unmount():
     run(["umount", str(mp)])
+
+
+def checkpoint(label):
+    if a.checkpoints:
+        emit({"event": "checkpoint", "workload": label})
+        if sys.stdin.readline().strip() != "continue":
+            raise RuntimeError("checkpoint was not acknowledged")
 
 
 def measure(label, argv, durable=False, output=None):
@@ -96,8 +111,9 @@ def delete_tree():
     measure("delete", ["rm", "-rf", str(mp / "tree")], durable=True)
     mount()
     assert not (mp / "tree").exists()
-    emit({"event": "complete"})
     unmount()
+    checkpoint("deleted")
+    emit({"event": "complete"})
 
 
 def sequential_io():
@@ -107,17 +123,34 @@ def sequential_io():
         measure("write-" + size + "-" + str(iteration),
                 ["dd", "if=/dev/zero", "of=" + str(mp / "large"), "bs=1m",
                  "count=" + str(a.io_mib)], durable=True)
+        checkpoint("write-" + str(iteration))
         mount()
         measure("read-" + size + "-" + str(iteration),
                 ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1m"])
+        if a.read_repeat:
+            measure("read-repeat-" + size + "-" + str(iteration),
+                    ["dd", "if=" + str(mp / "large"), "of=/dev/null", "bs=1m"])
         unmount()
+        if a.verify_data:
+            mount()
+            total = 0
+            zeroes = bytes(1024 * 1024)
+            with (mp / "large").open("rb") as source:
+                while data := source.read(len(zeroes)):
+                    assert data == zeroes[:len(data)], total
+                    total += len(data)
+            assert total == a.io_mib * 1024 * 1024, total
+            emit({"event": "io-verification", "iteration": iteration,
+                  "bytes": total})
+            unmount()
         mount()
-        run(["rm", str(mp / "large")])
-        unmount()
+        measure("delete-large-" + size + "-" + str(iteration),
+                ["rm", str(mp / "large")], durable=True)
 
 
 emit({"event": "setup", "args": vars(a)})
 mount()
+emit({"event": "mounts", "output": subprocess.check_output(["mount"], text=True)})
 assert not (mp / "tree").exists() and not (mp / "large").exists()
 if a.io_only:
     unmount()
@@ -126,6 +159,7 @@ if a.io_only:
     raise SystemExit(0)
 run(["mkdir", str(mp / "tree")])
 measure("extract", ["tar", "-xpf", a.archive, "-C", str(mp / "tree")], durable=True)
+checkpoint("extracted")
 if a.delete_only:
     delete_tree()
     raise SystemExit(0)
@@ -155,6 +189,20 @@ for parent, dirs, files in os.walk(mp / "tree", followlinks=False):
             counts["bytes"] += st.st_size
             assert st.st_mode & 0o777 in (0o644, 0o755), path
 emit({"event": "tree-verification", **counts})
+if a.verify_data:
+    verified = 0
+    with tarfile.open(a.archive, "r:") as archive:
+        for member in archive:
+            if not member.isfile():
+                continue
+            path = mp / "tree" / member.name
+            assert path.stat().st_size == member.size, path
+            with archive.extractfile(member) as expected, path.open("rb") as actual:
+                while data := expected.read(1024 * 1024):
+                    assert actual.read(len(data)) == data, path
+                assert actual.read(1) == b"", path
+            verified += 1
+    emit({"event": "archive-verification", "files": verified})
 unmount()
 sequential_io()
 delete_tree()
