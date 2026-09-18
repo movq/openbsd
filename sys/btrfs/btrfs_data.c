@@ -771,9 +771,8 @@ btrfs_write_inode_ordered(struct btrfs_trans_handle *handle,
 /*
  * Replace a run of complete private mappings and their unmaterialized adds
  * with one durable allocation, capped at 128 MiB. Payload and I/O buffers
- * remain bounded by MAXBSIZE. The allocator retains separate accounting
- * records: their disjoint union is unchanged, and commit releases them.
- * No writer or cancellation can run after this transformation.
+ * remain bounded by MAXBSIZE. Merge the allocation records as well, so a
+ * reopened transaction can retire the resulting extent by its new boundaries.
  */
 static int
 btrfs_coalesce_ordered_run(struct btrfs_trans_handle *handle,
@@ -829,6 +828,9 @@ btrfs_coalesce_ordered_run(struct btrfs_trans_handle *handle,
 	if (error != 0)
 		return (error);
 
+	error = btrfs_space_coalesce_alloc(handle, first->boe_bytenr, length);
+	if (error != 0)
+		return (error);
 	RBT_REMOVE(btrfs_data_ref_tree, &trans->bt_data_ref_index,
 	    first->boe_ref);
 	first->boe_ref->bdr_length = length;

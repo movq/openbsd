@@ -25,7 +25,7 @@
  * watermark.
  *
  * The physical planner starts at 32 MiB for data/metadata or 8 MiB for system
- * chunks. Data growth can reach 256 MiB, limiting growth above the base to a
+ * chunks. Data growth can reach 1 GiB, limiting growth above the base to a
  * tenth of remaining physical space including mirrors. Smaller gaps halve
  * the target down to 1 MiB.
  *
@@ -267,7 +267,7 @@ chunk_place(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op,
 		/* Leave headroom for metadata and small growth trials. */
 		if (op->action != BTRFS_CHUNK_MOVE &&
 		    (chunk->type & BTRFS_BLOCK_GROUP_DATA))
-			chunk->length = MAX(base, MIN(256ULL * 1024 * 1024,
+			chunk->length = MAX(base, MIN(1024ULL * 1024 * 1024,
 			    (available / (10 * chunk->nmirrors)) & ~65535ULL));
 		for (j = 0; j < chunk->nmirrors; j++) {
 			chunk->device[j] = device;

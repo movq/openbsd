@@ -99,6 +99,38 @@ static struct btrfs_block_group *
 		btrfs_space_find_group(struct btrfs_fs *, uint64_t,
 		    uint64_t);
 
+static inline int
+btrfs_trans_extent_compare(const struct btrfs_trans_extent *a,
+    const struct btrfs_trans_extent *b)
+{
+	if (a->bte_bytenr < b->bte_bytenr)
+		return (-1);
+	return (a->bte_bytenr > b->bte_bytenr);
+}
+
+RBT_GENERATE(btrfs_trans_extent_tree, btrfs_trans_extent, bte_index,
+    btrfs_trans_extent_compare);
+
+/* The indexed allocations are disjoint; test the successor and predecessor. */
+static struct btrfs_trans_extent *
+btrfs_space_overlap(struct btrfs_trans_extent_tree *tree, uint64_t bytenr,
+    uint64_t length)
+{
+	struct btrfs_trans_extent key = { .bte_bytenr = bytenr }, *extent;
+
+	extent = RBT_NFIND(btrfs_trans_extent_tree, tree, &key);
+	if (extent == NULL)
+		extent = RBT_MAX(btrfs_trans_extent_tree, tree);
+	else if (extent->bte_bytenr < bytenr + length)
+		return (extent);
+	else
+		extent = RBT_PREV(btrfs_trans_extent_tree, extent);
+	if (extent != NULL && btrfs_space_ranges_overlap(bytenr, length,
+	    extent->bte_bytenr, extent->bte_length))
+		return (extent);
+	return (NULL);
+}
+
 static unsigned int
 btrfs_space_group_count(struct btrfs_fs *bmp)
 {
@@ -807,6 +839,9 @@ btrfs_space_log_claim(struct btrfs_fs *bmp, uint64_t bytenr,
 		trans->bt_space_seq++;
 		TAILQ_INSERT_TAIL(&trans->bt_allocated_extents, extent,
 		    bte_entry);
+		if (RBT_INSERT(btrfs_trans_extent_tree,
+		    &trans->bt_allocated_index, extent) != NULL)
+			panic("btrfs: duplicate replay allocation");
 	} else {
 		group->bbg_excluded_bytes += length;
 		TAILQ_INSERT_TAIL(&bmp->bm_log_extents, extent, bte_entry);
@@ -1484,6 +1519,9 @@ btrfs_space_alloc(struct btrfs_trans_handle *handle, uint64_t type,
 			trans->bt_space_seq++;
 			TAILQ_INSERT_TAIL(&trans->bt_allocated_extents,
 			    allocated, bte_entry);
+			if (RBT_INSERT(btrfs_trans_extent_tree,
+			    &trans->bt_allocated_index, allocated) != NULL)
+				panic("btrfs: duplicate allocation");
 			btrfs_space_check_commit_reserve(trans);
 			mtx_leave(&trans->bt_lock);
 			btrfs_space_check_group(group);
@@ -1510,7 +1548,7 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_reserved_space_list *reservations;
 	struct btrfs_reserved_space *reservation;
-	struct btrfs_trans_extent *extent;
+	struct btrfs_trans_extent key = { .bte_bytenr = bytenr }, *extent;
 	struct btrfs_free_extent *space, *garbage[2];
 	struct btrfs_block_group *group = NULL;
 	uint64_t type = 0;
@@ -1522,13 +1560,11 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 		return (error);
 
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
-		if (extent->bte_bytenr == bytenr &&
-		    extent->bte_length == length) {
-			group = extent->bte_group;
-			type = extent->bte_type;
-			break;
-		}
+	extent = RBT_FIND(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+	    &key);
+	if (extent != NULL && extent->bte_length == length) {
+		group = extent->bte_group;
+		type = extent->bte_type;
 	}
 	mtx_leave(&trans->bt_lock);
 	if (group == NULL)
@@ -1558,13 +1594,10 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 
 	mtx_enter(&group->bbg_lock);
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
-		if (extent->bte_bytenr == bytenr &&
-		    extent->bte_length == length &&
-		    extent->bte_group == group)
-			break;
-	}
-	if (extent == NULL) {
+	extent = RBT_FIND(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+	    &key);
+	if (extent == NULL || extent->bte_length != length ||
+	    extent->bte_group != group) {
 		error = ENOENT;
 		goto unlock;
 	}
@@ -1586,6 +1619,7 @@ btrfs_space_cancel_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
 			trans->bt_commit_reserve_target += length;
 	}
 	TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+	RBT_REMOVE(btrfs_trans_extent_tree, &trans->bt_allocated_index, extent);
 	ngarbage = btrfs_space_insert_free_locked(group, space, garbage);
 	space = NULL;
 	error = 0;
@@ -1605,6 +1639,50 @@ unlock:
 }
 
 /*
+ * The coalescer has excluded writers and validated the file mappings and
+ * their private delayed adds. Preserve the disjoint union and accounting,
+ * replacing only the in-memory allocation boundaries. Abort can still return
+ * the whole run, and subsequent last-reference drops can find an exact match.
+ */
+int
+btrfs_space_coalesce_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
+    uint64_t length)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_trans_extent key = { .bte_bytenr = bytenr };
+	struct btrfs_trans_extent *first, *extent, *next;
+	uint64_t pos = bytenr;
+
+	KASSERT(handle->bth_commit && trans->bt_writers == 0);
+	if (length == 0 || bytenr > UINT64_MAX - length)
+		return (EINVAL);
+	first = RBT_FIND(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+	    &key);
+	for (extent = first; pos < bytenr + length;
+	    extent = RBT_NEXT(btrfs_trans_extent_tree, extent)) {
+		if (extent == NULL || extent->bte_bytenr != pos ||
+		    extent->bte_length > bytenr + length - pos ||
+		    extent->bte_type != BTRFS_BLOCK_GROUP_DATA ||
+		    extent->bte_group != first->bte_group ||
+		    extent->bte_commit != first->bte_commit ||
+		    extent->bte_discarded)
+			return (EINVAL);
+		pos += extent->bte_length;
+	}
+	extent = RBT_NEXT(btrfs_trans_extent_tree, first);
+	while (extent != NULL && extent->bte_bytenr < bytenr + length) {
+		next = RBT_NEXT(btrfs_trans_extent_tree, extent);
+		RBT_REMOVE(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+		    extent);
+		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+		free(extent, M_BTRFS, sizeof(*extent));
+		extent = next;
+	}
+	first->bte_length = length;
+	return (0);
+}
+
+/*
  * A detached COW block may already have an extent item: commit itself can
  * empty an extent-tree leaf after materializing its delayed add.  Keep the
  * allocation unavailable until the matching drop has been materialized.
@@ -1614,23 +1692,21 @@ btrfs_space_discard_alloc(struct btrfs_trans_handle *handle, uint64_t bytenr,
     uint64_t length)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
-	struct btrfs_trans_extent *extent;
+	struct btrfs_trans_extent key = { .bte_bytenr = bytenr }, *extent;
 	int error = ENOENT;
 
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
-		if (extent->bte_bytenr != bytenr ||
-		    extent->bte_length != length)
-			continue;
+	extent = RBT_FIND(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+	    &key);
+	if (extent != NULL && extent->bte_length == length) {
 		if ((extent->bte_type != BTRFS_BLOCK_GROUP_METADATA &&
 		    extent->bte_type != BTRFS_BLOCK_GROUP_SYSTEM) ||
-		    extent->bte_discarded) {
+		    extent->bte_discarded)
 			error = EINVAL;
-			break;
+		else {
+			extent->bte_discarded = 1;
+			error = 0;
 		}
-		extent->bte_discarded = 1;
-		error = 0;
-		break;
 	}
 	mtx_leave(&trans->bt_lock);
 	return (error);
@@ -2083,46 +2159,44 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
 		goto out;
 	}
 	mtx_enter(&trans->bt_lock);
-	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry) {
-		if (btrfs_space_ranges_overlap(bytenr, length,
-		    extent->bte_bytenr, extent->bte_length)) {
-			/*
-			 * Submitted data may have been logged and overwritten
-			 * within this generation. Its last reference is gone,
-			 * but a published log can still name it. Hold it outside
-			 * allocation accounting until durable full commit.
-			 */
-			if (extent->bte_type == BTRFS_BLOCK_GROUP_DATA &&
-			    extent->bte_bytenr == bytenr &&
-			    extent->bte_length == length) {
-				TAILQ_REMOVE(&trans->bt_allocated_extents,
-				    extent, bte_entry);
-				group->bbg_allocated_bytes -= length;
-				trans->bt_allocated_bytes -= length;
-				group->bbg_excluded_bytes += length;
-				trans->bt_space_seq++;
-				TAILQ_INSERT_TAIL(&bmp->bm_log_extents,
-				    extent, bte_entry);
-				goto unlock;
-			}
-			/* New, detached metadata has no committed owner. */
-			if (extent->bte_discarded &&
-			    (extent->bte_type == BTRFS_BLOCK_GROUP_METADATA ||
-			    extent->bte_type == BTRFS_BLOCK_GROUP_SYSTEM) &&
-			    extent->bte_bytenr == bytenr &&
-			    extent->bte_length == length)
-				error = 0;
-			else
-				error = EINVAL;
+	extent = btrfs_space_overlap(&trans->bt_allocated_index, bytenr, length);
+	if (extent != NULL) {
+		/*
+		 * Submitted data may have been logged and overwritten
+		 * within this generation. Its last reference is gone,
+		 * but a published log can still name it. Hold it outside
+		 * allocation accounting until durable full commit.
+		 */
+		if (extent->bte_type == BTRFS_BLOCK_GROUP_DATA &&
+		    extent->bte_bytenr == bytenr &&
+		    extent->bte_length == length) {
+			TAILQ_REMOVE(&trans->bt_allocated_extents,
+			    extent, bte_entry);
+			RBT_REMOVE(btrfs_trans_extent_tree,
+			    &trans->bt_allocated_index, extent);
+			group->bbg_allocated_bytes -= length;
+			trans->bt_allocated_bytes -= length;
+			group->bbg_excluded_bytes += length;
+			trans->bt_space_seq++;
+			TAILQ_INSERT_TAIL(&bmp->bm_log_extents,
+			    extent, bte_entry);
 			goto unlock;
 		}
-	}
-	TAILQ_FOREACH(extent, &trans->bt_pinned_extents, bte_entry) {
-		if (btrfs_space_ranges_overlap(bytenr, length,
-		    extent->bte_bytenr, extent->bte_length)) {
+		/* New, detached metadata has no committed owner. */
+		if (extent->bte_discarded &&
+		    (extent->bte_type == BTRFS_BLOCK_GROUP_METADATA ||
+		    extent->bte_type == BTRFS_BLOCK_GROUP_SYSTEM) &&
+		    extent->bte_bytenr == bytenr &&
+		    extent->bte_length == length)
+			error = 0;
+		else
 			error = EINVAL;
-			goto unlock;
-		}
+		goto unlock;
+	}
+	if (btrfs_space_overlap(&trans->bt_pinned_index, bytenr, length) !=
+	    NULL) {
+		error = EINVAL;
+		goto unlock;
 	}
 	if (group->bbg_pinned_bytes > UINT64_MAX - length ||
 	    trans->bt_pinned_bytes > UINT64_MAX - length) {
@@ -2136,6 +2210,9 @@ btrfs_space_pin(struct btrfs_trans_handle *handle, uint64_t bytenr,
 	trans->bt_pinned_bytes += length;
 	trans->bt_space_seq++;
 	TAILQ_INSERT_TAIL(&trans->bt_pinned_extents, pinned, bte_entry);
+	if (RBT_INSERT(btrfs_trans_extent_tree, &trans->bt_pinned_index,
+	    pinned) != NULL)
+		panic("btrfs: duplicate pin");
 	pinned = NULL;
 unlock:
 	mtx_leave(&trans->bt_lock);
@@ -2164,6 +2241,8 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
 		KASSERT(!extent->bte_discarded);
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+		RBT_REMOVE(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+		    extent);
 		group = extent->bte_group;
 		mtx_enter(&group->bbg_lock);
 		KASSERT(group->bbg_allocated_bytes >= extent->bte_length);
@@ -2179,6 +2258,8 @@ btrfs_space_commit(struct btrfs_transaction *trans)
 	}
 	while ((extent = TAILQ_FIRST(&trans->bt_pinned_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_pinned_extents, extent, bte_entry);
+		RBT_REMOVE(btrfs_trans_extent_tree, &trans->bt_pinned_index,
+		    extent);
 		group = extent->bte_group;
 		space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
 		space->bfe_bytenr = extent->bte_bytenr;
@@ -2226,6 +2307,8 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 	btrfs_space_check_commit_reserve(trans);
 	while ((extent = TAILQ_FIRST(&trans->bt_allocated_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_allocated_extents, extent, bte_entry);
+		RBT_REMOVE(btrfs_trans_extent_tree, &trans->bt_allocated_index,
+		    extent);
 		group = extent->bte_group;
 		space = malloc(sizeof(*space), M_BTRFS, M_WAITOK | M_ZERO);
 		space->bfe_bytenr = extent->bte_bytenr;
@@ -2248,6 +2331,8 @@ btrfs_space_abort(struct btrfs_transaction *trans)
 	}
 	while ((extent = TAILQ_FIRST(&trans->bt_pinned_extents)) != NULL) {
 		TAILQ_REMOVE(&trans->bt_pinned_extents, extent, bte_entry);
+		RBT_REMOVE(btrfs_trans_extent_tree, &trans->bt_pinned_index,
+		    extent);
 		group = extent->bte_group;
 		mtx_enter(&group->bbg_lock);
 		KASSERT(group->bbg_pinned_bytes >= extent->bte_length);

@@ -196,6 +196,8 @@ class Runner:
         if phase is not None:
             argv.append(phase)
         argv.append(directory or self.mountpoint)
+        if script == "chunks" and getattr(self.args, "chunk_stress", False):
+            argv.append("--stress")
         return self.vm(*argv, *extra)
 
     def host_test(self, script, *args, capture=False):
@@ -352,7 +354,10 @@ class Runner:
                     process.wait()
 
     def test_argv(self, script, phase, directory):
-        return ["python3", f"{self.vm_tests}/{script}.py", phase, directory]
+        argv = ["python3", f"{self.vm_tests}/{script}.py", phase, directory]
+        if script == "chunks" and getattr(self.args, "chunk_stress", False):
+            argv.append("--stress")
+        return argv
 
     def crash_ready(self, script, directory, marker):
         self.vm("rm", "-f", marker)
@@ -470,6 +475,9 @@ def arguments():
     parser.add_argument("--timeout", type=int, default=900,
                         help="seconds per command/breakpoint (default: 900)")
     parser.add_argument("--boot-timeout", type=int, default=180)
+    parser.add_argument("--chunk-stress", action="store_true",
+                        help="use 4 KiB writes and frequent fsyncs in chunk "
+                             "growth tests (slower than the default)")
     args = parser.parse_args()
     if args.timeout <= 0 or args.boot_timeout <= 0:
         parser.error("timeouts must be positive")
@@ -552,6 +560,7 @@ def main():
                 "mountpoint": args.mountpoint, "vm_source": args.vm_source,
                 "serial": args.serial, "monitor": args.monitor,
                 "kernel": kernel, "suite_sha256": digest.hexdigest(),
+                "chunk_stress": args.chunk_stress,
                 "layouts": {name: asdict(LAYOUTS[name]) for name in layouts},
                 "cases": [identity for identity, _, _ in plan],
             }

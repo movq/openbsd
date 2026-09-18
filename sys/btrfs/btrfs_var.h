@@ -322,6 +322,7 @@ TAILQ_HEAD(btrfs_reserved_space_list, btrfs_reserved_space);
 
 struct btrfs_trans_extent {
 	TAILQ_ENTRY(btrfs_trans_extent)	 bte_entry;
+	RBT_ENTRY(btrfs_trans_extent)	 bte_index;
 	struct btrfs_block_group		*bte_group;
 	uint64_t			 bte_bytenr;
 	uint64_t			 bte_length;
@@ -330,6 +331,9 @@ struct btrfs_trans_extent {
 	uint8_t				 bte_discarded;
 };
 TAILQ_HEAD(btrfs_trans_extent_list, btrfs_trans_extent);
+RBT_HEAD(btrfs_trans_extent_tree, btrfs_trans_extent);
+RBT_PROTOTYPE(btrfs_trans_extent_tree, btrfs_trans_extent, bte_index,
+    btrfs_trans_extent_compare);
 
 enum btrfs_trans_state {
 	BTRFS_TRANS_OPEN,
@@ -346,6 +350,9 @@ struct btrfs_transaction {
 	struct btrfs_reserved_space_list bt_reclaim_reservations;
 	struct btrfs_trans_extent_list	 bt_allocated_extents;
 	struct btrfs_trans_extent_list	 bt_pinned_extents;
+	/* Same records, indexed by bytenr under bt_lock. */
+	struct btrfs_trans_extent_tree	 bt_allocated_index;
+	struct btrfs_trans_extent_tree	 bt_pinned_index;
 	struct btrfs_dirty_extent_buffer_list
 					 bt_dirty_extent_buffers;
 	struct btrfs_delayed_tree_ref_list
@@ -367,7 +374,6 @@ struct btrfs_transaction {
 	struct btrfs_chunk_operation	*bt_chunk_op;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
-	unsigned int			 bt_reservation_drains;
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
 	uint8_t				 bt_commit_handle;
@@ -915,6 +921,8 @@ int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);
 int	btrfs_space_trim_commit(struct btrfs_transaction *);
+int	btrfs_space_coalesce_alloc(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t);
 void	btrfs_space_keep_delayed(struct btrfs_trans_handle *);
 void	btrfs_space_release(struct btrfs_trans_handle *);
 int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,
