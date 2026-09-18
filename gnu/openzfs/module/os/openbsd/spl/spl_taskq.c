@@ -43,6 +43,7 @@ struct zfs_taskq {
 	uint_t		 tq_nthreads;
 	uint_t		 tq_active;
 	uint_t		 tq_ndynamic;
+	uint_t		 tq_nprealloc;
 	uint_t		 tq_ndelayed;
 	uint_t		 tq_suspended;
 	uint_t		 tq_destroying;
@@ -158,6 +159,9 @@ zfs_taskq_run_ent(void *arg)
 	VERIFY3U(tq->tq_active, >, 0);
 	tq->tq_active--;
 	wakeup(&tq->tq_active);
+	VERIFY3U(tq->tq_nprealloc, >, 0);
+	tq->tq_nprealloc--;
+	wakeup(tq);
 	mtx_leave(&tq->tq_lock);
 }
 
@@ -428,11 +432,15 @@ zfs_taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg,
 	ent->tqent_arg = arg;
 	ent->tqent_taskq = tq;
 	task_set(&ent->tqent_task, zfs_taskq_run_ent, ent);
+	mtx_enter(&tq->tq_lock);
+	VERIFY(!tq->tq_destroying);
+	tq->tq_nprealloc++;
 	if (flags & TQ_FRONT)
 		queued = task_add_front(tq->tq_native, &ent->tqent_task);
 	else
 		queued = task_add(tq->tq_native, &ent->tqent_task);
 	VERIFY(queued);
+	mtx_leave(&tq->tq_lock);
 }
 
 int
@@ -446,12 +454,21 @@ void
 zfs_taskq_wait(taskq_t *tq)
 {
 
+	/*
+	 * OpenZFS needs the queue to be empty, including callbacks which
+	 * dispatch more work.  Native barriers can join an existing barrier
+	 * generation and return with newly queued work still pending.  In
+	 * particular, concurrent ARC eviction/flush waiters must not reuse
+	 * or free their entries until every callback has finished.
+	 *
+	 * Count preallocated entries separately: their callback may free the
+	 * containing object, so completion cannot inspect the entry itself.
+	 */
 	mtx_enter(&tq->tq_lock);
-	while (tq->tq_ndelayed != 0)
-		msleep_nsec(&tq->tq_ndelayed, &tq->tq_lock, PWAIT,
+	while (tq->tq_ndynamic != 0 || tq->tq_nprealloc != 0)
+		msleep_nsec(tq, &tq->tq_lock, PWAIT,
 		    "zfstqwt", INFSLP);
 	mtx_leave(&tq->tq_lock);
-	taskq_barrier(tq->tq_native);
 }
 
 void
