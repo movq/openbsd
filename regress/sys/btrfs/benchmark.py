@@ -2,8 +2,9 @@
 """OpenBSD/Linux workload runner for a freshly formatted, unmounted scratch FS.
 
 Creates and removes "tree" and "large" beneath the mountpoint. Formatting is
-deliberately external; see BENCHMARKS.md for the measured setup. Run under an
-external timeout, since a kernel hang can also block the Python process.
+deliberately external. ZFS expects an exported scratch pool and a dataset
+whose mountpoint is already configured. Run under an external timeout, since
+a kernel hang can also block the Python process.
 """
 import argparse
 import hashlib
@@ -21,8 +22,10 @@ p = argparse.ArgumentParser()
 p.add_argument("name")
 p.add_argument("device")
 p.add_argument("mountpoint")
-p.add_argument("--type", choices=["ffs", "btrfs"], required=True)
-p.add_argument("--options", default="noatime")
+p.add_argument("--type", choices=["ffs", "btrfs", "zfs"], required=True)
+p.add_argument("--options", default="noatime",
+               help="FFS/Btrfs mount options; configure ZFS properties externally")
+p.add_argument("--zpool-device", help="ZFS import search device; required for ZFS")
 p.add_argument("--archive", help="source archive; required unless --io-only")
 p.add_argument("--out", required=True)
 workloads = p.add_mutually_exclusive_group()
@@ -33,10 +36,12 @@ workloads.add_argument("--io-only", action="store_true",
 p.add_argument("--io-mib", type=int, default=2048,
                help="size of each sequential I/O file in MiB (default: 2048)")
 p.add_argument("--io-iterations", type=int, default=2)
+p.add_argument("--io-pattern", choices=["zero", "pattern"], default="zero",
+               help="pattern uses a deterministic nonzero 1 MiB buffer")
 p.add_argument("--read-repeat", action="store_true",
                help="also time an immediate sequential read repeat")
 p.add_argument("--verify-data", action="store_true",
-               help="compare extracted files with the archive and I/O files with zeroes")
+               help="compare extracted files with the archive and I/O files with their pattern")
 p.add_argument("--checkpoints", action="store_true",
                help="emit unmounted checkpoints and wait for 'continue' on stdin")
 p.add_argument("--observe", action="store_true",
@@ -46,6 +51,8 @@ if not a.io_only and not a.archive:
     p.error("--archive is required unless --io-only")
 if a.io_mib <= 0 or a.io_iterations <= 0:
     p.error("--io-mib and --io-iterations must be positive")
+if a.type == "zfs" and not a.zpool_device:
+    p.error("--zpool-device is required for ZFS")
 out = Path(a.out)
 out.mkdir(exist_ok=True)
 mp = Path(a.mountpoint)
@@ -64,11 +71,38 @@ def run(argv, **kw):
 
 
 def mount():
-    run(["mount", "-t", a.type, "-o", a.options, a.device, str(mp)])
+    if a.type == "zfs":
+        run(["zpool", "import", "-N", "-d", a.zpool_device,
+             a.device.split("/")[0]])
+        run(["zfs", "mount", a.device])
+    else:
+        run(["mount", "-t", a.type, "-o", a.options, a.device, str(mp)])
 
 
 def unmount():
-    run(["umount", str(mp)])
+    if a.type == "zfs":
+        # Export drains the pool; the next import has a new ARC identity.
+        # A dataset unmount alone would retain cached file data.
+        pool = a.device.split("/")[0]
+        run(["zpool", "sync", pool])
+        run(["zpool", "wait", "-t", "free", pool])
+        # The OpenBSD port can transiently retain pool references after the
+        # dataset has unmounted. Keep retries visible and inside drain timing.
+        deadline = time.monotonic() + 30
+        while True:
+            argv = ["zpool", "export", pool]
+            result = subprocess.run(argv, capture_output=True, text=True,
+                                    env={**os.environ, "LC_ALL": "C"})
+            if result.returncode == 0:
+                break
+            if "pool is busy" not in result.stderr or time.monotonic() >= deadline:
+                raise subprocess.CalledProcessError(
+                    result.returncode, argv, result.stdout, result.stderr)
+            emit({"event": "export-retry", "stderr": result.stderr,
+                  "sleep_seconds": 0.05})
+            time.sleep(0.05)
+    else:
+        run(["umount", str(mp)])
 
 
 def checkpoint(label):
@@ -110,6 +144,7 @@ def measure(label, argv, durable=False, output=None):
         "system_seconds": after.ru_stime - before.ru_stime,
         "inblock": after.ru_inblock - before.ru_inblock,
         "oublock": after.ru_oublock - before.ru_oublock,
+        "drain_method": "sync/wait-free/export" if a.type == "zfs" else "unmount",
     }
     if output:
         result["output_sha256"] = hashlib.sha256(Path(output).read_bytes()).hexdigest()
@@ -131,9 +166,18 @@ def sequential_io():
     size = "2g" if a.io_mib == 2048 else str(a.io_mib) + "m"
     for iteration in range(1, a.io_iterations + 1):
         mount()
-        measure("write-" + size + "-" + str(iteration),
-                ["dd", "if=/dev/zero", "of=" + str(mp / "large"), "bs=1048576",
-                 "count=" + str(a.io_mib)], durable=True)
+        if a.io_pattern == "zero":
+            writer = ["dd", "if=/dev/zero", "of=" + str(mp / "large"),
+                      "bs=1048576", "count=" + str(a.io_mib)]
+        else:
+            writer = [sys.executable, "-c",
+                      "import hashlib,sys\n"
+                      "data=hashlib.shake_256(b'filesystem-benchmark-v1').digest(1048576)\n"
+                      "with open(sys.argv[1], 'wb', buffering=0) as f:\n"
+                      " for _ in range(int(sys.argv[2])):\n"
+                      "  assert f.write(data) == len(data)\n",
+                      str(mp / "large"), str(a.io_mib)]
+        measure("write-" + size + "-" + str(iteration), writer, durable=True)
         checkpoint("write-" + str(iteration))
         mount()
         measure("read-" + size + "-" + str(iteration),
@@ -145,10 +189,11 @@ def sequential_io():
         if a.verify_data:
             mount()
             total = 0
-            zeroes = bytes(1024 * 1024)
+            expected = (bytes(1024 * 1024) if a.io_pattern == "zero" else
+                        hashlib.shake_256(b"filesystem-benchmark-v1").digest(1048576))
             with (mp / "large").open("rb") as source:
-                while data := source.read(len(zeroes)):
-                    assert data == zeroes[:len(data)], total
+                while data := source.read(len(expected)):
+                    assert data == expected[:len(data)], total
                     total += len(data)
             assert total == a.io_mib * 1024 * 1024, total
             emit({"event": "io-verification", "iteration": iteration,
