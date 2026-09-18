@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Grow existing data capacity, verify durable mappings, and reclaim data."""
+import argparse
 import errno
 import os
 from pathlib import Path
-import sys
 
 from namespace import child_checks, wait
 from unlink import sync
+
+WRITE_SECTORS = 16
+FSYNC_SECTORS = 1024
 
 
 def payload(worker, sector):
@@ -16,10 +19,11 @@ def payload(worker, sector):
 def write_file(path, worker, count):
     fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
     try:
-        for sector in range(count):
-            data = payload(worker, sector)
+        for sector in range(0, count, WRITE_SECTORS):
+            end = min(sector + WRITE_SECTORS, count)
+            data = b"".join(payload(worker, s) for s in range(sector, end))
             assert os.write(fd, data) == len(data)
-            if sector % 128 == 127:
+            if end % FSYNC_SECTORS == 0:
                 os.fsync(fd)
         os.fsync(fd)
     finally:
@@ -160,4 +164,15 @@ def hold(base):
 
 
 if __name__ == "__main__":
-    globals()[sys.argv[1]](Path(sys.argv[2]).resolve())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("phase", choices=[
+        "create", "verify", "capacity", "metadata", "metadata_verify",
+        "combined", "combined_verify", "hold"])
+    parser.add_argument("directory", type=Path)
+    parser.add_argument("--stress", action="store_true",
+                        help="write 4 KiB at a time and fsync every 512 KiB "
+                             "(default: 64 KiB writes, fsync every 4 MiB)")
+    args = parser.parse_args()
+    if args.stress:
+        WRITE_SECTORS, FSYNC_SECTORS = 1, 128
+    globals()[args.phase](args.directory.resolve())

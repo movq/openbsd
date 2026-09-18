@@ -77,6 +77,28 @@ def reservation_drain(r, crash=False):
         finish(r, "reservation_drain", directory)
 
 
+def data_drain(r, crash=False):
+    r.format(size="1G")
+    directory = r.path("test")
+    r.mount()
+    r.test("data_drain", "create", directory)
+    # Directory fsync need not publish the spare inode's later orphan cleanup.
+    # Start with its extents free, so pressure drains need no space-reclaim commit.
+    r.unmount()
+    r.checks()
+    r.mount()
+    if crash:
+        r.crash_break(r.test_argv("data_drain", "mutate", directory),
+                      ["btrfs_space_trim_commit"], 2)
+        r.checks()
+        r.boot()
+        r.mount()
+        finish(r, "data_drain", directory, "verify_original")
+    else:
+        r.test("data_drain", "mutate", directory)
+        finish(r, "data_drain", directory)
+
+
 def reflink(r):
     r.format()
     directory = r.path("test")
@@ -555,7 +577,7 @@ def chunks(r, phase="create", system=False, size=None):
 
 def chunks_large(r):
     # Keep the imported bitmaps within the fixture helper's single leaf.
-    # Other layouts reach the 256 MiB cap; bitmaps exercise a scaled target.
+    # Larger fixtures exercise growth targets above the 32 MiB base.
     chunks(r, size="3G" if r.layout.free_space == "bitmap" else "8G")
 
 
@@ -780,6 +802,8 @@ def cases():
         "checksums": checksums, "cluster": cluster, "coalesce": coalesce,
         "reservation-drain": reservation_drain,
         "reservation-drain-crash": partial(reservation_drain, crash=True),
+        "data-drain": data_drain,
+        "data-drain-crash": partial(data_drain, crash=True),
         "xxhash-checksums": partial(checksums, checksum="xxhash"),
         "xxhash-read-import": partial(read_import, checksum="xxhash"),
         "xxhash-read-compressed": partial(read_import, compressed=True,

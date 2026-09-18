@@ -77,6 +77,8 @@ btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 	TAILQ_INIT(&trans->bt_reclaim_reservations);
 	TAILQ_INIT(&trans->bt_allocated_extents);
 	TAILQ_INIT(&trans->bt_pinned_extents);
+	RBT_INIT(btrfs_trans_extent_tree, &trans->bt_allocated_index);
+	RBT_INIT(btrfs_trans_extent_tree, &trans->bt_pinned_index);
 	TAILQ_INIT(&trans->bt_dirty_extent_buffers);
 	TAILQ_INIT(&trans->bt_delayed_tree_refs);
 	TAILQ_INIT(&trans->bt_delayed_data_refs);
@@ -206,7 +208,7 @@ retry:
 		generation = trans->bt_generation;
 		mtx_leave(&bmp->bm_trans_mtx);
 		free(handle, M_BTRFS, sizeof(*handle));
-		error = btrfs_trans_commit(bmp, generation, curproc);
+		error = btrfs_trans_drain_reservations(bmp, generation);
 		if (error != 0)
 			return (error);
 		goto retry;
@@ -403,22 +405,27 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 }
 
 /*
- * Metadata-only reservation pressure need not publish a new generation.
+ * Reservation and payload pressure need not publish a new generation.
  * Close joins, materialize all outstanding obligations using their retained
  * promises, then return the unused promises and reopen. Keep dirty buffers,
  * saved roots, allocations and pins owned by this transaction throughout.
  *
- * Pending data still takes the full commit path: coalescing currently leaves
- * constituent allocation records that are only safe until publication.
- * Bound the number of drains and retained allocation/pin bytes so metadata
- * workloads cannot grow a transaction indefinitely. Chunk changes and
- * depleted protected reserves also retain the ordinary publication path.
+ * Write data, coalesce its mappings and allocation records, then materialize
+ * references before retiring payloads. Readers can then use the disk copy;
+ * the final commit still orders data before metadata and superblocks.
+ *
+ * Bound retained memory, not bytes of disk space represented by allocation
+ * and pin records. Actual space exhaustion still gets a full commit retry.
+ * Chunk changes and depleted protected reserves also require publication.
  */
 static int
 btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation)
 {
 	struct btrfs_transaction *trans;
 	struct btrfs_trans_handle *handle = NULL;
+	struct btrfs_trans_extent *extent;
+	struct btrfs_extent_buffer *eb;
+	uint64_t memory = 0;
 	int error, end_error;
 
 	error = btrfs_trans_close(bmp, generation, &trans);
@@ -426,15 +433,26 @@ btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation)
 		return (error);
 	if (trans->bt_error != 0)
 		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
-	if (trans->bt_chunk_op != NULL || trans->bt_ordered_bytes != 0 ||
-	    trans->bt_reservation_drains >= 16 ||
-	    trans->bt_allocated_bytes >= 32U * 1024 * 1024 ||
-	    trans->bt_pinned_bytes >= 128U * 1024 * 1024)
+	TAILQ_FOREACH(eb, &trans->bt_dirty_extent_buffers, eb_dirty_entry)
+		memory += sizeof(*eb) + letoh32(bmp->bm_super.nodesize);
+	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry)
+		memory += sizeof(*extent);
+	TAILQ_FOREACH(extent, &trans->bt_pinned_extents, bte_entry)
+		memory += sizeof(*extent);
+	TAILQ_FOREACH(extent, &bmp->bm_log_extents, bte_entry)
+		memory += sizeof(*extent);
+	if (trans->bt_chunk_op != NULL || memory >= 32U * 1024 * 1024)
 		return (btrfs_trans_commit_closed(trans, curproc));
 
 	error = btrfs_trans_commit_handle(trans, &handle);
 	if (error == 0)
+		error = btrfs_write_ordered_extents(handle);
+	if (error == 0)
+		error = btrfs_coalesce_ordered_extents(handle);
+	if (error == 0)
 		error = btrfs_prepare_metadata_commit(handle);
+	if (error != 0 && handle != NULL)
+		btrfs_trans_abort(handle, error);
 	if (handle != NULL) {
 		end_error = btrfs_trans_end(handle);
 		if (error == 0)
@@ -442,12 +460,14 @@ btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation)
 	}
 	if (error != 0)
 		return (btrfs_trans_finish(bmp, trans, error));
+	error = btrfs_ordered_extents_finish(trans, 1);
+	if (error != 0)
+		return (btrfs_trans_finish(bmp, trans, error));
 	error = btrfs_space_trim_commit(trans);
 	if (error == EAGAIN)
 		return (btrfs_trans_commit_closed(trans, curproc));
 	if (error != 0)
 		return (btrfs_trans_finish(bmp, trans, error));
-	trans->bt_reservation_drains++;
 	mtx_enter(&bmp->bm_trans_mtx);
 	btrfs_trans_reopen(trans);
 	mtx_leave(&bmp->bm_trans_mtx);

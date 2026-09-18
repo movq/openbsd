@@ -1,3 +1,9 @@
 Btrfs regression test scripts, intended for use with an OpenBSD QEMU VM running on a Linux host.
 
 run-* scripts are entrypoints.
+
+Chunk growth tests use four concurrent writers, 64 KiB writes, and fsync every
+4 MiB. They still exhaust the initial data capacity and verify every sector
+after remount. Use run_all.py --chunk-stress (or chunks.py --stress) for the
+original 4 KiB writes and fsync every 512 KiB; large DUP fixtures can take many
+minutes with that pattern.

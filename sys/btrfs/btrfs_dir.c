@@ -214,7 +214,8 @@ btrfs_name_plan_free(struct btrfs_name_plan *plan)
 	if (plan == NULL)
 		return;
 	for (i = 0; i < plan->count; i++)
-		free(plan->edits[i].data, M_BTRFS, plan->nodesize);
+		pool_put(&plan->root->br_mount->bm_metadata_pool,
+		    plan->edits[i].data);
 	free(plan, M_BTRFS, sizeof(*plan));
 }
 
@@ -243,7 +244,7 @@ btrfs_name_edit(struct btrfs_name_plan *plan, uint64_t ino, uint8_t type,
 	edit->key.objectid = htole64(ino);
 	edit->key.type = type;
 	edit->key.offset = htole64(offset);
-	edit->data = malloc(plan->nodesize, M_BTRFS, M_WAITOK);
+	edit->data = pool_get(&plan->root->br_mount->bm_metadata_pool, PR_WAITOK);
 	error = btrfs_search_slot(plan->root, &edit->key, &path);
 	if (error == 0) {
 		error = btrfs_path_item(&path, NULL, &data, &edit->size);
