@@ -30,8 +30,11 @@ def changed():
 def create(base):
     base.mkdir()
     with (base / "main").open("xb", buffering=0) as stream:
-        for sector in range(COUNT):
+        for sector in range(128):
             assert stream.write(payload(3, sector)) == SECTOR
+        for sector in range(128, COUNT, 16):
+            data = b"".join(payload(3, s) for s in range(sector, sector + 16))
+            assert stream.write(data) == len(data)
         os.fsync(stream.fileno())
     os.link(base / "main", base / "alias")
     sync(base)
@@ -99,10 +102,11 @@ def disk(image):
         if extent is None:
             continue
         length = int(extent[2])
-        assert SECTOR <= length <= 65536 and length % SECTOR == 0
+        assert SECTOR <= length <= 128 * 1024 * 1024 and length % SECTOR == 0
         extents.append(length)
     assert sum(extents) == SIZE, extents
     assert len(extents) < COUNT // 2, ("sector extent overhead", len(extents))
+    assert max(extents) > 65536, ("range coalescing missing", extents)
     print(f"{COUNT} sectors stored in {len(extents)} regular extents; "
           f"largest {max(extents)} bytes", flush=True)
 

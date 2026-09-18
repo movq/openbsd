@@ -61,6 +61,7 @@
 static struct btrfs_transaction *
 	btrfs_trans_alloc(struct btrfs_fs *, uint64_t);
 static void	btrfs_trans_reopen(struct btrfs_transaction *);
+static int	btrfs_trans_drain_reservations(struct btrfs_fs *, uint64_t);
 
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
@@ -226,16 +227,22 @@ retry:
 		if (end_error != 0)
 			return (end_error);
 		/*
-		 * Pending work may own most of the free metadata.  Publish it
-		 * and release unused promises before declaring ENOSPC.  No
+		 * Pending work may own most of the free metadata. Materialize
+		 * it and release unused promises before declaring ENOSPC. No
 		 * mutation from this operation has occurred, and commit never
 		 * takes the vnode or namespace locks the caller may hold.
 		 */
-		if (error == ENOSPC && dirty && !retried) {
-			error = btrfs_trans_commit(bmp, generation, curproc);
+		if (error == ENOSPC && dirty && retried < 2) {
+			if (retried == 0 &&
+			    failed_type == BTRFS_BLOCK_GROUP_METADATA)
+				error = btrfs_trans_drain_reservations(bmp,
+				    generation);
+			else
+				error = btrfs_trans_commit(bmp, generation,
+				    curproc);
 			if (error != 0)
 				return (error);
-			retried = 1;
+			retried++;
 			goto retry;
 		}
 		if (error == ENOSPC && reservation != NULL &&
@@ -393,6 +400,58 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
 	}
 	btrfs_trans_abort(handle, ELOOP);
 	return (ELOOP);
+}
+
+/*
+ * Metadata-only reservation pressure need not publish a new generation.
+ * Close joins, materialize all outstanding obligations using their retained
+ * promises, then return the unused promises and reopen. Keep dirty buffers,
+ * saved roots, allocations and pins owned by this transaction throughout.
+ *
+ * Pending data still takes the full commit path: coalescing currently leaves
+ * constituent allocation records that are only safe until publication.
+ * Bound the number of drains and retained allocation/pin bytes so metadata
+ * workloads cannot grow a transaction indefinitely. Chunk changes and
+ * depleted protected reserves also retain the ordinary publication path.
+ */
+static int
+btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation)
+{
+	struct btrfs_transaction *trans;
+	struct btrfs_trans_handle *handle = NULL;
+	int error, end_error;
+
+	error = btrfs_trans_close(bmp, generation, &trans);
+	if (error != 0 || trans == NULL)
+		return (error);
+	if (trans->bt_error != 0)
+		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
+	if (trans->bt_chunk_op != NULL || trans->bt_ordered_bytes != 0 ||
+	    trans->bt_reservation_drains >= 16 ||
+	    trans->bt_allocated_bytes >= 32U * 1024 * 1024 ||
+	    trans->bt_pinned_bytes >= 128U * 1024 * 1024)
+		return (btrfs_trans_commit_closed(trans, curproc));
+
+	error = btrfs_trans_commit_handle(trans, &handle);
+	if (error == 0)
+		error = btrfs_prepare_metadata_commit(handle);
+	if (handle != NULL) {
+		end_error = btrfs_trans_end(handle);
+		if (error == 0)
+			error = end_error;
+	}
+	if (error != 0)
+		return (btrfs_trans_finish(bmp, trans, error));
+	error = btrfs_space_trim_commit(trans);
+	if (error == EAGAIN)
+		return (btrfs_trans_commit_closed(trans, curproc));
+	if (error != 0)
+		return (btrfs_trans_finish(bmp, trans, error));
+	trans->bt_reservation_drains++;
+	mtx_enter(&bmp->bm_trans_mtx);
+	btrfs_trans_reopen(trans);
+	mtx_leave(&bmp->bm_trans_mtx);
+	return (0);
 }
 
 /* bwrite and device VOP_FSYNC alone do not flush volatile device caches. */

@@ -56,6 +56,25 @@ def coalesce(r):
     finish(r, "coalesce", directory)
 
 
+def reservation_drain(r, crash=False):
+    r.format()
+    directory = r.path("test")
+    r.mount()
+    r.test("reservation_drain", "create", directory)
+    if crash:
+        # Reach a second drain after reopening and mutating the first one's
+        # materialized metadata. Neither drain publishes the transaction.
+        r.crash_break(r.test_argv("reservation_drain", "mutate", directory),
+                      ["btrfs_space_trim_commit"], 2)
+        r.checks()
+        r.boot()
+        r.mount()
+        finish(r, "reservation_drain", directory, "verify_original")
+    else:
+        r.test("reservation_drain", "mutate", directory)
+        finish(r, "reservation_drain", directory)
+
+
 def reflink(r):
     r.format()
     directory = r.path("test")
@@ -725,6 +744,8 @@ def cases():
                                   verify=None, extref=False),
         "name-records": partial(basic, script="name_records"),
         "checksums": checksums, "cluster": cluster, "coalesce": coalesce,
+        "reservation-drain": reservation_drain,
+        "reservation-drain-crash": partial(reservation_drain, crash=True),
         "xxhash-checksums": partial(checksums, checksum="xxhash"),
         "xxhash-read-import": partial(read_import, checksum="xxhash"),
         "xxhash-read-compressed": partial(read_import, compressed=True,

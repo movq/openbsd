@@ -367,6 +367,7 @@ struct btrfs_transaction {
 	struct btrfs_chunk_operation	*bt_chunk_op;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
+	unsigned int			 bt_reservation_drains;
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
 	uint8_t				 bt_commit_handle;
@@ -913,6 +914,7 @@ int	btrfs_space_statfs(struct btrfs_fs *, struct statfs *);
 int	btrfs_space_reserve(struct btrfs_trans_handle *,
 	    const struct btrfs_trans_reservation *);
 int	btrfs_space_reserve_commit(struct btrfs_transaction *);
+int	btrfs_space_trim_commit(struct btrfs_transaction *);
 void	btrfs_space_keep_delayed(struct btrfs_trans_handle *);
 void	btrfs_space_release(struct btrfs_trans_handle *);
 int	btrfs_space_alloc(struct btrfs_trans_handle *, uint64_t, uint64_t,

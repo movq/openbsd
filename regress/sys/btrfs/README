@@ -354,7 +354,8 @@ ENOSPC, fsync and both remount modes, with the mount still writable. This
 checks fallback from a large reservation to a sector-sized one.
 
 coalesce.py uses create on a fresh image, then disk while unmounted to verify
-that sequential sectors became larger regular extents. Check independently,
+that mixed sequential sector and 64 KiB writes became regular extents larger
+than 64 KiB (up to the 128 MiB extent limit). Check independently,
 verify_original after remount, then mutate to exercise partial/interior COW,
 overwrites across extent boundaries, repeated pending replacement, mapped
 truncate retention, sparse regrowth, hard links, cancellation, and final drops.
@@ -366,6 +367,15 @@ btrfs_write_super_mirrors, run crash_write, and reset before the superblock
 write. Check independently and use verify_original after remount. Repeat
 crash_write with a breakpoint at btrfs_chunk_publish to reset after
 durable publication, then check independently and use verify_crash.
+
+reservation_drain.py creates 4096 empty files, commits them, then renames,
+unlinks/recreates and changes modes under metadata reservation pressure.
+reservation-drain verifies the resulting names and attributes after independent
+checks and both remount modes. reservation-drain-crash resets at the second
+btrfs_space_trim_commit entry: the transaction has already reopened after a
+drain and mutated its materialized metadata. The original committed names and
+attributes must survive. Run both on all four layouts, together with the
+capacity, publication, reflink and random crash suites.
 
 Writable images must meet the feature restrictions documented at
 btrfs_validate_writable in sys/btrfs/btrfs_vfsops.c and defined by the
