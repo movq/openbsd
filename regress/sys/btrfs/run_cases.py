@@ -1,5 +1,7 @@
 """Explicit fixture/phase recipes for run_all.py. Each case owns a fresh image."""
+from contextlib import redirect_stdout
 from functools import partial
+from pathlib import Path
 import re
 
 
@@ -432,7 +434,10 @@ def subvol(r):
 
 
 def subvolume(r):
-    r.format()
+    # Deletion reserves all reference drops before mutation. Leave room for
+    # that promise with 16 KiB nodes, a free-space tree and DUP allocation.
+    # subvolume-capacity separately checks failure on a small filesystem.
+    r.format(size="1G")
     r.mount()
     r.test("subvolume", "create")
     r.unmount()
@@ -482,6 +487,35 @@ def subvolume_capacity(r):
     r.mount()
     r.test("subvolume", "capacity")
     finish(r, verify=None)
+
+
+def log_incremental(r):
+    from log_tree import check_incremental
+
+    seed = r.case_dir / "seed"
+    seed.mkdir()
+    nodesize = str(r.layout.nodesize)
+    r.host_test("log_tree", "seed", seed, "incremental", nodesize)
+    # Imported inodes have generation zero. Their logged metadata must
+    # survive replay, including when the initial log fits in one leaf.
+    r.format(seed, size="1G")
+    r.vm("sync")
+    r.mount()
+    output = r.vm("python3", r.vm_tests + "/log_tree.py", "mutate",
+                  r.mountpoint, "incremental", nodesize, capture=True)
+    (r.case_dir / "publications.txt").write_text(output)
+    r.reset_paused()
+    try:
+        with redirect_stdout(r.log):
+            check_incremental(Path(r.image), output, r.layout.nodesize,
+                              "incremental")
+    finally:
+        r.boot()
+    for mode in ("rw", "ro"):
+        r.mount(mode)
+        r.test("log_tree", "verify", r.mountpoint, "incremental", nodesize)
+        r.unmount()
+        r.checks()
 
 
 def orphan_reject(r, directory=False):
@@ -769,6 +803,7 @@ def cases():
                                   verify="compressed_verify", compress="zstd",
                                   subvols=("rw:imported",)),
         "subvolume-capacity": subvolume_capacity,
+        "log-incremental": log_incremental,
         "inline": partial(imported, script="inline", exercise="write"),
         "inline-zstd": partial(imported, script="inline", seed_phase="seed-zstd",
                                exercise="write-zstd", verify="verify-zstd",

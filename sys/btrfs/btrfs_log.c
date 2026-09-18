@@ -299,11 +299,22 @@ log_collect_inode(struct btrfs_root *root, struct log_items *items,
 	 * carry xattrs and their own parent reference, but no directory ranges:
 	 * replay installs only the child's logged name.
 	 */
-	if (error == 0 && S_ISDIR(inode.bi_mode) &&
-	    inode.bi_generation <= bmp->bm_last_transid) {
+	if (error == 0) {
 		struct log_item *item = btrfs_log_find(items, ino,
 		    BTRFS_INODE_ITEM_KEY, 0);
-		((struct btrfs_inode_item *)item->data)->generation = 0;
+		struct btrfs_inode_item *disk = (void *)item->data;
+
+		if (S_ISDIR(inode.bi_mode) &&
+		    inode.bi_generation <= bmp->bm_last_transid)
+			disk->generation = 0;
+		else if (inode.bi_generation == 0) {
+			/*
+			 * mkfs imports may have generation zero. In the log
+			 * that means existence only, so use this transaction
+			 * for a regular inode whose metadata must be replayed.
+			 */
+			disk->generation = htole64(generation);
+		}
 	}
 	return (error);
 }
