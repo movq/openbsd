@@ -133,6 +133,7 @@ struct btrfs_data_csum {
 	const uint8_t	*expected;
 	uint32_t	 offset;
 	uint32_t	 sectorsize;
+	uint32_t	 length;
 };
 
 static int
@@ -502,6 +503,7 @@ btrfs_copy_extent(struct btrfs_fs *bmp, const struct btrfs_chunk_map *target,
 			if (error == 0) {
 				csum.expected = expected;
 				csum.sectorsize = unit;
+				csum.length = unit;
 				validate = btrfs_validate_data_csum;
 				arg = &csum;
 			}
@@ -603,20 +605,37 @@ static int
 btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 {
 	const struct btrfs_data_csum *csum = arg;
+	const uint8_t *expected = csum->expected;
+	size_t csumsize = btrfs_csum_size(csum->super);
+	uint32_t offset;
 
-	if (csum->offset > length || csum->sectorsize > length - csum->offset)
+	if (csum->offset > length || csum->length > length - csum->offset)
 		return (EINVAL);
-	if (!btrfs_csum_valid(csum->super,
-	    (const uint8_t *)data + csum->offset, csum->sectorsize,
-	    csum->expected))
-		return (EIO);
+	for (offset = 0; offset < csum->length; offset += csum->sectorsize) {
+		if (!btrfs_csum_valid(csum->super,
+		    (const uint8_t *)data + csum->offset + offset,
+		    csum->sectorsize, expected))
+			return (EIO);
+		expected += csumsize;
+	}
 	return (0);
 }
 
+/*
+ * Read a sector-aligned prefix of *lengthp within one allocation window.
+ * Validate only the requested sectors, acquiring the mapping and buffer once
+ * on the healthy path. Return the validated length and its buffer offset.
+ *
+ * If no mirror supplies the whole prefix, retry just its first sector.
+ * Callers advance by the returned length, allowing subsequent sectors to
+ * come from different mirrors. A neighboring media error must not prevent
+ * recovery of an otherwise readable sector.
+ */
 int
-btrfs_read_data_sector(struct btrfs_fs *bmp,
+btrfs_read_data_window(struct btrfs_fs *bmp,
     const struct btrfs_file_extent *extent, uint64_t logical,
-    const uint8_t *expected_csum, struct buf **bpp, uint32_t *offsetp)
+    uint32_t *lengthp, const uint8_t *expected_csum, struct buf **bpp,
+    uint32_t *offsetp)
 {
 	btrfs_io_validate_fn validate = NULL;
 	struct btrfs_data_csum csum;
@@ -633,13 +652,13 @@ btrfs_read_data_sector(struct btrfs_fs *bmp,
 	    (start & (sectorsize - 1)) != 0 ||
 	    (bytes & (sectorsize - 1)) != 0 ||
 	    (logical & (sectorsize - 1)) != 0 ||
-	    logical < start || logical - start > bytes - sectorsize)
+	    logical < start || logical - start > bytes - sectorsize ||
+	    *lengthp == 0 || (*lengthp & (sectorsize - 1)) != 0 ||
+	    *lengthp > bytes - (logical - start))
 		return (EINVAL);
 	/*
 	 * Windows belong to the allocation, so split mappings and different
 	 * inode references use the same physical cache keys and sizes.
-	 * Validate only the requested sector: different DUP copies may supply
-	 * the healthy sectors of a window with damage on both mirrors.
 	 */
 	relative = logical - start;
 	window = relative & ~((uint64_t)MAXBSIZE - 1);
@@ -649,6 +668,7 @@ btrfs_read_data_sector(struct btrfs_fs *bmp,
 	csum.super = &bmp->bm_super;
 	csum.sectorsize = sectorsize;
 	csum.expected = expected_csum;
+	csum.length = MIN(*lengthp, length - csum.offset);
 	if (expected_csum != NULL)
 		validate = btrfs_validate_data_csum;
 	rw_enter_read(&bmp->bm_io_lock);
@@ -659,16 +679,29 @@ retry:
 		    BTRFS_BLOCK_GROUP_DATA, validate, &csum,
 		    NULL, bpp);
 	if (error != 0 && length != sectorsize) {
-		/* A neighboring media error must not prevent a sector retry. */
 		start = logical;
 		length = sectorsize;
 		csum.offset = 0;
+		csum.length = sectorsize;
 		goto retry;
 	}
-	if (error == 0)
+	if (error == 0) {
 		*offsetp = csum.offset;
+		*lengthp = csum.length;
+	}
 	if (error == ENOENT)
 		error = EINVAL;
 	rw_exit_read(&bmp->bm_io_lock);
 	return (error);
+}
+
+int
+btrfs_read_data_sector(struct btrfs_fs *bmp,
+    const struct btrfs_file_extent *extent, uint64_t logical,
+    const uint8_t *expected_csum, struct buf **bpp, uint32_t *offsetp)
+{
+	uint32_t length = letoh32(bmp->bm_super.sectorsize);
+
+	return (btrfs_read_data_window(bmp, extent, logical, &length,
+	    expected_csum, bpp, offsetp));
 }

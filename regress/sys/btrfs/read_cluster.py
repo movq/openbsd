@@ -131,7 +131,7 @@ def damage(image, journal):
         r"extent data disk byte (\d+) nr (\d+)", tree, re.S)
     assert len(extents) == 1
     logical, length = map(int, extents[0])
-    assert length >= 4 * SECTOR
+    assert length >= 32 * SECTOR
     chunk = next(c for c in chunks(image)
                  if c["logical"] <= logical < c["logical"] + c["length"])
     assert len(chunk["physical"]) == 2
@@ -140,8 +140,10 @@ def damage(image, journal):
     saved = []
     try:
         # Sector zero is unrecoverable. Sectors one and two require different
-        # mirrors of the same window; sector three remains healthy on both.
-        for mirror, sector in ((0, 0), (1, 0), (0, 1), (1, 2)):
+        # mirrors of the same window. Sector 17 is also unrecoverable, so
+        # checking only the first checksum of a range cannot pass.
+        for mirror, sector in ((0, 0), (1, 0), (0, 1), (1, 2),
+                               (0, 17), (1, 17)):
             address = stripes[mirror] + sector * SECTOR + 43
             value = os.pread(fd, 1, address)
             assert value == payload(13, sector)[43:44]
@@ -163,11 +165,23 @@ def faults(base):
         # A range can need a different mirror for each of its sectors.
         pair = payload(13, 1) + payload(13, 2)
         assert os.pread(fd, 2 * SECTOR - 26, SECTOR + 13) == pair[13:-13]
+        # Read the remainder of the first window using both mirrors, then
+        # cross a window boundary without including either bad sector.
+        for start, end in ((1, 16), (3, 17), (18, 35)):
+            data = b"".join(payload(13, sector) for sector in range(start, end))
+            assert os.pread(fd, len(data), start * SECTOR) == data
+            assert os.pread(fd, len(data) - 26,
+                            start * SECTOR + 13) == data[13:-13]
         expect_error(errno.EIO, os.pread, fd, SECTOR, 0)
+        expect_error(errno.EIO, os.pread, fd, 3 * SECTOR, 15 * SECTOR)
+        expect_error(errno.EIO, os.pread, fd, 2 * SECTOR - 26,
+                     16 * SECTOR + 13)
         # The failed sector retry replaced full windows at the same start.
         # A new sector read must safely restore the larger buffer size.
         assert os.pread(fd, SECTOR, 3 * SECTOR) == payload(13, 3)
         for sector in range(4, COUNT):
+            if sector == 17:
+                continue
             assert os.pread(fd, SECTOR, sector * SECTOR) == payload(13, sector)
     finally:
         os.close(fd)
@@ -188,8 +202,9 @@ def repair(image, journal):
 def compressed_data():
     # Keep the first sector compressible too: mkfs.btrfs 7.0 can store an
     # incompressible import raw while still marking its extent compressed.
-    sample = random.Random(91).randbytes(32768)
-    return (bytes(98304) + sample) * 8
+    # The encoded allocation must cross a 64 KiB physical read window.
+    sample = random.Random(91).randbytes(98304)
+    return (bytes(32768) + sample) * 8
 
 
 def seed_compressed(base):
@@ -205,7 +220,7 @@ def disk_compressed(image):
         r"extent compression 3 \(zstd\)", tree)
     assert len(extents) == 8, extents
     for disk, length, ram in extents:
-        assert SECTOR < int(disk) <= 131072
+        assert 65536 < int(disk) <= 131072
         assert int(length) == int(ram) == 131072
     print("multi-sector Zstd allocations verified", flush=True)
 

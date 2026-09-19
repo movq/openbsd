@@ -146,12 +146,11 @@ def read_import(r, compressed=False, checksum="crc32c"):
 
 def read_faults(r, checksum="crc32c"):
     # Bitmap DUP imports can exceed one 4 KiB free-space leaf.
-    r.format(data="dup", free_space="extent", checksum=checksum)
-    directory = r.path("test")
-    r.mount()
-    r.test("read_cluster", "create", directory)
-    r.unmount()
-    r.checks()
+    # Import a large extent so the damaged range spans full read windows.
+    # Small native writes can drain into allocations shorter than a window.
+    seed = r.seed("read_cluster")
+    r.format(seed, data="dup", free_space="extent", checksum=checksum)
+    directory = r.mountpoint
     journal = r.case_dir / "damage.json"
     r.host_test("read_cluster", "damage", r.image, journal)
     r.mount("ro")
