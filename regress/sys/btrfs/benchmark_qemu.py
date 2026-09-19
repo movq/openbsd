@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shlex
 import socket
+import struct
 import subprocess
 
 
@@ -67,14 +68,27 @@ def counters():
     match = re.search(r"(?:^|\n)" + re.escape(a.block) + r": ([^\r\n]+)", text)
     if not match:
         raise RuntimeError("QEMU block backend missing: " + text)
-    return {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", match[1])
-            if k != "idle_time_ns"}
+    result = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", match[1])
+              if k != "idle_time_ns"}
+    if a.type == "btrfs":
+        # The raw image is shared with QEMU. At observation boundaries,
+        # generation differences count completed full transactions; cache
+        # flushes and tree-log publications are not transaction counts.
+        with a.image.open("rb") as image:
+            image.seek(65536 + 64)
+            magic, generation = struct.unpack("<8sQ", image.read(16))
+        if magic != b"_BHRfS_M":
+            raise RuntimeError("invalid Btrfs superblock")
+        result["super_generation"] = generation
+    return result
 
 
 def delta(before, after):
     result = {k: after[k] - v for k, v in before.items()}
     if any(v < 0 for v in result.values()):
         raise RuntimeError("QEMU counters went backwards")
+    if "super_generation" in result:
+        result["transaction_commits"] = result.pop("super_generation")
     result["wr_sectors_512"] = result["wr_bytes"] // 512
     result["wr_blocks_4096"] = result["wr_bytes"] / 4096
     return result

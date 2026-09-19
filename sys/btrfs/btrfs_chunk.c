@@ -18,9 +18,10 @@
 
 /*
  * Grow data, metadata and system groups within recorded member device sizes,
- * preserving existing profiles. Reservation failure publishes pending work
- * before entering chunk growth without a handle. Low system space triggers
- * system growth first. Logical ranges append beyond a filesystem-lifetime
+ * preserving existing profiles. Data reservation failure drains pending work
+ * before entering chunk growth without a handle. Growth can publish that work
+ * together with the new chunk. Low system space triggers system growth first.
+ * Logical ranges append beyond a filesystem-lifetime
  * high-water mark; chunk size does not change extent size or the ordered-data
  * watermark.
  *
@@ -1149,16 +1150,19 @@ btrfs_chunk_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
 	    BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM;
 	struct btrfs_chunk_operation *op;
 	uint64_t system_needed;
-	int error;
+	int error, retried = 0;
 
 	if ((type & types) != type || type == 0 || (type & (type - 1)) != 0 ||
 	    needed == 0 || needed > UINT64_MAX - 65535)
 		return (EINVAL);
 	rw_enter_write(&bmp->bm_chunk_alloc_lock);
 	for (;;) {
-		error = btrfs_commit_current(bmp, curproc);
-		if (error != 0)
-			break;
+		/* Data pressure already drained references and reclaimed pins. */
+		if (type != BTRFS_BLOCK_GROUP_DATA) {
+			error = btrfs_commit_current(bmp, curproc);
+			if (error != 0)
+				break;
+		}
 		if (bmp->bm_readonly) {
 			error = EROFS;
 			break;
@@ -1186,6 +1190,19 @@ btrfs_chunk_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
 		if (error != 0) {
 			chunk_discard(op);
 			if (error == ENOSPC) {
+				/*
+				 * Concurrent retirements may make space or whole
+				 * groups reclaimable. Publish once before trying
+				 * again or returning an empty group.
+				 */
+				if (!retried) {
+					error = btrfs_commit_current(bmp,
+					    curproc);
+					if (error != 0)
+						break;
+					retried = 1;
+					continue;
+				}
 				error = chunk_reclaim(bmp, type);
 				if (error == 0)
 					continue;

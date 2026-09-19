@@ -7,3 +7,11 @@ Chunk growth tests use four concurrent writers, 64 KiB writes, and fsync every
 after remount. Use run_all.py --chunk-stress (or chunks.py --stress) for the
 original 4 KiB writes and fsync every 512 KiB; large DUP fixtures can take many
 minutes with that pattern.
+
+benchmark_qemu.py reports full Btrfs transaction counts from superblock
+generation differences, separately from QEMU cache-flush counts. benchmark.py
+changes permissions to private modes before restoring them so chmod does real
+work even when an archive already uses 0644/0755.
+
+growth-commit* checks batched data/chunk publication and crashes on either side
+of it; growth-reuse checks that retired data is reclaimed before adding chunks.

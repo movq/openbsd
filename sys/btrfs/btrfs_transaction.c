@@ -61,7 +61,7 @@
 static struct btrfs_transaction *
 	btrfs_trans_alloc(struct btrfs_fs *, uint64_t);
 static void	btrfs_trans_reopen(struct btrfs_transaction *);
-static int	btrfs_trans_drain_reservations(struct btrfs_fs *, uint64_t);
+static int	btrfs_trans_drain_reservations(struct btrfs_fs *, uint64_t, int);
 
 static struct btrfs_transaction *
 btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
@@ -164,7 +164,7 @@ btrfs_trans_join(struct btrfs_fs *bmp,
 	struct btrfs_trans_handle *handle;
 	struct btrfs_transaction *trans;
 	uint64_t generation, failed_type, needed;
-	int dirty, end_error, error, retried = 0, grown = 0;
+	int data_drained = 0, dirty, end_error, error, retried = 0, grown = 0;
 
 	*handlep = NULL;
 retry:
@@ -208,7 +208,7 @@ retry:
 		generation = trans->bt_generation;
 		mtx_leave(&bmp->bm_trans_mtx);
 		free(handle, M_BTRFS, sizeof(*handle));
-		error = btrfs_trans_drain_reservations(bmp, generation);
+		error = btrfs_trans_drain_reservations(bmp, generation, 0);
 		if (error != 0)
 			return (error);
 		goto retry;
@@ -234,17 +234,27 @@ retry:
 		 * mutation from this operation has occurred, and commit never
 		 * takes the vnode or namespace locks the caller may hold.
 		 */
-		if (error == ENOSPC && dirty && retried < 2) {
-			if (retried == 0 &&
-			    failed_type == BTRFS_BLOCK_GROUP_METADATA)
+		if (error == ENOSPC && dirty &&
+		    (failed_type == BTRFS_BLOCK_GROUP_DATA ?
+		    !data_drained : retried < 2)) {
+			if (failed_type == BTRFS_BLOCK_GROUP_DATA ||
+			    (retried == 0 &&
+			    failed_type == BTRFS_BLOCK_GROUP_METADATA))
 				error = btrfs_trans_drain_reservations(bmp,
-				    generation);
+				    generation,
+				    failed_type == BTRFS_BLOCK_GROUP_DATA);
 			else
 				error = btrfs_trans_commit(bmp, generation,
 				    curproc);
 			if (error != 0)
 				return (error);
-			retried++;
+			/* Metadata can fail before the same join reaches data. */
+			if (failed_type == BTRFS_BLOCK_GROUP_DATA)
+				data_drained = 1;
+			else {
+				data_drained = 0;
+				retried++;
+			}
 			goto retry;
 		}
 		if (error == ENOSPC && reservation != NULL &&
@@ -264,6 +274,7 @@ retry:
 				return (error);
 			grown++;
 			retried = 0;
+			data_drained = 0;
 			goto retry;
 		}
 		return (error);
@@ -419,7 +430,8 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
  * Chunk changes and depleted protected reserves also require publication.
  */
 static int
-btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation)
+btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation,
+    int reclaim_data)
 {
 	struct btrfs_transaction *trans;
 	struct btrfs_trans_handle *handle = NULL;
@@ -468,6 +480,23 @@ btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation)
 		return (btrfs_trans_commit_closed(trans, curproc));
 	if (error != 0)
 		return (btrfs_trans_finish(bmp, trans, error));
+	/*
+	 * Data reservation failure needs publication only if it can return
+	 * retired data to the allocator. References have now been applied,
+	 * including drops which were merely queued when the join failed.
+	 * Otherwise let growth add a chunk to this generation and publish
+	 * the pending work and the new chunk together.
+	 */
+	if (reclaim_data) {
+		TAILQ_FOREACH(extent, &trans->bt_pinned_extents, bte_entry)
+			if (extent->bte_group->bbg_flags & BTRFS_BLOCK_GROUP_DATA)
+				return (btrfs_trans_commit_closed(trans,
+				    curproc));
+		TAILQ_FOREACH(extent, &bmp->bm_log_extents, bte_entry)
+			if (extent->bte_group->bbg_flags & BTRFS_BLOCK_GROUP_DATA)
+				return (btrfs_trans_commit_closed(trans,
+				    curproc));
+	}
 	mtx_enter(&bmp->bm_trans_mtx);
 	btrfs_trans_reopen(trans);
 	mtx_leave(&bmp->bm_trans_mtx);
