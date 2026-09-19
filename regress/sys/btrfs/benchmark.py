@@ -227,6 +227,10 @@ unmount()
 mount()
 measure("chown", ["chown", "-R", "12345:12345", str(mp / "tree")], durable=True)
 mount()
+# Change permissions before restoring the public modes. Source archives often
+# already use 0644/0755, which would make the restoring chmod a no-op.
+measure("chmod-private", ["chmod", "-R", "u=rwX,go=", str(mp / "tree")], durable=True)
+mount()
 measure("chmod", ["chmod", "-R", "u=rwX,go=rX", str(mp / "tree")], durable=True)
 mount()
 counts = {"files": 0, "directories": 0, "symlinks": 0, "bytes": 0}

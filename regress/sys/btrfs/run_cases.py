@@ -581,6 +581,50 @@ def chunks_large(r):
     chunks(r, size="3G" if r.layout.free_space == "bitmap" else "8G")
 
 
+def growth_commit(r, crash=None):
+    r.format(size="512M")
+    directory = r.path("test")
+    r.mount()
+    r.test("growth_commit", "create", directory)
+    r.unmount()
+    r.checks()
+    before = int(re.search(r"^generation\s+(\d+)",
+                          r.inspect("dump-super"), re.M)[1])
+    r.mount()
+    if crash:
+        target = ("btrfs_write_super_mirrors" if crash == "before" else
+                  "btrfs_chunk_publish")
+        r.crash_break(r.test_argv("growth_commit", "mutate", directory),
+                      ["btrfs_chunk_grow", target])
+        r.checks()
+        r.boot()
+        r.mount()
+        finish(r, "growth_commit", directory,
+               "verify_original" if crash == "before" else "verify")
+    else:
+        r.test("growth_commit", "mutate", directory)
+        r.unmount()
+        after = int(re.search(r"^generation\s+(\d+)",
+                             r.inspect("dump-super"), re.M)[1])
+        # One growth publication and one final drain suffice.
+        assert 0 < after - before <= 2, (before, after)
+        r.mount()
+        finish(r, "growth_commit", directory)
+
+
+def growth_reuse(r):
+    r.format(size="512M")
+    directory = r.path("test")
+    r.mount()
+    r.test("growth_commit", "create", directory)
+    r.test("growth_commit", "fill", directory)
+    r.unmount()
+    r.checks()
+    r.mount()
+    r.test("growth_commit", "reuse", directory)
+    finish(r, "growth_commit", directory, "verify_reused")
+
+
 def reclaim(r, bounded=True, bitmap_retire=False):
     r.format(size=small_size(r), free_space="extent" if bitmap_retire else None)
     directory = r.path("test")
@@ -856,6 +900,10 @@ def cases():
         "statfs": statfs,
         "chunks": chunks,
         "chunks-large": chunks_large,
+        "growth-commit": growth_commit,
+        "growth-commit-before": partial(growth_commit, crash="before"),
+        "growth-commit-after": partial(growth_commit, crash="after"),
+        "growth-reuse": growth_reuse,
         "chunks-system": partial(chunks, system=True),
         "chunks-combined": partial(chunks, phase="combined"),
         "chunks-system-combined": partial(chunks, phase="combined", system=True),
