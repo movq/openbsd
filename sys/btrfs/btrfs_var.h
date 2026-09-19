@@ -976,6 +976,9 @@ int	btrfs_lookup_data_csum(struct btrfs_fs *, uint64_t, uint8_t *);
 int	btrfs_read_data_sector(struct btrfs_fs *,
 	    const struct btrfs_file_extent *, uint64_t, const uint8_t *,
 	    struct buf **, uint32_t *);
+int	btrfs_read_data_window(struct btrfs_fs *,
+	    const struct btrfs_file_extent *, uint64_t, uint32_t *,
+	    const uint8_t *, struct buf **, uint32_t *);
 int	btrfs_read_compressed_extent(struct btrfs_node *,
 	    const struct btrfs_file_extent *, uint64_t, size_t, void *);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);
