@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish pending file data and a new data chunk in the same generation."""
+"""Use several new data chunks before publishing their common generation."""
 import os
 from pathlib import Path
 import sys
@@ -18,17 +18,47 @@ def create(base):
     (base / "blocks").write_text(str(os.statvfs(base).f_blocks))
 
 
-def mutate(base):
+def mutate(base, durable=True, retire=False):
     before = os.statvfs(base).f_blocks
+    capacity, growths = before, 0
     with (base / "data").open("r+b", buffering=0) as stream:
         for number in range(16384):
             assert stream.write(payload(number)) == BLOCK
-            if os.statvfs(base).f_blocks > before:
+            current = os.statvfs(base).f_blocks
+            if current > capacity:
+                growths += 1
+                capacity = current
+                if retire and growths == 1:
+                    # This allocation belongs to a new group and will be
+                    # drained before the later additions.
+                    (base / "victim").write_bytes(b"retired\n" * 8192)
+            if growths == 3:
                 break
         else:
-            raise AssertionError("data capacity did not grow")
-        os.fsync(stream.fileno())
+            raise AssertionError("data capacity did not grow three times")
+        # This spans retired payloads in new groups as well as ordered data.
+        verify(base)
+        if retire:
+            (base / "victim").unlink()
+            # Materialize the drop without requiring more data capacity.
+            # Aborting afterwards must release exclusions before groups.
+            for number in range(4096):
+                (base / f"entry-{number}").touch()
+        if durable:
+            os.fsync(stream.fileno())
     verify(base)
+
+
+def mutate_retire(base):
+    mutate(base, retire=True)
+
+
+def pending(base):
+    mutate(base, durable=False)
+
+
+def pending_retire(base):
+    mutate(base, durable=False, retire=True)
 
 
 def verify_original(base):
@@ -47,7 +77,7 @@ def verify(base):
         for number in range(size // BLOCK):
             assert stream.read(BLOCK) == payload(number), number
         assert stream.read() == b""
-    print("published growth and pending data verified", flush=True)
+    print("grown capacity and file data verified", flush=True)
 
 
 def fill(base):

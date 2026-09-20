@@ -311,6 +311,7 @@ struct btrfs_trans_reservation {
 #define BTRFS_ORDERED_BYTES_MAX		(32ULL * 1024 * 1024)
 
 struct btrfs_chunk_operation;
+TAILQ_HEAD(btrfs_chunk_operation_list, btrfs_chunk_operation);
 
 struct btrfs_reserved_space {
 	TAILQ_ENTRY(btrfs_reserved_space) brs_entry;
@@ -372,6 +373,7 @@ struct btrfs_transaction {
 	uint64_t			 bt_pinned_bytes;
 	uint64_t			 bt_bytes_used;
 	struct btrfs_chunk_operation	*bt_chunk_op;
+	struct btrfs_chunk_operation_list bt_pending_chunks;
 	uint64_t			 bt_space_seq;
 	unsigned int			 bt_writers;
 	int				 bt_error;
@@ -914,6 +916,9 @@ void	btrfs_space_moved(struct btrfs_fs *, struct btrfs_block_group *,
 	    const struct btrfs_chunk_map *);
 void	btrfs_chunk_publish(struct btrfs_transaction *);
 void	btrfs_chunk_abort(struct btrfs_transaction *);
+void	btrfs_chunk_activate(struct btrfs_transaction *);
+uint64_t btrfs_chunk_pending_bytes(struct btrfs_transaction *);
+int	btrfs_trans_activate_chunks(struct btrfs_fs *, uint64_t);
 int	btrfs_space_init(struct btrfs_fs *);
 void	btrfs_space_destroy(struct btrfs_fs *);
 int	btrfs_space_statfs(struct btrfs_fs *, struct statfs *);
