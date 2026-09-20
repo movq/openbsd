@@ -13,8 +13,10 @@ generation differences, separately from QEMU cache-flush counts. benchmark.py
 changes permissions to private modes before restoring them so chmod does real
 work even when an archive already uses 0644/0755.
 
-growth-commit* checks batched data/chunk publication and crashes on either side
-of it; growth-reuse checks that retired data is reclaimed before adding chunks.
+growth-commit* uses three new data chunks before fsync, checks the transaction
+count, and crashes during activation and on either side of publication.
+growth-commit-retire also retires data from a pending group. growth-reuse
+checks that retired data is reclaimed before adding chunks.
 
 read-faults and xxhash-read-faults import large DUP extents and damage different
 sectors on both mirrors. They check recovery across read windows, errors for

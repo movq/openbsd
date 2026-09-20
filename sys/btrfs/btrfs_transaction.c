@@ -86,6 +86,7 @@ btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 	RBT_INIT(btrfs_data_ref_tree, &trans->bt_data_ref_index);
 	RBT_INIT(btrfs_ordered_tree, &trans->bt_ordered_extents);
 	TAILQ_INIT(&trans->bt_dirty_roots);
+	TAILQ_INIT(&trans->bt_pending_chunks);
 	return (trans);
 }
 
@@ -145,10 +146,11 @@ btrfs_trans_destroy(struct btrfs_fs *bmp)
 	KASSERT(RBT_EMPTY(btrfs_ordered_tree, &trans->bt_ordered_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_dirty_extent_buffers));
 	if (trans->bt_state != BTRFS_TRANS_COMMITTED) {
-		btrfs_chunk_abort(trans);
 		btrfs_space_abort(trans);
+		btrfs_chunk_abort(trans);
 	}
 	KASSERT(trans->bt_chunk_op == NULL);
+	KASSERT(TAILQ_EMPTY(&trans->bt_pending_chunks));
 	KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
 	KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
@@ -427,7 +429,8 @@ btrfs_prepare_metadata_commit(struct btrfs_trans_handle *handle)
  *
  * Bound retained memory, not bytes of disk space represented by allocation
  * and pin records. Actual space exhaustion still gets a full commit retry.
- * Chunk changes and depleted protected reserves also require publication.
+ * Administrative chunk changes and depleted protected reserves still require
+ * publication. Pending data additions can remain usable in this generation.
  */
 static int
 btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation,
@@ -445,6 +448,7 @@ btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation,
 		return (error);
 	if (trans->bt_error != 0)
 		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
+	memory = btrfs_chunk_pending_bytes(trans);
 	TAILQ_FOREACH(eb, &trans->bt_dirty_extent_buffers, eb_dirty_entry)
 		memory += sizeof(*eb) + letoh32(bmp->bm_super.nodesize);
 	TAILQ_FOREACH(extent, &trans->bt_allocated_extents, bte_entry)
@@ -706,6 +710,29 @@ btrfs_trans_reopen(struct btrfs_transaction *trans)
 	wakeup(&bmp->bm_transaction);
 }
 
+/*
+ * Install prepared data mappings only after draining handles. Keep the
+ * generation open: the transaction still owns their publication or rollback.
+ * A concurrent commit may already have installed and published the additions.
+ */
+int
+btrfs_trans_activate_chunks(struct btrfs_fs *bmp, uint64_t generation)
+{
+	struct btrfs_transaction *trans;
+	int error;
+
+	error = btrfs_trans_close(bmp, generation, &trans);
+	if (error != 0 || trans == NULL)
+		return (error);
+	if (trans->bt_error != 0)
+		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
+	btrfs_chunk_activate(trans);
+	mtx_enter(&bmp->bm_trans_mtx);
+	btrfs_trans_reopen(trans);
+	mtx_leave(&bmp->bm_trans_mtx);
+	return (0);
+}
+
 int
 btrfs_trans_close(struct btrfs_fs *bmp, uint64_t minimum_generation,
     struct btrfs_transaction **transp)
@@ -809,8 +836,13 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 		(void)btrfs_delayed_refs_finish(trans, 0);
 		(void)btrfs_ordered_extents_finish(trans, 0);
 		(void)btrfs_extent_buffers_finish(trans, 0);
-		btrfs_chunk_abort(trans);
 		btrfs_space_abort(trans);
+		/*
+		 * Joins remain closed and this mount is becoming read-only.
+		 * Drop exclusions before freeing any unpublished data groups.
+		 */
+		btrfs_log_destroy(bmp);
+		btrfs_chunk_abort(trans);
 	}
 
 	mtx_enter(&bmp->bm_trans_mtx);
@@ -859,6 +891,7 @@ btrfs_log_fsync(struct btrfs_node *node, uint64_t generation, struct proc *p)
 	if (trans->bt_error != 0)
 		return (btrfs_trans_finish(bmp, trans, trans->bt_error));
 	if (trans->bt_log_full_commit || trans->bt_chunk_op != NULL ||
+	    !TAILQ_EMPTY(&trans->bt_pending_chunks) ||
 	    node->bn_inode.bi_nlink == 0)
 		error = EAGAIN;
 	else {

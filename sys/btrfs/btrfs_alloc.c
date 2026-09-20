@@ -149,9 +149,9 @@ btrfs_space_group_at(struct btrfs_fs *bmp, unsigned int index)
 
 	/*
 	 * Callers hold a transaction handle, own commit, or serialize chunk
-	 * changes with bm_chunk_alloc_lock. Publication drains handles before
-	 * replacing indexes and freeing removed groups. Statfs instead holds
-	 * bm_mapping_lock throughout its traversal.
+	 * changes with bm_chunk_alloc_lock. Activation, publication and abort
+	 * drain handles before replacing indexes or freeing groups. Statfs
+	 * instead holds bm_mapping_lock throughout its traversal.
 	 */
 	rw_enter_read(&bmp->bm_mapping_lock);
 	KASSERT(index < bmp->bm_nblock_groups);

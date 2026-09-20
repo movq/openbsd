@@ -19,11 +19,11 @@
 /*
  * Grow data, metadata and system groups within recorded member device sizes,
  * preserving existing profiles. Data reservation failure drains pending work
- * before entering chunk growth without a handle. Growth can publish that work
- * together with the new chunk. Low system space triggers system growth first.
- * Logical ranges append beyond a filesystem-lifetime
- * high-water mark; chunk size does not change extent size or the ordered-data
- * watermark.
+ * before entering chunk growth without a handle. Prepared data additions can
+ * serve the running transaction before durable publication. Low system space
+ * triggers system growth first. Logical ranges append beyond a
+ * filesystem-lifetime high-water mark; chunk size does not change extent size
+ * or the ordered-data watermark.
  *
  * The physical planner starts at 32 MiB for data/metadata or 8 MiB for system
  * chunks. Data growth can reach 1 GiB, limiting growth above the base to a
@@ -62,7 +62,7 @@ enum btrfs_chunk_action {
 };
 
 /*
- * bm_chunk_alloc_lock serializes preparation through transaction completion.
+ * bm_chunk_alloc_lock serializes preparation through activation or completion.
  * Preparation owns replacement indexes and either a private new group or an
  * existing group's exclusion from reservations. Other indexed groups are
  * borrowed. Roots belong to the filesystem; no tree paths survive preparation.
@@ -74,16 +74,26 @@ enum btrfs_chunk_action {
  * transaction before dropping its handle. Only btrfs_chunk_publish or
  * btrfs_chunk_abort may then consume it, even if commit reports an error.
  * Until that transfer, chunk_discard unwinds every preparation/application
- * failure. New groups never serve allocations before durable publication.
+ * failure. Administrative operations retain their publication boundary.
+ *
+ * Ordinary data growth instead attaches to bt_pending_chunks. Closing joins
+ * allows activation of its new group and indexes without committing. The
+ * first active addition retains the old indexes; later additions replace and
+ * free intermediate indexes. Pending operations own all new groups until
+ * publication, and abort restores the old indexes after releasing allocations,
+ * pins and exclusions. Live device usage includes active additions; staged
+ * superblocks also account for any addition not yet activated.
  *
  * One reserved handle applies chunk/device, block-group and free-space edits.
  * btr_chunk prevents recursive growth during join. Chunk-tree COW uses system
  * space; system growth checks superblock-array capacity and prepares a
- * bootstrap mapping. Publication installs indexes before establishing the next
- * generation's reserves. Callers must relinquish ownership even if reserve
- * replenishment fails after durable publication.
+ * bootstrap mapping. Publication installs any remaining indexes before
+ * establishing the next generation's reserves. Callers must relinquish
+ * ownership even if reserve replenishment fails after durable publication.
  */
 struct btrfs_chunk_operation {
+	TAILQ_ENTRY(btrfs_chunk_operation) entry;
+	int				 active;
 	struct btrfs_fs			*fs;
 	enum btrfs_chunk_action		 action;
 	struct btrfs_chunk_map		 chunk;
@@ -680,7 +690,7 @@ chunk_move_apply(struct btrfs_trans_handle *handle,
  * Once attached, transaction completion alone owns publication or rollback.
  */
 static int
-chunk_execute(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
+chunk_execute(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op, int defer)
 {
 	struct btrfs_trans_handle *handle;
 	struct btrfs_transaction *trans;
@@ -698,6 +708,9 @@ chunk_execute(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 	trans = handle->bth_transaction;
 	generation = trans->bt_generation;
 	KASSERT(trans->bt_chunk_op == NULL);
+	KASSERT(defer || TAILQ_EMPTY(&trans->bt_pending_chunks));
+	KASSERT(!defer || (op->action == BTRFS_CHUNK_ADD &&
+	    (op->chunk.type & BTRFS_BLOCK_GROUP_DATA)));
 	if (op->action == BTRFS_CHUNK_REMOVE) {
 		/*
 		 * Reassignment can change physical buffer sizes between data
@@ -733,11 +746,18 @@ chunk_execute(struct btrfs_fs *bmp, struct btrfs_chunk_operation *op)
 		chunk_discard(op);
 		return (error);
 	}
-	trans->bt_chunk_op = op;
+	if (defer)
+		TAILQ_INSERT_TAIL(&trans->bt_pending_chunks, op, entry);
+	else
+		trans->bt_chunk_op = op;
 	/* Do not touch op or its group after dropping this handle. */
 	error = btrfs_trans_end(handle);
-	if (error == 0)
-		error = btrfs_trans_commit(bmp, generation, curproc);
+	if (error == 0) {
+		if (defer)
+			error = btrfs_trans_activate_chunks(bmp, generation);
+		else
+			error = btrfs_trans_commit(bmp, generation, curproc);
+	}
 	return (error);
 }
 
@@ -778,7 +798,7 @@ btrfs_device_change(struct btrfs_fs *bmp, struct btrfs_device *device, int add)
 			op->source_item.bytes_used = htole64(
 			    letoh64(op->source_item.bytes_used) - bytes);
 			chunk_encode(op);
-			error = chunk_execute(bmp, op);
+			error = chunk_execute(bmp, op, 0);
 			if (error != 0)
 				return (error);
 		}
@@ -800,7 +820,7 @@ btrfs_device_change(struct btrfs_fs *bmp, struct btrfs_device *device, int add)
 	op->reservation.btr_system =
 	    (uint64_t)letoh32(bmp->bm_super.nodesize) * BTRFS_CHUNK_SYSTEM_BLOCKS;
 	op->reservation.btr_reclaim = op->reservation.btr_chunk = 1;
-	return (chunk_execute(bmp, op));
+	return (chunk_execute(bmp, op, 0));
 }
 
 /* Super publication includes a pending add, and omits a pending removal. */
@@ -946,7 +966,7 @@ chunk_reclaim(struct btrfs_fs *bmp, uint64_t type)
 				continue;
 			return (error);
 		}
-		error = chunk_execute(bmp, op);
+		error = chunk_execute(bmp, op, 0);
 		/* Replenishment can fail after publication has freed the group. */
 		if (error != ENOSPC || bmp->bm_readonly)
 			return (error);
@@ -991,7 +1011,7 @@ btrfs_balance_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
 	if (error != 0)
 		chunk_discard(op);
 	else
-		error = chunk_execute(bmp, op);
+		error = chunk_execute(bmp, op, 0);
 	return (error);
 }
 
@@ -1124,7 +1144,7 @@ btrfs_balance(struct btrfs_fs *bmp, struct btrfs_ioctl_balance *args)
 			if (error != 0)
 				chunk_discard(op);
 			else
-				error = chunk_execute(bmp, op);
+				error = chunk_execute(bmp, op, 0);
 		}
 		if (error == ENOSPC && !bmp->bm_readonly) {
 			nospace = 1;
@@ -1170,10 +1190,13 @@ btrfs_chunk_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
 		/* Chunk-tree COW must have system space before other growth. */
 		system_needed = (uint64_t)letoh32(bmp->bm_super.nodesize) *
 		    BTRFS_CHUNK_SYSTEM_BLOCKS;
-		if (chunk_available(bmp, BTRFS_BLOCK_GROUP_SYSTEM) <
+		if (type != BTRFS_BLOCK_GROUP_SYSTEM &&
+		    chunk_available(bmp, BTRFS_BLOCK_GROUP_SYSTEM) <
 		    system_needed) {
 			type = BTRFS_BLOCK_GROUP_SYSTEM;
 			needed = system_needed;
+			/* Publish pending data additions before system growth. */
+			continue;
 		}
 		if (chunk_available(bmp, type) >= needed) {
 			error = 0;
@@ -1213,7 +1236,8 @@ btrfs_chunk_grow(struct btrfs_fs *bmp, uint64_t type, uint64_t needed)
 		if (error != 0)
 			chunk_discard(op);
 		else
-			error = chunk_execute(bmp, op);
+			error = chunk_execute(bmp, op,
+			    type == BTRFS_BLOCK_GROUP_DATA);
 		break;
 	}
 	rw_exit_write(&bmp->bm_chunk_alloc_lock);
@@ -1241,6 +1265,10 @@ btrfs_chunk_update_super(struct btrfs_transaction *trans,
 	struct btrfs_chunk *chunk;
 	uint32_t size, offset, length;
 
+	TAILQ_FOREACH(op, &trans->bt_pending_chunks, entry)
+		if (sb->dev_item.devid == op->device.devid)
+			sb->dev_item = op->device;
+	op = trans->bt_chunk_op;
 	if (op == NULL)
 		return (0);
 	if (sb->dev_item.devid == op->device.devid)
@@ -1327,10 +1355,74 @@ btrfs_chunk_device_item(struct btrfs_transaction *trans,
 {
 	struct btrfs_chunk_operation *op = trans->bt_chunk_op;
 
-	*item = op != NULL && op->member == device ?
-	    op->device : device->bd_item;
+	*item = device->bd_item;
+	TAILQ_FOREACH(op, &trans->bt_pending_chunks, entry)
+		if (op->member == device)
+			*item = op->device;
+	op = trans->bt_chunk_op;
+	if (op != NULL && op->member == device)
+		*item = op->device;
 	if (op != NULL && op->source == device)
 		*item = op->source_item;
+}
+
+/*
+ * Closed joins keep allocator traversals stable. Readers and statfs finish
+ * using the old indexes before replacement. Only the first addition retains
+ * an index snapshot, bounding rollback storage independently of batch length.
+ */
+void
+btrfs_chunk_activate(struct btrfs_transaction *trans)
+{
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_chunk_operation *op, *first;
+	struct btrfs_chunk_map *oldchunks;
+	struct btrfs_block_group **oldgroups;
+	unsigned int count;
+
+	KASSERT(trans->bt_writers == 0);
+	KASSERT(!trans->bt_commit_handle);
+	first = TAILQ_FIRST(&trans->bt_pending_chunks);
+	TAILQ_FOREACH(op, &trans->bt_pending_chunks, entry) {
+		if (op->active)
+			continue;
+		rw_enter_write(&bmp->bm_io_lock);
+		rw_enter_write(&bmp->bm_mapping_lock);
+		count = bmp->bm_nchunks;
+		KASSERT(bmp->bm_nblock_groups == count);
+		KASSERT(op->count == count + 1);
+		oldchunks = bmp->bm_chunks;
+		oldgroups = bmp->bm_block_groups;
+		bmp->bm_chunks = op->chunks;
+		bmp->bm_block_groups = op->groups;
+		bmp->bm_nchunks = bmp->bm_nblock_groups = op->count;
+		bmp->bm_chunk_logical_end = op->chunk.logical + op->chunk.length;
+		op->member->bd_item = op->device;
+		op->chunks = op == first ? oldchunks : NULL;
+		op->groups = op == first ? oldgroups : NULL;
+		op->active = 1;
+		rw_exit_write(&bmp->bm_mapping_lock);
+		rw_exit_write(&bmp->bm_io_lock);
+		if (op != first) {
+			free(oldchunks, M_BTRFS, count * sizeof(*oldchunks));
+			free(oldgroups, M_BTRFS, count * sizeof(*oldgroups));
+		}
+	}
+}
+
+uint64_t
+btrfs_chunk_pending_bytes(struct btrfs_transaction *trans)
+{
+	struct btrfs_chunk_operation *op;
+	uint64_t bytes = 0;
+
+	TAILQ_FOREACH(op, &trans->bt_pending_chunks, entry) {
+		bytes += sizeof(*op);
+		if (op->chunks != NULL)
+			bytes += (uint64_t)(op->count - op->active) *
+			    (sizeof(*op->chunks) + sizeof(*op->groups));
+	}
+	return (bytes);
 }
 
 /* Called only after durable commit, before the next generation's reserves. */
@@ -1343,6 +1435,16 @@ btrfs_chunk_publish(struct btrfs_transaction *trans)
 	struct btrfs_block_group **oldgroups;
 	unsigned int count;
 
+	/* A concurrent committer may win before the grower activates its group. */
+	btrfs_chunk_activate(trans);
+	while ((op = TAILQ_FIRST(&trans->bt_pending_chunks)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_pending_chunks, op, entry);
+		op->group = NULL;
+		/* An active operation's retained arrays describe the old index. */
+		op->count--;
+		chunk_discard(op);
+	}
+	op = trans->bt_chunk_op;
 	if (op == NULL)
 		return;
 	KASSERT(trans->bt_writers == 0);
@@ -1412,10 +1514,47 @@ done:
 void
 btrfs_chunk_abort(struct btrfs_transaction *trans)
 {
-	struct btrfs_chunk_operation *op = trans->bt_chunk_op;
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_chunk_operation *op, *first;
+	struct btrfs_chunk_map *chunks;
+	struct btrfs_block_group **groups;
+	uint64_t bytes;
+	unsigned int count;
 
 	KASSERT(trans->bt_writers == 0);
 	KASSERT(!trans->bt_commit_handle);
+	first = TAILQ_FIRST(&trans->bt_pending_chunks);
+	if (first != NULL && first->active) {
+		/* Allocation, pin and exclusion records no longer borrow groups. */
+		rw_enter_write(&bmp->bm_io_lock);
+		rw_enter_write(&bmp->bm_mapping_lock);
+		chunks = bmp->bm_chunks;
+		groups = bmp->bm_block_groups;
+		count = bmp->bm_nchunks;
+		bmp->bm_chunks = first->chunks;
+		bmp->bm_block_groups = first->groups;
+		bmp->bm_nchunks = bmp->bm_nblock_groups = first->count - 1;
+		first->chunks = NULL;
+		first->groups = NULL;
+		TAILQ_FOREACH(op, &trans->bt_pending_chunks, entry) {
+			if (!op->active)
+				continue;
+			bytes = op->chunk.length * op->chunk.nmirrors;
+			KASSERT(letoh64(op->member->bd_item.bytes_used) >= bytes);
+			op->member->bd_item.bytes_used = htole64(
+			    letoh64(op->member->bd_item.bytes_used) - bytes);
+		}
+		rw_exit_write(&bmp->bm_mapping_lock);
+		rw_exit_write(&bmp->bm_io_lock);
+		free(chunks, M_BTRFS, count * sizeof(*chunks));
+		free(groups, M_BTRFS, count * sizeof(*groups));
+	}
+	while ((op = TAILQ_FIRST(&trans->bt_pending_chunks)) != NULL) {
+		TAILQ_REMOVE(&trans->bt_pending_chunks, op, entry);
+		KASSERT(op->group->bbg_excluded_bytes == 0);
+		chunk_discard(op);
+	}
+	op = trans->bt_chunk_op;
 	trans->bt_chunk_op = NULL;
 	if (op != NULL)
 		chunk_discard(op);
