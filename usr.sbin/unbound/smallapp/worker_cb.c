@@ -43,6 +43,26 @@
 #include "config.h"
 #include "libunbound/context.h"
 #include "libunbound/worker.h"
+
+struct comm_reply;
+struct comm_point;
+
+/** fast reload thread commands to remote service thread event callback */
+void fast_reload_service_cb(int fd, short bits, void* arg);
+
+/** fast reload callback for the remote control client connection */
+int fast_reload_client_callback(struct comm_point* c, void* arg, int err,
+	struct comm_reply* rep);
+
+/** handle remote control accept callbacks */
+int remote_accept_callback(struct comm_point*, void*, int, struct comm_reply*);
+
+/** handle remote control data callbacks */
+int remote_control_callback(struct comm_point*, void*, int, struct comm_reply*);
+
+/** routine to printout option values over SSL */
+void  remote_get_opt_ssl(char* line, void* arg);
+
 #include "util/fptr_wlist.h"
 #include "util/log.h"
 #include "services/mesh.h"
@@ -102,7 +122,7 @@ struct outbound_entry* worker_send_query(
 	socklen_t ATTR_UNUSED(addrlen), uint8_t* ATTR_UNUSED(zone),
 	size_t ATTR_UNUSED(zonelen), int ATTR_UNUSED(tcp_upstream), int ATTR_UNUSED(ssl_upstream),
 	char* ATTR_UNUSED(tls_auth_name), struct module_qstate* ATTR_UNUSED(q),
-	int* ATTR_UNUSED(was_ratelimited))
+	int* ATTR_UNUSED(was_ratelimited), int* ATTR_UNUSED(ratelimit_incremented))
 {
 	log_assert(0);
 	return 0;
@@ -128,6 +148,12 @@ worker_alloc_cleanup(void* ATTR_UNUSED(arg))
 	log_assert(0);
 }
 
+void
+libworker_alloc_cleanup(void* ATTR_UNUSED(arg))
+{
+	log_assert(0);
+}
+
 struct outbound_entry* libworker_send_query(
 	struct query_info* ATTR_UNUSED(qinfo), uint16_t ATTR_UNUSED(flags),
 	int ATTR_UNUSED(dnssec), int ATTR_UNUSED(want_dnssec),
@@ -136,7 +162,7 @@ struct outbound_entry* libworker_send_query(
 	socklen_t ATTR_UNUSED(addrlen), uint8_t* ATTR_UNUSED(zone),
 	size_t ATTR_UNUSED(zonelen), int ATTR_UNUSED(tcp_upstream), int ATTR_UNUSED(ssl_upstream),
 	char* ATTR_UNUSED(tls_auth_name), struct module_qstate* ATTR_UNUSED(q),
-	int* ATTR_UNUSED(was_ratelimited))
+	int* ATTR_UNUSED(was_ratelimited), int* ATTR_UNUSED(ratelimit_incremented))
 {
 	log_assert(0);
 	return 0;
