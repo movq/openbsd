@@ -1,4 +1,4 @@
-/*	$OpenBSD: ikev2_pld.c,v 1.136.4.1 2026/04/01 20:02:24 bluhm Exp $	*/
+/*	$OpenBSD: ikev2_pld.c,v 1.136.4.2 2026/09/27 11:19:56 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -1421,6 +1421,27 @@ ikev2_pld_delete(struct iked *env, struct ikev2_payload *pld,
 
 	cnt = betoh16(del.del_nspi);
 	sz = del.del_spisize;
+	len = left - sizeof(del);
+
+	switch (del.del_protoid) {
+	case IKEV2_SAPROTO_IKE:
+		if (sz != 0 || cnt != 0 || len != 0) {
+			log_debug("%s: malformed IKE delete", __func__);
+			return (-1);
+		}
+		break;
+	case IKEV2_SAPROTO_AH:
+	case IKEV2_SAPROTO_ESP:
+		if (sz != 4 || cnt == 0 || len != sz * cnt) {
+			log_debug("%s: malformed AH/ESP delete", __func__);
+			return (-1);
+		}
+		break;
+	default:
+		log_debug("%s: unsupported protoid %d for delete", __func__,
+		    del.del_protoid);
+		return (-1);
+	}
 
 	log_debug("%s: proto %s spisize %zu nspi %zu",
 	    __func__, print_map(del.del_protoid, ikev2_saproto_map),
@@ -1435,16 +1456,10 @@ ikev2_pld_delete(struct iked *env, struct ikev2_payload *pld,
 	msg->msg_parent->msg_del_cnt = cnt;
 	msg->msg_parent->msg_del_spisize = sz;
 
-	buf = msgbuf + offset + sizeof(del);
-	len = left - sizeof(del);
-	if (len == 0 || sz == 0 || cnt == 0)
+	if (del.del_protoid == IKEV2_SAPROTO_IKE)
 		return (0);
 
-	if ((len / sz) != cnt) {
-		log_debug("%s: invalid payload length %zu/%zu != %zu",
-		    __func__, len, sz, cnt);
-		return (-1);
-	}
+	buf = msgbuf + offset + sizeof(del);
 
 	print_hex(buf, 0, len);
 
