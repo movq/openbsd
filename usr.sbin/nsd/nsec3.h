@@ -80,6 +80,8 @@ void nsec3_hash_and_store(struct zone* zone, const struct dname* dname,
 int nsec3_rr_uses_params(struct rr* rr, struct zone* zone);
 /* number of NSEC3s that are in the zone chain */
 int nsec3_in_chain_count(struct domain* domain, struct zone* zone);
+/* if the NSEC3 record is b32.zone name */
+int nsec3_has_owner_for_zone(struct domain* domain, struct zone* zone);
 /* find previous NSEC3, or, lastinzone, or, NULL */
 struct domain* nsec3_chain_find_prev(struct zone* zone, struct domain* domain);
 /* clear nsec3 precompile for the zone */
@@ -104,6 +106,12 @@ void nsec3_precompile_nsec3rr(struct namedb* db, struct domain* domain,
 	struct zone* zone);
 /* precompile entire zone, assumes all is null at start */
 void nsec3_precompile_newparam(struct namedb* db, struct zone* zone);
+/* clear super zone of apex, for names subdomain of apex. */
+void nsec3_superzone_clear_for_apex(struct namedb* db,
+	const struct dname* apex);
+/* precompile super zone of apex, for names subdomain of apex. */
+void nsec3_superzone_precompile_for_apex(struct namedb* db,
+	const struct dname* apex);
 /* create b32.zone for a hash, allocated in the region */
 const struct dname* nsec3_b32_create(struct region* region, struct zone* zone,
 	unsigned char* hash);

@@ -1,4 +1,4 @@
-.TH "nsd.conf" "5" "Mar 19, 2026" "NLnet Labs" "nsd 4.14.2"
+.TH "nsd.conf" "5" "sep  2, 2026" "NLnet Labs" "nsd 4.15.2"
 .\" Copyright (c) 2001\-2024, NLnet Labs. All rights reserved.
 .\" See LICENSE for the license.
 .SH "NAME"
@@ -632,6 +632,18 @@ times, additional port numbers can be used for proxy protocol service. The
 interface definitions that use this port number expect PROXYv2 proxy protocol
 traffic, for UDP, TCP and for TLS service.
 .TP
+.B allow\-proxy:\fR <IP netblock>
+The allowed proxy senders, that can send PROXYv2 traffic. Without an
+allow\-proxy option any IP address is allowed. It can be given multiple times
+to allow multiple netblocks, or with /32 or /128 specific addresses can be
+listed.
+.TP
+.B udp\-padding\-port:\fR <number>
+UDP requests received over this port containing an EDNS0 padding option will,
+unlike ordinary UDP requests, be answered with a padded response. The option
+may be given more than once.
+Listening to the port needs to be configured separately with a \fBip\-address\fR or \fBinterface\fR option.
+.TP
 .B xdp\-interface:\fR <string>
 The interface to use XDP with. This enables the use of AF_XDP sockets for UDP
 queries. Default is "", disabled. (EXPERIMENTAL)
@@ -690,14 +702,21 @@ can help with drivers with broken AF_XDP support. Default is no.
 .TP
 .B metrics\-enable:\fR <yes or no>
 Enable the prometheus metrics HTTP endpoint. It exposes the same statistics as
-the \fInsd\-control\fR(8) stats_noreset command, but with metric names
+the \fInsd\-control stats_noreset\fR command, but with metric names
 following the prometheus specification. (Requires libevent2)
 
-To generate per zone metrics, specify the \fBzonestats\fR option on the desired
-zones.
-
-Beware, that when using \fInsd\-control\fR(8) stats (instead of stats_noreset),
-the statistics will be reset for the HTTP metrics endpoint as well.
+To generate metrics per zone (or more accurately, per zonestats group),
+specify the \fBzonestats\fR option on the desired zones. This will expose the
+zonestats metrics with the zonestats name as a label called "zone", for
+example with \fBzonestats: examplezone\fR:
+.sp
+.nf
+	nsd_zonestats_queries_total{zone="examplezone"}
+.fi
+.sp
+Beware, that when using \fInsd\-control stats\fR (instead of \fInsd\-control
+stats_noreset\fR), the statistics will be reset for the HTTP metrics endpoint
+as well.
 .TP
 .B metrics\-interface:\fR <ip4 or ip6 | interface name>
 NSD will bind to the listed addresses or interfaces to serve the prometheus
@@ -1035,7 +1054,7 @@ SAN (Subject Alternative Name) DNS entry or CN (Common Name) entry equal to
 .BR auth-domain-name
 of the defined
 .BR tls-auth .
-The certificate validify is also verified with
+The certificate validity is also verified with
 .BR tls-cert-bundle .
 If authentication of the secondary, based on the specified tls-auth authentication
 information, fails the XFR zone transfer will be refused. If the connection is performed

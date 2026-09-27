@@ -439,6 +439,7 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 {
 	unsigned int i;
 	uint16_t type, rdlen;
+	size_t rdpos;
 	/* we must have a SOA in the authority section */
 	if(NSCOUNT(packet) == 0)
 		return 0;
@@ -460,6 +461,7 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 		type = buffer_read_u16(packet);
 		buffer_skip(packet, 6);
 		rdlen = buffer_read_u16(packet);
+		rdpos = buffer_position(packet);
 		if(!buffer_available(packet, rdlen))
 			return 0;
 		if(type == TYPE_SOA) {
@@ -471,6 +473,9 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 				return 0; /* malformed rname */
 			if(!buffer_available(packet, 4))
 				return 0;
+			if(buffer_position(packet) + 20 !=
+				rdpos + (size_t)rdlen)
+				return 0; /* malformed SOA rdata */
 			*qserial = buffer_read_u32(packet);
 			return 1;
 		}
@@ -567,6 +572,7 @@ static struct ixfr_data* ixfr_data_prev(struct zone_ixfr* ixfr,
 	struct ixfr_data* cur, size_t* prevcount)
 {
 	struct ixfr_data* prev;
+	int wrapped = 0;
 	if(!cur || cur == (struct ixfr_data*)RBTREE_NULL)
 		return NULL;
 	if(cur->oldserial == ixfr->oldest_serial)
@@ -600,6 +606,11 @@ static struct ixfr_data* ixfr_data_prev(struct zone_ixfr* ixfr,
 			/* We hit the first element in the tree, go again
 			 * at the last one. Wrap around. */
 			prev = (struct ixfr_data*)rbtree_last(ixfr->data);
+			if(wrapped) {
+				/* The lookup wrapped again, this is a loop. */
+				return NULL;
+			}
+			wrapped = 1;
 		}
 	}
 	/* no elements in list */
@@ -611,8 +622,11 @@ static int connect_ixfrs(struct zone_ixfr* ixfr, struct ixfr_data* data,
 	uint32_t* end_serial)
 {
 	struct ixfr_data* p = data;
+	size_t count = 0;
 	while(p != NULL) {
 		struct ixfr_data* next = ixfr_data_next(ixfr, p);
+		if(count++ > ixfr->data->count + 12)
+			return 0; /* loop */
 		if(next) {
 			if(p->newserial != next->oldserial) {
 				/* These ixfrs are not connected,
@@ -688,6 +702,18 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 			query->ixfr_pos_of_newsoa = buffer_position(query->packet);
 		} else {
 			/* cannot add another RR, so return */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: SOA RR in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+
+					domain_to_string(query->zone->apex),
+					TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -701,6 +727,18 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 			total_added++;
 		} else {
 			/* cannot add another RR, so return */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: SOA RR in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+
+					domain_to_string(query->zone->apex),
+					TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -717,6 +755,21 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 		} else {
 			/* the next record does not fit in the remaining
 			 * space of the packet */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				char apexstr[MAXDOMAINLEN * 5];
+				char* ownerstr = "";
+				if(rrlen)
+					ownerstr = wiredname2str(query->ixfr_data->del + query->ixfr_count_del);
+				domain_to_string_buf(query->zone->apex, apexstr);
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: RR at %s in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+					ownerstr, apexstr, TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -733,6 +786,21 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 		} else {
 			/* the next record does not fit in the remaining
 			 * space of the packet */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				char apexstr[MAXDOMAINLEN * 5];
+				char* ownerstr = "";
+				if(rrlen)
+					ownerstr = wiredname2str(query->ixfr_data->add + query->ixfr_count_add);
+				domain_to_string_buf(query->zone->apex, apexstr);
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: RR at %s in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+					ownerstr, apexstr, TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -748,8 +816,10 @@ query_state_type query_ixfr(struct nsd *nsd, struct query *query)
 		return QUERY_PROCESSED;
 
 	pktcompression_init(&pcomp);
-	if (query->maxlen > IXFR_MAX_MESSAGE_LEN)
+	if (query->maxlen > IXFR_MAX_MESSAGE_LEN) {
+		buffer_set_position(query->packet, QHEADERSZ);
 		query->maxlen = IXFR_MAX_MESSAGE_LEN;
+	}
 
 	assert(!query_overflow(query));
 	/* only keep running values for most packets */
@@ -874,7 +944,8 @@ query_state_type query_ixfr(struct nsd *nsd, struct query *query)
 
 	total_added = ixfr_copy_rrs_into_packet(query, &pcomp);
 
-	while(query->ixfr_count_add >= query->ixfr_data->add_len) {
+	while(!query->ixfr_is_done &&
+		query->ixfr_count_add >= query->ixfr_data->add_len) {
 		struct ixfr_data* next = ixfr_data_next(query->zone->ixfr,
 			query->ixfr_data);
 		/* finished the ixfr_data */
@@ -1074,7 +1145,8 @@ void ixfr_store_finish(struct ixfr_store* ixfr_store, struct nsd* nsd,
 		ixfr_store_free(ixfr_store);
 		return;
 	}
-	zone_ixfr_add(ixfr_store->zone->ixfr, ixfr_store->data, 1);
+	zone_ixfr_add(ixfr_store->zone->ixfr, ixfr_store->data, 1,
+		ixfr_store->zone->opts->name);
 	ixfr_store->data = NULL;
 
 	/* free structure */
@@ -1180,6 +1252,12 @@ void ixfr_store_add_newsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 	}
 	rdlen_uncompressed = primns_len + email_len + 4 + 4 + 4 + 4 + 4;
 
+	if(ixfr_store->data->oldsoa && ixfr_store->data->oldserial == serial) {
+		log_msg(LOG_ERR, "ixfr_store newsoa: duplicate serial number");
+		ixfr_store_cancel(ixfr_store);
+		buffer_set_position(packet, oldpos);
+		return;
+	}
 	ixfr_store->data->newserial = serial;
 
 	/* store the soa record */
@@ -1234,6 +1312,12 @@ void ixfr_store_add_oldsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 	}
 	rdlen_uncompressed = primns_len + email_len + 4 + 4 + 4 + 4 + 4;
 
+	if(ixfr_store->data->newsoa && ixfr_store->data->newserial == serial) {
+		log_msg(LOG_ERR, "ixfr_store oldsoa: duplicate serial number");
+		ixfr_store_cancel(ixfr_store);
+		buffer_set_position(packet, oldpos);
+		return;
+	}
 	ixfr_store->data->oldserial = serial;
 
 	/* store the soa record */
@@ -1524,6 +1608,8 @@ static void zone_ixfr_remove_oldest(struct zone_ixfr* ixfr)
 {
 	if(ixfr->data->count > 0) {
 		struct ixfr_data* oldest = ixfr_data_first(ixfr);
+		if(!oldest)
+			return; /* oldest_serial is stale, skip eviction */
 		if(ixfr->oldest_serial == oldest->oldserial) {
 			if(ixfr->data->count > 1) {
 				struct ixfr_data* next = ixfr_data_next(ixfr, oldest);
@@ -1589,10 +1675,20 @@ void zone_ixfr_remove(struct zone_ixfr* ixfr, struct ixfr_data* data)
 	ixfr_data_free(data);
 }
 
-void zone_ixfr_add(struct zone_ixfr* ixfr, struct ixfr_data* data, int isnew)
+void zone_ixfr_add(struct zone_ixfr* ixfr, struct ixfr_data* data, int isnew,
+	const char* zname)
 {
 	memset(&data->node, 0, sizeof(data->node));
-	if(ixfr->data->count == 0) {
+	data->node.key = &data->oldserial;
+	if(rbtree_insert(ixfr->data, &data->node) == NULL) {
+		/* duplicate oldserial in IXFR stream - reject the chunk. */
+		log_msg(LOG_WARNING, "zone %s: chunk with duplicate "
+			"oldserial=%u discarded; broken journal chain prevented",
+			(zname?zname:"<unknown>"), (unsigned)data->oldserial);
+		ixfr_data_free(data);
+		return;
+	}
+	if(ixfr->data->count == 1) {
 		ixfr->oldest_serial = data->oldserial;
 		ixfr->newest_serial = data->oldserial;
 	} else if(isnew) {
@@ -1602,8 +1698,6 @@ void zone_ixfr_add(struct zone_ixfr* ixfr, struct ixfr_data* data, int isnew)
 		/* added older entry, before the others */
 		ixfr->oldest_serial = data->oldserial;
 	}
-	data->node.key = &data->oldserial;
-	rbtree_insert(ixfr->data, &data->node);
 	ixfr->total_size += ixfr_data_size(data);
 }
 
@@ -1844,7 +1938,7 @@ static int ixfr_rename_files(struct zone* zone, const char* zfile,
 	int dest_num_files)
 {
 	struct ixfr_data* data, *startspot = NULL;
-	size_t prevcount = 0;
+	size_t prevcount = 0, count = 0;
 	int destnum;
 	if(!zone->ixfr || !zone->ixfr->data)
 		return 1;
@@ -1883,6 +1977,11 @@ static int ixfr_rename_files(struct zone* zone, const char* zfile,
 		 * has been renamed to a temporary name */
 		startspot = data;
 		data = ixfr_data_next(zone->ixfr, data);
+		if(count++ > zone->ixfr->data->count+12) {
+			/* loop */
+			ixfr_delete_rest_files(zone, data, zfile, 1);
+			return 0;
+		}
 		destnum--;
 	}
 
@@ -2555,6 +2654,7 @@ static int ixfr_data_read(struct nsd* nsd, struct zone* zone,
 	const char* ixfrfile, uint32_t* dest_serial, int file_num)
 {
 	struct ixfr_data_state state = { 0 };
+	size_t ixfr_data_sz;
 
 	if(!zone->apex) {
 		return 0;
@@ -2634,9 +2734,11 @@ static int ixfr_data_read(struct nsd* nsd, struct zone* zone,
 		ixfr_data_free(state.data);
 		return 0;
 	}
-	zone_ixfr_add(zone->ixfr, state.data, 0);
+	ixfr_data_sz = ixfr_data_size(state.data); /* pick up size before
+		possible deletion of the item */
+	zone_ixfr_add(zone->ixfr, state.data, 0, zone->opts->name);
 	VERBOSITY(3, (LOG_INFO, "zone %s read %s IXFR data of %u bytes",
-		zone->opts->name, ixfrfile, (unsigned)ixfr_data_size(state.data)));
+		zone->opts->name, ixfrfile, (unsigned)ixfr_data_sz));
 	return 1;
 }
 

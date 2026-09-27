@@ -505,7 +505,7 @@ find_rr_num(rrset_type* rrset, uint16_t type, uint16_t klass,
 		}
 	}
 	/* this is odd. Log why rr cannot be found. */
-	if (!add) {
+	if (!add && verbosity >= 3) {
 		debug_find_rr_num(rrset, type, klass, rr);
 	}
 	return -1;
@@ -522,6 +522,7 @@ nsec3_delete_rr_trigger(namedb_type* db, rr_type* rr, zone_type* zone)
 	/* see if the domain was an NSEC3-domain in the chain, but no longer */
 	if(rr->type == TYPE_NSEC3 && rr->owner->nsec3 &&
 		rr->owner->nsec3->nsec3_node.key &&
+		nsec3_has_owner_for_zone(rr->owner, zone) &&
 		nsec3_rr_uses_params(rr, zone) &&
 		nsec3_in_chain_count(rr->owner, zone) <= 1) {
 		domain_type* prev = nsec3_chain_find_prev(zone, rr->owner);
@@ -640,6 +641,7 @@ nsec3_add_rr_trigger(namedb_type* db, rr_type* rr, zone_type* zone)
 	 * in the udb has been adjusted) */
 	if(zone->nsec3_param && rr->type == TYPE_NSEC3 &&
 		(!rr->owner->nsec3 || !rr->owner->nsec3->nsec3_node.key)
+		&& nsec3_has_owner_for_zone(rr->owner, zone)
 		&& nsec3_rr_uses_params(rr, zone)) {
 		if(!zone->nsec3_last) {
 			/* all nsec3s have previously been deleted, but
@@ -711,6 +713,16 @@ delete_RR(namedb_type* db, const dname_type* dname,
 	rrset_type* rrset_prev;
 #endif
 	const nsd_type_descriptor_type *descriptor = nsd_type_descriptor(type);
+	if (!dname_is_subdomain(dname, domain_dname(zone->apex))) {
+		char zname[MAXDOMAINLEN * 5];
+		domain_to_string_buf(zone->apex, zname);
+		VERBOSITY(2, (LOG_WARNING,
+			"out-of-zone record deletion in transfer for zone %s: "
+			"owner %s is outside zone; skipping",
+			zname, dname_to_string(dname, NULL)));
+		buffer_skip(packet, rdatalen);
+		return 1;
+	}
 	domain = domain_table_find(db->domains, dname);
 	if(!domain) {
 		log_msg(LOG_WARNING, "diff: domain %s does not exist",
@@ -725,8 +737,9 @@ delete_RR(namedb_type* db, const dname_type* dname,
 	rrset = domain_find_rrset_and_prev(domain, zone, type, &rrset_prev);
 #endif
 	if(!rrset) {
-		log_msg(LOG_WARNING, "diff: rrset %s does not exist",
-			dname_to_string(dname,0));
+		VERBOSITY(2, (LOG_WARNING,
+			"diff: RRset to delete from <%s, %s> does not exist",
+			dname_to_string(dname,0), rrtype_to_string(type)));
 		buffer_skip(packet, rdatalen);
 		*softfail = 1;
 		return 1; /* not fatal error */
@@ -735,6 +748,7 @@ delete_RR(namedb_type* db, const dname_type* dname,
 		domain_table_type *temptable;
 		int32_t rrnum, code;
 		struct rr *rr;
+		int was_rrsig_dnskey = 0;
 		temptable = domain_table_create(temp_region);
 		/* This will ensure that the dnames in rdata are
 		 * normalized, conform RFC 4035, section 6.2
@@ -745,6 +759,7 @@ delete_RR(namedb_type* db, const dname_type* dname,
 				"%s %s %s", dname_to_string(dname,0),
 				rrtype_to_string(type),
 				read_rdata_fail_str(code));
+			return 0;
 		}
 		rr->owner = domain;
 		rr->type = type;
@@ -764,8 +779,9 @@ delete_RR(namedb_type* db, const dname_type* dname,
 			&& rrset->rr_count != 0)
 			rrnum = 0; /* replace existing SOA if no match */
 		if(rrnum == -1) {
-			log_msg(LOG_WARNING, "diff: RR <%s, %s> does not exist",
-				dname_to_string(dname,0), rrtype_to_string(type));
+			VERBOSITY(2, (LOG_WARNING,
+				"diff: RR to delete from RRset <%s, %s> does not exist",
+				dname_to_string(dname,0), rrtype_to_string(type)));
 			*softfail = 1;
 			return 1; /* not fatal error */
 		}
@@ -773,6 +789,10 @@ delete_RR(namedb_type* db, const dname_type* dname,
 		/* process triggers for RR deletions */
 		nsec3_delete_rr_trigger(db, rrset->rrs[rrnum], zone);
 #endif
+		if(domain == zone->apex && type == TYPE_RRSIG &&
+			rr_rrsig_type_covered(rrset->rrs[rrnum])==TYPE_DNSKEY)
+			was_rrsig_dnskey = 1;
+
 		/* lower usage (possibly deleting other domains, and thus
 		 * invalidating the current RR's domain pointers) */
 		rr_lower_usage(db, rrset->rrs[rrnum]);
@@ -822,6 +842,8 @@ delete_RR(namedb_type* db, const dname_type* dname,
 			region_recycle(db->region, rrset_orig,
 				sizeof(rrset_type) +
 				rrset_orig->rr_count*sizeof(rr_type*));
+#endif /* PACKED_STRUCTS */
+			rrset->rr_count --;
 			if(domain == zone->apex) {
 				/* Because the rrset struct is reallocated,
 				 * a pointer to it may need to be set again. */
@@ -829,10 +851,23 @@ delete_RR(namedb_type* db, const dname_type* dname,
 					zone->soa_rrset = rrset;
 				} else if(type == TYPE_NS) {
 					zone->ns_rrset = rrset;
+				} else if(type == TYPE_RRSIG
+					&& was_rrsig_dnskey) {
+					/* See if the zone is still signed */
+					unsigned i;
+					int has_dnskey_rrsig = 0;
+					for (i = 0; i < rrset->rr_count; i++) {
+						if(rr_rrsig_type_covered(
+							rrset->rrs[i])==
+							TYPE_DNSKEY){
+							has_dnskey_rrsig = 1;
+							break;
+						}
+					}
+					if(!has_dnskey_rrsig)
+						zone->is_secure = 0;
 				}
 			}
-#endif /* PACKED_STRUCTS */
-			rrset->rr_count --;
 #ifdef NSEC3
 			/* for type nsec3, the domain may have become a
 			 * 'normal' domain with its remaining data now */
@@ -971,6 +1006,16 @@ add_RR(namedb_type* db, const dname_type* dname,
 			return 0;
 		}
 		commit_RRset(db, zone, &collect_rrs2);
+		return 1;
+	}
+	if (!dname_is_subdomain(dname, domain_dname(zone->apex))) {
+		char zname[MAXDOMAINLEN * 5];
+		domain_to_string_buf(zone->apex, zname);
+		VERBOSITY(2, (LOG_WARNING,
+			"out-of-zone record in transfer for zone %s: "
+			"owner %s is outside zone; skipping",
+			zname, dname_to_string(dname, NULL)));
+		buffer_skip(packet, rdatalen);
 		return 1;
 	}
 	domain = domain_table_insert(db->domains, dname);
@@ -1275,6 +1320,14 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 			region_destroy(region);
 			return 0;
 		}
+		if (klass != CLASS_IN && type != TYPE_OPT) {
+			log_msg(LOG_ERR, "bad xfr non-IN-class RR %s %s %s",
+				dname_to_string(owner,0),
+				rrclass_to_string(klass),
+				rrtype_to_string(type));
+			region_destroy(region);
+			return 0;
+		}
 
 		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s parsed count %d, ax %d, delmode %d",
 			domain_to_string(zone->apex), *rr_count, *is_axfr, *delete_mode));
@@ -1299,11 +1352,6 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 			if (*rr_count == 0) {
 				assert(!*is_axfr);
 				assert(!*delete_mode);
-				if (klass != CLASS_IN) {
-					log_msg(LOG_ERR, "first RR not SOA IN");
-					region_destroy(region);
-					return 0;
-				}
 				if(dname_compare(domain_dname(zone->apex), owner) != 0) {
 					log_msg(LOG_ERR, "SOA dname not equal to zone %s",
 						domain_to_string(zone->apex));
@@ -1316,10 +1364,9 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 					region_destroy(region);
 					return 0;
 				}
-				buffer_skip(packet, rrlen);
-
 				if(ixfr_store)
 					ixfr_store_add_newsoa(ixfr_store, ttl, packet, rrlen);
+				buffer_skip(packet, rrlen);
 
 				continue;
 			} else if (*rr_count == 1) {
@@ -1364,6 +1411,14 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 				   just before soa - so it gets deleted and added too */
 				DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s IXFRswapdel count %d, ax %d, delmode %d",
 					domain_to_string(zone->apex), *rr_count, *is_axfr, *delete_mode));
+			} else if(*is_axfr) {
+				if(!(seq_nr == seq_total-1 && i == ancount-1)) {
+					/* AXFR mode: a SOA at rr_count>=2
+					 * should not exist. Skip it rather
+					 * than passing it to add_RR. */
+					buffer_skip(packet, rrlen);
+					continue;
+				}
 			}
 		} else {
 			if (*rr_count == 0) {
@@ -2079,7 +2134,15 @@ task_process_add_zone(struct nsd* nsd, udb_base* udb, udb_ptr* last_task,
 		return;
 	}
 	/* create zone */
+#ifdef NSEC3
+	nsec3_superzone_clear_for_apex(nsd->db, zdname);
+#endif
 	z = find_or_create_zone(nsd->db, zdname, nsd->options, zname, pname);
+#ifdef NSEC3
+	/* If no z, it reinstates the content, if z created, it creates
+	 * the content around the new zone apex (created with zone create). */
+	nsec3_superzone_precompile_for_apex(nsd->db, zdname);
+#endif
 	if(!z) {
 		region_recycle(nsd->db->region, (void*)zdname,
 			dname_total_size(zdname));
@@ -2108,6 +2171,7 @@ task_process_del_zone(struct nsd* nsd, struct task_list_d* task)
 		return;
 
 #ifdef NSEC3
+	nsec3_superzone_clear_for_apex(nsd->db, task->zname);
 	nsec3_clear_precompile(nsd->db, zone);
 	zone->nsec3_param = NULL;
 #endif
@@ -2116,6 +2180,9 @@ task_process_del_zone(struct nsd* nsd, struct task_list_d* task)
 	/* remove from zonetree, apex, soa */
 	zopt = zone->opts;
 	namedb_zone_delete(nsd->db, zone);
+#ifdef NSEC3
+	nsec3_superzone_precompile_for_apex(nsd->db, task->zname);
+#endif
 	/* remove from options (zone_list already edited by xfrd) */
 	zone_options_delete(nsd->options, zopt);
 }

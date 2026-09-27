@@ -105,6 +105,14 @@ static int print_svcparam_dohpath(struct buffer *output,
 static int print_svcparam_tls_supported_groups(struct buffer *output,
 	uint16_t svcparamkey, const uint8_t* data, uint16_t datalen);
 
+/* Print svcparam docpath */
+static int print_svcparam_docpath(struct buffer *output,
+	uint16_t svcparamkey, const uint8_t* data, uint16_t datalen);
+
+/* Print svcparam oots */
+static int print_svcparam_oots(struct buffer *output,
+	uint16_t svcparamkey, const uint8_t* data, uint16_t datalen);
+
 static const nsd_svcparam_descriptor_type svcparams[] = {
 	{ SVCB_KEY_MANDATORY, "mandatory", print_svcparam_mandatory },
 	{ SVCB_KEY_ALPN, "alpn", print_svcparam_alpn },
@@ -118,6 +126,9 @@ static const nsd_svcparam_descriptor_type svcparams[] = {
 	{ SVCB_KEY_OHTTP, "ohttp", print_svcparam_no_value },
 	{ SVCB_KEY_TLS_SUPPORTED_GROUPS, "tls-supported-groups",
 		print_svcparam_tls_supported_groups },
+	{ SVCB_KEY_DOCPATH, "docpath", print_svcparam_docpath},
+	{ SVCB_KEY_PVD, "pvd", print_svcparam_no_value },
+	{ SVCB_KEY_OOTS, "oots", print_svcparam_oots},
 };
 
 /*
@@ -137,7 +148,7 @@ print_name_literal(struct buffer *output, uint16_t rdlength,
 {
 	const uint8_t *name, *label, *limit;
 	assert(rdlength >= *offset);
-	if (rdlength - *offset == 0)
+	if (rdlength < *offset || rdlength - *offset == 0)
 		return 0;
 
 	name = rdata + *offset;
@@ -181,7 +192,7 @@ print_domain(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 {
 	const struct dname *dname;
 	struct domain *domain;
-	if(rdlength - *offset < (uint16_t)sizeof(void*))
+	if(rdlength < *offset || rdlength - *offset < (uint16_t)sizeof(void*))
 		return 0;
 	memcpy(&domain, rdata+*offset, sizeof(void*));
 	dname = domain_dname(domain);
@@ -195,7 +206,7 @@ static inline int32_t
 skip_string(struct buffer* output, uint16_t rdlength, uint16_t* offset)
 {
 	int32_t length;
-	if (rdlength - *offset < 1)
+	if (rdlength < *offset || rdlength - *offset < 1)
 		return -1;
 	length = buffer_read_u8(output);
 	if (length + 1 > rdlength - *offset)
@@ -236,7 +247,7 @@ print_string(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 	if(rdlength - *offset < 1)
 		return 0;
 	n = rdata[*offset];
-	if((size_t)rdlength - *offset < 1 + n)
+	if(rdlength < *offset || (size_t)rdlength - *offset < 1 + n)
 		return 0;
 	buffer_printf(output, "\"");
 	for (size_t i = 1; i <= n; i++) {
@@ -285,7 +296,7 @@ print_unquoted(buffer_type *output, uint16_t rdlength,
 	uint8_t len;
 	size_t i;
 
-	if(rdlength - *offset < 1)
+	if(rdlength < *offset || rdlength - *offset < 1)
 		return 0;
 	len = rdata[*offset];
 	if(((size_t)len) + 1 > (size_t)rdlength - *offset)
@@ -336,7 +347,6 @@ print_ip4(struct buffer *output, size_t rdlength, const uint8_t *rdata,
 	uint16_t *offset)
 {
 	char str[INET_ADDRSTRLEN + 1];
-	assert(rdlength >= *offset);
 	if(((size_t)*offset) + 4 > rdlength)
 		return 0;
 	if(!inet_ntop(AF_INET, rdata + *offset, str, sizeof(str)))
@@ -360,8 +370,7 @@ print_ip6(struct buffer *output, size_t rdlength, const uint8_t *rdata,
 	uint16_t *offset)
 {
 	char str[INET6_ADDRSTRLEN + 1];
-	assert(rdlength >= *offset);
-	if (rdlength - *offset < 16)
+	if (rdlength < *offset || rdlength - *offset < 16)
 		return 0;
 	if (!inet_ntop(AF_INET6, rdata + *offset, str, sizeof(str)))
 		return 0;
@@ -384,8 +393,7 @@ print_ilnp64(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 	uint16_t *offset)
 {
 	uint16_t a1, a2, a3, a4;
-	assert(rdlength >= *offset);
-	if (rdlength - *offset < 8)
+	if (rdlength < *offset || rdlength - *offset < 8)
 		return 0;
 	a1 = read_uint16(rdata + *offset);
 	a2 = read_uint16(rdata + *offset + 2);
@@ -442,8 +450,7 @@ print_time(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 	struct tm* tm;
 	char buf[15];
 
-	assert(rdlength >= *offset);
-	if (rdlength - *offset < 4)
+	if (rdlength < *offset || rdlength - *offset < 4)
 		return 0;
 	time = (time_t)read_uint32(rdata + *offset);
 	tm = gmtime_r(&time, &tmbuf);
@@ -469,7 +476,7 @@ print_base32(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 {
 	size_t size;
 	int length;
-	if(rdlength - *offset == 0)
+	if(rdlength < *offset || rdlength - *offset == 0)
 		return 0;
 	size = rdata[*offset];
 	if (rdlength - ((size_t)*offset) < 1 + size)
@@ -506,6 +513,8 @@ print_base64(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 {
 	int length;
 	size_t size = rdlength - *offset;
+	if(rdlength < *offset)
+		return 0;
 	if(size == 0) {
 		/* single zero represents empty buffer */
 		buffer_write(output, "0", 1);
@@ -552,6 +561,8 @@ print_base16(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 	uint16_t *offset)
 {
 	size_t size = rdlength - *offset;
+	if(rdlength < *offset)
+		return 0;
 	if(size == 0) {
 		/* single zero represents empty buffer, such as CDS deletes */
 		buffer_write(output, "0", 1);
@@ -577,8 +588,7 @@ print_salt(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 	uint16_t *offset)
 {
 	uint8_t length;
-	assert(rdlength >= *offset);
-	if (rdlength - *offset == 0)
+	if (rdlength < *offset || rdlength - *offset == 0)
 		return 0;
 
 	length = rdata[*offset];
@@ -637,6 +647,8 @@ print_nsec_bitmap(struct buffer *output, uint16_t rdlength,
 {
 	int insert_space = 0;
 
+	if(rdlength < *offset)
+		return 0;
 	rdata += *offset;
 	while(rdlength - *offset > 0) {
 		uint8_t window, bitmap_size;
@@ -682,6 +694,7 @@ svcparam_must_have_value(uint16_t svcparamkey)
 	case SVCB_KEY_MANDATORY:
 	case SVCB_KEY_DOHPATH:
 	case SVCB_KEY_TLS_SUPPORTED_GROUPS:
+	case SVCB_KEY_OOTS:
 		return 1;
 	default:
 		break;
@@ -696,12 +709,13 @@ svcparam_must_not_have_value(uint16_t svcparamkey)
 	switch (svcparamkey) {
 	case SVCB_KEY_NO_DEFAULT_ALPN:
 	case SVCB_KEY_OHTTP:
+	case SVCB_KEY_PVD:
 		return 1;
 	default:
 		break;
 	}
 	return 0;
-};
+}
 
 /*
  * Skip over the svcparams in the packet. Moves position.
@@ -950,6 +964,52 @@ print_svcparam_tls_supported_groups(struct buffer *output,
 	return 1;
 }
 
+static int
+print_svcparam_docpath(struct buffer *output, uint16_t svcparamkey,
+	const uint8_t* data, uint16_t datalen)
+{
+	if(datalen > 0)
+		return print_svcparam_alpn(output, svcparamkey, data, datalen);
+	buffer_print_svcparamkey(output, svcparamkey);
+	return 1;
+}
+
+static int
+print_svcparam_oots(struct buffer *output, uint16_t svcparamkey,
+		const uint8_t* data, uint16_t datalen)
+{
+	assert(datalen > 0); /* Guaranteed by svcparam_print */
+
+	buffer_print_svcparamkey(output, svcparamkey);
+	buffer_printf(output, "=\"");
+	while(((size_t)(*data)) + 2 <= (size_t)datalen) {
+		size_t transport_len = *data;
+		uint8_t percentage = data[transport_len + 1];
+		size_t i;
+
+		if(!transport_len || percentage > 100)
+			return 0;
+
+		for(i=0; i < transport_len; i++) {
+			char ch = data[i + 1];
+			if(!isgraph(ch)
+			|| ch == '"' || ch == '\\' || ch == ',' || ch == ':')
+				return 0;
+
+			buffer_write_u8(output, ch);
+		}
+		buffer_printf(output, ":%d", percentage);
+		data += transport_len + 2;
+		datalen -= transport_len + 2;
+		if(datalen)
+			buffer_write_u8(output, ',');
+	}
+	if(datalen)
+		return 0;
+	buffer_printf(output, "\"");
+	return 1;
+}
+
 /*
  * Print svcparam.
  * @param output: the string is output here.
@@ -967,8 +1027,7 @@ print_svcparam(struct buffer *output, uint16_t rdlength, const uint8_t *rdata,
 	const uint8_t* dp;
 	unsigned i;
 
-	assert(rdlength >= *offset);
-	if (rdlength - *offset < 4)
+	if (rdlength < *offset || rdlength - *offset < 4)
 		return 0;
 
 	key = read_uint16(rdata + *offset);
@@ -2266,7 +2325,7 @@ print_nxt_rdata(struct buffer *output, const struct rr *rr)
 	int bitmap_size;
 	const uint8_t* bitmap;
 
-	assert(rr->rdlength > sizeof(void*));
+	assert(rr->rdlength >= sizeof(void*));
 	if (!print_domain(output, rr->rdlength, rr->rdata, &length))
 		return 0;
 
@@ -2560,7 +2619,10 @@ read_apl_rdata(struct domain_table *domains, uint16_t rdlength,
 		return MALFORMED;
 	while (rdlength - length >= 4) {
 		uint8_t afdlength = rdata[length + 3] & APL_LENGTH_MASK;
-		if (rdlength - (length + 4) < afdlength)
+		uint16_t afam = read_uint16(rdata + length);
+		if (rdlength - (length + 4) < afdlength ||
+			(afam == 1 && afdlength > 4) ||
+			(afam == 2 && afdlength > 16))
 			return MALFORMED;
 		length += 4 + afdlength;
 	}
@@ -2590,7 +2652,7 @@ print_apl(struct buffer *output, size_t rdlength, const uint8_t *rdata,
 	char text_address[INET6_ADDRSTRLEN + 1];
 	uint8_t address[16];
 
-	if (size < 4)
+	if (rdlength < *offset || size < 4)
 		return 0;
 
 	address_family = read_uint16(rdata + *offset);
@@ -2600,14 +2662,22 @@ print_apl(struct buffer *output, size_t rdlength, const uint8_t *rdata,
 	af = -1;
 
 	switch (address_family) {
-	case 1: af = AF_INET; break;
-	case 2: af = AF_INET6; break;
+	case 1: af = AF_INET;
+		if(length > 4)
+			return 0;
+		break;
+	case 2: af = AF_INET6;
+		if(length > 16)
+			return 0;
+		break;
 	}
 
 	if (af == -1 || size - 4 < length)
 		return 0;
 
 	memset(address, 0, sizeof(address));
+	if(length > sizeof(address))
+		return 0;
 	memmove(address, rdata + *offset + 4, length);
 
 	if (!inet_ntop(af, address, text_address, sizeof(text_address)))
@@ -3123,6 +3193,8 @@ print_hip_rdata(struct buffer *output, const struct rr *rr)
 	hit_length = rr->rdata[0];
 	pk_algorithm = rr->rdata[1];
 	pk_length = read_uint16(rr->rdata+2);
+	if(4 + (uint32_t)hit_length + (uint32_t)pk_length > (uint32_t)rr->rdlength)
+		return 0;
 	buffer_printf(output, "%" PRIu8 " ", pk_algorithm);
 	if(!print_base16(output, length+hit_length, rr->rdata, &length))
 		return 0;
@@ -3282,7 +3354,7 @@ read_svcb_rdata(struct domain_table *domains, uint16_t rdlength,
 	struct domain *domain;
 	struct dname_buffer target;
 	uint16_t length = 2, svcparams_length = 0;
-	uint16_t size;
+	size_t size;
 	const size_t mark = buffer_position(packet);
 
 	/* short + name + svc_params */
@@ -3394,6 +3466,50 @@ print_dsync_rdata(struct buffer *output, const struct rr *rr)
 		rrtype_to_string(read_uint16(rr->rdata)), rr->rdata[2],
 		read_uint16(rr->rdata+3));
 	if(!print_name_literal(output, rr->rdlength, rr->rdata, &length))
+		return 0;
+	if(rr->rdlength != length)
+		return 0;
+	return 1;
+}
+
+int32_t
+read_hhit_rdata(struct domain_table *domains, uint16_t rdlength,
+	struct buffer *packet, struct rr **rr)
+{
+	/* A CBOR blob has at least 1 byte */
+	if (rdlength < 1)
+		return MALFORMED;
+	return read_rdata(domains, rdlength, packet, rr);
+}
+
+int
+print_hhit_rdata(struct buffer *output, const struct rr *rr)
+{
+	uint16_t length = 0;
+
+	if (!print_base64(output, rr->rdlength, rr->rdata, &length))
+		return 0;
+	if(rr->rdlength != length)
+		return 0;
+	return 1;
+}
+
+int32_t
+read_brid_rdata(struct domain_table *domains, uint16_t rdlength,
+	struct buffer *packet, struct rr **rr)
+{
+	/* A CBOR blob has at least 1 byte */
+	if (rdlength < 1)
+		return MALFORMED;
+	return read_rdata(domains, rdlength, packet, rr);
+}
+
+int
+print_brid_rdata(struct buffer *output, const struct rr *rr)
+{
+	uint16_t length = 0;
+
+	if (!print_base64(output, rr->rdlength, rr->rdata, &length))
 		return 0;
 	if(rr->rdlength != length)
 		return 0;

@@ -29,6 +29,7 @@
 #include "rrl.h"
 #include "bitset.h"
 #include "xfrd.h"
+#include "metrics.h"
 
 #include "configparser.h"
 config_parser_state_type* cfg_parser = 0;
@@ -151,6 +152,8 @@ nsd_options_create(region_type* region)
 	opt->tls_cert_bundle = NULL;
 	opt->tls_auth_xfr_only = 0;
 	opt->proxy_protocol_port = NULL;
+	opt->allow_proxy = NULL;
+	opt->udp_padding_port = NULL;
 	opt->answer_cookie = 1;
 	opt->cookie_secret = NULL;
 	opt->cookie_staging_secret = NULL;
@@ -333,6 +336,9 @@ parse_options_file(struct nsd_options* opt, const char* file,
 			                tls_auth_options_find(opt, acl->tls_auth_name)))
 				    c_error("tls_auth %s in pattern %s could not be found",
 						acl->tls_auth_name, pat->pname);
+				else if (!opt->tls_auth_port)
+				    c_warning("provide-xfr has a tls-auth-name,"
+				         " but no tls-auth-port is configured");
 			}
 			if(acl->nokey || acl->blocked)
 				continue;
@@ -959,10 +965,11 @@ zone_list_close(struct nsd_options* opt)
 }
 
 static void
-c_error_va_list_pos(int showpos, const char* fmt, va_list args)
+c_error_va_list_pos(int showpos, int is_error, const char* fmt, va_list args)
 {
 	char* at = NULL;
-	cfg_parser->errors++;
+	if(is_error)
+		cfg_parser->errors++;
 	if(showpos && c_text && c_text[0]!=0) {
 		at = c_text;
 	}
@@ -975,7 +982,8 @@ c_error_va_list_pos(int showpos, const char* fmt, va_list args)
 			snprintf(m, sizeof(m), "at '%s': ", at);
 			(*cfg_parser->err)(cfg_parser->err_arg, m);
 		}
-		(*cfg_parser->err)(cfg_parser->err_arg, "error: ");
+		(*cfg_parser->err)(cfg_parser->err_arg,
+			is_error ? "error: " : "warning: ");
 		vsnprintf(m, sizeof(m), fmt, args);
 		(*cfg_parser->err)(cfg_parser->err_arg, m);
 		(*cfg_parser->err)(cfg_parser->err_arg, "\n");
@@ -983,7 +991,7 @@ c_error_va_list_pos(int showpos, const char* fmt, va_list args)
 	}
         fprintf(stderr, "%s:%d: ", cfg_parser->filename, cfg_parser->line);
 	if(at) fprintf(stderr, "at '%s': ", at);
-	fprintf(stderr, "error: ");
+	fprintf(stderr, is_error ? "error: " : "warning: ");
 	vfprintf(stderr, fmt, args);
 	fprintf(stderr, "\n");
 }
@@ -999,7 +1007,22 @@ c_error(const char *fmt, ...)
 	}
 
 	va_start(ap, fmt);
-	c_error_va_list_pos(showpos, fmt, ap);
+	c_error_va_list_pos(showpos, 1, fmt, ap);
+	va_end(ap);
+}
+
+void
+c_warning(const char *fmt, ...)
+{
+	va_list ap;
+	int showpos = 0;
+
+	if (strcmp(fmt, "syntax error") == 0 || strcmp(fmt, "parse error") == 0) {
+		showpos = 1;
+	}
+
+	va_start(ap, fmt);
+	c_error_va_list_pos(showpos, 0, fmt, ap);
 	va_end(ap);
 }
 
@@ -1942,6 +1965,28 @@ key_options_add_modify(struct nsd_options* opt, struct key_options* key)
 }
 
 int
+acl_check_incoming_proxy(struct acl_options* acl, struct query* q,
+	struct acl_options** reason)
+{
+	if(reason)
+		*reason = NULL;
+
+	while(acl)
+	{
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "proxy testing allow-proxy acl %s",
+			acl->ip_address_spec));
+		if(acl_addr_matches_proxy(acl, q)) {
+			if(reason)
+				*reason = acl;
+			return 1;
+		}
+		acl = acl->next;
+	}
+
+	return -1;
+}
+
+int
 acl_check_incoming_block_proxy(struct acl_options* acl, struct query* q,
 	struct acl_options** reason)
 {
@@ -1994,7 +2039,21 @@ acl_check_incoming(struct acl_options* acl, struct query* q,
 			acl->ip_address_spec, acl->nokey?"NOKEY":
 			(acl->blocked?"BLOCKED":acl->key_name)));
 #endif
-		if(acl_addr_matches(acl, q) && acl_key_matches(acl, q)) {
+#ifdef HAVE_SSL
+		if (acl->tls_auth_name && !q->tls_auth) {
+			/* the acl requires a TLS client cert with name, but
+			 * the connection did not came over a "tls-auth-port:"
+			 */
+			number++;
+			acl = acl->next;
+			continue;
+		}
+#endif
+		if(acl_addr_matches(acl, q) && acl_key_matches(acl, q)
+#ifdef HAVE_SSL
+		&& acl_tls_auth_name_matches(acl, q)
+#endif
+		) {
 			if(!match)
 			{
 				match = acl; /* remember first match */
@@ -2006,27 +2065,6 @@ acl_check_incoming(struct acl_options* acl, struct query* q,
 				return -1;
 			}
 		}
-#ifdef HAVE_SSL
-		/* we are in a acl with tls_auth */
-		if (acl->tls_auth_name && q->tls_auth) {
-			/* we have auth_domain_name in tls_auth */
-			if (acl->tls_auth_options && acl->tls_auth_options->auth_domain_name) {
-				if (!acl_tls_hostname_matches(q->tls_auth, acl->tls_auth_options->auth_domain_name)) {
-					VERBOSITY(3, (LOG_WARNING,
-							"client cert does not match %s %s",
-							acl->tls_auth_name, acl->tls_auth_options->auth_domain_name));
-					q->cert_cn = NULL;
-					return -1;
-				}
-				VERBOSITY(5, (LOG_INFO, "%s %s verified",
-					acl->tls_auth_name, acl->tls_auth_options->auth_domain_name));
-				q->cert_cn = acl->tls_auth_options->auth_domain_name;
-			} else {
-				/* nsd gives error on start for this, but check just in case */
-				log_msg(LOG_ERR, "auth-domain-name not defined in %s", acl->tls_auth_name);
-			}
-		}
-#endif
 		number++;
 		acl = acl->next;
 	}
@@ -2190,9 +2228,9 @@ acl_addr_match_range_v4(uint32_t* minval, uint32_t* x, uint32_t* maxval, size_t 
 	/* check treats x as one huge number */
 
 	/* if outside bounds, we are done */
-	if(*minval > *x)
+	if(ntohl(*minval) > ntohl(*x))
 		return 0;
-	if(*maxval < *x)
+	if(ntohl(*maxval) < ntohl(*x))
 		return 0;
 
 	return 1;
@@ -2213,10 +2251,10 @@ acl_addr_match_range_v6(uint32_t* minval, uint32_t* x, uint32_t* maxval, size_t 
 	{
 		/* if outside bounds, we are done */
 		if(checkmin)
-			if(minval[i] > x[i])
+			if(ntohl(minval[i]) > ntohl(x[i]))
 				return 0;
 		if(checkmax)
-			if(maxval[i] < x[i])
+			if(ntohl(maxval[i]) < ntohl(x[i]))
 				return 0;
 		/* if x is equal to a bound, that bound needs further checks */
 		if(checkmin && minval[i]!=x[i])
@@ -2239,13 +2277,18 @@ acl_addr_match_range_v6(uint32_t* minval, uint32_t* x, uint32_t* maxval, size_t 
  * Copyright (C) 2012, iSEC Partners.
  * License: MIT License
  * Author:  Alban Diquet
+ *
+ * Modified 20260805 W.C.A. Wijngaards - added san_present for RFC6125
+ * conformance change.
  */
 static int matches_subject_alternative_name(
-	const char *acl_cert_cn, size_t acl_cert_cn_len, const X509 *cert)
+	const char *acl_cert_cn, size_t acl_cert_cn_len, const X509 *cert,
+	int* san_present)
 {
 	int result = 0;
 	int san_names_nb = -1;
 	STACK_OF(GENERAL_NAME) *san_names = NULL;
+	*san_present = 0;
 
 	/* Try to extract the names within the SAN extension from the certificate */
 	san_names = X509_get_ext_d2i(cert, NID_subject_alt_name, NULL, NULL);
@@ -2262,6 +2305,7 @@ static int matches_subject_alternative_name(
 		/* Skip non-DNS SAN entries. */
 		if (current_name->type != GEN_DNS)
 			continue;
+		*san_present = 1; /* DNS SAN entry is present */
 #if HAVE_ASN1_STRING_GET0_DATA
 		str = (const char *)ASN1_STRING_get0_data(current_name->d.dNSName);
 #else
@@ -2354,7 +2398,7 @@ static int matches_common_name(
 int
 acl_tls_hostname_matches(SSL* tls_auth, const char *acl_cert_cn)
 {
-	int result = 0;
+	int result = 0, san_present;
 	size_t acl_cert_cn_len;
 	X509 *client_cert;
 
@@ -2382,8 +2426,9 @@ acl_tls_hostname_matches(SSL* tls_auth, const char *acl_cert_cn)
 	 */
 
 	acl_cert_cn_len = strlen(acl_cert_cn);
-	/* semi follow RFC6125#section-6.4.4 check SAN DNS first */
-	if (!(result = matches_subject_alternative_name(acl_cert_cn, acl_cert_cn_len, client_cert)))
+	/* follow RFC6125#section-6.4.4 check SAN DNS first, and
+	 * common name if there is no SAN DNS present. */
+	if (!(result = matches_subject_alternative_name(acl_cert_cn, acl_cert_cn_len, client_cert, &san_present)) && !san_present)
 		result = matches_common_name(acl_cert_cn, acl_cert_cn_len, client_cert);
 
 	X509_free(client_cert);
@@ -2430,6 +2475,35 @@ acl_key_matches(struct acl_options* acl, struct query* q)
 	}
 	return 1;
 }
+
+#ifdef HAVE_SSL
+int
+acl_tls_auth_name_matches(struct acl_options* acl, struct query* q)
+{
+	/* If no name specified, no name is required  */
+	if (!acl->tls_auth_name)
+		return 1;
+
+	/* we have auth_domain_name in tls_auth */
+	if (!acl->tls_auth_options
+	||  !acl->tls_auth_options->auth_domain_name) {
+		/* nsd gives error on start for this, but check just in case */
+		log_msg(LOG_ERR, "auth-domain-name not defined in %s", acl->tls_auth_name);
+		return 0;
+	}
+	if (!acl_tls_hostname_matches(q->tls_auth,
+				acl->tls_auth_options->auth_domain_name)) {
+		VERBOSITY(6, (LOG_DEBUG, "client cert does not match %s %s",
+			acl->tls_auth_name,
+			acl->tls_auth_options->auth_domain_name));
+		return 0;
+	}
+	VERBOSITY(5, (LOG_INFO, "%s %s verified", acl->tls_auth_name,
+		acl->tls_auth_options->auth_domain_name));
+	q->cert_cn = acl->tls_auth_options->auth_domain_name;
+	return 1;
+}
+#endif
 
 int
 acl_same_host(struct acl_options* a, struct acl_options* b)
@@ -2941,12 +3015,30 @@ unsigned getzonestatid(struct nsd_options* opt, struct zone_options* zopt)
 {
 #ifdef USE_ZONE_STATS
 	const char* statname;
+	char* statname_valid;
+	int name_was_modified;
 	struct zonestatname* n;
 	rbnode_type* res;
 	/* try to find the instantiated zonestat name */
 	if(!zopt->pattern->zonestats || zopt->pattern->zonestats[0]==0)
 		return 0; /* no zone stats */
 	statname = config_cook_string(zopt, zopt->pattern->zonestats);
+
+	#ifdef USE_METRICS
+	/* warn when we will lossily change the zonestat name in metrics */
+	statname_valid = strdup(statname);
+	if(!statname_valid) {
+		log_msg(LOG_ERR, "malloc failed: %s", strerror(errno));
+		exit(1);
+	}
+	name_was_modified = metrics_make_label_value_valid(statname_valid);
+	if (name_was_modified) {
+		log_msg(LOG_WARNING, "zonestats name \"%s\" contains disallowed characters, using \"%s\" in metrics",
+			statname, statname_valid);
+	}
+	free(statname_valid);
+	#endif /* USE_METRICS */
+
 	res = rbtree_search(opt->zonestatnames, statname);
 	if(res)
 		return ((struct zonestatname*)res)->id;
@@ -3124,10 +3216,8 @@ resolve_interface_names(struct nsd_options* options)
 }
 
 int
-sockaddr_uses_proxy_protocol_port(struct nsd_options* options,
-	struct sockaddr* addr)
+sockaddr_uses_port(struct sockaddr* addr, struct port_list* p)
 {
-	struct proxy_protocol_port_list* p;
 	int port;
 #ifdef INET6
 	struct sockaddr_storage* ss = (struct sockaddr_storage*)addr;
@@ -3147,7 +3237,6 @@ sockaddr_uses_proxy_protocol_port(struct nsd_options* options,
 		return 0; /* unknown family */
 	}
 #endif
-	p = options->proxy_protocol_port;
 	while(p) {
 		if(p->port == port)
 			return 1;

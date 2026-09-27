@@ -79,7 +79,12 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 
 		query_add_compression_domain(query, qdomain, QHEADERSZ);
 
-		assert(query->axfr_zone->soa_rrset->rr_count == 1);
+		if(query->axfr_zone->soa_rrset->rr_count != 1) {
+			VERBOSITY(2, (LOG_INFO, "axfr: zone %s soa rr count %u (expected 1), servfail for AXFR-out", domain_to_string(query->axfr_zone->apex),
+			(unsigned)query->axfr_zone->soa_rrset->rr_count));
+			RCODE_SET(query->packet, RCODE_SERVFAIL);
+			return QUERY_PROCESSED;
+		}
 		added = packet_encode_rr(query,
 					 query->axfr_zone->apex,
 					 query->axfr_zone->soa_rrset->rrs[0],
@@ -135,8 +140,20 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 							}
 						}
 					}
-					if (!added)
+					if (!added) {
+						if(total_added == 0) {
+							/* RR wire encoding exceeds TCP_MAX_MESSAGE_LEN; cannot transmit. */
+							char apexstr[MAXDOMAINLEN * 5];
+							domain_to_string_buf(query->axfr_zone->apex, apexstr);
+							VERBOSITY(2, (LOG_ERR, "axfr: RR at %s in zone %s too large for any DNS message "
+								"(wire encoding exceeds %d bytes), aborting transfer",
+								domain_to_string(query->axfr_current_rrset->rrs[query->axfr_current_rr]->owner),
+								apexstr, TCP_MAX_MESSAGE_LEN));
+							RCODE_SET(query->packet, RCODE_SERVFAIL);
+							query->axfr_is_done = 1;
+						}
 						goto return_answer;
+					}
 					++total_added;
 					++query->axfr_current_rr;
 				}
@@ -151,7 +168,6 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 	}
 
 	/* Add terminating SOA RR.  */
-	assert(query->axfr_zone->soa_rrset->rr_count == 1);
 	added = packet_encode_rr(query,
 				 query->axfr_zone->apex,
 				 query->axfr_zone->soa_rrset->rrs[0],

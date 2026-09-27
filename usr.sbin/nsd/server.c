@@ -158,6 +158,8 @@ struct udp_handler_data
 	struct event       event;
 	/* if set, PROXYv2 is expected on this connection */
 	int pp2_enabled;
+	/* if set, padding is allowed on this connection */
+	int may_pad;
 };
 
 struct tcp_accept_handler_data {
@@ -3221,7 +3223,9 @@ server_main(struct nsd *nsd)
 	}
 
 #ifdef USE_XDP
-	xdp_server_cleanup(&nsd->xdp.xdp_server);
+	if (nsd->options->xdp_interface) {
+		xdp_server_cleanup(&nsd->xdp.xdp_server);
+	}
 #endif
 
 #ifdef MEMCLEAN /* OS collects memory pages */
@@ -3335,10 +3339,13 @@ add_udp_handler(
 	data->nsd = nsd;
 	data->socket = sock;
 
-	if(nsd->options->proxy_protocol_port &&
-		sockaddr_uses_proxy_protocol_port(nsd->options,
-		(struct sockaddr *)&sock->addr.ai_addr)) {
+	if(sockaddr_uses_port((struct sockaddr *)&sock->addr.ai_addr,
+				nsd->options->proxy_protocol_port)) {
 		data->pp2_enabled = 1;
+	}
+	if(sockaddr_uses_port((struct sockaddr *)&sock->addr.ai_addr,
+				nsd->options->udp_padding_port)) {
+		data->may_pad = 1;
 	}
 
 	memset(handler, 0, sizeof(*handler));
@@ -3360,9 +3367,8 @@ add_tcp_handler(
 	data->nsd = nsd;
 	data->socket = sock;
 
-	if(nsd->options->proxy_protocol_port &&
-		sockaddr_uses_proxy_protocol_port(nsd->options,
-		(struct sockaddr *)&sock->addr.ai_addr)) {
+	if(sockaddr_uses_port((struct sockaddr *)&sock->addr.ai_addr,
+				nsd->options->proxy_protocol_port)) {
 		data->pp2_enabled = 1;
 	}
 
@@ -4058,6 +4064,35 @@ port_is_zero(
 #endif
 }
 
+/* Check if proxy is allowed */
+static int
+pp2_is_allowed(struct query* q)
+{
+	if(nsd.options->allow_proxy) {
+		struct acl_options* why = NULL;
+		if(acl_check_incoming_proxy(nsd.options->allow_proxy, q,
+			&why) == -1) {
+			if(verbosity >= 2) {
+				char proxy[128];
+				addr2str(&q->remote_addr, proxy, sizeof(proxy));
+				VERBOSITY(2, (LOG_INFO, "proxy-protocol: %s is not "
+					"in allow-proxy list", proxy));
+			}
+			return 0;
+		}
+#ifndef NDEBUG
+		/* It was allowed from acl 'why'. */
+		if(why) {
+			char proxy[128];
+			addr2str(&q->remote_addr, proxy, sizeof(proxy));
+			DEBUG(DEBUG_QUERY,1, (LOG_INFO, "proxy %s passed acl %s",
+				proxy, why->ip_address_spec));
+		}
+#endif /* NDEBUG */
+	}
+	return 1;
+}
+
 /* Parses the PROXYv2 header from buf and updates the struct.
  * Returns 1 on success, 0 on failure. */
 static int
@@ -4096,6 +4131,10 @@ consume_pp2_header(struct buffer* buf, struct query* q, int stream)
 			{
 			struct sockaddr_in* addr =
 				(struct sockaddr_in*)&q->client_addr;
+			if(ntohs(header->len) < PP2_HEADER_LEN_INET) {
+				VERBOSITY(4, (LOG_ERR, "proxy_protocol: header too short for IPv4 address"));
+				return 0;
+			}
 			addr->sin_family = AF_INET;
 			memmove(&addr->sin_addr.s_addr,
 				&header->addr.addr4.src_addr, 4);
@@ -4111,6 +4150,10 @@ consume_pp2_header(struct buffer* buf, struct query* q, int stream)
 			{
 			struct sockaddr_in6* addr =
 				(struct sockaddr_in6*)&q->client_addr;
+			if(ntohs(header->len) < PP2_HEADER_LEN_INET6) {
+				VERBOSITY(4, (LOG_ERR, "proxy_protocol: header too short for IPv6 address"));
+				return 0;
+			}
 			memset(addr, 0, sizeof(*addr));
 			addr->sin6_family = AF_INET6;
 			memmove(&addr->sin6_addr,
@@ -4169,6 +4212,7 @@ handle_udp(int fd, short event, void* arg)
 		queries[i]->remote_addrlen = msgs[i].msg_hdr.msg_namelen;
 		queries[i]->client_addrlen = (socklen_t)sizeof(queries[i]->client_addr);
 		queries[i]->is_proxied = 0;
+		queries[i]->may_pad = data->may_pad;
 		q = queries[i];
 		if (received == -1) {
 			log_msg(LOG_ERR, "recvmmsg %d failed %s", i, strerror(
@@ -4197,10 +4241,15 @@ handle_udp(int fd, short event, void* arg)
 
 		buffer_skip(q->packet, received);
 		buffer_flip(q->packet);
-		if(data->pp2_enabled && !consume_pp2_header(q->packet, q, 0)) {
-			VERBOSITY(2, (LOG_ERR, "proxy-protocol: could not "
-				"consume PROXYv2 header"));
-			goto swap_drop;
+		if(data->pp2_enabled) {
+			if(!pp2_is_allowed(q))
+				goto swap_drop;
+			if(!consume_pp2_header(q->packet, q, 0)) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not "
+					"consume PROXYv2 header"));
+				query_reset(queries[i], UDP_MAX_MESSAGE_LEN, 0);
+				goto swap_drop;
+			}
 		}
 		if(!q->is_proxied) {
 			q->client_addrlen = q->remote_addrlen;
@@ -4560,6 +4609,10 @@ handle_tcp_reading(int fd, short event, void* arg)
 			return;
 		}
 		buffer_flip(data->query->packet);
+		if(!pp2_is_allowed(data->query)) {
+			cleanup_tcp_handler(data);
+			return;
+		}
 		if(!consume_pp2_header(data->query->packet, data->query, 1)) {
 			VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not consume PROXYv2 header"));
 
@@ -4809,7 +4862,8 @@ handle_tcp_writing(int fd, short event, void* arg)
 		}
 
 #ifdef HAVE_WRITEV
-		sent -= sizeof(n_tcplen);
+		/* The number of bytes transmitted for the message content. */
+		sent = data->bytes_transmitted - sizeof(n_tcplen);
 		/* handle potential 'packet done' code */
 		goto packet_could_be_done;
 #endif
@@ -5174,6 +5228,10 @@ handle_tls_reading(int fd, short event, void* arg)
 			return;
 		}
 		buffer_flip(data->query->packet);
+		if(!pp2_is_allowed(data->query)) {
+			cleanup_tcp_handler(data);
+			return;
+		}
 		if(!consume_pp2_header(data->query->packet, data->query, 1)) {
 			VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not consume PROXYv2 header"));
 			cleanup_tcp_handler(data);
@@ -5415,7 +5473,6 @@ handle_tls_writing(int fd, short event, void* arg)
 			data->shake_state = tls_hs_read_event;
 			tcp_handler_setup_event(data, handle_tls_reading, fd, EV_PERSIST | EV_READ | EV_TIMEOUT);
 		} else if(want != SSL_ERROR_WANT_WRITE) {
-			cleanup_tcp_handler(data);
 			{
 				char client_ip[128], e[188];
 				if(data->query) {
@@ -5427,6 +5484,7 @@ handle_tls_writing(int fd, short event, void* arg)
 					client_ip, "SSL_write error");
 				log_crypto_err(e);
 			}
+			cleanup_tcp_handler(data);
 		}
 		return;
 	}
