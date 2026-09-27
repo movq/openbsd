@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypldap.c,v 1.31 2024/11/21 13:38:15 claudio Exp $ */
+/*	$OpenBSD: ypldap.c,v 1.31.6.1 2026/09/27 16:21:36 bluhm Exp $ */
 
 /*
  * Copyright (c) 2008 Pierre-Yves Ritschard <pyr@openbsd.org>
@@ -199,7 +199,7 @@ main_create_user_groups(struct env *env)
 		/* gid */
 		bp[strcspn(bp, ":")] = '\0';
 
-		pw_gid = (gid_t)strtonum(bp, 0, GID_MAX, &errstr);
+		pw_gid = (gid_t)strtonum(bp, 0, GID_MAX - 1, &errstr);
 		if (errstr) {
 			log_warnx("main: failed to parse gid for uid: %d",
 			    ue->ue_uid);
