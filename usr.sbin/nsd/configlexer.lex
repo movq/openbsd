@@ -213,6 +213,7 @@ tcp-query-count{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_TCP_QUERY_COUNT;
 tcp-timeout{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_TCP_TIMEOUT;}
 tcp-mss{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_TCP_MSS;}
 outgoing-tcp-mss{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_OUTGOING_TCP_MSS;}
+tcp-listen-queue{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_TCP_LISTEN_QUEUE;}
 ipv4-edns-size{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_IPV4_EDNS_SIZE;}
 ipv6-edns-size{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_IPV6_EDNS_SIZE;}
 pidfile{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_PIDFILE;}
@@ -314,6 +315,7 @@ tls-auth-port{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_TLS_AUTH_PORT;}
 tls-auth-xfr-only{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_TLS_AUTH_XFR_ONLY;}
 tls-cert-bundle{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_TLS_CERT_BUNDLE; }
 proxy-protocol-port{COLON} { LEXOUT(("v(%s) ", yytext)); return VAR_PROXY_PROTOCOL_PORT; }
+allow-proxy{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_ALLOW_PROXY;}
 answer-cookie{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_ANSWER_COOKIE;}
 cookie-secret{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_COOKIE_SECRET;}
 cookie-secret-file{COLON}	{ LEXOUT(("v(%s) ", yytext)); return VAR_COOKIE_SECRET_FILE;}
@@ -336,6 +338,7 @@ xdp-program-path{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_XDP_PROGRAM_PA
 xdp-program-load{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_XDP_PROGRAM_LOAD; }
 xdp-bpffs-path{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_XDP_BPFFS_PATH; }
 xdp-force-copy{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_XDP_FORCE_COPY; }
+udp-padding-port{COLON}		{ LEXOUT(("v(%s) ", yytext)); return VAR_UDP_PADDING_PORT;}
 {NEWLINE}		{ LEXOUT(("NL\n")); cfg_parser->line++;}
 
 servers={UNQUOTEDLETTER}*	{

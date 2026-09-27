@@ -1385,8 +1385,8 @@ static int32_t check_ds_rr(
       32, // 2: SHA-256
       32, // 3: GOST R 34.11-94
       48, // 4: SHA-384
-      48, // 5: GOST R 34.10-2012
-      48, // 6: SM3
+      32, // 5: GOST R 34.10-2012
+      32, // 6: SM3
       0   // 7: Unassigned
     };
 
@@ -1435,8 +1435,8 @@ static int32_t parse_ds_rdata(
       32, // 2: SHA-256
       32, // 3: GOST R 34.11-94
       48, // 4: SHA-384
-      48, // 5: GOST R 34.10-2012
-      48, // 6: SM3
+      32, // 5: GOST R 34.10-2012
+      32, // 6: SM3
       0   // 7: Unassigned
     };
 
@@ -2340,6 +2340,55 @@ static int32_t parse_dsync_rdata(
 }
 
 nonnull_all
+static int32_t check_hhit_rr(
+  parser_t *parser, const type_info_t *type, const rdata_t *rdata)
+{
+  // FIXME: It is a CBOR blob with some internal structure, but ignoring the
+  //        internal structure, a minimally sized CBOR blob is 1 byte
+  if ((uintptr_t)rdata->octets - (uintptr_t)parser->rdata->octets < 1)
+    SYNTAX_ERROR(parser, "Invalid %s", NAME(type));
+  return accept_rr(parser, type, rdata);
+}
+
+nonnull_all
+static int32_t parse_hhit_rdata(
+  parser_t *parser, const type_info_t *type, rdata_t *rdata, token_t *token)
+{
+  int32_t code;
+  const rdata_info_t *fields = type->rdata.fields;
+
+  if ((code = parse_base64_sequence(parser, type, &fields[0], rdata, token)) < 0)
+    return code;
+
+  return check_hhit_rr(parser, type, rdata);
+}
+
+nonnull_all
+static int32_t check_brid_rr(
+  parser_t *parser, const type_info_t *type, const rdata_t *rdata)
+{
+  // FIXME: It is a CBOR blob with some internal structure, but ignoring the
+  //        internal structure, a minimally sized CBOR blob is 1 byte
+  if ((uintptr_t)rdata->octets - (uintptr_t)parser->rdata->octets < 1)
+    SYNTAX_ERROR(parser, "Invalid %s", NAME(type));
+  return accept_rr(parser, type, rdata);
+}
+
+nonnull_all
+static int32_t parse_brid_rdata(
+  parser_t *parser, const type_info_t *type, rdata_t *rdata, token_t *token)
+{
+  int32_t code;
+  const rdata_info_t *fields = type->rdata.fields;
+
+  if ((code = parse_base64_sequence(parser, type, &fields[0], rdata, token)) < 0)
+    return code;
+
+  return check_brid_rr(parser, type, rdata);
+}
+
+
+nonnull_all
 static int32_t check_nid_rr(
   parser_t *parser, const type_info_t *type, const rdata_t *rdata)
 {
@@ -2752,29 +2801,33 @@ static int32_t parse_amtrelay_rdata(
   if ((code = parse_int8(parser, type, &fields[2], rdata, token)) < 0)
     return code;
 
-  if (octets[1]) {
-    if ((code = take_contiguous(parser, type, &fields[3], token)) < 0)
-      return code;
-    switch (octets[1]) {
-      case 1: /* IPv4 address */
-        type = (const type_info_t *)amtrelay_ipv4;
-        fields = type->rdata.fields;
-        if ((code = parse_ip4(parser, type, &fields[3], rdata, token)) < 0)
-          return code;
-        break;
-      case 2: /* IPv6 address */
-        type = (const type_info_t *)amtrelay_ipv6;
-        fields = type->rdata.fields;
-        if ((code = parse_ip6(parser, type, &fields[3], rdata, token)) < 0)
-          return code;
-        break;
-      case 3: /* domain name */
-        if ((code = parse_name(parser, type, &fields[3], rdata, token)) < 0)
-          return code;
-        break;
-      default:
-        SYNTAX_ERROR(parser, "Invalid %s in %s", NAME(&fields[3]), NAME(type));
-    }
+  if ((code = take_contiguous(parser, type, &fields[3], token)) < 0)
+    return code;
+  switch (octets[1]) {
+    case 0:
+      /* no gateway requires a '.' as the relay in presentation format
+       * without parsing it into wireformat rdata */
+      if (!(token->length == 1 && *token->data == '.'))
+        SYNTAX_ERROR(parser, "Invalid %s in %s, the no gateway type (type 0) of AMTRELAY requires the relay field to have '.' in it", NAME(&fields[3]), NAME(type));
+      break;
+    case 1: /* IPv4 address */
+      type = (const type_info_t *)amtrelay_ipv4;
+      fields = type->rdata.fields;
+      if ((code = parse_ip4(parser, type, &fields[3], rdata, token)) < 0)
+        return code;
+      break;
+    case 2: /* IPv6 address */
+      type = (const type_info_t *)amtrelay_ipv6;
+      fields = type->rdata.fields;
+      if ((code = parse_ip6(parser, type, &fields[3], rdata, token)) < 0)
+        return code;
+      break;
+    case 3: /* domain name */
+      if ((code = parse_name(parser, type, &fields[3], rdata, token)) < 0)
+        return code;
+      break;
+    default:
+      SYNTAX_ERROR(parser, "Invalid %s in %s", NAME(&fields[3]), NAME(type));
   }
   octets[1] |= D;
   if ((code = take_delimiter(parser, type, token)) < 0)
@@ -3277,6 +3330,14 @@ static const rdata_info_t dsync_rdata_fields[] = {
   FIELD("target")
 };
 
+static const rdata_info_t hhit_rdata_fields[] = {
+  FIELD("cbor blob"),
+};
+
+static const rdata_info_t brid_rdata_fields[] = {
+  FIELD("cbor blob"),
+};
+
 static const rdata_info_t spf_rdata_fields[] = {
   FIELD("text")
 };
@@ -3522,8 +3583,10 @@ static const type_info_t types[] = {
                 check_https_rr, parse_https_rdata),
   TYPE("DSYNC", ZONE_TYPE_DSYNC, ZONE_CLASS_ANY, FIELDS(dsync_rdata_fields),
                 check_dsync_rr, parse_dsync_rdata),
-  UNKNOWN_TYPE(67),
-  UNKNOWN_TYPE(68),
+  TYPE("HHIT", ZONE_TYPE_HHIT, ZONE_CLASS_ANY, FIELDS(hhit_rdata_fields),
+                check_hhit_rr, parse_hhit_rdata),
+  TYPE("BRID", ZONE_TYPE_BRID, ZONE_CLASS_ANY, FIELDS(brid_rdata_fields),
+                check_brid_rr, parse_brid_rdata),
   UNKNOWN_TYPE(69),
   UNKNOWN_TYPE(70),
   UNKNOWN_TYPE(71),

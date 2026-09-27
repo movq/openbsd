@@ -627,13 +627,16 @@ apply_xfrs_to_consumer_zone(struct xfrd_catalog_consumer_zone* consumer_zone,
 	FILE* df;
 
 	if(xfr->msg_is_ixfr) {
-		uint32_t soa_serial;
+		uint32_t soa_serial=0, after_serial=0;
 		xfrd_xfr_type* prev;
 
-		if(dbzone->soa_rrset == NULL || dbzone->soa_rrset->rrs == NULL
-		|| dbzone->soa_rrset->rrs[0].rdata_count <= 2
-		|| rdata_atom_size(dbzone->soa_rrset->rrs[0].rdatas[2])
-				!= sizeof(uint32_t)) {
+		if(dbzone->soa_rrset == NULL
+#ifndef PACKED_STRUCTS
+		|| dbzone->soa_rrset->rrs == NULL
+#endif
+		|| dbzone->soa_rrset->rrs[0]->rdlength < 20+2*sizeof(void*)
+		|| !retrieve_soa_rdata_serial(dbzone->soa_rrset->rrs[0],
+			&soa_serial)) {
 
 			make_catalog_consumer_invalid(consumer_zone,
 			       "could not apply ixfr on catalog consumer zone "
@@ -641,8 +644,6 @@ apply_xfrs_to_consumer_zone(struct xfrd_catalog_consumer_zone* consumer_zone,
 			       consumer_zone->options->name);
 			return;
 		}
-		soa_serial = read_uint32(rdata_atom_data(
-				dbzone->soa_rrset->rrs[0].rdatas[2]));
 		if(soa_serial == xfr->msg_old_serial) 
 			goto apply_xfr;
 		for(prev = xfr->prev; prev; prev = prev->prev) {
@@ -653,8 +654,10 @@ apply_xfrs_to_consumer_zone(struct xfrd_catalog_consumer_zone* consumer_zone,
 			apply_xfrs_to_consumer_zone(consumer_zone, dbzone, prev);
 			break;
 		}
-		if(!prev || xfr->msg_old_serial != read_uint32(rdata_atom_data(
-					dbzone->soa_rrset->rrs[0].rdatas[2]))){
+		if(!prev
+		|| !retrieve_soa_rdata_serial(dbzone->soa_rrset->rrs[0],
+			&after_serial)
+		|| xfr->msg_old_serial != after_serial) {
 			make_catalog_consumer_invalid(consumer_zone,
 			       "could not find and/or apply xfrs for catalog "
 			       "consumer zone \'%s\': to update to serial %u",
@@ -700,6 +703,7 @@ xfrd_process_soa_info_task(struct task_list_d* task)
 	zone_type* dbzone = NULL;
 	xfrd_xfr_type* xfr;
 	xfrd_xfr_type* prev_xfr;
+	int xfr_was_ixfr = 0;
 	enum soainfo_hint hint;
 #ifndef NDEBUG
 	time_t before;
@@ -729,7 +733,6 @@ xfrd_process_soa_info_task(struct task_list_d* task)
 		soa.klass = htons(CLASS_IN);
 		memmove(&soa.ttl, p, sizeof(uint32_t));
 		p += sizeof(uint32_t);
-		soa.rdata_count = htons(7);
 		memmove(soa.prim_ns, p, sizeof(uint8_t));
 		p += sizeof(uint8_t);
 		memmove(soa.prim_ns+1, p, soa.prim_ns[0]);
@@ -823,6 +826,10 @@ xfrd_process_soa_info_task(struct task_list_d* task)
 		dbzone = namedb_find_or_create_zone( xfrd->nsd->db, task->zname
 		                                   , consumer_zone->options);
 	}
+	if(zone->latest_xfr) {
+		xfr_was_ixfr = (zone->latest_xfr->query_type == TYPE_IXFR);
+	}
+
 	/* soainfo_gone and soainfo_bad are straightforward, delete all updates
 	   that were transfered, i.e. acquired != 0. soainfo_ok is more
 	   complicated as it is possible that there are subsequent corrupt or
@@ -911,6 +918,28 @@ xfrd_process_soa_info_task(struct task_list_d* task)
 			break;
 		/* fall through */
 	case soainfo_gone:
+		if(hint == soainfo_gone) {
+			/* "rollback" on-disk soa information */
+			zone->soa_disk_acquired = zone->soa_nsd_acquired;
+			zone->soa_disk = zone->soa_nsd;
+		}
+		if(hint == soainfo_gone && !soa_ptr) {
+			if(xfr_was_ixfr) {
+				/* Attempt without IXFR, maybe AXFR works. */
+				xfrd_disable_ixfr(zone);
+				xfrd_set_zone_state(zone, xfrd_zone_refreshing);
+				xfrd_set_refresh_now(zone);
+				break;
+			}
+			/* The zone transfer update failed to apply.
+			 * Okay to fallback from IXFR to AXFR, but after failed
+			 * AXFR, wait for retry instead of immediate fetch */
+			VERBOSITY(2, (LOG_INFO, "xfrd: zone %s transfer "
+				"failed to apply, waiting for retry",
+				zone->apex_str));
+			xfrd_set_timer_retry(zone);
+			break;
+		}
 		xfrd_handle_incoming_soa(zone, soa_ptr, acquired);
 		break;
 	}
@@ -1017,24 +1046,8 @@ xfrd_deactivate_zone(xfrd_zone_type* z)
 }
 
 void
-xfrd_del_slave_zone(xfrd_state_type* xfrd, const dname_type* dname)
+udp_zone_waiting_list_remove(xfrd_zone_type* z)
 {
-	xfrd_zone_type* z = (xfrd_zone_type*)rbtree_delete(xfrd->zones, dname);
-	if(!z) return;
-	
-	/* io */
-	if(z->tcp_waiting) {
-		/* delete from tcp waiting list */
-		if(z->tcp_waiting_prev)
-			z->tcp_waiting_prev->tcp_waiting_next =
-				z->tcp_waiting_next;
-		else xfrd->tcp_set->tcp_waiting_first = z->tcp_waiting_next;
-		if(z->tcp_waiting_next)
-			z->tcp_waiting_next->tcp_waiting_prev =
-				z->tcp_waiting_prev;
-		else xfrd->tcp_set->tcp_waiting_last = z->tcp_waiting_prev;
-		z->tcp_waiting = 0;
-	}
 	if(z->udp_waiting) {
 		/* delete from udp waiting list */
 		if(z->udp_waiting_prev)
@@ -1046,6 +1059,23 @@ xfrd_del_slave_zone(xfrd_state_type* xfrd, const dname_type* dname)
 				z->udp_waiting_prev;
 		else	xfrd->udp_waiting_last = z->udp_waiting_prev;
 		z->udp_waiting = 0;
+	}
+}
+
+void
+xfrd_del_slave_zone(xfrd_state_type* xfrd, const dname_type* dname)
+{
+	xfrd_zone_type* z = (xfrd_zone_type*)rbtree_delete(xfrd->zones, dname);
+	if(!z) return;
+
+	/* io */
+	if(z->tcp_waiting) {
+		/* delete from tcp waiting list */
+		tcp_zone_waiting_list_remove(z);
+	}
+	if(z->udp_waiting) {
+		/* delete from udp waiting list */
+		udp_zone_waiting_list_remove(z);
 	}
 	xfrd_deactivate_zone(z);
 	if(z->tcp_conn != -1) {
@@ -1249,6 +1279,16 @@ xfrd_make_request(xfrd_zone_type* zone)
 		if(zone->round_num >= XFRD_MAX_ROUNDS) {
 			/* tried all servers that many times, wait */
 			zone->round_num = -1;
+			/* Discard NOTIFY serial hint. After one round of
+			 * searching for it, at the upstream primaries, the
+			 * notify hint need no longer be used. The retry
+			 * timer is used, for one, earlier re-attempt. This
+			 * is useful if the upstream is in-progress of loading
+			 * the zone information. After the brief wait it may
+			 * have completed that task. And this may catch the
+			 * case where it notify is sent before the load
+			 * activity has completed at the primary. */
+			zone->soa_notified_acquired = 0;
 			xfrd_set_timer_retry(zone);
 			DEBUG(DEBUG_XFRD,1, (LOG_INFO,
 				"xfrd zone %s makereq wait_retry, rd %d mr %d nx %d",
@@ -1377,22 +1417,24 @@ xfrd_time()
 void
 xfrd_copy_soa(xfrd_soa_type* soa, rr_type* rr)
 {
-	const uint8_t* rr_ns_wire = dname_name(domain_dname(rdata_atom_domain(rr->rdatas[0])));
-	uint8_t rr_ns_len = domain_dname(rdata_atom_domain(rr->rdatas[0]))->name_size;
-	const uint8_t* rr_em_wire = dname_name(domain_dname(rdata_atom_domain(rr->rdatas[1])));
-	uint8_t rr_em_len = domain_dname(rdata_atom_domain(rr->rdatas[1]))->name_size;
+	const uint8_t* rr_ns_wire = dname_name(domain_dname(rdata_domain_ref(rr)));
+	uint8_t rr_ns_len = domain_dname(rdata_domain_ref(rr))->name_size;
+	const uint8_t* rr_em_wire = dname_name(domain_dname(
+		rdata_domain_ref_offset(rr, sizeof(void*))));
+	uint8_t rr_em_len = domain_dname(rdata_domain_ref_offset(rr,
+		sizeof(void*)))->name_size;
+	uint8_t* p;
 
-	if(rr->type != TYPE_SOA || rr->rdata_count != 7) {
+	if(rr->type != TYPE_SOA || rr->rdlength != 20+2*sizeof(void*)) {
 		log_msg(LOG_ERR, "xfrd: copy_soa called with bad rr, type %d rrs %u.",
-			rr->type, rr->rdata_count);
+			rr->type, (unsigned)rr->rdlength);
 		return;
 	}
 	DEBUG(DEBUG_XFRD,1, (LOG_INFO, "xfrd: copy_soa rr, type %d rrs %u, ttl %u.",
-			(int)rr->type, (unsigned)rr->rdata_count, (unsigned)rr->ttl));
+			(int)rr->type, (unsigned)rr->rdlength, (unsigned)rr->ttl));
 	soa->type = htons(rr->type);
 	soa->klass = htons(rr->klass);
 	soa->ttl = htonl(rr->ttl);
-	soa->rdata_count = htons(rr->rdata_count);
 
 	/* copy dnames */
 	soa->prim_ns[0] = rr_ns_len;
@@ -1401,11 +1443,12 @@ xfrd_copy_soa(xfrd_soa_type* soa, rr_type* rr)
 	memcpy(soa->email+1, rr_em_wire, rr_em_len);
 
 	/* already in network format */
-	memcpy(&soa->serial, rdata_atom_data(rr->rdatas[2]), sizeof(uint32_t));
-	memcpy(&soa->refresh, rdata_atom_data(rr->rdatas[3]), sizeof(uint32_t));
-	memcpy(&soa->retry, rdata_atom_data(rr->rdatas[4]), sizeof(uint32_t));
-	memcpy(&soa->expire, rdata_atom_data(rr->rdatas[5]), sizeof(uint32_t));
-	memcpy(&soa->minimum, rdata_atom_data(rr->rdatas[6]), sizeof(uint32_t));
+	p = rr->rdata + 2*sizeof(void*);
+	memcpy(&soa->serial, p, sizeof(uint32_t));
+	memcpy(&soa->refresh, p+4, sizeof(uint32_t));
+	memcpy(&soa->retry, p+8, sizeof(uint32_t));
+	memcpy(&soa->expire, p+12, sizeof(uint32_t));
+	memcpy(&soa->minimum, p+16, sizeof(uint32_t));
 	DEBUG(DEBUG_XFRD,1, (LOG_INFO,
 		"xfrd: copy_soa rr, serial %u refresh %u retry %u expire %u",
 		(unsigned)ntohl(soa->serial), (unsigned)ntohl(soa->refresh),
@@ -1623,6 +1666,9 @@ xfrd_udp_read_packet(buffer_type* packet, int fd, struct sockaddr* src,
 	if(received == -1) {
 		log_msg(LOG_ERR, "xfrd: recvfrom failed: %s",
 			strerror(errno));
+		return 0;
+	} else if(received < QHEADERSZ) {
+		log_msg(LOG_ERR, "xfrd: UDP packet too small");
 		return 0;
 	}
 	buffer_set_limit(packet, received);
@@ -1979,7 +2025,8 @@ static int xfrd_parse_soa_info(buffer_type* packet, xfrd_soa_type* soa)
 	{
 		return 0;
 	}
-	soa->rdata_count = 7; /* rdata in SOA */
+	if(!buffer_available(packet, 20))
+		return 0;
 	soa->serial = htonl(buffer_read_u32(packet));
 	soa->refresh = htonl(buffer_read_u32(packet));
 	soa->retry = htonl(buffer_read_u32(packet));
@@ -2002,12 +2049,15 @@ xfrd_xfr_check_rrs(xfrd_zone_type* zone, buffer_type* packet, size_t count,
 	int *done, xfrd_soa_type* soa, region_type* temp)
 {
 	/* first RR has already been checked */
+	const struct nsd_type_descriptor *descriptor;
 	uint32_t tmp_serial = 0;
-	uint16_t type, rrlen;
+	uint16_t type, klass, rrlen;
 	size_t i, soapos, mempos;
 	const dname_type* dname;
+	struct rr* rr;
+	int32_t code;
 	domain_table_type* owners;
-	rdata_atom_type* rdatas;
+	enum { DELETING_RRs = 0, ADDING_RRs } ixfr_state = DELETING_RRs;
 
 	for(i=0; i<count; ++i,++zone->latest_xfr->msg_rr_count)
 	{
@@ -2032,7 +2082,15 @@ xfrd_xfr_check_rrs(xfrd_zone_type* zone, buffer_type* packet, size_t count,
 		}
 		soapos = buffer_position(packet);
 		type = buffer_read_u16(packet);
-		(void)buffer_read_u16(packet); /* class */
+		klass = buffer_read_u16(packet);
+		if(klass != CLASS_IN && type != TYPE_OPT) {
+			log_msg(LOG_ERR, "xfrd: zone %s xfr "
+				"non-IN-class RR (%s type=%s class=%s), rejected",
+				zone->apex_str, dname_to_string(dname,0),
+				rrtype_to_string(type),
+				rrclass_to_string(klass));
+			return 0;
+		}
 		(void)buffer_read_u32(packet); /* ttl */
 		rrlen = buffer_read_u16(packet);
 		if(!buffer_available(packet, rrlen)) {
@@ -2041,10 +2099,15 @@ xfrd_xfr_check_rrs(xfrd_zone_type* zone, buffer_type* packet, size_t count,
 			return 0;
 		}
 		mempos = buffer_position(packet);
-		if(rdata_wireformat_to_rdata_atoms(temp, owners, type, rrlen,
-			packet, &rdatas) == -1) {
+
+		descriptor = nsd_type_descriptor(type);
+		code = descriptor->read_rdata(owners, rrlen, packet, &rr);
+		if(code < 0) {
 			DEBUG(DEBUG_XFRD,1, (LOG_ERR, "xfrd: zone %s xfr unable "
-				"to parse rdata", zone->apex_str));
+				"to parse rdata %s %s %s", zone->apex_str,
+				dname_to_string(dname,0),
+				rrtype_to_string(type),
+				read_rdata_fail_str(code)));
 			return 0;
 		}
 		if(type == TYPE_SOA) {
@@ -2071,6 +2134,7 @@ xfrd_xfr_check_rrs(xfrd_zone_type* zone, buffer_type* packet, size_t count,
 				}
 				zone->latest_xfr->msg_old_serial = ntohl(soa->serial);
 				tmp_serial = ntohl(soa->serial);
+				ixfr_state = DELETING_RRs;
 			}
 			else if(ntohl(soa->serial) == zone->latest_xfr->msg_new_serial) {
 				/* saw another SOA of new serial. */
@@ -2093,12 +2157,43 @@ xfrd_xfr_check_rrs(xfrd_zone_type* zone, buffer_type* packet, size_t count,
 						"serial decreasing not allowed", zone->apex_str));
 					return 0; /* middle serial decreases in IXFR */
 				}
+				if(ntohl(soa->serial) == tmp_serial) {
+					if(ixfr_state == DELETING_RRs) {
+						DEBUG(DEBUG_XFRD,1, ( LOG_ERR, "xfrd: zone %s xfr serial duplicate "
+							  "not allowed for serial %"PRIu32" while %s",
+							  zone->apex_str, tmp_serial,
+							  ( ixfr_state == DELETING_RRs
+							  ? "deleting RRs" : "adding RRs")));
+						return 0; /* middle serial is the same as the previous in IXFR */
+					}
+					ixfr_state = DELETING_RRs;
+				} else {
+					assert(ntohl(soa->serial) > tmp_serial);
+					ixfr_state = ADDING_RRs;
+				}
 				/* serial ok, update tmp serial */
 				tmp_serial = ntohl(soa->serial);
+			}
+			else {
+				/* AXFR mode, rr_count>1, serial!=new_serial,
+				 * RFC 5936 s2.2 forbids SOA in a non-terminal
+				 * position with a different serial. Reject
+				 * the stream. */
+				DEBUG(DEBUG_XFRD,1, (LOG_ERR, "xfrd: zone %s axfr "
+					"unexpected mid-stream SOA serial %u",
+					zone->apex_str,
+					(unsigned)ntohl(soa->serial)));
+				return 0; /* SOA in middle of AXFR */
 			}
 		}
 		buffer_set_position(packet, mempos);
 		buffer_skip(packet, rrlen);
+	}
+	if(buffer_position(packet) != buffer_limit(packet)) {
+		DEBUG(DEBUG_XFRD,1, (LOG_ERR, "xfrd: zone %s xfr bad, "
+			"trailing data %d bytes", zone->apex_str,
+			(int)(buffer_limit(packet)-buffer_position(packet))));
+		return 0; /* trailing data */
 	}
 	/* packet seems to have a valid DNS RR structure */
 	return 1;
@@ -2291,12 +2386,12 @@ xfrd_parse_received_xfr_packet(xfrd_zone_type* zone, buffer_type* packet,
 		if(zone->soa_disk_acquired != 0 &&
 			zone->state != xfrd_zone_expired /* if expired - accept anything */ &&
 			compare_serial(ntohl(soa->serial), ntohl(zone->soa_disk.serial)) < 0) {
-                        DEBUG(DEBUG_XFRD,1, (LOG_INFO,
-                                "xfrd: zone %s ignoring old serial (%u/%u) from %s",
-                                zone->apex_str, ntohl(zone->soa_disk.serial), ntohl(soa->serial), zone->master->ip_address_spec));
-                        VERBOSITY(1, (LOG_INFO,
-                                "xfrd: zone %s ignoring old serial (%u/%u) from %s",
-                                zone->apex_str, ntohl(zone->soa_disk.serial), ntohl(soa->serial), zone->master->ip_address_spec));
+			DEBUG(DEBUG_XFRD,1, (LOG_INFO,
+				"xfrd: zone %s ignoring old serial (local: %u, remote: %u) from %s",
+				zone->apex_str, ntohl(zone->soa_disk.serial), ntohl(soa->serial), zone->master->ip_address_spec));
+			VERBOSITY(1, (LOG_INFO,
+				"xfrd: zone %s ignoring old serial (local: %u, remote: %u) from %s",
+				zone->apex_str, ntohl(zone->soa_disk.serial), ntohl(soa->serial), zone->master->ip_address_spec));
 			region_destroy(tempregion);
 			return xfrd_packet_bad;
 		}
@@ -2617,6 +2712,7 @@ xfrd_handle_received_xfr_packet(xfrd_zone_type* zone, buffer_type* packet)
 			zone->latest_xfr->xfrfilenumber))
 	{
 		zone->latest_xfr->sent = xfrd->nsd->mytask + 1;
+		xfrd->num_xfrs_in_reload++;
 	}
 	/* reset msg seq nr, so if that is nonnull we know xfr file exists */
 	zone->latest_xfr->msg_seq_nr = 0;
@@ -2719,6 +2815,12 @@ xfrd_handle_notify_and_start_xfr(xfrd_zone_type* zone, xfrd_soa_type* soa)
 		if(zone->soa_disk_acquired == 0)
 			zone->fresh_xfr_timeout = XFRD_TRANSFER_TIMEOUT_START;
 	}
+}
+
+struct xfrd_zone*
+xfrd_find_zone(xfrd_state_type* xfrd, const dname_type* dname)
+{
+	return (xfrd_zone_type*)rbtree_search(xfrd->zones, dname);
 }
 
 void
@@ -2931,6 +3033,8 @@ xfrd_prepare_zones_for_reload(void)
 					xfr->msg_old_serial,
 					xfr->msg_new_serial,
 					xfr->xfrfilenumber);
+				if(send)
+					xfrd->num_xfrs_in_reload++;
 				if(send && !reload) {
 					reload = 1;
 					xfrd_set_reload_timeout();
@@ -3005,9 +3109,14 @@ void xfrd_process_task_result(xfrd_state_type* xfrd, struct udb_base* taskudb)
 
 void xfrd_set_reload_now(xfrd_state_type* xfrd)
 {
-#ifdef HAVE_SYSTEMD
-	sd_notify(0, "RELOADING=1");
-#endif
+	/* systemd kills after a timer, but a large zone can take time.
+	 * so there is no, 
+	 * #ifdef HAVE_SYSTEMD
+	 * 	sd_notify(0, "RELOADING=1");
+	 * #endif
+	 * message.
+	 * Also, NSD stays responsive during that time, due to the forked
+	 * operation. */
 	xfrd->need_to_send_reload = 1;
 	if(!(xfrd->ipc_handler_flags&EV_WRITE)) {
 		ipc_xfrd_set_listening(xfrd, EV_PERSIST|EV_READ|EV_WRITE);

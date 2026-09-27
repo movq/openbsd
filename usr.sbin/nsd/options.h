@@ -21,7 +21,7 @@ struct dname;
 struct tsig_key;
 struct buffer;
 struct nsd;
-struct proxy_protocol_port_list;
+struct port_list;
 
 
 typedef struct nsd_options nsd_options_type;
@@ -103,6 +103,7 @@ struct nsd_options {
 	int tcp_timeout;
 	int tcp_mss;
 	int outgoing_tcp_mss;
+	int tcp_listen_queue;
 	size_t ipv4_edns_size;
 	size_t ipv6_edns_size;
 	const char* pidfile;
@@ -146,7 +147,11 @@ struct nsd_options {
 	int tls_auth_xfr_only;
 
 	/* proxy protocol port list */
-	struct proxy_protocol_port_list* proxy_protocol_port;
+	struct port_list* proxy_protocol_port;
+	/* Allowed proxy senders (the outer IP addr), it allows all if empty */
+	struct acl_options* allow_proxy;
+	/* udp-padding-port list */
+	struct port_list* udp_padding_port;
 
 	/** remote control section. enable toggle. */
 	int control_enable;
@@ -462,9 +467,9 @@ struct tls_auth_options {
 	char* client_key_pw;
 };
 
-/* proxy protocol port option list */
-struct proxy_protocol_port_list {
-	struct proxy_protocol_port_list* next;
+/* port option list */
+struct port_list {
+	struct port_list* next;
 	int port;
 };
 
@@ -598,12 +603,16 @@ int acl_addr_matches_proxy(struct acl_options* acl, struct query* q);
 int acl_tls_hostname_matches(SSL* ssl, const char* acl_cert_cn);
 #endif
 int acl_key_matches(struct acl_options* acl, struct query* q);
+int acl_tls_auth_name_matches(struct acl_options* acl, struct query* q);
 int acl_addr_match_mask(uint32_t* a, uint32_t* b, uint32_t* mask, size_t sz);
 int acl_addr_match_range_v6(uint32_t* minval, uint32_t* x, uint32_t* maxval, size_t sz);
 int acl_addr_match_range_v4(uint32_t* minval, uint32_t* x, uint32_t* maxval, size_t sz);
 
 /* check acl list for blocks on address, return 0 if none, -1 if blocked. */
 int acl_check_incoming_block_proxy(struct acl_options* acl, struct query* q,
+	struct acl_options** reason);
+/* check acl list, proxy addr, if match return 1, -1 if no matches. */
+int acl_check_incoming_proxy(struct acl_options* acl, struct query* q,
 	struct acl_options** reason);
 
 /* returns true if acls are both from the same host */
@@ -640,6 +649,7 @@ const char* config_make_zonefile(struct zone_options* zone, struct nsd* nsd);
 
 /* parsing helpers */
 void c_error(const char* msg, ...) ATTR_FORMAT(printf, 1,2);
+void c_warning(const char* msg, ...) ATTR_FORMAT(printf, 1,2);
 int c_wrap(void);
 struct acl_options* parse_acl_info(region_type* region, char* ip,
 	const char* key);
@@ -664,8 +674,7 @@ void warn_if_directory(const char* filetype, FILE* f, const char* fname);
  * names. */
 void resolve_interface_names(struct nsd_options* options);
 
-/* See if the sockaddr port number is listed in the proxy protocol ports. */
-int sockaddr_uses_proxy_protocol_port(struct nsd_options* options,
-	struct sockaddr* addr);
+/* See if the sockaddr port number is listed in the ports. */
+int sockaddr_uses_port(struct sockaddr* addr, struct port_list* ports);
 
 #endif /* OPTIONS_H */

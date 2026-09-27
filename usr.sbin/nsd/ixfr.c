@@ -185,34 +185,6 @@ static void pktcompression_insert_with_labels(struct pktcompression* pcomp,
 	}
 }
 
-/* calculate length of dname in uncompressed wireformat in buffer */
-static size_t dname_length(const uint8_t* buf, size_t len)
-{
-	size_t l = 0;
-	if(!buf || len == 0)
-		return l;
-	while(len > 0 && buf[0] != 0) {
-		size_t lablen = (size_t)(buf[0]);
-		if( (lablen&0xc0) )
-			return 0; /* the name should be uncompressed */
-		if(lablen+1 > len)
-			return 0; /* should fit in the buffer */
-		l += lablen+1;
-		len -= lablen+1;
-		buf += lablen+1;
-		if(l > MAXDOMAINLEN)
-			return 0;
-	}
-	if(len == 0)
-		return 0; /* end label should fit in buffer */
-	if(buf[0] != 0)
-		return 0; /* must end in root label */
-	l += 1; /* for the end root label */
-	if(l > MAXDOMAINLEN)
-		return 0;
-	return l;
-}
-
 /* write a compressed domain name into the packet,
  * returns uncompressed wireformat length,
  * 0 if it does not fit and -1 on failure, bad dname. */
@@ -220,7 +192,7 @@ static int pktcompression_write_dname(struct buffer* packet,
 	struct pktcompression* pcomp, const uint8_t* rr, size_t rrlen)
 {
 	size_t wirelen = 0;
-	size_t dname_len = dname_length(rr, rrlen);
+	size_t dname_len = buf_dname_length(rr, rrlen);
 	if(!rr || rrlen == 0 || dname_len == 0)
 		return 0;
 	while(rrlen > 0 && rr[0] != 0) {
@@ -263,6 +235,118 @@ static int pktcompression_write_dname(struct buffer* packet,
 	return wirelen;
 }
 
+static int ixfr_write_rdata_pkt(struct buffer* packet, uint16_t tp,
+	struct pktcompression* pcomp, const uint8_t* rr, size_t rdlen)
+{
+	const struct nsd_type_descriptor* descriptor = nsd_type_descriptor(tp);
+	size_t i;
+	uint16_t offset; /* The offset in rr. */
+
+	/* The rr points at the start of the rdata of length rdlen.
+	 * This is uncompressed wireformat. */
+
+	if(!descriptor->is_compressible) {
+		if(!buffer_available(packet, rdlen))
+			return 0;
+		buffer_write(packet, rr, rdlen);
+		return 1;
+	}
+
+	/* It is compressible, loop over the fields and write compressed
+	 * domain names, when the rdata has a compressible name. */
+	offset = 0;
+	for(i=0; i < descriptor->rdata.length; i++) {
+		const nsd_rdata_descriptor_type* field =
+			&descriptor->rdata.fields[i];
+		uint16_t field_len = 0;
+		int already_written = 0;
+		if(rdlen == offset && field->is_optional)
+			break; /* There are no more rdata fields. */
+		if(field->calculate_length_uncompressed_wire) {
+			/* Call field length function. */
+			/* This is called with an uncompressed wireformat
+			 * data buffer, instead of the in-memory data buffer.
+			 * For IPSECKEY it does not matter, since it has
+			 * a literal dname storage. */
+			struct domain* domain;
+			int32_t l = field->calculate_length_uncompressed_wire(
+				rdlen, rr, offset, &domain);
+			if(l < 0)
+				return 1; /* attempt to skip malformed rr */
+			field_len = l;
+			if(domain) {
+				/* Treat as uncompressed dname, to be safe. */
+				/* Write as an uncompressed name. */
+				if(!buffer_available(packet,
+					domain_dname(domain)->name_size))
+					return 0;
+				buffer_write(packet,
+					dname_name(domain_dname(domain)),
+					domain_dname(domain)->name_size);
+				already_written = 1;
+			}
+		} else if(field->length >= 0) {
+			field_len = field->length;
+		} else {
+			size_t dlen;
+			int dname_len;
+			switch(field->length) {
+				/* The dnames are stored in uncompressed
+				 * wireformat in the uncompressed wireformat
+				 * string. */
+			case RDATA_COMPRESSED_DNAME:
+				/* Attempt to compress the compressible
+				 * name. */
+				dname_len = pktcompression_write_dname(packet,
+					pcomp, rr+offset, rdlen-offset);
+				if(dname_len == -1)
+					return 1; /* attempt to skip malformed rr */
+				if(dname_len == 0)
+					return 0;
+				field_len = dname_len;
+				already_written = 1;
+				break;
+			case RDATA_UNCOMPRESSED_DNAME:
+			case RDATA_LITERAL_DNAME:
+				/* Write as an uncompressed name. */
+				if(rdlen-offset<1)
+					return 1; /* attempt to skip malformed rr */
+				dlen = buf_dname_length(rr+offset,
+					rdlen-offset);
+				if(dlen == 0)
+					return 1; /* attempt to skip malformed rr */
+				field_len = dlen;
+				break;
+			case RDATA_STRING:
+			case RDATA_BINARY:
+				if(rdlen-offset<1)
+					return 1; /* attempt to skip malformed rr */
+				field_len = ((uint16_t)(rr+offset)[0]) + 1;
+				break;
+			case RDATA_IPSECGATEWAY:
+			case RDATA_AMTRELAY_RELAY:
+				/* This should have called the callback. */
+				return 1; /* attempt to skip malformed rr */
+			case RDATA_REMAINDER:
+				field_len = rdlen - offset;
+				break;
+			default:
+				/* Unknown specialized value. */
+				return 1; /* attempt to skip malformed rr */
+			}
+		}
+		if((size_t)offset+field_len > rdlen)
+			return 1; /* attempt to skip malformed rr */
+		if(!already_written) {
+			if(!buffer_available(packet, field_len))
+				return 0;
+			buffer_write(packet, rr+offset, field_len);
+		}
+		offset += field_len;
+	}
+	return 1;
+}
+
 /* write an RR into the packet with compression for domain names,
  * return 0 and resets position if it does not fit in the packet. */
 static int ixfr_write_rr_pkt(struct query* query, struct buffer* packet,
@@ -274,8 +358,6 @@ static int ixfr_write_rr_pkt(struct query* query, struct buffer* packet,
 	uint16_t tp;
 	int dname_len;
 	size_t rdlen;
-	size_t i;
-	rrtype_descriptor_type* descriptor;
 
 	if(total_added == 0) {
 		size_t oldmaxlen = query->maxlen;
@@ -325,100 +407,11 @@ static int ixfr_write_rr_pkt(struct query* query, struct buffer* packet,
 		return 1; /* attempt to skip this malformed rr, could assert */
 
 	/* rdata */
-	descriptor = rrtype_descriptor_by_type(tp);
-	for(i=0; i<descriptor->maximum; i++) {
-		size_t copy_len = 0;
-		if(rdlen == 0)
-			break;
-
-		switch(rdata_atom_wireformat_type(tp, i)) {
-		case RDATA_WF_COMPRESSED_DNAME:
-			dname_len = pktcompression_write_dname(packet, pcomp,
-				rr, rdlen);
-			if(dname_len == -1)
-				return 1; /* attempt to skip malformed rr */
-			if(dname_len == 0) {
-				buffer_set_position(packet, oldpos);
-				return 0;
-			}
-			rr += dname_len;
-			rdlen -= dname_len;
-			break;
-		case RDATA_WF_UNCOMPRESSED_DNAME:
-		case RDATA_WF_LITERAL_DNAME:
-			copy_len = rdlen;
-			break;
-		case RDATA_WF_BYTE:
-			copy_len = 1;
-			break;
-		case RDATA_WF_SHORT:
-			copy_len = 2;
-			break;
-		case RDATA_WF_LONG:
-			copy_len = 4;
-			break;
-		case RDATA_WF_LONGLONG:
-			copy_len = 8;
-			break;
-		case RDATA_WF_TEXTS:
-		case RDATA_WF_LONG_TEXT:
-			copy_len = rdlen;
-			break;
-		case RDATA_WF_TEXT:
-		case RDATA_WF_BINARYWITHLENGTH:
-			copy_len = 1;
-			if(rdlen > copy_len)
-				copy_len += rr[0];
-			break;
-		case RDATA_WF_A:
-			copy_len = 4;
-			break;
-		case RDATA_WF_AAAA:
-			copy_len = 16;
-			break;
-		case RDATA_WF_ILNP64:
-			copy_len = 8;
-			break;
-		case RDATA_WF_EUI48:
-			copy_len = EUI48ADDRLEN;
-			break;
-		case RDATA_WF_EUI64:
-			copy_len = EUI64ADDRLEN;
-			break;
-		case RDATA_WF_BINARY:
-			copy_len = rdlen;
-			break;
-		case RDATA_WF_APL:
-			copy_len = (sizeof(uint16_t)    /* address family */
-                                  + sizeof(uint8_t)   /* prefix */
-                                  + sizeof(uint8_t)); /* length */
-			if(copy_len <= rdlen)
-				copy_len += (rr[copy_len-1]&APL_LENGTH_MASK);
-			break;
-		case RDATA_WF_IPSECGATEWAY:
-			copy_len = rdlen;
-			break;
-		case RDATA_WF_SVCPARAM:
-			copy_len = 4;
-			if(copy_len <= rdlen)
-				copy_len += read_uint16(rr+2);
-			break;
-		default:
-			copy_len = rdlen;
-			break;
-		}
-		if(copy_len) {
-			if(!buffer_available(packet, copy_len)) {
-				buffer_set_position(packet, oldpos);
-				return 0;
-			}
-			if(copy_len > rdlen)
-				return 1; /* assert of skip malformed */
-			buffer_write(packet, rr, copy_len);
-			rr += copy_len;
-			rdlen -= copy_len;
-		}
+	if(!ixfr_write_rdata_pkt(packet, tp, pcomp, rr, rdlen)) {
+		buffer_set_position(packet, oldpos);
+		return 0;
 	}
+
 	/* write compressed rdata length */
 	buffer_write_u16_at(packet, rdpos, buffer_position(packet)-rdpos-2);
 	if(total_added == 0) {
@@ -446,6 +439,7 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 {
 	unsigned int i;
 	uint16_t type, rdlen;
+	size_t rdpos;
 	/* we must have a SOA in the authority section */
 	if(NSCOUNT(packet) == 0)
 		return 0;
@@ -467,6 +461,7 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 		type = buffer_read_u16(packet);
 		buffer_skip(packet, 6);
 		rdlen = buffer_read_u16(packet);
+		rdpos = buffer_position(packet);
 		if(!buffer_available(packet, rdlen))
 			return 0;
 		if(type == TYPE_SOA) {
@@ -478,6 +473,9 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 				return 0; /* malformed rname */
 			if(!buffer_available(packet, 4))
 				return 0;
+			if(buffer_position(packet) + 20 !=
+				rdpos + (size_t)rdlen)
+				return 0; /* malformed SOA rdata */
 			*qserial = buffer_read_u32(packet);
 			return 1;
 		}
@@ -486,14 +484,18 @@ static int parse_qserial(struct buffer* packet, uint32_t* qserial,
 	return 0;
 }
 
+/* get serial from SOA rdata */
+static uint32_t soa_rdata_get_serial(uint8_t* rdata, uint16_t rdlength)
+{
+	if(rdlength < 2*sizeof(void*) /* name ptr */ + 4 /* serial */)
+		return 0;
+	return read_uint32(rdata+2*sizeof(void*));
+}
+
 /* get serial from SOA RR */
 static uint32_t soa_rr_get_serial(struct rr* rr)
 {
-	if(rr->rdata_count < 3)
-		return 0;
-	if(rr->rdatas[2].data[0] < 4)
-		return 0;
-	return read_uint32(&rr->rdatas[2].data[1]);
+	return soa_rdata_get_serial(rr->rdata, rr->rdlength);
 }
 
 /* get the current serial from the zone */
@@ -503,11 +505,7 @@ uint32_t zone_get_current_serial(struct zone* zone)
 		return 0;
 	if(zone->soa_rrset->rr_count == 0)
 		return 0;
-	if(zone->soa_rrset->rrs[0].rdata_count < 3)
-		return 0;
-	if(zone->soa_rrset->rrs[0].rdatas[2].data[0] < 4)
-		return 0;
-	return read_uint32(&zone->soa_rrset->rrs[0].rdatas[2].data[1]);
+	return soa_rr_get_serial(zone->soa_rrset->rrs[0]);
 }
 
 /* iterator over ixfr data. find first element, eg. oldest zone version
@@ -574,6 +572,7 @@ static struct ixfr_data* ixfr_data_prev(struct zone_ixfr* ixfr,
 	struct ixfr_data* cur, size_t* prevcount)
 {
 	struct ixfr_data* prev;
+	int wrapped = 0;
 	if(!cur || cur == (struct ixfr_data*)RBTREE_NULL)
 		return NULL;
 	if(cur->oldserial == ixfr->oldest_serial)
@@ -607,6 +606,11 @@ static struct ixfr_data* ixfr_data_prev(struct zone_ixfr* ixfr,
 			/* We hit the first element in the tree, go again
 			 * at the last one. Wrap around. */
 			prev = (struct ixfr_data*)rbtree_last(ixfr->data);
+			if(wrapped) {
+				/* The lookup wrapped again, this is a loop. */
+				return NULL;
+			}
+			wrapped = 1;
 		}
 	}
 	/* no elements in list */
@@ -618,8 +622,11 @@ static int connect_ixfrs(struct zone_ixfr* ixfr, struct ixfr_data* data,
 	uint32_t* end_serial)
 {
 	struct ixfr_data* p = data;
+	size_t count = 0;
 	while(p != NULL) {
 		struct ixfr_data* next = ixfr_data_next(ixfr, p);
+		if(count++ > ixfr->data->count + 12)
+			return 0; /* loop */
 		if(next) {
 			if(p->newserial != next->oldserial) {
 				/* These ixfrs are not connected,
@@ -695,6 +702,18 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 			query->ixfr_pos_of_newsoa = buffer_position(query->packet);
 		} else {
 			/* cannot add another RR, so return */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: SOA RR in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+
+					domain_to_string(query->zone->apex),
+					TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -708,6 +727,18 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 			total_added++;
 		} else {
 			/* cannot add another RR, so return */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: SOA RR in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+
+					domain_to_string(query->zone->apex),
+					TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -724,6 +755,21 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 		} else {
 			/* the next record does not fit in the remaining
 			 * space of the packet */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				char apexstr[MAXDOMAINLEN * 5];
+				char* ownerstr = "";
+				if(rrlen)
+					ownerstr = wiredname2str(query->ixfr_data->del + query->ixfr_count_del);
+				domain_to_string_buf(query->zone->apex, apexstr);
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: RR at %s in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+					ownerstr, apexstr, TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -740,6 +786,21 @@ static uint16_t ixfr_copy_rrs_into_packet(struct query* query,
 		} else {
 			/* the next record does not fit in the remaining
 			 * space of the packet */
+			if(total_added == 0) {
+				/* RR exceeds TCP_MAX_MESSAGE_LEN (65535 bytes):
+				 * cannot fit in any DNS message. Abort the
+				 * IXFR transfer rather than spinning. */
+				char apexstr[MAXDOMAINLEN * 5];
+				char* ownerstr = "";
+				if(rrlen)
+					ownerstr = wiredname2str(query->ixfr_data->add + query->ixfr_count_add);
+				domain_to_string_buf(query->zone->apex, apexstr);
+				VERBOSITY(2, (LOG_ERR, "ixfr_out: RR at %s in zone %s too large for any DNS message "
+					"(wire encoding exceeds %d bytes), aborting IXFR transfer",
+					ownerstr, apexstr, TCP_MAX_MESSAGE_LEN));
+				RCODE_SET(query->packet, RCODE_SERVFAIL);
+				query->ixfr_is_done = 1;
+			}
 			return total_added;
 		}
 	}
@@ -755,8 +816,10 @@ query_state_type query_ixfr(struct nsd *nsd, struct query *query)
 		return QUERY_PROCESSED;
 
 	pktcompression_init(&pcomp);
-	if (query->maxlen > IXFR_MAX_MESSAGE_LEN)
+	if (query->maxlen > IXFR_MAX_MESSAGE_LEN) {
+		buffer_set_position(query->packet, QHEADERSZ);
 		query->maxlen = IXFR_MAX_MESSAGE_LEN;
+	}
 
 	assert(!query_overflow(query));
 	/* only keep running values for most packets */
@@ -811,8 +874,8 @@ query_state_type query_ixfr(struct nsd *nsd, struct query *query)
 			query_add_compression_domain(query, zone->apex,
 				QHEADERSZ);
 			if(packet_encode_rr(query, zone->apex,
-				&zone->soa_rrset->rrs[0],
-				zone->soa_rrset->rrs[0].ttl)) {
+				zone->soa_rrset->rrs[0],
+				zone->soa_rrset->rrs[0]->ttl)) {
 				ANCOUNT_SET(query->packet, 1);
 			} else {
 				RCODE_SET(query->packet, RCODE_SERVFAIL);
@@ -881,7 +944,8 @@ query_state_type query_ixfr(struct nsd *nsd, struct query *query)
 
 	total_added = ixfr_copy_rrs_into_packet(query, &pcomp);
 
-	while(query->ixfr_count_add >= query->ixfr_data->add_len) {
+	while(!query->ixfr_is_done &&
+		query->ixfr_count_add >= query->ixfr_data->add_len) {
 		struct ixfr_data* next = ixfr_data_next(query->zone->ixfr,
 			query->ixfr_data);
 		/* finished the ixfr_data */
@@ -1081,7 +1145,8 @@ void ixfr_store_finish(struct ixfr_store* ixfr_store, struct nsd* nsd,
 		ixfr_store_free(ixfr_store);
 		return;
 	}
-	zone_ixfr_add(ixfr_store->zone->ixfr, ixfr_store->data, 1);
+	zone_ixfr_add(ixfr_store->zone->ixfr, ixfr_store->data, 1,
+		ixfr_store->zone->opts->name);
 	ixfr_store->data = NULL;
 
 	/* free structure */
@@ -1089,7 +1154,7 @@ void ixfr_store_finish(struct ixfr_store* ixfr_store, struct nsd* nsd,
 }
 
 /* read SOA rdata section for SOA storage */
-static int read_soa_rdata(struct buffer* packet, uint8_t* primns,
+static int read_soa_rdata_fields(struct buffer* packet, uint8_t* primns,
 	int* primns_len, uint8_t* email, int* email_len,
 	uint32_t* serial, uint32_t* refresh, uint32_t* retry,
 	uint32_t* expire, uint32_t* minimum, size_t* sz)
@@ -1178,7 +1243,7 @@ void ixfr_store_add_newsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 		buffer_set_position(packet, oldpos);
 		return;
 	}
-	if(!read_soa_rdata(packet, primns, &primns_len, email, &email_len,
+	if(!read_soa_rdata_fields(packet, primns, &primns_len, email, &email_len,
 		&serial, &refresh, &retry, &expire, &minimum, &sz)) {
 		log_msg(LOG_ERR, "ixfr_store newsoa: cannot parse packet");
 		ixfr_store_cancel(ixfr_store);
@@ -1187,6 +1252,12 @@ void ixfr_store_add_newsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 	}
 	rdlen_uncompressed = primns_len + email_len + 4 + 4 + 4 + 4 + 4;
 
+	if(ixfr_store->data->oldsoa && ixfr_store->data->oldserial == serial) {
+		log_msg(LOG_ERR, "ixfr_store newsoa: duplicate serial number");
+		ixfr_store_cancel(ixfr_store);
+		buffer_set_position(packet, oldpos);
+		return;
+	}
 	ixfr_store->data->newserial = serial;
 
 	/* store the soa record */
@@ -1232,7 +1303,7 @@ void ixfr_store_add_oldsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 		buffer_set_position(packet, oldpos);
 		return;
 	}
-	if(!read_soa_rdata(packet, primns, &primns_len, email, &email_len,
+	if(!read_soa_rdata_fields(packet, primns, &primns_len, email, &email_len,
 		&serial, &refresh, &retry, &expire, &minimum, &sz)) {
 		log_msg(LOG_ERR, "ixfr_store oldsoa: cannot parse packet");
 		ixfr_store_cancel(ixfr_store);
@@ -1241,6 +1312,12 @@ void ixfr_store_add_oldsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 	}
 	rdlen_uncompressed = primns_len + email_len + 4 + 4 + 4 + 4 + 4;
 
+	if(ixfr_store->data->newsoa && ixfr_store->data->newserial == serial) {
+		log_msg(LOG_ERR, "ixfr_store oldsoa: duplicate serial number");
+		ixfr_store_cancel(ixfr_store);
+		buffer_set_position(packet, oldpos);
+		return;
+	}
 	ixfr_store->data->oldserial = serial;
 
 	/* store the soa record */
@@ -1253,25 +1330,21 @@ void ixfr_store_add_oldsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
 	buffer_set_position(packet, oldpos);
 }
 
-/* store RR in data segment */
-static int ixfr_putrr(const struct dname* dname, uint16_t type, uint16_t klass,
-	uint32_t ttl, rdata_atom_type* rdatas, ssize_t rdata_num,
-	uint8_t** rrs, size_t* rrs_len, size_t* rrs_capacity)
+/* store RR in data segment.
+ * return -1 on fail of wireformat, 0 on allocate failure, or 1 success. */
+static int ixfr_putrr(const rr_type* rr, uint8_t** rrs, size_t* rrs_len,
+	size_t* rrs_capacity)
 {
-	size_t rdlen_uncompressed, sz;
+	int32_t rdlen_uncompressed;
+	size_t sz;
 	uint8_t* sp;
-	int i;
+	const dname_type* dname;
 
-	/* find rdatalen */
-	rdlen_uncompressed = 0;
-	for(i=0; i<rdata_num; i++) {
-		if(rdata_atom_is_domain(type, i)) {
-			rdlen_uncompressed += domain_dname(rdatas[i].domain)
-				->name_size;
-		} else {
-			rdlen_uncompressed += rdatas[i].data[0];
-		}
-	}
+	rdlen_uncompressed = rr_calculate_uncompressed_rdata_length(rr);
+	if (rdlen_uncompressed < 0)
+		return -1; /* malformed */
+
+	dname = domain_dname(rr->owner);
 	sz = dname->name_size + 2 /*type*/ + 2 /*class*/ + 4 /*ttl*/ +
 		2 /*rdlen*/ + rdlen_uncompressed;
 
@@ -1285,36 +1358,18 @@ static int ixfr_putrr(const struct dname* dname, uint16_t type, uint16_t klass,
 	*rrs_len += sz;
 	memmove(sp, dname_name(dname), dname->name_size);
 	sp += dname->name_size;
-	write_uint16(sp, type);
-	sp += 2;
-	write_uint16(sp, klass);
-	sp += 2;
-	write_uint32(sp, ttl);
-	sp += 4;
-	write_uint16(sp, rdlen_uncompressed);
-	sp += 2;
-	for(i=0; i<rdata_num; i++) {
-		if(rdata_atom_is_domain(type, i)) {
-			memmove(sp, dname_name(domain_dname(rdatas[i].domain)),
-				domain_dname(rdatas[i].domain)->name_size);
-			sp += domain_dname(rdatas[i].domain)->name_size;
-		} else {
-			memmove(sp, &rdatas[i].data[1], rdatas[i].data[0]);
-			sp += rdatas[i].data[0];
-		}
-	}
+	write_uint16(sp, rr->type);
+	write_uint16(sp + 2, rr->klass);
+	write_uint32(sp + 4, rr->ttl);
+	write_uint16(sp + 8, rdlen_uncompressed);
+	rr_write_uncompressed_rdata(rr, sp+10, rdlen_uncompressed);
 	return 1;
 }
 
-void ixfr_store_putrr(struct ixfr_store* ixfr_store, const struct dname* dname,
-	uint16_t type, uint16_t klass, uint32_t ttl, struct buffer* packet,
-	uint16_t rrlen, struct region* temp_region, uint8_t** rrs,
-	size_t* rrs_len, size_t* rrs_capacity)
+void ixfr_store_putrr(struct ixfr_store* ixfr_store, const rr_type* rr,
+	uint8_t** rrs, size_t* rrs_len, size_t* rrs_capacity)
 {
-	domain_table_type *temptable;
-	rdata_atom_type *rdatas;
-	ssize_t rdata_num;
-	size_t oldpos;
+	int code;
 
 	if(ixfr_store->cancelled)
 		return;
@@ -1322,7 +1377,7 @@ void ixfr_store_putrr(struct ixfr_store* ixfr_store, const struct dname* dname,
 	/* The SOA data is stored with separate calls. And then appended
 	 * during the finish operation. We do not have to store it here
 	 * when called from difffile's IXFR processing with type SOA. */
-	if(type == TYPE_SOA)
+	if(rr->type == TYPE_SOA)
 		return;
 	/* make space for these RRs we have now; basically once we
 	 * grow beyond the current allowed amount an older IXFR is deleted. */
@@ -1331,76 +1386,57 @@ void ixfr_store_putrr(struct ixfr_store* ixfr_store, const struct dname* dname,
 	if(ixfr_store->cancelled)
 		return;
 
-	/* parse rdata */
-	oldpos = buffer_position(packet);
-	temptable = domain_table_create(temp_region);
-	rdata_num = rdata_wireformat_to_rdata_atoms(temp_region, temptable,
-		type, rrlen, packet, &rdatas);
-	buffer_set_position(packet, oldpos);
-	if(rdata_num == -1) {
-		log_msg(LOG_ERR, "ixfr_store addrr: cannot parse packet");
-		ixfr_store_cancel(ixfr_store);
-		return;
-	}
+	/* store rdata */
+	code = ixfr_putrr(rr, rrs, rrs_len, rrs_capacity);
 
-	if(!ixfr_putrr(dname, type, klass, ttl, rdatas, rdata_num,
-		rrs, rrs_len, rrs_capacity)) {
-		log_msg(LOG_ERR, "ixfr_store addrr: cannot allocate space");
+	if (code <= 0) {
+		if (code == -1)
+			log_msg(LOG_ERR, "ixfr_store addrr: cannot parse rdata format");
+		else
+			log_msg(LOG_ERR, "ixfr_store addrr: cannot allocate space");
 		ixfr_store_cancel(ixfr_store);
 		return;
 	}
 }
 
-void ixfr_store_delrr(struct ixfr_store* ixfr_store, const struct dname* dname,
-	uint16_t type, uint16_t klass, uint32_t ttl, struct buffer* packet,
-	uint16_t rrlen, struct region* temp_region)
+void ixfr_store_delrr(struct ixfr_store* ixfr_store, const rr_type* rr)
 {
 	if(ixfr_store->cancelled)
 		return;
-	ixfr_store_putrr(ixfr_store, dname, type, klass, ttl, packet, rrlen,
-		temp_region, &ixfr_store->data->del,
+	ixfr_store_putrr(ixfr_store, rr, &ixfr_store->data->del,
 		&ixfr_store->data->del_len, &ixfr_store->del_capacity);
 }
 
-void ixfr_store_addrr(struct ixfr_store* ixfr_store, const struct dname* dname,
-	uint16_t type, uint16_t klass, uint32_t ttl, struct buffer* packet,
-	uint16_t rrlen, struct region* temp_region)
+void ixfr_store_addrr(struct ixfr_store* ixfr_store, const rr_type* rr)
 {
 	if(ixfr_store->cancelled)
 		return;
-	ixfr_store_putrr(ixfr_store, dname, type, klass, ttl, packet, rrlen,
-		temp_region, &ixfr_store->data->add,
+	ixfr_store_putrr(ixfr_store, rr, &ixfr_store->data->add,
 		&ixfr_store->data->add_len, &ixfr_store->add_capacity);
 }
 
-int ixfr_store_addrr_rdatas(struct ixfr_store* ixfr_store,
-	const struct dname* dname, uint16_t type, uint16_t klass,
-	uint32_t ttl, rdata_atom_type* rdatas, ssize_t rdata_num)
+int ixfr_store_addrr_rdatas(struct ixfr_store* ixfr_store, const rr_type *rr)
 {
 	if(ixfr_store->cancelled)
 		return 1;
-	if(type == TYPE_SOA)
+	if(rr->type == TYPE_SOA)
 		return 1;
-	return ixfr_putrr(dname, type, klass, ttl, rdatas, rdata_num,
-		&ixfr_store->data->add, &ixfr_store->data->add_len,
-		&ixfr_store->add_capacity);
+	if(ixfr_putrr(rr, &ixfr_store->data->add, &ixfr_store->data->add_len,
+		&ixfr_store->add_capacity) <= 0)
+		return 0;
+	return 1;
 }
 
 int ixfr_store_add_newsoa_rdatas(struct ixfr_store* ixfr_store,
-	const struct dname* dname, uint16_t type, uint16_t klass,
-	uint32_t ttl, rdata_atom_type* rdatas, ssize_t rdata_num)
+	const rr_type* rr)
 {
 	size_t capacity = 0;
-	uint32_t serial;
 	if(ixfr_store->cancelled)
 		return 1;
-	if(rdata_num < 2 || rdata_atom_size(rdatas[2]) < 4)
+	if(!retrieve_soa_rdata_serial(rr, &ixfr_store->data->newserial))
 		return 0;
-	memcpy(&serial, rdata_atom_data(rdatas[2]), sizeof(serial));
-	ixfr_store->data->newserial = ntohl(serial);
-	if(!ixfr_putrr(dname, type, klass, ttl, rdatas, rdata_num,
-		&ixfr_store->data->newsoa, &ixfr_store->data->newsoa_len,
-		&ixfr_store->add_capacity))
+	if(ixfr_putrr(rr, &ixfr_store->data->newsoa,
+		&ixfr_store->data->newsoa_len, &ixfr_store->add_capacity) <= 0)
 		return 0;
 	ixfr_trim_capacity(&ixfr_store->data->newsoa,
 		&ixfr_store->data->newsoa_len, &capacity);
@@ -1475,27 +1511,26 @@ int ixfr_store_oldsoa_uncompressed(struct ixfr_store* ixfr_store,
 	uint8_t* dname, size_t dname_len, uint16_t type, uint16_t klass,
 	uint32_t ttl, uint8_t* rdata, size_t rdata_len)
 {
-	size_t capacity = 0;
+	uint32_t serial;
+	size_t capacity = 0, index, count;
 	if(ixfr_store->cancelled)
 		return 1;
 	if(!ixfr_storerr_uncompressed(dname, dname_len, type, klass,
 		ttl, rdata, rdata_len, &ixfr_store->data->oldsoa,
 		&ixfr_store->data->oldsoa_len, &capacity))
 		return 0;
-	{
-		uint32_t serial;
-		size_t index, count = 0;
-		if (!(count = skip_dname(rdata, rdata_len)))
-			return 0;
-		index = count;
-		if (!(count = skip_dname(rdata+index, rdata_len-index)))
-			return 0;
-		index += count;
-		if (rdata_len - index < 4)
-			return 0;
-		memcpy(&serial, rdata+index, sizeof(serial));
-		ixfr_store->data->oldserial = ntohl(serial);
-	}
+
+	if (!(count = skip_dname(rdata, rdata_len)))
+		return 0;
+	index = count;
+	if (!(count = skip_dname(rdata+index, rdata_len-index)))
+		return 0;
+	index += count;
+	if (rdata_len - index < 4)
+		return 0;
+	memcpy(&serial, rdata+index, sizeof(serial));
+	ixfr_store->data->oldserial = ntohl(serial);
+
 	ixfr_trim_capacity(&ixfr_store->data->oldsoa,
 		&ixfr_store->data->oldsoa_len, &capacity);
 	return 1;
@@ -1573,6 +1608,8 @@ static void zone_ixfr_remove_oldest(struct zone_ixfr* ixfr)
 {
 	if(ixfr->data->count > 0) {
 		struct ixfr_data* oldest = ixfr_data_first(ixfr);
+		if(!oldest)
+			return; /* oldest_serial is stale, skip eviction */
 		if(ixfr->oldest_serial == oldest->oldserial) {
 			if(ixfr->data->count > 1) {
 				struct ixfr_data* next = ixfr_data_next(ixfr, oldest);
@@ -1638,10 +1675,20 @@ void zone_ixfr_remove(struct zone_ixfr* ixfr, struct ixfr_data* data)
 	ixfr_data_free(data);
 }
 
-void zone_ixfr_add(struct zone_ixfr* ixfr, struct ixfr_data* data, int isnew)
+void zone_ixfr_add(struct zone_ixfr* ixfr, struct ixfr_data* data, int isnew,
+	const char* zname)
 {
 	memset(&data->node, 0, sizeof(data->node));
-	if(ixfr->data->count == 0) {
+	data->node.key = &data->oldserial;
+	if(rbtree_insert(ixfr->data, &data->node) == NULL) {
+		/* duplicate oldserial in IXFR stream - reject the chunk. */
+		log_msg(LOG_WARNING, "zone %s: chunk with duplicate "
+			"oldserial=%u discarded; broken journal chain prevented",
+			(zname?zname:"<unknown>"), (unsigned)data->oldserial);
+		ixfr_data_free(data);
+		return;
+	}
+	if(ixfr->data->count == 1) {
 		ixfr->oldest_serial = data->oldserial;
 		ixfr->newest_serial = data->oldserial;
 	} else if(isnew) {
@@ -1651,8 +1698,6 @@ void zone_ixfr_add(struct zone_ixfr* ixfr, struct ixfr_data* data, int isnew)
 		/* added older entry, before the others */
 		ixfr->oldest_serial = data->oldserial;
 	}
-	data->node.key = &data->oldserial;
-	rbtree_insert(ixfr->data, &data->node);
 	ixfr->total_size += ixfr_data_size(data);
 }
 
@@ -1893,7 +1938,7 @@ static int ixfr_rename_files(struct zone* zone, const char* zfile,
 	int dest_num_files)
 {
 	struct ixfr_data* data, *startspot = NULL;
-	size_t prevcount = 0;
+	size_t prevcount = 0, count = 0;
 	int destnum;
 	if(!zone->ixfr || !zone->ixfr->data)
 		return 1;
@@ -1932,6 +1977,11 @@ static int ixfr_rename_files(struct zone* zone, const char* zfile,
 		 * has been renamed to a temporary name */
 		startspot = data;
 		data = ixfr_data_next(zone->ixfr, data);
+		if(count++ > zone->ixfr->data->count+12) {
+			/* loop */
+			ixfr_delete_rest_files(zone, data, zfile, 1);
+			return 0;
+		}
 		destnum--;
 	}
 
@@ -1982,45 +2032,20 @@ static int ixfr_write_file_header(struct zone* zone, struct ixfr_data* data,
 	return 1;
 }
 
-/* print rdata on one line */
-static int
-oneline_print_rdata(buffer_type *output, rrtype_descriptor_type *descriptor,
-	rr_type* record)
-{
-	size_t i;
-	size_t saved_position = buffer_position(output);
-
-	for (i = 0; i < record->rdata_count; ++i) {
-		if (i == 0) {
-			buffer_printf(output, "\t");
-		} else {
-			buffer_printf(output, " ");
-		}
-		if (!rdata_atom_to_string(
-			    output,
-			    (rdata_zoneformat_type) descriptor->zoneformat[i],
-			    record->rdatas[i], record))
-		{
-			buffer_set_position(output, saved_position);
-			return 0;
-		}
-	}
-
-	return 1;
-}
-
 /* parse wireformat RR into a struct RR in temp region */
 static int parse_wirerr_into_temp(struct zone* zone, char* fname,
 	struct region* temp, uint8_t* buf, size_t len,
-	const dname_type** dname, struct rr* rr)
+	const dname_type** dname, struct rr** rr)
 {
 	size_t bufpos = 0;
-	uint16_t rdlen;
-	ssize_t rdata_num;
+	uint16_t rdlen, tp, klass;
+	uint32_t ttl;
+	int32_t code;
+	const struct nsd_type_descriptor *descriptor;
 	buffer_type packet;
 	domain_table_type* owners;
+	struct domain *domain;
 	owners = domain_table_create(temp);
-	memset(rr, 0, sizeof(*rr));
 	*dname = dname_make(temp, buf, 1);
 	if(!*dname) {
 		log_msg(LOG_ERR, "failed to write zone %s IXFR data %s: failed to parse dname", zone->opts->name, fname);
@@ -2031,11 +2056,11 @@ static int parse_wirerr_into_temp(struct zone* zone, char* fname,
 		log_msg(LOG_ERR, "failed to write zone %s IXFR data %s: buffer too short", zone->opts->name, fname);
 		return 0;
 	}
-	rr->type = read_uint16(buf+bufpos);
+	tp = read_uint16(buf+bufpos);
 	bufpos += 2;
-	rr->klass = read_uint16(buf+bufpos);
+	klass = read_uint16(buf+bufpos);
 	bufpos += 2;
-	rr->ttl = read_uint32(buf+bufpos);
+	ttl = read_uint32(buf+bufpos);
 	bufpos += 4;
 	rdlen = read_uint16(buf+bufpos);
 	bufpos += 2;
@@ -2043,14 +2068,20 @@ static int parse_wirerr_into_temp(struct zone* zone, char* fname,
 		log_msg(LOG_ERR, "failed to write zone %s IXFR data %s: buffer too short for rdatalen", zone->opts->name, fname);
 		return 0;
 	}
+	domain = domain_table_insert(owners, *dname);
 	buffer_create_from(&packet, buf+bufpos, rdlen);
-	rdata_num = rdata_wireformat_to_rdata_atoms(
-		temp, owners, rr->type, rdlen, &packet, &rr->rdatas);
-	if(rdata_num == -1) {
-		log_msg(LOG_ERR, "failed to write zone %s IXFR data %s: cannot parse rdata", zone->opts->name, fname);
+	descriptor = nsd_type_descriptor(tp);
+	code = descriptor->read_rdata(owners, rdlen, &packet, rr);
+	if(code < 0) {
+		log_msg(LOG_ERR, "failed to write zone %s IXFR data %s: cannot parse rdata %s %s %s", zone->opts->name, fname,
+			dname_to_string(*dname,0), rrtype_to_string(tp),
+			read_rdata_fail_str(code));
 		return 0;
 	}
-	rr->rdata_count = rdata_num;
+	(*rr)->owner = domain;
+	(*rr)->type = tp;
+	(*rr)->klass = klass;
+	(*rr)->ttl = ttl;
 	return 1;
 }
 
@@ -2059,16 +2090,14 @@ static int parse_wirerr_into_temp(struct zone* zone, char* fname,
 static int print_rr_oneline(struct buffer* rr_buffer, const dname_type* dname,
 	struct rr* rr)
 {
-	rrtype_descriptor_type *descriptor;
-	descriptor = rrtype_descriptor_by_type(rr->type);
+	const nsd_type_descriptor_type *descriptor = nsd_type_descriptor(
+		rr->type);
 	buffer_printf(rr_buffer, "%s", dname_to_string(dname, NULL));
 	buffer_printf(rr_buffer, "\t%lu\t%s\t%s", (unsigned long)rr->ttl,
 		rrclass_to_string(rr->klass), rrtype_to_string(rr->type));
-	if(!oneline_print_rdata(rr_buffer, descriptor, rr)) {
-		if(!rdata_atoms_to_unknown_string(rr_buffer,
-			descriptor, rr->rdata_count, rr->rdatas)) {
+	if (!print_rdata(rr_buffer, descriptor, rr)) {
+		if(!print_unknown_rdata(rr_buffer, descriptor, rr))
 			return 0;
-		}
 	}
 	return 1;
 }
@@ -2078,7 +2107,7 @@ static int ixfr_write_rr(struct zone* zone, FILE* out, char* fname,
 	uint8_t* buf, size_t len, struct region* temp, buffer_type* rr_buffer)
 {
 	const dname_type* dname;
-	struct rr rr;
+	struct rr* rr;
 
 	if(!parse_wirerr_into_temp(zone, fname, temp, buf, len, &dname, &rr)) {
 		region_free_all(temp);
@@ -2086,7 +2115,7 @@ static int ixfr_write_rr(struct zone* zone, FILE* out, char* fname,
 	}
 
 	buffer_clear(rr_buffer);
-	if(!print_rr_oneline(rr_buffer, dname, &rr)) {
+	if(!print_rr_oneline(rr_buffer, dname, rr)) {
 		log_msg(LOG_ERR, "failed to write zone %s IXFR data %s: cannot spool RR string into buffer", zone->opts->name, fname);
 		region_free_all(temp);
 		return 0;
@@ -2316,49 +2345,32 @@ static void ixfr_temp_deldomain(struct domain_table* temptable,
 static void clear_temp_table_of_rr(struct domain_table* temptable,
 	struct zone* tempzone, struct rr* rr)
 {
-#if 0 /* clear out by removing everything, alternate for the cleanout code */
-	/* clear domains from the tempzone,
-	 * the only domain left is the zone apex and its parents */
-	domain_type* domain;
-#ifdef USE_RADIX_TREE
-	struct radnode* first = radix_first(temptable->nametree);
-	domain = first?(domain_type*)first->elem:NULL;
-#else
-	domain = (domain_type*)rbtree_first(temptable->names_to_domains);
-#endif
-	while(domain != (domain_type*)RBTREE_NULL && domain) {
-		domain_type* next = domain_next(domain);
-		if(domain != tempzone->apex &&
-			!domain_is_subdomain(tempzone->apex, domain)) {
-			domain_table_delete(temptable, domain);
-		} else {
-			if(!domain->parent /* is the root */ ||
-				domain == tempzone->apex)
-				domain->usage = 1;
-			else	domain->usage = 0;
-		}
-		domain = next;
-	}
-
-	if(rr->owner == tempzone->apex) {
-		tempzone->apex->rrsets = NULL;
-		tempzone->soa_rrset = NULL;
-		tempzone->soa_nx_rrset = NULL;
-		tempzone->ns_rrset = NULL;
-	}
-	return;
-#endif
+	const nsd_type_descriptor_type* descriptor =
+		nsd_type_descriptor(rr->type);
 
 	/* clear domains in the rdata */
-	unsigned i;
-	for(i=0; i<rr->rdata_count; i++) {
-		if(rdata_atom_is_domain(rr->type, i)) {
-			/* clear out that dname */
-			struct domain* domain =
-				rdata_atom_domain(rr->rdatas[i]);
-			domain->usage --;
-			if(domain != tempzone->apex && domain->usage == 0)
-				ixfr_temp_deldomain(temptable, domain, rr->owner);
+	if(descriptor->has_references) {
+		uint16_t offset = 0;
+		size_t i;
+		for(i=0; i < descriptor->rdata.length; i++) {
+			uint16_t field_len;
+			struct domain* domain;
+			if(rr->rdlength == offset &&
+				descriptor->rdata.fields[i].is_optional)
+				break; /* There are no more rdata fields. */
+			if(!lookup_rdata_field_entry(descriptor, i, rr, offset,
+				&field_len, &domain))
+				break; /* malformed */
+			if(domain != NULL) {
+				/* The field is a domain reference. */
+				/* clear out that dname */
+				domain->usage --;
+				if(domain != tempzone->apex &&
+					domain->usage == 0)
+					ixfr_temp_deldomain(temptable, domain,
+						rr->owner);
+			}
+			offset += field_len;
 		}
 	}
 
@@ -2383,6 +2395,7 @@ static int ixfr_data_readnewsoa(struct ixfr_data* data, struct zone* zone,
 	uint32_t dest_serial)
 {
 	size_t capacity = 0;
+	int code;
 	if(rr->type != TYPE_SOA) {
 		zone_error(parser, "zone %s ixfr data: IXFR data does not start with SOA",
 			zone->opts->name);
@@ -2410,9 +2423,13 @@ static int ixfr_data_readnewsoa(struct ixfr_data* data, struct zone* zone,
 			dest_serial);
 		return 0;
 	}
-	if(!ixfr_putrr(domain_dname(rr->owner), rr->type, rr->klass, rr->ttl, rr->rdatas, rr->rdata_count, &data->newsoa, &data->newsoa_len, &capacity)) {
-		zone_error(parser, "zone %s ixfr data: cannot allocate space",
-			zone->opts->name);
+	if((code=ixfr_putrr(rr, &data->newsoa, &data->newsoa_len, &capacity))
+		<= 0) {
+		if(code == -1)
+			zone_error(parser, "zone %s ixfr data: cannot parse rdata format",
+				zone->opts->name);
+		else zone_error(parser, "zone %s ixfr data: cannot allocate space",
+				zone->opts->name);
 		return 0;
 	}
 	clear_temp_table_of_rr(temptable, tempzone, rr);
@@ -2449,7 +2466,7 @@ static int ixfr_data_readoldsoa(struct ixfr_data* data, struct zone* zone,
 		return 0;
 	}
 	data->oldserial = soa_rr_get_serial(rr);
-	if(!ixfr_putrr(domain_dname(rr->owner), rr->type, rr->klass, rr->ttl, rr->rdatas, rr->rdata_count, &data->oldsoa, &data->oldsoa_len, &capacity)) {
+	if(!ixfr_putrr(rr, &data->oldsoa, &data->oldsoa_len, &capacity)) {
 		zone_error(parser, "zone %s ixfr data: cannot allocate space",
 			zone->opts->name);
 		return 0;
@@ -2467,7 +2484,7 @@ static int ixfr_data_readdel(struct ixfr_data* data, struct zone* zone,
 	struct domain_table* temptable, struct zone* tempzone)
 {
 	size_t capacity = 0;
-	if(!ixfr_putrr(domain_dname(rr->owner), rr->type, rr->klass, rr->ttl, rr->rdatas, rr->rdata_count, &data->del, &data->del_len, &capacity)) {
+	if(!ixfr_putrr(rr, &data->del, &data->del_len, &capacity)) {
 		zone_error(parser, "zone %s ixdr data: cannot allocate space",
 			zone->opts->name);
 		return 0;
@@ -2491,7 +2508,7 @@ static int ixfr_data_readadd(struct ixfr_data* data, struct zone* zone,
 	struct domain_table* temptable, struct zone* tempzone)
 {
 	size_t capacity = 0;
-	if(!ixfr_putrr(domain_dname(rr->owner), rr->type, rr->klass, rr->ttl, rr->rdatas, rr->rdata_count, &data->add, &data->add_len, &capacity)) {
+	if(!ixfr_putrr(rr, &data->add, &data->add_len, &capacity)) {
 		zone_error(parser, "zone %s ixfr data: cannot allocate space",
 			zone->opts->name);
 		return 0;
@@ -2509,7 +2526,8 @@ static int ixfr_data_readadd(struct ixfr_data* data, struct zone* zone,
 struct ixfr_data_state {
 	struct zone *zone;
 	struct ixfr_data *data;
-	struct region *tempregion, *stayregion;
+	struct region *stayregion;
+	struct region *tempregion;
 	struct domain_table *temptable;
 	struct zone *tempzone;
 	uint32_t *dest_serial;
@@ -2531,9 +2549,9 @@ static int32_t ixfr_data_accept(
 	const struct dname *dname;
 	struct domain *domain;
 	struct buffer buffer;
-	union rdata_atom *rdatas;
-	ssize_t rdata_count;
 	struct ixfr_data_state *state = (struct ixfr_data_state *)user_data;
+	const struct nsd_type_descriptor *descriptor;
+	int32_t code;
 
 	assert(parser);
 
@@ -2544,17 +2562,32 @@ static int32_t ixfr_data_accept(
 	domain = domain_table_insert(state->temptable, dname);
 	assert(domain);
 
-	rdata_count = rdata_wireformat_to_rdata_atoms(
-		state->tempregion, state->temptable, type, rdlength, &buffer, &rdatas);
-	assert(rdata_count > 0);
-	rr = region_alloc(state->tempregion, sizeof(*rr));
+	descriptor = nsd_type_descriptor(type);
+	code = descriptor->read_rdata(state->temptable, rdlength, &buffer, &rr);
+	/* This has validated the fields on the rdata. The content can be
+	 * dealt with, if this is successful, later on by iterating over the
+	 * rdata fields. For compression, and for printout, the rdata field
+	 * format is known to be good.
+	 * If the field validation is not needed, the wireformat in the
+	 * rdata, rdlength could have been used to add to the ixfr store.
+	 * But it is more prudent to validate the rdata fields. */
+	if(code < 0) {
+		if(verbosity >= 3) {
+			zone_log(parser, ZONE_ERROR, "the RR rdata fields are wrong for the type");
+		}
+		VERBOSITY(3, (LOG_INFO, "zone %s IXFR bad RR, cannot parse "
+			"rdata of %s %s %s", state->zone->opts->name,
+			dname_to_string(dname, NULL), rrtype_to_string(type),
+			read_rdata_fail_str(code)));
+		if(code == TRUNCATED)
+			return ZONE_OUT_OF_MEMORY;
+		return ZONE_BAD_PARAMETER;
+	}
 	assert(rr);
 	rr->owner = domain;
-	rr->rdatas = rdatas;
 	rr->ttl = ttl;
 	rr->type = type;
 	rr->klass = class;
-	rr->rdata_count = rdata_count;
 
 	if (state->rr_count == 0) {
 		if (!ixfr_data_readnewsoa(state->data, state->zone, rr, parser,
@@ -2621,6 +2654,7 @@ static int ixfr_data_read(struct nsd* nsd, struct zone* zone,
 	const char* ixfrfile, uint32_t* dest_serial, int file_num)
 {
 	struct ixfr_data_state state = { 0 };
+	size_t ixfr_data_sz;
 
 	if(!zone->apex) {
 		return 0;
@@ -2700,9 +2734,11 @@ static int ixfr_data_read(struct nsd* nsd, struct zone* zone,
 		ixfr_data_free(state.data);
 		return 0;
 	}
-	zone_ixfr_add(zone->ixfr, state.data, 0);
+	ixfr_data_sz = ixfr_data_size(state.data); /* pick up size before
+		possible deletion of the item */
+	zone_ixfr_add(zone->ixfr, state.data, 0, zone->opts->name);
 	VERBOSITY(3, (LOG_INFO, "zone %s read %s IXFR data of %u bytes",
-		zone->opts->name, ixfrfile, (unsigned)ixfr_data_size(state.data)));
+		zone->opts->name, ixfrfile, (unsigned)ixfr_data_sz));
 	return 1;
 }
 

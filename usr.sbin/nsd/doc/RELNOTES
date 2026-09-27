@@ -1,5 +1,287 @@
 NSD RELEASE NOTES
 
+4.15.2
+================
+FEATURES:
+	- Merge #494: RFC 7830 EDNS0 padding option support with DoT
+	  With padding suggestions from RFC 8467 for responses
+	  Thanks kdrenard for the suggestion
+	- Merge #498: Support for the HHIT and BRID RR types
+	- Merge #499: Support for the "docpath" and "pvd"
+	  SVCB Service Parameter Keys
+	- Merge #500: Support for the "oots" SVCB Service Parameter Key
+	- An `allow-proxy` configuration file option to specify allow access
+	  control list for the PROXYv2 protocol port.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the suggestion.
+	- Merge #502: An `udp-padding-port` configuration file option to enable
+	  responding to the padding option on UDP, but on specific ports only.
+	  This is convenient for setups where NSD is behind a frontend handling
+	  the DNS over TLS.
+	- `--enable-multiple-catalog-zones` option to configure to enable
+	  experimental support for multiple catalog consumer zones.
+
+BUG FIXES:
+	- Merge #495 from ruuda: Include inttypes.h from metrics.c.
+	- Merge #496 from maertsen: Fix allow-query syntax in catalog
+	  documentation.
+	- Fix that IXFR queries with overly large SOA records do not cause an
+	  assertion failure in the server child process. The malformed SOA
+	  record is rejected with FORMERR.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix that notify ahead of the zone serial does not cause perpetual
+	  retransfer. After one round, and after another retry, it gives up,
+	  and forgets the notified serial number. This allows the primary a
+	  moment to retrieve the new zone version.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix that AXFR out for a zone with an oversize record does not loop.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix that IXFR out for a zone with an oversize record does not loop.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix serve childs crashing when queried for a very long CNAME chain
+	  on ASAN builds. The maximum CNAME chain in responses is set to 18.
+	  The value can be configured with the --with-max-cname-chain=number
+	  option to configure.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to have failed zone transfers retry after a time, instead of in a
+	  loop, for transfers with failed contents.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix that an increase verbosity level is needed to warn about unfound
+	  RRs to be deleted (from IXFR). Verbosity 2 for unfound RRsets and
+	  unfound RDATA. Verbosity 3 to log which RR in the existing set does
+	  not match.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to ignore NSEC3s with wrong non-base32hex chars in owner label.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix Y2038 bug, where the server process would fail with undefined
+	  behaviour, if it was built with address sanitizer undefined checks
+	  enabled, for the timestamp in EDNS cookies.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to not let `nsd-control zonestatus` crash the xfrd processes
+	  when configured with multiple catalog consumers.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to prevent a configured primary from hampering loading its own
+	  zone by providing a transfer with the OPT RR in the answer section
+	  and the UDP Payload size (i.e. class) of the OPT RR set to something
+	  else than 1 (IN).
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to ignore NSEC3 records with malformed owner name. In depth fix
+	  to clear key for NSEC3 tree collisions. And a fix to limit the
+	  reenactment of failed reloads, that ordinarily marks transfers as
+	  corrupt, so that for crashes it waits with that zone for retry. This
+	  allows other zones to update in the meantime.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix nsd-control reconfig so that change of a secondary zone while it
+	  is on the udp or tcp waiting list does not crash after that.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to reset the length of the incoming packet buffer after a failed
+	  PROXYv2 header on UDP. It can cause an assertion failure on the next
+	  packet.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix XoT transfer authentication to not fall back to the common name
+	  if a DNS name is present in the certificate. This fixes the RFC6125
+	  conformance.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix dnstap over TLS certificate check for reconnection. Also clean up
+	  file descriptor and SSL state on connection failures.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix client certificate checking by linking the tls-auth-name
+	  requirement on an access control list item, to the other requirements
+	  (IP address and/or TSIG key) on the same list item.
+	  Thanks to voguemerry for the report
+
+4.15.1
+================
+FEATURES:
+BUG FIXES:
+	- Fix for CVE-2026-18664: IP range access control restrictions are
+	  bypassed for some unintended IP.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report
+	  Thanks to Claude and Ada Logics for the report
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-18664.txt
+	- Fix for CVE-2026-18916: Any remote client can denial TCP service by
+	  throttling the TCP receive window (down to 1).
+	  Thanks to Akhil Koul (https://github.com/akoul) for the report
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-18916.txt
+	- Fix for CVE-2026-19401: Any remote client can denial UDP service by
+	  sending a specifically crafted query with multiple DNS Cookie options.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report
+	  Thanks to afldl <zhangph@yandex.com> for the report
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-19401.txt
+	- Fix for CVE-2026-19538: Anyone with access to the proxy protocol port
+	  over TCP or TLS can bypass BLOCKED access control items.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-19538.txt
+
+4.15.0
+================
+FEATURES:
+	- Merge #483 from ruuda: Improve Prometheus metrics: Move zonestats from
+	  metric name to label
+BUG FIXES:
+	- Fix #478: Feature request: reduce syslog noise from frequent
+	  read-only control commands (e.g. stats_noreset). It logs the
+	  verbosity command always, and others at 2 and higher.
+	- Fix XDP cleanup code being executed even if xdp is not configured
+	- Merge #481 from jaredmauch: Fix pedantic/CodeQL warning in sources
+	- Merge #484 from orlitzky: OpenRC: fix network deps and support both
+	  supervisors
+	- Fix PROXYv2 header read and consume, it checks the header size.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report.
+	- Fix notify relay ipc to check for large size.
+	  This stops desync of the internal notify pipe.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report.
+	- Fix print of malformed HIP records.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report, and
+	  Haruki Oyama (Waseda University) for also reporting this issue.
+	- Fix to not fail on NSEC3 records with a bad owner name.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix print of NXT RR without bitmap
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix overflow for NSEC3 zones with 255-octet name
+	  Thanks to Haruki Oyama (Waseda University) for the report, and
+	  Qifan Zhang, Palo Alto Networks, for also reporting this issue.
+	- Fix to update github ci actions/checkout to v7.
+	- Fix notify and zone transfer processing for malformed SOA records,
+	  with a short rdata content. It stops an assertion failure. Thanks to
+	  Tristan Madani (@TristanInSec) from Talence Security for the report.
+	- Fix that wrong buffer position in IXFR for the first SOA causes the
+	  storage to retrieve wrong information. Later data would overwrite it
+	  so it did not cause observable trouble. Thanks to Tristan Madani
+	  (@TristanInSec) from Talence Security for the report.
+	- More robust removing of RRs from an IXFR processing.
+	  Thanks zhangph for reporting this issue
+	- Fix unit test for stopmany for process role logs.
+	- Fix nsd-control assoc_tsig, if that interrupts a zone transfer in
+	  progress, to not crash. It restarts the transfer from the primary.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix nsd-control del_tsig, if that interrupts a zone transfer in
+	  progress, to not crash. It does not delete the key, if in use.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix catalog producer zone with long name, so that it does not crash
+	  on that. Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix catalog consumer zone with long name for member unique label that
+	  is long, so that it does not crash on that.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix that non-IN-class records cause a zone transfer to be rejected.
+	  Also such records are not added from a transfer. This stops an
+	  assertion failure.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to disallow a SOA record in the middle of an AXFR. This stops an
+	  assertion failure.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to set zone is_secure to false when IXFR removes RRSIG DNSKEY.
+	  This stops an assertion failure. Also fix soa and ns rrset change in
+	  IXFR when packed rrsets are disabled.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix to handle NSEC3 zones without space for hashes. Zones with a apex
+	  domain name length >= 223 bytes, that have a NSEC3PARAM must not be
+	  prehashed, since the hashed owner name would not fit.
+	  Thanks Qifan Zhang, Palo Alto Networks, for the report
+	- Fix to add hardening to zone_ixfr_remove_oldest, for IXFR processing.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix for xfrd crash with too short response to a UDP SOA query
+	  Only for release builds and only when configured for XFR over UDP
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+	- Fix that out-of-zone records are skipped from zone transfers.
+	  Otherwise such records could stick around after zone deletion and
+	  cause failures for DS queries.
+	  Thanks to Qifan Zhang, Palo Alto Networks, for the report.
+
+4.14.3
+================
+FEATURES:
+BUG FIXES:
+	- Fix for CVE-2026-12244: A specially crafted SVCB RR can cause a heap
+	  overflow of up to 65509 attacker controlled bytes.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-12244.txt
+	- Fix for CVE-2026-12245: If NSD is configured with DNS over TLS, a
+	  client that performs a TLS action, closing the connection early,
+	  causes a crash and restart of the server process. An attacker can
+	  keep all children in a crash-restart loop denying DoT service.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report.
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-12245.txt
+	- Fix for CVE-2026-12246: The RR type APL rdata address, if too large,
+	  causes out of bounds write on the stack, when the zonefile is written
+	  out. Thanks to Qifan Zhang from Palo Alto Networks, Haruki Oyama from
+	  Waseda University and zhangph for the report.
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-12246.txt
+	- Fix for CVE-2026-12490: Secondaries authenticated by a client
+	  certificate to transfer a zone over TLS, can bypass verification by
+	  transferring over TCP.
+	  Thanks to Qifan Zhang, Palo Alto Networks for the report.
+	  https://www.nlnetlabs.nl/downloads/nsd/CVE-2026-12490.txt
+
+4.14.2
+================
+FEATURES:
+BUG FIXES:
+	- Merge #477: Improve ignored old serial log message.
+	- Fix in IXFR processing, to commit the collected RRs before
+	  deletions.
+
+4.14.1
+================
+FEATURES:
+	- Merge #469 from jschlyter: Add container build files
+BUG FIXES:
+	- Fix to note DSYNC RFC9859 reference.
+	- Fix to note reference for NXNAME in comment.
+	- Merge #470 from jschlyter: Update path to default container
+	  configuration and entrypoint
+	- Fix rr-test.tdir so AMTRELAY relay field is "." with type 0
+	- Fix checkconf.tdir test to anticipate default values for
+	  send-buffer-size and receive-buffer-size when configured with 0
+	- skip dns-cookies.tdir test with restricted unpriviledged userns
+	- Fix #474: metrics output with zone statistics to change
+	  disallowed characters in metric names to underscores.
+	- Fix that non normalized NSEC next owner names are preserved.
+	- Fix to preserve case in literal dnames in RR types RRSIG,
+	  IPSECKEY, TALINK, DSYNC and AMTRELAY.
+	- Fix for #474: Fix metrics name for zone statistics for
+	  the queries_total to have disallowed characters changed
+	  to underscores.
+	- Fix to silence restricted userns check in test script.
+	- Fix #475 info: axfr for domain from not-verified.
+	- Fix metrics to clear server variable after close and log error
+	  on allocation failure.
+	- Fix to escape slashes when they appear in the zone name for a
+	  pattern zonefile that is created. Also for per zone statistics.
+	- Merge #472: Reduce memory usage with zones with RRsets
+	  consisting of many RRs.
+	- Fix man page for ip-address, add text about process numbers,
+	  bindtodevice and setfib.
+	- Fix systemd signalling so that it does not reload for too long.
+	  The reload is not signalled to systemd, so that long operations
+	  can complete, without systemd acting on a timer to stop them.
+
+4.14.0
+================
+FEATURES:
+	- Fix #137: Adds tcp-listen-queue: number config option to set
+	  the TCP backlog. And the default for the listen TCP backlog is
+	  set to -1 on BSDs and Linux.
+	- Merge #444: Refactor RDATA storage to reduce memory footprint
+BUG FIXES:
+	- Fix empty debug statement body in catalog consumer zone process.
+	- Merge #459: Check for libfstrm version >= 0.4.
+	- For #459: Add configure check for fstrm_tcp_writer_options_init
+	  in addition to the check for fstrm_iothr_init.
+	- Merge #460: Add XDP_OBJ fixing link errors for XDP.
+	- Fix XDP build error with --enable-checking
+	- Resolve warnings about mixed declaration and code and unused variable
+	- Fix confusing report for default send and receive buffer-size by
+	  nsd-checkconf
+	- Fix to log more details when send-buffer-size or receive-buffer-size
+	  is not granted, on verbosity level 2.
+	- Update in acx_nlnetlabs.m4 to version 49.
+	- Update in acx_nlnetlabs.m4 to version 50, with cache value for
+	  malloc function check.
+	- Update acx_nlnetlabs.m4 to version 51, with nonstring unknown
+	  attribute warning fix.
+	- Merge #466: Do not delete nodes from non-existent zone's NSEC3 hash   
+	  trees 
+
 4.13.0
 ================
 FEATURES:
@@ -68,6 +350,9 @@ BUG FIXES:
 	- Update simdzone with support for --enable-pie.
 	- Merge #454 from jaredmauch: handle rare case but seen in
 	  production where data->query is NULL.
+	- Fix zonestatfd check
+	- Fix code analyzer warning, and bail out of handle_tcp_writing
+	  and handle_tls_writing early when data->query is NULL.
 
 4.12.0
 ================

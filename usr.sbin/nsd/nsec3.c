@@ -70,9 +70,11 @@ cmp_nsec3_tree(const void* x, const void* y)
 	const domain_type* a = (const domain_type*)x;
 	const domain_type* b = (const domain_type*)y;
 	/* labelcount + 32long label */
-	assert(dname_name(domain_dname_const(a))[0] == 32);
-	assert(dname_name(domain_dname_const(b))[0] == 32);
-	return memcmp(dname_name(domain_dname_const(a)), dname_name(domain_dname_const(b)), 33);
+	assert(dname_name(domain_dname_const(a))[0] == NSEC3_OWNER_LABEL_LEN);
+	assert(dname_name(domain_dname_const(b))[0] == NSEC3_OWNER_LABEL_LEN);
+	return memcmp( dname_name(domain_dname_const(a))
+	             , dname_name(domain_dname_const(b))
+	             , NSEC3_OWNER_LABEL_LEN + 1);
 }
 
 void nsec3_zone_trees_create(struct region* region, zone_type* zone)
@@ -93,9 +95,13 @@ detect_nsec3_params(rr_type* nsec3_apex,
 {
 	assert(salt && salt_len && iter);
 	assert(nsec3_apex);
-	*salt_len = rdata_atom_data(nsec3_apex->rdatas[3])[0];
-	*salt = (unsigned char*)(rdata_atom_data(nsec3_apex->rdatas[3])+1);
-	*iter = read_uint16(rdata_atom_data(nsec3_apex->rdatas[2]));
+	if(nsec3_apex->rdlength < 5)
+		return;
+	if(nsec3_apex->rdlength < 5 + (uint16_t)(nsec3_apex->rdata[4]))
+		return;
+	*salt_len = nsec3_apex->rdata[4];
+	*salt = (unsigned char*)(nsec3_apex->rdata + 5);
+	*iter = read_uint16(nsec3_apex->rdata + 2);
 }
 
 const dname_type *
@@ -119,6 +125,7 @@ nsec3_hash_and_store(zone_type* zone, const dname_type* dname, uint8_t* store)
 	detect_nsec3_params(zone->nsec3_param, &nsec3_salt,
 		&nsec3_saltlength, &nsec3_iterations);
 	assert(nsec3_iterations >= 0 && nsec3_iterations <= 65536);
+	assert(dname);
 	iterated_hash((unsigned char*)store, nsec3_salt, nsec3_saltlength,
 		dname_name(dname), dname->name_size, nsec3_iterations);
 }
@@ -140,9 +147,11 @@ nsec3_lookup_hash_and_wc(region_type* region, zone_type* zone,
 	domain->nsec3->hash_wc->hash.node.key = NULL;
 	domain->nsec3->hash_wc->wc.node.key = NULL;
 	nsec3_hash_and_store(zone, dname, domain->nsec3->hash_wc->hash.hash);
-	wcard = dname_parse(tmpregion, "*");
-	wcard = dname_concatenate(tmpregion, wcard, dname);
-	nsec3_hash_and_store(zone, wcard, domain->nsec3->hash_wc->wc.hash);
+	if(dname->name_size + 2 <= MAXDOMAINLEN) {
+		wcard = dname_parse(tmpregion, "*");
+		wcard = dname_concatenate(tmpregion, wcard, dname);
+		nsec3_hash_and_store(zone, wcard, domain->nsec3->hash_wc->wc.hash);
+	}
 }
 
 static void
@@ -162,13 +171,25 @@ nsec3_lookup_hash_ds(region_type* region, zone_type* zone,
 static int
 nsec3_has_soa(rr_type* rr)
 {
-	if(rdata_atom_size(rr->rdatas[NSEC3_RDATA_BITMAP]) >= 3 && /* has types in bitmap */
-		rdata_atom_data(rr->rdatas[NSEC3_RDATA_BITMAP])[0] == 0 && /* first window = 0, */
-		/* [1]: bitmap length must be >= 1 */
-		/* [2]: bit[6] = SOA, thus mask first bitmap octet with 0x02 */
-		(rdata_atom_data(rr->rdatas[NSEC3_RDATA_BITMAP])[2]&0x02)) { /* SOA bit set */
+	size_t offset;
+	/* byte + byte + short + string + string + bitmap */
+	if(rr->rdlength < 6)
+		return 0;
+	offset = 4;
+	if(rr->rdlength < offset+1 ||
+		rr->rdlength < offset+1+rr->rdata[offset])
+		return 0;
+	offset += 1 + rr->rdata[offset];
+	if(rr->rdlength < offset+1 ||
+		rr->rdlength < offset+1+rr->rdata[offset])
+		return 0;
+	offset += 1 + rr->rdata[offset];
+	if (rr->rdlength >= offset + 3 && /* has types in bitmap */
+			rr->rdata[offset] == 0 && /* first window = 0, */
+	    /* [1]: bitmap length must be >= 1 */
+	    /* [2]: bit[6] = SOA, thus mask first bitmap octet with 0x02 */
+	    (rr->rdata[offset+2] & 0x02))
 		return 1;
-	}
 	return 0;
 }
 
@@ -185,6 +206,23 @@ check_apex_soa(namedb_type* namedb, zone_type *zone, int nolog)
 	nsec3_hash_and_store(zone, dname, h);
 	tmpregion = region_create(xalloc, free);
 	hashed_apex = nsec3_b32_create(tmpregion, zone, h);
+	if(!hashed_apex) {
+		if(!nolog) {
+			if((int)domain_dname(zone->apex)->name_size >= 223) {
+				log_msg( LOG_ERR
+				       , "apex %s too long for NSEC3 hash label"
+				       , dname_to_string(
+					       domain_dname(zone->apex), NULL));
+			} else {
+				log_msg( LOG_ERR
+				       , "cannot create NSEC3 hash label at %s"
+				       , dname_to_string(
+					       domain_dname(zone->apex), NULL));
+			}
+		}
+		region_destroy(tmpregion);
+		return NULL;
+	}
 	domain = domain_table_find(namedb->domains, hashed_apex);
 	if(!domain) {
 		if(!nolog) {
@@ -208,13 +246,14 @@ check_apex_soa(namedb_type* namedb, zone_type *zone, int nolog)
 		return NULL;
 	}
 	for(j=0; j<nsec3_rrset->rr_count; j++) {
-		if(nsec3_has_soa(&nsec3_rrset->rrs[j])) {
+		if(nsec3_has_soa(nsec3_rrset->rrs[j]) &&
+			nsec3_rr_uses_params(nsec3_rrset->rrs[j], zone)) {
 			region_destroy(tmpregion);
-			return &nsec3_rrset->rrs[j];
+			return nsec3_rrset->rrs[j];
 		}
 	}
 	if(!nolog) {
-		log_msg(LOG_ERR, "%s NSEC3PARAM entry: hash(apex) NSEC3 has no SOA flag.",
+		log_msg(LOG_ERR, "%s NSEC3PARAM entry: hash(apex) NSEC3 has no SOA flag or different params.",
 			domain_to_string(zone->apex));
 		log_msg(LOG_ERR, "hash(apex)= %s",
 			dname_to_string(hashed_apex, NULL));
@@ -226,21 +265,26 @@ check_apex_soa(namedb_type* namedb, zone_type *zone, int nolog)
 static void
 nsec3param_to_str(struct rr* rr, char* str, size_t buflen)
 {
-	rdata_atom_type* rd = rr->rdatas;
 	size_t len;
+	if(rr->rdlength < 5 || rr->rdlength < 5 + (uint16_t)rr->rdata[4]) {
+		str[0]=0;
+		return;
+	}
 	len = snprintf(str, buflen, "%u %u %u ",
-		(unsigned)rdata_atom_data(rd[0])[0],
-		(unsigned)rdata_atom_data(rd[1])[0],
-		(unsigned)read_uint16(rdata_atom_data(rd[2])));
-	if(rdata_atom_data(rd[3])[0] == 0) {
+		(unsigned)rr->rdata[0], (unsigned)rr->rdata[1],
+		(unsigned)read_uint16(rr->rdata+2));
+	if(rr->rdata[4] == 0) {
 		if(buflen > len + 2)
 			str[len++] = '-';
 	} else {
-		len += hex_ntop(rdata_atom_data(rd[3])+1,
-			rdata_atom_data(rd[3])[0], str+len, buflen-len-1);
+		len += hex_ntop(rr->rdata+5, rr->rdata[4], str+len, buflen-len-1);
 	}
-	if(buflen > len + 1)
+	if(buflen > len + 1) {
 		str[len] = 0;
+	} else {
+		assert(buflen > 0);
+		str[buflen-1] = 0;
+	}
 }
 
 static struct rr*
@@ -253,14 +297,13 @@ db_find_nsec3param(struct namedb* db, struct zone* z, struct rr* avoid_rr,
 		return NULL;
 	/* find first nsec3param we can support (SHA1, no flags) */
 	for(i=0; i<rrset->rr_count; i++) {
-		rdata_atom_type* rd = rrset->rrs[i].rdatas;
 		/* do not use the RR that is going to be deleted (in IXFR) */
-		if(&rrset->rrs[i] == avoid_rr) continue;
-		if(rrset->rrs[i].rdata_count < 4) continue;
-		if(rdata_atom_data(rd[0])[0] == NSEC3_SHA1_HASH &&
-			rdata_atom_data(rd[1])[0] == 0) {
+		if(rrset->rrs[i] == avoid_rr) continue;
+		if(rrset->rrs[i]->rdlength < 5) continue; /* require salt field */
+		if(rrset->rrs[i]->rdata[0] == NSEC3_SHA1_HASH &&
+			rrset->rrs[i]->rdata[1] == 0) {
 			if(checkchain) {
-				z->nsec3_param = &rrset->rrs[i];
+				z->nsec3_param = rrset->rrs[i];
 				if(!check_apex_soa(db, z, 1)) {
 					char str[MAX_RDLENGTH*2+16];
 					nsec3param_to_str(z->nsec3_param,
@@ -271,12 +314,12 @@ db_find_nsec3param(struct namedb* db, struct zone* z, struct rr* avoid_rr,
 			}
 			if(2 <= verbosity) {
 				char str[MAX_RDLENGTH*2+16];
-				nsec3param_to_str(&rrset->rrs[i], str,
+				nsec3param_to_str(rrset->rrs[i], str,
 					sizeof(str));
 				VERBOSITY(2, (LOG_INFO, "rehash of zone %s with parameters %s",
 					domain_to_string(z->apex), str));
 			}
-			return &rrset->rrs[i];
+			return rrset->rrs[i];
 		}
 	}
 	return NULL;
@@ -292,27 +335,99 @@ nsec3_find_zone_param(struct namedb* db, struct zone* zone,
 
 /* check params ok for one RR */
 static int
-nsec3_rdata_params_ok(rdata_atom_type* prd, rdata_atom_type* rd)
+nsec3_rdata_params_ok(const rr_type *prr, const rr_type* rr)
 {
-	return (rdata_atom_data(rd[0])[0] ==
-		rdata_atom_data(prd[0])[0] && /* hash algo */
-	   rdata_atom_data(rd[2])[0] ==
-		rdata_atom_data(prd[2])[0] && /* iterations 0 */
-	   rdata_atom_data(rd[2])[1] ==
-		rdata_atom_data(prd[2])[1] && /* iterations 1 */
-	   rdata_atom_data(rd[3])[0] ==
-		rdata_atom_data(prd[3])[0] && /* salt length */
-	   memcmp(rdata_atom_data(rd[3])+1,
-		rdata_atom_data(prd[3])+1, rdata_atom_data(rd[3])[0])
-		== 0 );
+	if(prr->rdlength > rr->rdlength)
+		return 0; /* The salt has to fit */
+	if(prr->rdlength < 5)
+		return 0; /* Malformed */
+	return prr->rdata[0] == rr->rdata[0] &&
+		(memcmp(prr->rdata+2, rr->rdata+2, prr->rdlength-2) == 0);
 }
+
+
+/* Copied verbatim from simdzone/src/generic/base32.h */
+static const uint8_t b32rmap[256] = {
+  0xfd, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /*   0 -   7 */
+  0xff, 0xfe, 0xfe, 0xfe,  0xfe, 0xfe, 0xff, 0xff,  /*   8 -  15 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /*  16 -  23 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /*  24 -  31 */
+  0xfe, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /*  32 -  39 */
+  0xff, 0xff, 0xff, 0x3e,  0xff, 0xff, 0xff, 0x3f,  /*  40 -  47 */
+  0x00, 0x01, 0x02, 0x03,  0x04, 0x05, 0x06, 0x07,  /*  48 -  55 */
+  0x08, 0x09, 0xff, 0xff,  0xff, 0xfd, 0xff, 0xff,  /*  56 -  63 */
+  0xff, 0x0a, 0x0b, 0x0c,  0x0d, 0x0e, 0x0f, 0x10,  /*  64 -  71 */
+  0x11, 0x12, 0x13, 0x14,  0x15, 0x16, 0x17, 0x18,  /*  72 -  79 */
+  0x19, 0x1a, 0x1b, 0x1c,  0x1d, 0x1e, 0x1f, 0xff,  /*  80 -  87 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /*  88 -  95 */
+  0xff, 0x0a, 0x0b, 0x0c,  0x0d, 0x0e, 0x0f, 0x10,  /*  96 - 103 */
+  0x11, 0x12, 0x13, 0x14,  0x15, 0x16, 0x17, 0x18,  /* 104 - 111 */
+  0x19, 0x1a, 0x1b, 0x1c,  0x1d, 0x1e, 0x1f, 0xff,  /* 112 - 119 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 120 - 127 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 128 - 135 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 136 - 143 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 144 - 151 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 152 - 159 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 160 - 167 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 168 - 175 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 176 - 183 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 184 - 191 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 192 - 199 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 200 - 207 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 208 - 215 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 216 - 223 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 224 - 231 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 232 - 239 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 240 - 247 */
+  0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,  /* 248 - 255 */
+};
+
 
 int
 nsec3_rr_uses_params(rr_type* rr, zone_type* zone)
 {
-	if(!rr || rr->rdata_count < 4)
+	/* TODO: Test validness with base32hex parser from simdzone */
+	const uint8_t* wire;
+
+	if(!rr || rr->rdlength < 6)
 		return 0;
-	return nsec3_rdata_params_ok(zone->nsec3_param->rdatas, rr->rdatas);
+	wire = dname_name(domain_dname_const(rr->owner));
+	if(wire[0] == NSEC3_OWNER_LABEL_LEN
+	&& b32rmap[wire[ 1]] < 32 && b32rmap[wire[ 2]] < 32
+	&& b32rmap[wire[ 3]] < 32 && b32rmap[wire[ 4]] < 32
+	&& b32rmap[wire[ 5]] < 32 && b32rmap[wire[ 6]] < 32
+	&& b32rmap[wire[ 7]] < 32 && b32rmap[wire[ 8]] < 32
+	&& b32rmap[wire[ 9]] < 32 && b32rmap[wire[10]] < 32
+	&& b32rmap[wire[11]] < 32 && b32rmap[wire[12]] < 32
+	&& b32rmap[wire[13]] < 32 && b32rmap[wire[14]] < 32
+	&& b32rmap[wire[15]] < 32 && b32rmap[wire[16]] < 32
+	&& b32rmap[wire[17]] < 32 && b32rmap[wire[18]] < 32
+	&& b32rmap[wire[19]] < 32 && b32rmap[wire[20]] < 32
+	&& b32rmap[wire[21]] < 32 && b32rmap[wire[22]] < 32
+	&& b32rmap[wire[23]] < 32 && b32rmap[wire[24]] < 32
+	&& b32rmap[wire[25]] < 32 && b32rmap[wire[26]] < 32
+	&& b32rmap[wire[27]] < 32 && b32rmap[wire[28]] < 32
+	&& b32rmap[wire[29]] < 32 && b32rmap[wire[30]] < 32
+	&& b32rmap[wire[31]] < 32 && b32rmap[wire[32]] < 32)
+		return nsec3_rdata_params_ok(zone->nsec3_param, rr);
+	return 0;
+}
+
+int
+nsec3_has_owner_for_zone(domain_type* domain, zone_type* zone)
+{
+	if(dname_name(domain_dname_const(domain))[0] != NSEC3_OWNER_LABEL_LEN)
+		return 0; /* not b32.name */
+	if(!(((size_t)domain_dname(domain)->label_count) ==
+		((size_t)domain_dname(zone->apex)->label_count)+1 &&
+		((size_t)domain_dname(domain)->name_size) ==
+		((size_t)domain_dname(zone->apex)->name_size) +
+		NSEC3_OWNER_LABEL_LEN+1 &&
+		memcmp(dname_name(domain_dname_const(domain))+
+		NSEC3_OWNER_LABEL_LEN+1, dname_name(domain_dname_const(
+		zone->apex)), domain_dname(zone->apex)->name_size) == 0))
+		return 0; /* not b32.zonename */
+	return 1;
 }
 
 int
@@ -323,8 +438,10 @@ nsec3_in_chain_count(domain_type* domain, zone_type* zone)
 	int count = 0;
 	if(!rrset || !zone->nsec3_param)
 		return 0; /* no NSEC3s, none in the chain */
+	if(!nsec3_has_owner_for_zone(domain, zone))
+		return 0; /* wrong owner name */
 	for(i=0; i<rrset->rr_count; i++) {
-		if(nsec3_rr_uses_params(&rrset->rrs[i], zone))
+		if(nsec3_rr_uses_params(rrset->rrs[i], zone))
 			count++;
 	}
 	return count;
@@ -372,6 +489,89 @@ hash_tree_clear(rbtree_type* tree)
 	tree->root = RBTREE_NULL;
 }
 
+/* Clear nsec3 precompile for walked to domain */
+static void
+nsec3_clear_precompile_walk(struct namedb* db, zone_type* zone,
+	domain_type* walk)
+{
+	if(walk->nsec3) {
+		if(nsec3_condition_hash(walk, zone)) {
+			walk->nsec3->nsec3_node.key = NULL;
+			walk->nsec3->nsec3_cover = NULL;
+			walk->nsec3->nsec3_wcard_child_cover = NULL;
+			walk->nsec3->nsec3_is_exact = 0;
+			if (walk->nsec3->hash_wc) {
+				region_recycle(db->domains->region,
+					walk->nsec3->hash_wc,
+					sizeof(nsec3_hash_wc_node_type));
+				walk->nsec3->hash_wc = NULL;
+			}
+		}
+		if(nsec3_condition_dshash(walk, zone)) {
+			walk->nsec3->nsec3_ds_parent_cover = NULL;
+			walk->nsec3->nsec3_ds_parent_is_exact = 0;
+			if (walk->nsec3->ds_parent_hash) {
+				region_recycle(db->domains->region,
+					walk->nsec3->ds_parent_hash,
+					sizeof(nsec3_hash_node_type));
+				walk->nsec3->ds_parent_hash = NULL;
+			}
+		}
+	}
+}
+
+/* Find the zone above apex (that is the apex of a zone), NULL if none. */
+static struct zone*
+find_superzone_of(struct namedb* db, const dname_type* apex)
+{
+	struct domain* apex_domain = domain_table_find(db->domains, apex);
+	if(apex_domain && apex_domain->parent)
+		return domain_find_zone(db, apex_domain->parent);
+	return NULL;
+}
+
+void
+nsec3_superzone_clear_for_apex(struct namedb* db, const dname_type* apex)
+{
+	domain_type* apex_domain, *walk;
+	struct zone* zone; /* the super zone of apex */
+	zone = find_superzone_of(db, apex);
+	if(!zone) return; /* no super zone above the apex */
+	if(!zone->nsec3_param) return; /* super is not an NSEC3 zone */
+
+	apex_domain = domain_table_find(db->domains, apex);
+	if(!domain_is_subdomain(apex_domain, zone->apex))
+		return; /* robustness check */
+	walk = apex_domain;
+	while(walk && domain_is_subdomain(walk, apex_domain)) {
+		if(walk->nsec3) {
+			if(nsec3_condition_hash(walk, zone)) {
+				zone_del_domain_in_hash_tree(zone->nsec3tree,
+					&walk->nsec3->nsec3_node);
+				if(walk->nsec3->hash_wc) {
+					zone_del_domain_in_hash_tree(
+						zone->hashtree,
+						&walk->nsec3->hash_wc->hash.node);
+					zone_del_domain_in_hash_tree(
+						zone->wchashtree,
+						&walk->nsec3->hash_wc->wc.node);
+				}
+			}
+			if(nsec3_condition_dshash(walk, zone)) {
+				if(walk->nsec3->ds_parent_hash) {
+					zone_del_domain_in_hash_tree(zone->dshashtree,
+						&walk->nsec3->ds_parent_hash->node);
+				}
+			}
+		}
+		nsec3_clear_precompile_walk(db, zone, walk);
+		walk = domain_next(walk);
+	}
+	/* clear nsec3_last if that was cleared */
+	zone->nsec3_last = ((zone->nsec3tree && rbtree_last(zone->nsec3tree) != RBTREE_NULL)?
+		(domain_type*)rbtree_last(zone->nsec3tree)->key:NULL);
+}
+
 void
 nsec3_clear_precompile(struct namedb* db, zone_type* zone)
 {
@@ -388,30 +588,7 @@ nsec3_clear_precompile(struct namedb* db, zone_type* zone)
 	/* wipe precompile */
 	walk = zone->apex;
 	while(walk && domain_is_subdomain(walk, zone->apex)) {
-		if(walk->nsec3) {
-			if(nsec3_condition_hash(walk, zone)) {
-				walk->nsec3->nsec3_node.key = NULL;
-				walk->nsec3->nsec3_cover = NULL;
-				walk->nsec3->nsec3_wcard_child_cover = NULL;
-				walk->nsec3->nsec3_is_exact = 0;
-				if (walk->nsec3->hash_wc) {
-					region_recycle(db->domains->region,
-						walk->nsec3->hash_wc,
-						sizeof(nsec3_hash_wc_node_type));
-					walk->nsec3->hash_wc = NULL;
-				}
-			}
-			if(nsec3_condition_dshash(walk, zone)) {
-				walk->nsec3->nsec3_ds_parent_cover = NULL;
-				walk->nsec3->nsec3_ds_parent_is_exact = 0;
-				if (walk->nsec3->ds_parent_hash) {
-					region_recycle(db->domains->region,
-						walk->nsec3->ds_parent_hash,
-						sizeof(nsec3_hash_node_type));
-					walk->nsec3->ds_parent_hash = NULL;
-				}
-			}
-		}
+		nsec3_clear_precompile_walk(db, zone, walk);
 		walk = domain_next(walk);
 	}
 	zone->nsec3_last = NULL;
@@ -544,8 +721,6 @@ nsec3_precompile_domain(struct namedb* db, struct domain* domain,
 	/* add into tree */
 	zone_add_domain_in_hash_tree(db->region, &zone->hashtree,
 		cmp_hash_tree, domain, &domain->nsec3->hash_wc->hash.node);
-	zone_add_domain_in_hash_tree(db->region, &zone->wchashtree,
-		cmp_wchash_tree, domain, &domain->nsec3->hash_wc->wc.node);
 
 	/* lookup in tree cover ptr (or exact) */
 	exact = nsec3_find_cover(zone, domain->nsec3->hash_wc->hash.hash,
@@ -555,10 +730,23 @@ nsec3_precompile_domain(struct namedb* db, struct domain* domain,
 		domain->nsec3->nsec3_is_exact = 1;
 	else	domain->nsec3->nsec3_is_exact = 0;
 
-	/* find cover for *.domain for wildcard denial */
-	(void)nsec3_find_cover(zone, domain->nsec3->hash_wc->wc.hash,
-		sizeof(domain->nsec3->hash_wc->wc.hash), &result);
-	domain->nsec3->nsec3_wcard_child_cover = result;
+	/* If the wildcard (*.domain) fits within MAXDOMAINLEN, then add it to
+	 * the wildcard hashtree and find the cover for it. Note that, in this 
+	 * case, its hash value has been computed (nsec3_lookup_hash_and_wc()).
+	 */
+	if(domain_dname(domain)->name_size + 2 <= MAXDOMAINLEN) {
+		zone_add_domain_in_hash_tree(db->region, &zone->wchashtree,
+			cmp_wchash_tree, domain, &domain->nsec3->hash_wc->wc.node);
+		(void)nsec3_find_cover(zone, domain->nsec3->hash_wc->wc.hash,
+			sizeof(domain->nsec3->hash_wc->wc.hash), &result);
+		domain->nsec3->nsec3_wcard_child_cover = result;
+	} else {
+		/* Setting to NULL is safe, because nsec3_add_rrset() is the
+		 * only usage of nsec3_wcard_child_cover, and simply doesn't
+		 * try to add anythin if it is NULL
+		 */
+		domain->nsec3->nsec3_wcard_child_cover = NULL;
+	}
 }
 
 void
@@ -582,20 +770,43 @@ nsec3_precompile_domain_ds(struct namedb* db, struct domain* domain,
 		cmp_dshash_tree, domain, &domain->nsec3->ds_parent_hash->node);
 }
 
-static void
-parse_nsec3_name(const dname_type* dname, uint8_t* hash, size_t buflen)
+static inline int
+b32hex_p8ton5(const uint8_t* p, uint8_t* n)
 {
-	/* first label must be the match, */
-	size_t lablen = (buflen-1) * 8 / 5;
+	uint8_t ofs;
+	if((ofs = b32rmap[p[0]]) > 31) return 0;
+	n[0]  = (uint8_t)(ofs << 3);
+	if((ofs = b32rmap[p[1]]) > 31) return 0;
+	n[0] |= (uint8_t)(ofs >> 2);
+	n[1]  = (uint8_t)(ofs << 6);
+	if((ofs = b32rmap[p[2]]) > 31) return 0;
+	n[1] |= (uint8_t)(ofs << 1);
+	if((ofs = b32rmap[p[3]]) > 31) return 0;
+	n[1] |= (uint8_t)(ofs >> 4);
+	n[2]  = (uint8_t)(ofs << 4);
+	if((ofs = b32rmap[p[4]]) > 31) return 0;
+	n[2] |= (uint8_t)(ofs >> 1);
+	n[3]  = (uint8_t)(ofs << 7);
+	if((ofs = b32rmap[p[5]]) > 31) return 0;
+	n[3] |= (uint8_t)(ofs << 2);
+	if((ofs = b32rmap[p[6]]) > 31) return 0;
+	n[3] |= (uint8_t)(ofs >> 3);
+	n[4]  = (uint8_t)(ofs << 5);
+	if((ofs = b32rmap[p[7]]) > 31) return 0;
+	n[4] |= ofs;
+	return 1;
+}
+
+static int
+parse_nsec3_name(const dname_type* dname, uint8_t* hash)
+{
+	/* TODO: Do this with base32hex parser from simdzone */
 	const uint8_t* wire = dname_name(dname);
-	assert(lablen == 32 && buflen == NSEC3_HASH_LEN+1);
-	/* labels of length 32 for SHA1, and must have space+1 for convert */
-	if(wire[0] != lablen) {
-		/* not NSEC3 */
-		memset(hash, 0, buflen);
-		return;
-	}
-	(void)b32_pton((char*)wire+1, hash, buflen);
+	return wire[0] == NSEC3_OWNER_LABEL_LEN
+	    && b32hex_p8ton5(wire +  1, hash)
+	    && b32hex_p8ton5(wire +  9, hash +  5)
+	    && b32hex_p8ton5(wire + 17, hash + 10)
+	    && b32hex_p8ton5(wire + 25, hash + 15);
 }
 
 void
@@ -610,6 +821,46 @@ nsec3_precompile_nsec3rr(namedb_type* db, struct domain* domain,
 	if(rbtree_last(zone->nsec3tree)->key == domain) {
 		zone->nsec3_last = domain;
 	}
+}
+
+/* nsec3 precompile for walked to domain */
+static void
+nsec3_precompile_walk(struct namedb* db, zone_type* zone, domain_type* walk,
+	struct region* tmpregion)
+{
+	if(nsec3_condition_hash(walk, zone)) {
+		nsec3_precompile_domain(db, walk, zone, tmpregion);
+		region_free_all(tmpregion);
+	}
+	if(nsec3_condition_dshash(walk, zone))
+		nsec3_precompile_domain_ds(db, walk, zone);
+}
+
+void
+nsec3_superzone_precompile_for_apex(struct namedb* db, const dname_type* apex)
+{
+	region_type* tmpregion;
+	domain_type* apex_domain, *walk;
+	struct zone* zone; /* the super zone of apex */
+	zone = find_superzone_of(db, apex);
+	if(!zone) return; /* no super zone above the apex */
+	if(!zone->nsec3_param) return; /* super is not an NSEC3 zone */
+
+	apex_domain = domain_table_find(db->domains, apex);
+	if(!domain_is_subdomain(apex_domain, zone->apex))
+		return; /* robustness check */
+	tmpregion = region_create(xalloc, free);
+	for(walk=apex_domain; walk && domain_is_subdomain(walk, apex_domain);
+		walk = domain_next(walk)) {
+		if(nsec3_in_chain_count(walk, zone) != 0) {
+			nsec3_precompile_nsec3rr(db, walk, zone);
+		}
+	}
+	for(walk=apex_domain; walk && domain_is_subdomain(walk, apex_domain);
+		walk = domain_next(walk)) {
+		nsec3_precompile_walk(db, zone, walk, tmpregion);
+	}
+	region_destroy(tmpregion);
 }
 
 void
@@ -631,12 +882,7 @@ nsec3_precompile_newparam(namedb_type* db, zone_type* zone)
 	/* hash and precompile zone */
 	for(walk=zone->apex; walk && domain_is_subdomain(walk, zone->apex);
 		walk = domain_next(walk)) {
-		if(nsec3_condition_hash(walk, zone)) {
-			nsec3_precompile_domain(db, walk, zone, tmpregion);
-			region_free_all(tmpregion);
-		}
-		if(nsec3_condition_dshash(walk, zone))
-			nsec3_precompile_domain_ds(db, walk, zone);
+		nsec3_precompile_walk(db, zone, walk, tmpregion);
 		if(++c % ZONEC_PCT_COUNT == 0 && time(NULL) > s + ZONEC_PCT_TIME) {
 			s = time(NULL);
 			VERBOSITY(1, (LOG_INFO, "nsec3 %s %d %%",
@@ -761,8 +1007,13 @@ process_range(zone_type* zone, domain_type* start,
 	 * already allocated, and we need not allocate it here */
 	/* set start */
 	if(start) {
-		uint8_t hash[NSEC3_HASH_LEN+1];
-		parse_nsec3_name(domain_dname(start), hash, sizeof(hash));
+		uint8_t hash[NSEC3_HASH_LEN];
+		if(!parse_nsec3_name(domain_dname(start), hash)) {
+			log_msg( LOG_WARNING
+			       , "NSEC3 %s skipped due to invalid owner name"
+			       , dname_to_string(domain_dname(start), 0));
+			return;
+		}
 		/* if exact match on first, set is_exact */
 		if(process_first(zone->hashtree, hash, &p, init_lookup_key_hash_tree)) {
 			((domain_type*)(p->key))->nsec3->nsec3_cover = nsec3;
@@ -787,8 +1038,13 @@ process_range(zone_type* zone, domain_type* start,
 	}
 	/* set end */
 	if(end) {
-		uint8_t hash[NSEC3_HASH_LEN+1];
-		parse_nsec3_name(domain_dname(end), hash, sizeof(hash));
+		uint8_t hash[NSEC3_HASH_LEN];
+		if(!parse_nsec3_name(domain_dname(end), hash)) {
+			log_msg( LOG_WARNING
+			       , "NSEC3 %s skipped due to invalid owner name"
+			       , dname_to_string(domain_dname(end), 0));
+			return;
+		}
 		process_end(zone->hashtree, hash, &p_end, init_lookup_key_hash_tree);
 		process_end(zone->wchashtree, hash, &pwc_end, init_lookup_key_wc_tree);
 		process_end(zone->dshashtree, hash, &pds_end, init_lookup_key_ds_tree);
@@ -1108,9 +1364,9 @@ domain_has_only_NSEC3(struct domain* domain, struct zone* zone)
 	{
 		if(!zone || rrset->zone == zone)
 		{
-			if(rrset->rrs[0].type == TYPE_NSEC3)
+			if(rrset->rrs[0]->type == TYPE_NSEC3)
 				nsec3_seen = 1;
-			else if(rrset->rrs[0].type != TYPE_RRSIG)
+			else if(rrset->rrs[0]->type != TYPE_RRSIG)
 				return 0;
 		}
 		rrset = rrset->next;

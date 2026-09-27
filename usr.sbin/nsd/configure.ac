@@ -7,7 +7,7 @@ sinclude(dnstap/dnstap.m4)
 
 # autoconf-2.70 is needed for @runstatedir@
 AC_PREREQ([2.70])
-AC_INIT([NSD],[4.13.0],[https://github.com/NLnetLabs/nsd/issues or nsd-bugs@nlnetlabs.nl])
+AC_INIT([NSD],[4.15.2],[https://github.com/NLnetLabs/nsd/issues or nsd-bugs@nlnetlabs.nl])
 AC_CONFIG_HEADERS([config.h])
 
 #
@@ -178,10 +178,7 @@ AC_ARG_WITH([user],
 AC_SUBST(user)
 AC_DEFINE_UNQUOTED(USER, ["$user"], [the user name to drop privileges to])
 
-m4_version_prereq([2.70], [AC_PROG_CC], [m4_warn([obsolete],
-[AC_PROG_CC_STDC is obsolete; use AC_PROG_CC
-])dnl
-AC_REQUIRE(AC_PROG_CC)])
+m4_version_prereq([2.70], [AC_PROG_CC], [AC_PROG_CC_STDC])
 AC_PROG_SED
 AC_PROG_AWK
 AC_PROG_GREP
@@ -950,7 +947,16 @@ dnl Some random defines's
 dnl
 AC_DEFINE_UNQUOTED([IDENTITY], ["unidentified server"], [Define to the default nsd identity.])
 AC_DEFINE_UNQUOTED([VERSION], [PACKAGE_STRING], [Define to the NSD version to answer version.server query.])
-AC_DEFINE_UNQUOTED([TCP_BACKLOG], [256], [Define to the backlog to be used with listen.])
+
+case "$host" in
+    *bsd*|*BSD*|*linux*|*Linux*)
+	AC_DEFINE_UNQUOTED([TCP_BACKLOG], [-1], [Define to the backlog to be used with listen.])
+	;;
+    *)
+	AC_DEFINE_UNQUOTED([TCP_BACKLOG], [256], [Define to the backlog to be used with listen.])
+	;;
+esac
+
 AC_DEFINE_UNQUOTED([TCP_PORT], ["53"], [Define to the default tcp port.])
 AC_DEFINE_UNQUOTED([TCP_MAX_MESSAGE_LEN], [65535], [Define to the default maximum message length.])
 AC_DEFINE_UNQUOTED([UDP_PORT], ["53"], [Define to the default udp port.])
@@ -981,6 +987,16 @@ AC_ARG_WITH([tcp_timeout],
 AC_DEFINE_UNQUOTED([TCP_TIMEOUT], $tcp_timeout, [Define to the default tcp timeout.])
 
 dnl
+dnl Determine the maximum CNAME chain length to return
+dnl Defaults to 18 as a tribute to our dear colleague
+dnl
+max_cname_chain=18
+AC_ARG_WITH([max_cname_chain],
+	AS_HELP_STRING([--with-max-cname-chain=number],[Limit the maximum number of CNAMEs to follow]),
+	[max_cname_chain=$withval])
+AC_DEFINE_UNQUOTED([MAX_CNAME_CHAIN], $max_cname_chain, [Define to the default maximum number of CNAMEs to follow.])
+
+dnl
 dnl Features
 dnl
 AC_ARG_ENABLE(root-server, AS_HELP_STRING([--enable-root-server],[Configure NSD as a root server (obsolete)]))
@@ -992,6 +1008,15 @@ case "$enable_ipv6" in
         yes|*)
 		AC_DEFINE_UNQUOTED([INET6], [], [Define this to enable IPv6 support.])
 		;;
+esac
+
+AC_ARG_ENABLE(multiple-catalog-zones, AS_HELP_STRING([--enable-multiple-catzones],[Enable experimental support for more than one catalog consumer zone]))
+case "$enable_multiple_catalog_zones" in
+        yes)
+		AC_DEFINE_UNQUOTED([MULTIPLE_CATALOG_CONSUMER_ZONES], [], [Define this to enable experimental support for more than one catalog consumer zone.])
+		;;
+        no|*)
+                ;;
 esac
 
 AC_ARG_ENABLE(bind8-stats, AS_HELP_STRING([--disable-bind8-stats],[Disable BIND8 like NSTATS & XSTATS and statistics in nsd-control]))

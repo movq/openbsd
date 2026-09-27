@@ -85,6 +85,8 @@ struct xfrd_state {
 	uint8_t reload_failed;
 	uint8_t can_send_reload;
 	pid_t reload_pid;
+	int num_reload_failed_repeat;
+	int num_xfrs_in_reload;
 	/* timeout for lost sigchild and reaping children */
 	struct event child_timer;
 	int child_timer_added;
@@ -137,7 +139,6 @@ struct xfrd_soa {
 	uint16_t type; /* = TYPE_SOA */
 	uint16_t klass; /* = CLASS_IN */
 	uint32_t ttl;
-	uint16_t rdata_count; /* = 7 */
 	/* format is 1 octet length, + wireformat dname.
 	   one more octet since parse_dname_wire_from_packet needs it.
 	   maximum size is allocated to avoid memory alloc/free. */
@@ -390,6 +391,8 @@ void xfrd_set_timer(xfrd_zone_type* zone, time_t t);
 void xfrd_set_refresh_now(xfrd_zone_type* zone);
 /* unset the timer - no more timeouts, for when zone is queued */
 void xfrd_unset_timer(xfrd_zone_type* zone);
+/* remove the zone from the udp waiting list */
+void udp_zone_waiting_list_remove(xfrd_zone_type* z);
 /* remove the 'refresh now', remove it from the activated list */
 void xfrd_deactivate_zone(xfrd_zone_type* z);
 
@@ -488,5 +491,9 @@ const char* xfrd_pretty_time(time_t v);
 xfrd_xfr_type *xfrd_prepare_zone_xfr(xfrd_zone_type *zone, uint16_t query_type);
 
 void xfrd_delete_zone_xfr(xfrd_zone_type *zone, xfrd_xfr_type *xfr);
+
+/* Find zone by name. */
+struct xfrd_zone* xfrd_find_zone(xfrd_state_type* xfrd,
+	const dname_type* dname);
 
 #endif /* XFRD_H */

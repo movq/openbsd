@@ -81,6 +81,7 @@
 #include "difffile.h"
 #include "ipc.h"
 #include "remote.h"
+#include "rdata.h"
 
 #ifdef USE_METRICS
 #include "metrics.h"
@@ -981,6 +982,10 @@ force_transfer_zone(xfrd_zone_type* zone)
 		xfrd_tcp_release(xfrd->tcp_set, zone);
 	else if(zone->zone_handler.ev_fd != -1)
 		xfrd_udp_release(zone);
+	if(zone->udp_waiting)
+		udp_zone_waiting_list_remove(zone);
+	if(zone->tcp_waiting)
+		tcp_zone_waiting_list_remove(zone);
 	/* pretend we not longer have it and force any
 	 * zone to be downloaded (even same serial, w AXFR) */
 	zone->soa_disk_acquired = 0;
@@ -1042,8 +1047,11 @@ print_zonestatus(RES* ssl, xfrd_state_type* xfrd, struct zone_options* zo)
 			return 0;
 	}
 	if(zone_is_catalog_consumer(zo)) {
-		zone_type* zone = namedb_find_zone(xfrd->nsd->db,
-				(const dname_type*)zo->node.key);
+		uint32_t serial = 0;
+		zone_type* zone = xfrd->nsd->db
+			? namedb_find_zone(xfrd->nsd->db,
+				(const dname_type*)zo->node.key)
+			: NULL;
 		struct xfrd_catalog_consumer_zone* consumer_zone =
 			(struct xfrd_catalog_consumer_zone*)
 			rbtree_search( xfrd->catalog_consumer_zones
@@ -1051,13 +1059,14 @@ print_zonestatus(RES* ssl, xfrd_state_type* xfrd, struct zone_options* zo)
 
 		if(!ssl_printf(ssl, "	catalog: consumer"))
 			return 0;
-		if(zone && zone->soa_rrset && zone->soa_rrset->rrs
-		&& zone->soa_rrset->rrs[0].rdata_count > 2
-		&& rdata_atom_size(zone->soa_rrset->rrs[0].rdatas[2]) ==
-							sizeof(uint32_t)) {
+		if(zone && zone->soa_rrset
+#ifndef PACKED_STRUCTS
+		&& zone->soa_rrset->rrs
+#endif
+		&& retrieve_soa_rdata_serial(zone->soa_rrset->rrs[0],
+			&serial)) {
 			if(!ssl_printf(ssl, " (serial: %u, # members: %zu)\n",
-					read_uint32(rdata_atom_data(
-					zone->soa_rrset->rrs[0].rdatas[2])),
+					serial,
 					  consumer_zone
 					? consumer_zone->member_ids.count : 0))
 				return 0;
@@ -1881,6 +1890,18 @@ repat_interrupt_zones(xfrd_state_type* xfrd, struct nsd_options* newopt)
 				xfrd_udp_release(xz);
 				xfrd_set_refresh_now(xz);
 			}
+			if(xz->udp_waiting) {
+				log_msg(LOG_INFO, "udp_waiting for %s",
+					xz->apex_str);
+				udp_zone_waiting_list_remove(xz);
+				xfrd_set_refresh_now(xz);
+			}
+			if(xz->tcp_waiting) {
+				log_msg(LOG_INFO, "tcp_waiting for %s",
+					xz->apex_str);
+				tcp_zone_waiting_list_remove(xz);
+				xfrd_set_refresh_now(xz);
+			}
 			xz->master = 0;
 			xz->master_num = 0;
 			xz->next_master = -1;
@@ -2404,6 +2425,7 @@ do_assoc_tsig(RES* ssl, xfrd_state_type* xfrd, char* arg)
 	char* arg2 = NULL;
 	struct zone_options* zone;
 	struct key_options* key_opt;
+	struct xfrd_zone* xzone;
 
 	if(*arg == '\0') {
 		(void)ssl_printf(ssl, "error: missing argument (zonename)\n");
@@ -2424,6 +2446,23 @@ do_assoc_tsig(RES* ssl, xfrd_state_type* xfrd, char* arg)
 	if(!key_opt) {
 		(void)ssl_printf(ssl, "error: key: %s does not exist\n", arg2);
 		return;
+	}
+
+	/* Abort any in-flight transfer for this zone before mutating its ACL
+	 * so that xfr->tsig stays consistent with zone->master->key_options. */
+	xzone = xfrd_find_zone(xfrd, (dname_type*)zone->node.key);
+	if(xzone && xzone->tcp_conn != -1) {
+		xfrd_tcp_release(xfrd->tcp_set, xzone);
+		/* probe the current target again, if possible. */
+		if(xzone->next_master == -1)
+			xzone->next_master = xzone->master_num;
+		xfrd_set_refresh_now(xzone);
+	} else if(xzone && xzone->zone_handler.ev_fd != -1) {
+		/* Also UDP can use the TSIG for signature. */
+		xfrd_udp_release(xzone);
+		if(xzone->next_master == -1)
+			xzone->next_master = xzone->master_num;
+		xfrd_set_refresh_now(xzone);
 	}
 
 	zopt_set_acl_to_tsig(zone->pattern->allow_notify, region, arg2,
@@ -2473,11 +2512,21 @@ do_del_tsig(RES* ssl, xfrd_state_type* xfrd, char* arg) {
 	}
 	RBTREE_FOR(zone, struct zone_options*, xfrd->nsd->options->zone_options)
 	{
+		xfrd_zone_type* xzone;
 		if(acl_contains_tsig_key(zone->pattern->allow_notify, arg) ||
 		   acl_contains_tsig_key(zone->pattern->notify, arg) ||
 		   acl_contains_tsig_key(zone->pattern->request_xfr, arg) ||
 		   acl_contains_tsig_key(zone->pattern->provide_xfr, arg) ||
 		   acl_contains_tsig_key(zone->pattern->allow_query, arg)) {
+			if(!ssl_printf(ssl, "zone %s uses key %s\n",
+				zone->name, arg))
+				return;
+			used_key = 1;
+			break;
+		}
+		xzone = xfrd_find_zone(xfrd, (dname_type*)zone->node.key);
+		if(xzone && xzone->latest_xfr &&
+			xzone->latest_xfr->tsig.key == key_opt->tsig_key) {
 			if(!ssl_printf(ssl, "zone %s uses key %s\n",
 				zone->name, arg))
 				return;
@@ -2835,8 +2884,17 @@ handle_req(struct daemon_remote* rc, struct rc_state* s, RES* res)
 		(void)ssl_printf(res, "error version mismatch\n");
 		return;
 	}
-	/* always log control commands */
-	VERBOSITY(0, (LOG_INFO, "control cmd: %s", buf));
+	/* always log control command 'verbosity', others at 2, so
+	 * they can be squelched if needed. */
+	if(verbosity < 2) {
+		/* only the 'verbosity' command. */
+		if(strncmp(skipwhite(buf), "verbosity", 9) == 0) {
+			VERBOSITY(0, (LOG_INFO, "control cmd: %s", buf));
+		}
+	} else {
+		/* always log every control command. */
+		VERBOSITY(2, (LOG_INFO, "control cmd: %s", buf));
+	}
 
 	/* figure out what to do */
 	execute_cmd(rc, res, buf);
@@ -3423,7 +3481,7 @@ create_local_accept_sock(const char *path, int* noproto)
 		goto err;
 	}
 
-	if (listen(s, TCP_BACKLOG) == -1) {
+	if (listen(s, nsd.options->tcp_listen_queue) == -1) {
 		log_msg(LOG_ERR, "can't listen: %s", strerror(errno));
 		goto err;
 	}

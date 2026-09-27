@@ -1,4 +1,4 @@
-.TH "nsd.conf" "5" "Sep  3, 2025" "NLnet Labs" "nsd 4.13.0"
+.TH "nsd.conf" "5" "sep  2, 2026" "NLnet Labs" "nsd 4.15.2"
 .\" Copyright (c) 2001\-2024, NLnet Labs. All rights reserved.
 .\" See LICENSE for the license.
 .SH "NAME"
@@ -104,16 +104,19 @@ clause. There may only be one
 .B server:
 clause.
 .TP
-.B ip\-address:\fR <ip4 or ip6>[@port] [servers] [bindtodevice] [setfib]
+.B ip\-address:\fR <ip4 or ip6 or interface\-name>[@port] [servers] [bindtodevice] [setfib]
 NSD will bind to the listed ip\-address. Can be given multiple times
 to bind multiple ip\-addresses. Optionally, a port number can be given.
 If none are given NSD listens to the wildcard interface. Same as command-line option
 .BR \-a.
 .sp
 To limit which NSD server(s) listen on the given interface, specify one or
-more servers separated by whitespace after <ip>[@port]. Ranges can be used as
+more servers separated by whitespace after <ip>[@port].
+The NSD server has number 1 to server\-count processes to serve queries.
+This specifies the server processes by number that handle the ip\-address.
+Ranges can be used as
 a shorthand to specify multiple consecutive servers. By default every server
-will listen.
+will listen and handle traffic for this.
 .sp
 If an interface name is used instead of ip4 or ip6, the list of IP addresses
 associated with that interface is picked up and used at server start.
@@ -125,8 +128,19 @@ address of 0.0.0.0 then the kernel picks an ip-address with which to
 send to the internet, and it picks the wrong one.  Typically needed for
 anycast instances.  Use ip-transparent to be able to list addresses that
 turn on later (typical for certain load-balancing).
+.sp
+The bindtodevice option looks for the device for the address, and then
+uses SO_BINDTODEVICE to bind the socket to the device. This is used as a
+performance optimisation. And it allows the network socket to connect
+directly to the network device. This speeds up the network stack processing.
+The socket only processes packets received from that interface.
+.sp
+The setfib option uses the SO_SETFIB socket option so that the fib from
+getaddrinfo for the address is set on the socket. This associates the FIB,
+the routing table, from the interface for the socket. That bypasses the
+routing selection for traffic. It is used as a performance optimisation.
 .TP
-.B interface:\fR <ip4 or ip6>[@port] [servers] [bindtodevice] [setfib]
+.B interface:\fR <ip4 or ip6 or interface\-name>[@port] [servers] [bindtodevice] [setfib]
 Same as ip\-address (for ease of compatibility with unbound.conf).
 .TP
 .B ip\-transparent:\fR <yes or no>
@@ -263,6 +277,14 @@ address path MTU problem.
 Note that not all platform supports socket option to set MSS (TCP_MAXSEG).
 Default is system default MSS determined by interface MTU and
 negotiation between NSD and other servers.
+.TP
+.B tcp\-listen\-queue:\fR <number>
+Set the TCP backlog for listening sockets. This allows more pending
+connections with their connection established waiting for TCP service.
+Higher is better for more connections coming in at the same time.
+High values also protect more against flooding and some side-channel issues.
+Default is -1 on BSDs and Linux, and 256 on other systems. The -1 selects
+the largest value allowed.
 .TP
 .B xfrd\-tcp\-max:\fR <number>
 Number of sockets for xfrd to use for outgoing zone transfers. Default 128.
@@ -610,6 +632,18 @@ times, additional port numbers can be used for proxy protocol service. The
 interface definitions that use this port number expect PROXYv2 proxy protocol
 traffic, for UDP, TCP and for TLS service.
 .TP
+.B allow\-proxy:\fR <IP netblock>
+The allowed proxy senders, that can send PROXYv2 traffic. Without an
+allow\-proxy option any IP address is allowed. It can be given multiple times
+to allow multiple netblocks, or with /32 or /128 specific addresses can be
+listed.
+.TP
+.B udp\-padding\-port:\fR <number>
+UDP requests received over this port containing an EDNS0 padding option will,
+unlike ordinary UDP requests, be answered with a padded response. The option
+may be given more than once.
+Listening to the port needs to be configured separately with a \fBip\-address\fR or \fBinterface\fR option.
+.TP
 .B xdp\-interface:\fR <string>
 The interface to use XDP with. This enables the use of AF_XDP sockets for UDP
 queries. Default is "", disabled. (EXPERIMENTAL)
@@ -668,14 +702,21 @@ can help with drivers with broken AF_XDP support. Default is no.
 .TP
 .B metrics\-enable:\fR <yes or no>
 Enable the prometheus metrics HTTP endpoint. It exposes the same statistics as
-the \fInsd\-control\fR(8) stats_noreset command, but with metric names
+the \fInsd\-control stats_noreset\fR command, but with metric names
 following the prometheus specification. (Requires libevent2)
 
-To generate per zone metrics, specify the \fBzonestats\fR option on the desired
-zones.
-
-Beware, that when using \fInsd\-control\fR(8) stats (instead of stats_noreset),
-the statistics will be reset for the HTTP metrics endpoint as well.
+To generate metrics per zone (or more accurately, per zonestats group),
+specify the \fBzonestats\fR option on the desired zones. This will expose the
+zonestats metrics with the zonestats name as a label called "zone", for
+example with \fBzonestats: examplezone\fR:
+.sp
+.nf
+	nsd_zonestats_queries_total{zone="examplezone"}
+.fi
+.sp
+Beware, that when using \fInsd\-control stats\fR (instead of \fInsd\-control
+stats_noreset\fR), the statistics will be reset for the HTTP metrics endpoint
+as well.
 .TP
 .B metrics\-interface:\fR <ip4 or ip6 | interface name>
 NSD will bind to the listed addresses or interfaces to serve the prometheus
@@ -894,6 +935,10 @@ The string is processed so that one string can be used (in a pattern)
 for a lot of different zones.  If the label or character does not exist the
 percent-character is replaced with a period for output (i.e. for the
 third character in a two letter domain name).
+The '/' slash character is escaped as "\\047" when it is inside the '%s'
+string.
+Directories are created as necessary, when the directory is specified
+as part of the zonefile string. Useful for "%1/%2/%s.zone" or so.
 .sp
 .B %s\fR is replaced with the zone name.
 .sp
@@ -1009,7 +1054,7 @@ SAN (Subject Alternative Name) DNS entry or CN (Common Name) entry equal to
 .BR auth-domain-name
 of the defined
 .BR tls-auth .
-The certificate validify is also verified with
+The certificate validity is also verified with
 .BR tls-cert-bundle .
 If authentication of the secondary, based on the specified tls-auth authentication
 information, fails the XFR zone transfer will be refused. If the connection is performed

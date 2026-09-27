@@ -158,6 +158,8 @@ struct udp_handler_data
 	struct event       event;
 	/* if set, PROXYv2 is expected on this connection */
 	int pp2_enabled;
+	/* if set, padding is allowed on this connection */
+	int may_pad;
 };
 
 struct tcp_accept_handler_data {
@@ -895,10 +897,14 @@ set_rcvbuf(struct nsd_socket *sock, int rcv)
 		return 1;
 	}
 	if(errno == EPERM || errno == ENOBUFS) {
+		if(errno == ENOBUFS) {
+			VERBOSITY(2, (LOG_INFO, "setsockopt(..., SO_RCVBUFFORCE, %d) was not granted: %s",
+				rcv, strerror(errno)));
+		}
 		return 0;
 	}
-	log_msg(LOG_ERR, "setsockopt(..., SO_RCVBUFFORCE, ...) failed: %s",
-		strerror(errno));
+	log_msg(LOG_ERR, "setsockopt(..., SO_RCVBUFFORCE, %d) failed: %s",
+		rcv, strerror(errno));
 	return -1;
 #else /* !SO_RCVBUFFORCE */
 	if (0 == setsockopt(
@@ -907,10 +913,14 @@ set_rcvbuf(struct nsd_socket *sock, int rcv)
 		return 1;
 	}
 	if(errno == ENOSYS || errno == ENOBUFS) {
+		if(errno == ENOBUFS) {
+			VERBOSITY(2, (LOG_INFO, "setsockopt(..., SO_RCVBUF, %d) was not granted: %s",
+				rcv, strerror(errno)));
+		}
 		return 0;
 	}
-	log_msg(LOG_ERR, "setsockopt(..., SO_RCVBUF, ...) failed: %s",
-		strerror(errno));
+	log_msg(LOG_ERR, "setsockopt(..., SO_RCVBUF, %d) failed: %s",
+		rcv, strerror(errno));
 	return -1;
 #endif /* SO_RCVBUFFORCE */
 #endif /* SO_RCVBUF */
@@ -929,10 +939,14 @@ set_sndbuf(struct nsd_socket *sock, int snd)
 		return 1;
 	}
 	if(errno == EPERM || errno == ENOBUFS) {
+		if(errno == ENOBUFS) {
+			VERBOSITY(2, (LOG_INFO, "setsockopt(..., SO_SNDBUFFORCE, %d) was not granted: %s",
+				snd, strerror(errno)));
+		}
 		return 0;
 	}
-	log_msg(LOG_ERR, "setsockopt(..., SO_SNDBUFFORCE, ...) failed: %s",
-		strerror(errno));
+	log_msg(LOG_ERR, "setsockopt(..., SO_SNDBUFFORCE, %d) failed: %s",
+		snd, strerror(errno));
 	return -1;
 #else /* !SO_SNDBUFFORCE */
 	if(0 == setsockopt(
@@ -941,10 +955,14 @@ set_sndbuf(struct nsd_socket *sock, int snd)
 		return 1;
 	}
 	if(errno == ENOSYS || errno == ENOBUFS) {
+		if(errno == ENOBUFS) {
+			VERBOSITY(2, (LOG_INFO, "setsockopt(..., SO_SNDBUF, %d) was not granted: %s",
+				snd, strerror(errno)));
+		}
 		return 0;
 	}
-	log_msg(LOG_ERR, "setsockopt(..., SO_SNDBUF, ...) failed: %s",
-		strerror(errno));
+	log_msg(LOG_ERR, "setsockopt(..., SO_SNDBUF, %d) failed: %s",
+		snd, strerror(errno));
 	return -1;
 #endif /* SO_SNDBUFFORCE */
 #endif /* SO_SNDBUF */
@@ -1277,7 +1295,8 @@ set_setfib(struct nsd_socket *sock)
 static int
 open_udp_socket(struct nsd *nsd, struct nsd_socket *sock, int *reuseport_works)
 {
-	int rcv = 1*1024*1024, snd = 4*1024*1024;
+	int rcv = nsd->options->receive_buffer_size;
+	int snd = nsd->options->send_buffer_size;
 
 	if(-1 == (sock->s = socket(
 		sock->addr.ai_family, sock->addr.ai_socktype, 0)))
@@ -1301,13 +1320,9 @@ open_udp_socket(struct nsd *nsd, struct nsd_socket *sock, int *reuseport_works)
 	if(nsd->reuseport && reuseport_works && *reuseport_works)
 		*reuseport_works = (set_reuseport(sock) == 1);
 
-	if(nsd->options->receive_buffer_size > 0)
-		rcv = nsd->options->receive_buffer_size;
 	if(set_rcvbuf(sock, rcv) == -1)
 		return -1;
 
-	if(nsd->options->send_buffer_size > 0)
-		snd = nsd->options->send_buffer_size;
 	if(set_sndbuf(sock, snd) == -1)
 		return -1;
 #ifdef INET6
@@ -1415,7 +1430,7 @@ open_tcp_socket(struct nsd *nsd, struct nsd_socket *sock, int *reuseport_works)
 	(void)set_tcp_fastopen(sock);
 #endif
 
-	if(listen(sock->s, TCP_BACKLOG) == -1) {
+	if(listen(sock->s, nsd->options->tcp_listen_queue) == -1) {
 		log_msg(LOG_ERR, "can't listen: %s", strerror(errno));
 		return -1;
 	}
@@ -3208,7 +3223,9 @@ server_main(struct nsd *nsd)
 	}
 
 #ifdef USE_XDP
-	xdp_server_cleanup(&nsd->xdp.xdp_server);
+	if (nsd->options->xdp_interface) {
+		xdp_server_cleanup(&nsd->xdp.xdp_server);
+	}
 #endif
 
 #ifdef MEMCLEAN /* OS collects memory pages */
@@ -3322,10 +3339,13 @@ add_udp_handler(
 	data->nsd = nsd;
 	data->socket = sock;
 
-	if(nsd->options->proxy_protocol_port &&
-		sockaddr_uses_proxy_protocol_port(nsd->options,
-		(struct sockaddr *)&sock->addr.ai_addr)) {
+	if(sockaddr_uses_port((struct sockaddr *)&sock->addr.ai_addr,
+				nsd->options->proxy_protocol_port)) {
 		data->pp2_enabled = 1;
+	}
+	if(sockaddr_uses_port((struct sockaddr *)&sock->addr.ai_addr,
+				nsd->options->udp_padding_port)) {
+		data->may_pad = 1;
 	}
 
 	memset(handler, 0, sizeof(*handler));
@@ -3347,9 +3367,8 @@ add_tcp_handler(
 	data->nsd = nsd;
 	data->socket = sock;
 
-	if(nsd->options->proxy_protocol_port &&
-		sockaddr_uses_proxy_protocol_port(nsd->options,
-		(struct sockaddr *)&sock->addr.ai_addr)) {
+	if(sockaddr_uses_port((struct sockaddr *)&sock->addr.ai_addr,
+				nsd->options->proxy_protocol_port)) {
 		data->pp2_enabled = 1;
 	}
 
@@ -3398,13 +3417,14 @@ add_xdp_handler(struct nsd *nsd,
 	            struct xdp_server *xdp,
 	            struct xdp_handler_data *data) {
 
+	int sock;
 	struct event *handler = &data->event;
 
 	data->nsd = nsd;
 	data->server = xdp;
 
 	memset(handler, 0, sizeof(*handler));
-	int sock = xsk_socket__fd(xdp->xsks[xdp->queue_index].xsk);
+	sock = xsk_socket__fd(xdp->xsks[xdp->queue_index].xsk);
 	if (sock < 0) {
 		log_msg(LOG_ERR, "xdp: xsk socket file descriptor is invalid: %s",
 		        strerror(errno));
@@ -3704,13 +3724,18 @@ server_child(struct nsd *nsd)
 #ifdef USE_XDP
 	if (nsd->options->xdp_interface) {
 		/* don't try to bind more sockets than there are queues available */
-		if (nsd->xdp.xdp_server.queue_count <= nsd->this_child->child_num) {
+		if ((int)nsd->xdp.xdp_server.queue_count <= nsd->this_child->child_num) {
 			log_msg(LOG_WARNING,
 			        "xdp: server-count exceeds available queues (%d) on "
 			        "interface %s, skipping xdp in this process",
 			        nsd->xdp.xdp_server.queue_count,
 			        nsd->xdp.xdp_server.interface_name);
 		} else {
+			struct xdp_handler_data *data;
+			const int scratch_data_len = 1;
+			void *scratch_data = region_alloc_zero(nsd->server_region,
+			                                       scratch_data_len);
+
 			nsd->xdp.xdp_server.queue_index = nsd->this_child->child_num;
 			nsd->xdp.xdp_server.queries = xdp_queries;
 
@@ -3719,13 +3744,9 @@ server_child(struct nsd *nsd)
 			        nsd->xdp.xdp_server.queue_index,
 			        nsd->xdp.xdp_server.interface_name);
 
-			struct xdp_handler_data *data;
 			data = region_alloc_zero(nsd->server_region, sizeof(*data));
 			add_xdp_handler(nsd, &nsd->xdp.xdp_server, data);
 
-			const int scratch_data_len = 1;
-			void *scratch_data = region_alloc_zero(nsd->server_region,
-			                                       scratch_data_len);
 			for (i = 0; i < XDP_RX_BATCH_SIZE; i++) {
 				/* Be aware that the buffer is initialized with scratch data
 				 * and will be filled by the xdp handle and receive function
@@ -4043,6 +4064,35 @@ port_is_zero(
 #endif
 }
 
+/* Check if proxy is allowed */
+static int
+pp2_is_allowed(struct query* q)
+{
+	if(nsd.options->allow_proxy) {
+		struct acl_options* why = NULL;
+		if(acl_check_incoming_proxy(nsd.options->allow_proxy, q,
+			&why) == -1) {
+			if(verbosity >= 2) {
+				char proxy[128];
+				addr2str(&q->remote_addr, proxy, sizeof(proxy));
+				VERBOSITY(2, (LOG_INFO, "proxy-protocol: %s is not "
+					"in allow-proxy list", proxy));
+			}
+			return 0;
+		}
+#ifndef NDEBUG
+		/* It was allowed from acl 'why'. */
+		if(why) {
+			char proxy[128];
+			addr2str(&q->remote_addr, proxy, sizeof(proxy));
+			DEBUG(DEBUG_QUERY,1, (LOG_INFO, "proxy %s passed acl %s",
+				proxy, why->ip_address_spec));
+		}
+#endif /* NDEBUG */
+	}
+	return 1;
+}
+
 /* Parses the PROXYv2 header from buf and updates the struct.
  * Returns 1 on success, 0 on failure. */
 static int
@@ -4081,6 +4131,10 @@ consume_pp2_header(struct buffer* buf, struct query* q, int stream)
 			{
 			struct sockaddr_in* addr =
 				(struct sockaddr_in*)&q->client_addr;
+			if(ntohs(header->len) < PP2_HEADER_LEN_INET) {
+				VERBOSITY(4, (LOG_ERR, "proxy_protocol: header too short for IPv4 address"));
+				return 0;
+			}
 			addr->sin_family = AF_INET;
 			memmove(&addr->sin_addr.s_addr,
 				&header->addr.addr4.src_addr, 4);
@@ -4096,6 +4150,10 @@ consume_pp2_header(struct buffer* buf, struct query* q, int stream)
 			{
 			struct sockaddr_in6* addr =
 				(struct sockaddr_in6*)&q->client_addr;
+			if(ntohs(header->len) < PP2_HEADER_LEN_INET6) {
+				VERBOSITY(4, (LOG_ERR, "proxy_protocol: header too short for IPv6 address"));
+				return 0;
+			}
 			memset(addr, 0, sizeof(*addr));
 			addr->sin6_family = AF_INET6;
 			memmove(&addr->sin6_addr,
@@ -4154,6 +4212,7 @@ handle_udp(int fd, short event, void* arg)
 		queries[i]->remote_addrlen = msgs[i].msg_hdr.msg_namelen;
 		queries[i]->client_addrlen = (socklen_t)sizeof(queries[i]->client_addr);
 		queries[i]->is_proxied = 0;
+		queries[i]->may_pad = data->may_pad;
 		q = queries[i];
 		if (received == -1) {
 			log_msg(LOG_ERR, "recvmmsg %d failed %s", i, strerror(
@@ -4182,10 +4241,15 @@ handle_udp(int fd, short event, void* arg)
 
 		buffer_skip(q->packet, received);
 		buffer_flip(q->packet);
-		if(data->pp2_enabled && !consume_pp2_header(q->packet, q, 0)) {
-			VERBOSITY(2, (LOG_ERR, "proxy-protocol: could not "
-				"consume PROXYv2 header"));
-			goto swap_drop;
+		if(data->pp2_enabled) {
+			if(!pp2_is_allowed(q))
+				goto swap_drop;
+			if(!consume_pp2_header(q->packet, q, 0)) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not "
+					"consume PROXYv2 header"));
+				query_reset(queries[i], UDP_MAX_MESSAGE_LEN, 0);
+				goto swap_drop;
+			}
 		}
 		if(!q->is_proxied) {
 			q->client_addrlen = q->remote_addrlen;
@@ -4545,6 +4609,10 @@ handle_tcp_reading(int fd, short event, void* arg)
 			return;
 		}
 		buffer_flip(data->query->packet);
+		if(!pp2_is_allowed(data->query)) {
+			cleanup_tcp_handler(data);
+			return;
+		}
 		if(!consume_pp2_header(data->query->packet, data->query, 1)) {
 			VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not consume PROXYv2 header"));
 
@@ -4794,7 +4862,8 @@ handle_tcp_writing(int fd, short event, void* arg)
 		}
 
 #ifdef HAVE_WRITEV
-		sent -= sizeof(n_tcplen);
+		/* The number of bytes transmitted for the message content. */
+		sent = data->bytes_transmitted - sizeof(n_tcplen);
 		/* handle potential 'packet done' code */
 		goto packet_could_be_done;
 #endif
@@ -5159,6 +5228,10 @@ handle_tls_reading(int fd, short event, void* arg)
 			return;
 		}
 		buffer_flip(data->query->packet);
+		if(!pp2_is_allowed(data->query)) {
+			cleanup_tcp_handler(data);
+			return;
+		}
 		if(!consume_pp2_header(data->query->packet, data->query, 1)) {
 			VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not consume PROXYv2 header"));
 			cleanup_tcp_handler(data);
@@ -5400,7 +5473,6 @@ handle_tls_writing(int fd, short event, void* arg)
 			data->shake_state = tls_hs_read_event;
 			tcp_handler_setup_event(data, handle_tls_reading, fd, EV_PERSIST | EV_READ | EV_TIMEOUT);
 		} else if(want != SSL_ERROR_WANT_WRITE) {
-			cleanup_tcp_handler(data);
 			{
 				char client_ip[128], e[188];
 				if(data->query) {
@@ -5412,6 +5484,7 @@ handle_tls_writing(int fd, short event, void* arg)
 					client_ip, "SSL_write error");
 				log_crypto_err(e);
 			}
+			cleanup_tcp_handler(data);
 		}
 		return;
 	}
@@ -5710,6 +5783,7 @@ static void handle_xdp(int fd, short event, void* arg) {
 
 	if ((event & EV_READ))
 		xdp_handle_recv_and_send(data->server);
+	(void)fd;
 }
 #endif
 
