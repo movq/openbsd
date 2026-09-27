@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_sysctl.c,v 1.491.2.2 2026/09/27 10:47:23 bluhm Exp $	*/
+/*	$OpenBSD: kern_sysctl.c,v 1.491.2.3 2026/09/27 11:12:55 bluhm Exp $	*/
 /*	$NetBSD: kern_sysctl.c,v 1.17 1996/05/20 17:49:05 mrg Exp $	*/
 
 /*-
@@ -2698,6 +2698,25 @@ struct semid_ds_kern {
 extern struct semid_ds_kern **sema_kern;
 #define sema sema_kern
 
+struct shmid_ds_kern {
+	struct ipc_perm	shm_perm;	/* operation permission structure */
+	int		shm_segsz;	/* size of segment in bytes */
+	pid_t		shm_lpid;	/* process ID of last shm op */
+	pid_t		shm_cpid;	/* process ID of creator */
+	uint64_t	shm_nattch;	/* number of current attaches */
+	time_t		shm_atime;	/* time of last shmat() */
+	long		__shm_atimensec;
+	time_t		shm_dtime;	/* time of last shmdt() */
+	long		__shm_dtimensec;
+	time_t		shm_ctime;	/* time of last change by shmctl() */
+	long		__shm_ctimensec;
+	void		*shm_internal;	/* implementation specific data */
+};
+
+/* rename shmsegs for stable as it is declared as struct shmid_ds in sem.h */
+extern struct shmid_ds_kern **shmsegs_kern;
+#define shmsegs shmsegs_kern
+
 int
 sysctl_sysvipc(int *name, u_int namelen, void *where, size_t *sizep)
 {
@@ -2803,9 +2822,32 @@ sysctl_sysvipc(int *name, u_int namelen, void *where, size_t *sizep)
 #ifdef SYSVSHM
 			case KERN_SYSVIPC_SHM_INFO:
 				if (shmsegs[i] != NULL) {
-					memcpy(&shmsi->shmids[i], shmsegs[i],
-					    dssize);
-					shmsi->shmids[i].shm_internal = NULL;
+					shmsi->shmids[i].shm_perm =
+					    shmsegs[i]->shm_perm;
+					shmsi->shmids[i].shm_segsz =
+					    shmsegs[i]->shm_segsz;
+					shmsi->shmids[i].shm_lpid =
+					    shmsegs[i]->shm_lpid;
+					shmsi->shmids[i].shm_cpid =
+					    shmsegs[i]->shm_cpid;
+					if (shmsegs[i]->shm_nattch > SHRT_MAX)
+						shmsi->shmids[i].shm_nattch =
+						    SHRT_MAX;
+					else
+						shmsi->shmids[i].shm_nattch =
+						    shmsegs[i]->shm_nattch;
+					shmsi->shmids[i].shm_atime =
+					    shmsegs[i]->shm_atime;
+					shmsi->shmids[i].__shm_atimensec =
+					    shmsegs[i]->__shm_atimensec;
+					shmsi->shmids[i].shm_dtime =
+					    shmsegs[i]->shm_dtime;
+					shmsi->shmids[i].__shm_dtimensec =
+					    shmsegs[i]->__shm_dtimensec;
+					shmsi->shmids[i].shm_ctime =
+					    shmsegs[i]->shm_ctime;
+					shmsi->shmids[i].__shm_ctimensec =
+					    shmsegs[i]->__shm_ctimensec;
 				}
 
 				break;
