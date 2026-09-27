@@ -49,6 +49,26 @@
 #include <openssl/ssl.h>
 #endif
 #include "util/locks.h"
+
+struct comm_reply;
+struct comm_point;
+
+/** fast reload thread commands to remote service thread event callback */
+void fast_reload_service_cb(int fd, short bits, void* arg);
+
+/** fast reload callback for the remote control client connection */
+int fast_reload_client_callback(struct comm_point* c, void* arg, int err,
+	struct comm_reply* rep);
+
+/** handle remote control accept callbacks */
+int remote_accept_callback(struct comm_point*, void*, int, struct comm_reply*);
+
+/** handle remote control data callbacks */
+int remote_control_callback(struct comm_point*, void*, int, struct comm_reply*);
+
+/** routine to printout option values over SSL */
+void  remote_get_opt_ssl(char* line, void* arg);
+
 struct config_file;
 struct listen_list;
 struct listen_port;
@@ -206,6 +226,12 @@ struct fast_reload_thread {
 	int commpair[2];
 	/** thread id, of the io thread */
 	ub_thread_type tid;
+#ifdef HAVE_GETTID
+	/** thread tid, the LWP id */
+	pid_t thread_tid;
+	/** if logging should include the LWP id */
+	int thread_tid_log;
+#endif
 	/** if the io processing has started */
 	int started;
 	/** if the thread has to quit */
@@ -249,6 +275,8 @@ struct fast_reload_thread {
 	struct fast_reload_auth_change* auth_zone_change_list;
 	/** the old tree of auth zones, to lookup. */
 	struct auth_zones* old_auth_zones;
+	/** If the ssl ctxs have changed. */
+	int sslctxs_changed;
 };
 
 /**
