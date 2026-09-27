@@ -1,4 +1,4 @@
-/*	$OpenBSD: iked.h,v 1.233 2024/11/04 02:44:28 dlg Exp $	*/
+/*	$OpenBSD: iked.h,v 1.233.8.1 2026/09/27 11:20:54 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -1424,7 +1424,7 @@ __dead void fatalx(const char *, ...)
 int	 ocsp_connect(struct iked *, struct imsg *);
 int	 ocsp_receive_fd(struct iked *, struct imsg *);
 int	 ocsp_validate_cert(struct iked *, void *, size_t, struct iked_sahdr,
-    uint8_t, X509 *);
+	    uint8_t, X509 *, struct iked_static_id *);
 
 /* parse.y */
 int	 parse_config(const char *, struct iked *);
