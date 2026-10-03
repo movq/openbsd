@@ -1,4 +1,4 @@
-/* $OpenBSD: ipsec.c,v 1.155 2025/04/30 03:53:21 tb Exp $	 */
+/* $OpenBSD: ipsec.c,v 1.155.4.1 2026/10/03 17:35:48 bluhm Exp $	 */
 /* $EOM: ipsec.c,v 1.143 2000/12/11 23:57:42 niklas Exp $	 */
 
 /*
@@ -597,7 +597,7 @@ ipsec_set_network(u_int8_t *src_id, u_int8_t *dst_id, struct sa *sa)
 	}
 
 	if (((proto = TAILQ_FIRST(&sa->protos)) != NULL) &&
-	    ((iproto = proto->data) != NULL) && 
+	    ((iproto = proto->data) != NULL) &&
 	    (iproto->encap_mode == IPSEC_ENCAP_UDP_ENCAP_TRANSPORT ||
 	    iproto->encap_mode == IPSEC_ENCAP_UDP_ENCAP_TRANSPORT_DRAFT)) {
 		/*
