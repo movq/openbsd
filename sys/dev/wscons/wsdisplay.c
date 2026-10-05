@@ -1,4 +1,4 @@
-/* $OpenBSD: wsdisplay.c,v 1.156 2026/04/17 06:18:19 deraadt Exp $ */
+/* $OpenBSD: wsdisplay.c,v 1.156.2.1 2026/10/05 20:54:02 bluhm Exp $ */
 /* $NetBSD: wsdisplay.c,v 1.82 2005/02/27 00:27:52 perry Exp $ */
 
 /*
@@ -483,6 +483,8 @@ wsdisplay_delscreen(struct wsdisplay_softc *sc, int idx, int flags)
 	if ((scr = sc->sc_scr[idx]) == NULL)
 		return (ENXIO);
 
+	if (ISSET(sc->sc_flags, SC_SWITCHPENDING))
+		return (EBUSY);
 	if (scr->scr_dconf == &wsdisplay_console_conf ||
 #ifdef WSDISPLAY_COMPAT_USL
 	    scr->scr_syncops ||
