@@ -1,4 +1,4 @@
-/* $OpenBSD: layout.c,v 1.102 2026/10/02 12:48:52 nicm Exp $ */
+/* $OpenBSD: layout.c,v 1.101 2026/09/20 08:42:46 nicm Exp $ */
 
 /*
  * Copyright (c) 2009 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -469,6 +469,7 @@ layout_fix_panes(struct window *w, struct window_pane *skip)
 					sx = PANE_MINIMUM;
 				else
 					sx = sx - sb_w - sb_pad;
+			wp->flags |= PANE_REDRAWSCROLLBAR;
 		}
 
 		window_pane_resize(wp, sx, sy);
@@ -476,11 +477,8 @@ layout_fix_panes(struct window *w, struct window_pane *skip)
 		if (wp->xoff != old_xoff ||
 		    wp->yoff != old_yoff ||
 		    wp->sx != old_sx ||
-		    wp->sy != old_sy) {
-			if (window_pane_scrollbar_reserve(wp))
-				wp->flags |= PANE_REDRAWSCROLLBAR;
+		    wp->sy != old_sy)
 			changed = 1;
-		}
 	}
 	if (changed)
 		redraw_invalidate_scene(w);

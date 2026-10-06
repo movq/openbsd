@@ -1,4 +1,4 @@
-/*	$OpenBSD: control.c,v 1.31 2026/10/05 14:13:08 deraadt Exp $ */
+/*	$OpenBSD: control.c,v 1.30 2026/08/04 19:05:21 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -69,8 +69,7 @@ control_init(char *path)
 	int			 fd;
 	mode_t			 old_umask;
 
-	if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
-	    0)) == -1) {
+	if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) == -1) {
 		log_warn("control_init: socket");
 		return (-1);
 	}
@@ -104,6 +103,8 @@ control_init(char *path)
 		return (-1);
 	}
 
+	session_socket_nonblockmode(fd);
+
 	return (fd);
 }
 
@@ -133,12 +134,14 @@ control_accept(int listenfd)
 	struct ctl_conn		*ctl_conn;
 
 	len = sizeof(sa);
-	if ((connfd = accept4(listenfd,
-	    (struct sockaddr *)&sa, &len, SOCK_NONBLOCK)) == -1) {
+	if ((connfd = accept(listenfd,
+	    (struct sockaddr *)&sa, &len)) == -1) {
 		if (errno != EWOULDBLOCK && errno != EINTR)
 			log_warn("control_accept: accept");
 		return (0);
 	}
+
+	session_socket_nonblockmode(connfd);
 
 	if ((ctl_conn = calloc(1, sizeof(struct ctl_conn))) == NULL) {
 		log_warn("control_accept");
@@ -291,6 +294,20 @@ control_dispatch_msg(struct pollfd *pfd, u_int *ctl_cnt)
 		imsg_free(&imsg);
 	}
 	return (0);
+}
+
+void
+session_socket_nonblockmode(int fd)
+{
+	int	flags;
+
+	if ((flags = fcntl(fd, F_GETFL)) == -1)
+		fatal("fcntl F_GETFL");
+
+	flags |= O_NONBLOCK;
+
+	if ((flags = fcntl(fd, F_SETFL, flags)) == -1)
+		fatal("fcntl F_SETFL");
 }
 
 void

@@ -1,4 +1,4 @@
-/*	$OpenBSD: output-rtrx.c,v 1.9 2026/10/06 06:55:41 claudio Exp $	*/
+/*	$OpenBSD: output-rtrx.c,v 1.6 2026/09/30 13:42:04 deraadt Exp $	*/
 /*
  * Copyright (c) 2026 Ralph Covelli <rcovelli@he.net>
  *
@@ -117,7 +117,8 @@ struct pdu_ipv6_prefix_import {
 #define SKI_LENGTH 20
 #define SPKI_LENGTH_P256 91
 
-struct pdu_router_key_import {
+struct pdu_router_key_import
+{
 	uint8_t version;
 	uint8_t type;
 	uint8_t flags;
@@ -215,13 +216,16 @@ void
 rtrx_connect(void)
 {
 	struct sockaddr_un  serv_addr;
-	int sockfd;
+	int sockfd, val;
 
-	sockfd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		rtrx_errno = errno;
 		return;
 	}
+
+	val = fcntl(sockfd, F_GETFL, 0);
+	fcntl(sockfd, F_SETFL, val | O_NONBLOCK);
 
 	memset(&serv_addr, 0, sizeof serv_addr);
 
@@ -242,15 +246,6 @@ rtrx_connect(void)
 	rtrx_sock = sockfd;
 
 	return;
-}
-
-void
-rtrx_close(void)
-{
-	if (rtrx_sock != -1) {
-		close(rtrx_sock);
-		rtrx_sock = -1;
-	}
 }
 
 int
@@ -529,40 +524,42 @@ output_rtrx(FILE *out, struct validation_data *vd, struct stats *st)
 		errno = rtrx_errno;
 		return -1;
 	}
+
 	len = sizeof(ss);
 	if (getpeername(rtrx_sock, (struct sockaddr *)&ss, &len) == -1)
-		goto failure;
-	if ((val = fcntl(rtrx_sock, F_GETFL, 0)) == -1)
-		goto failure;
-	if (fcntl(rtrx_sock, F_SETFL, val & ~O_NONBLOCK) == -1)
-		goto failure;
+		return -1;
+
+	val = fcntl(rtrx_sock, F_GETFL, 0);
+	fcntl(rtrx_sock, F_SETFL, val & ~O_NONBLOCK);
 
 	if (rtrx_open_controller() < 0)
 		return -1;
+
 	if (rtrx_start_of_import() < 0)
 		return -1;
+
 	RB_FOREACH(rpki_vrp, vrp_tree, &vd->vrps) {
 		if (rtrx_vrp_import(rpki_vrp) < 0)
 			return -1;
 	}
+
 	RB_FOREACH(rpki_brk, brk_tree, &vd->brks) {
 		if (rtrx_brk_import(rpki_brk) < 0)
 			return -1;
 	}
+
 	if (!excludeaspa) {
 		RB_FOREACH(rpki_vap, vap_tree, &vd->vaps) {
 			if (rtrx_vap_import(rpki_vap) < 0)
 				return -1;
 		}
 	}
+
 	if (rtrx_end_of_import() < 0)
 		return -1;
 
 	close(rtrx_sock);
 	rtrx_sock = -1;
+
 	return 0;
-failure:
-	close(rtrx_sock);
-	rtrx_sock = -1;
-	return -1;
 }

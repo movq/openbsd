@@ -1,4 +1,4 @@
-/*	$OpenBSD: repo.c,v 1.92 2026/10/01 13:06:56 claudio Exp $ */
+/*	$OpenBSD: repo.c,v 1.91 2026/07/28 18:58:22 claudio Exp $ */
 /*
  * Copyright (c) 2021 Claudio Jeker <claudio@openbsd.org>
  * Copyright (c) 2019 Kristaps Dzonsons <kristaps@bsd.lv>
@@ -41,7 +41,7 @@ extern struct stats	stats;
 extern int		rrdpon;
 extern int		repo_timeout;
 extern time_t		deadline;
-static int		nofetch[TALSZ_MAX];
+int			nofetch;
 
 enum repo_state {
 	REPO_LOADING = 0,
@@ -65,7 +65,6 @@ struct rrdprepo {
 	int			 file_failed;
 	time_t			 last_reset;
 	time_t			 mtime;
-	int			 talid;
 };
 static SLIST_HEAD(, rrdprepo)	rrdprepos = SLIST_HEAD_INITIALIZER(rrdprepos);
 
@@ -334,7 +333,7 @@ repo_done(const void *vp, int ok)
 			continue;
 
 		/* for rrdp try to fall back to rsync */
-		if (vp == rp->rrdp && !ok && !nofetch[rp->talid]) {
+		if (vp == rp->rrdp && !ok && !nofetch) {
 			rp->rrdp = NULL;
 			rp->rsync = rsync_get(rp->repouri, rp->basedir);
 			/* need to check if it was already loaded */
@@ -899,7 +898,7 @@ rrdp_session_read(struct ibuf *b)
 }
 
 static struct rrdprepo *
-rrdp_get(int talid, const char *uri)
+rrdp_get(const char *uri)
 {
 	struct rrdp_session *state;
 	struct rrdprepo *rr;
@@ -915,7 +914,6 @@ rrdp_get(int talid, const char *uri)
 		err(1, NULL);
 
 	rr->id = ++repoid;
-	rr->talid = talid;
 	SLIST_INSERT_HEAD(&rrdprepos, rr, entry);
 
 	if ((rr->notifyuri = strdup(uri)) == NULL)
@@ -1131,7 +1129,7 @@ rrdp_finish(unsigned int id, int ok)
 		rr->state = REPO_DONE;
 	} else {
 		warnx("%s: load from network failed, fallback to %s",
-		    rr->notifyuri, nofetch[rr->talid] ? "cache" : "rsync");
+		    rr->notifyuri, nofetch ? "cache" : "rsync");
 		stats.rrdp_fails++;
 		rr->state = REPO_FAILED;
 		/* clear the RRDP repo since it failed */
@@ -1259,11 +1257,11 @@ repo_lookup(int talid, const char *uri, const char *notify)
 	if (++talrepocnt[talid] >= MAX_REPO_PER_TAL) {
 		if (talrepocnt[talid] == MAX_REPO_PER_TAL)
 			warnx("too many repositories under %s", tals[talid]);
-		nofetch[talid] = 1;
+		nofetch = 1;
 	}
 
 	/* check if sync disabled ... */
-	if (noop || nofetch[talid]) {
+	if (noop || nofetch) {
 		logx("%s: using cache", rp->basedir);
 		entityq_flush(&rp->queue, rp);
 		return rp;
@@ -1275,7 +1273,7 @@ repo_lookup(int talid, const char *uri, const char *notify)
 
 	/* ... else try RRDP first if available then rsync */
 	if (notify != NULL)
-		rp->rrdp = rrdp_get(talid, notify);
+		rp->rrdp = rrdp_get(notify);
 	if (rp->rrdp == NULL)
 		rp->rsync = rsync_get(uri, rp->basedir);
 
@@ -1495,7 +1493,6 @@ repo_check_timeout(int timeout)
 	struct repo	*rp;
 	time_t		 now;
 	int		 diff;
-	unsigned int	 i;
 
 	now = getmonotime();
 
@@ -1503,8 +1500,7 @@ repo_check_timeout(int timeout)
 	if (deadline != 0) {
 		if (deadline <= now) {
 			warnx("deadline reached, giving up on repository sync");
-			for (i = 0; i < sizeof(nofetch) / sizeof(*nofetch); i++)
-				nofetch[i] = 1;
+			nofetch = 1;
 			/* clear deadline since nofetch is set */
 			deadline = 0;
 			/* increase now enough so that all pending repos fail */

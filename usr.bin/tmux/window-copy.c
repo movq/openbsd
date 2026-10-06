@@ -1,4 +1,4 @@
-/* $OpenBSD: window-copy.c,v 1.435 2026/10/06 08:26:23 nicm Exp $ */
+/* $OpenBSD: window-copy.c,v 1.431 2026/09/21 10:43:37 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -768,7 +768,6 @@ window_copy_scroll(struct window_pane *wp, int sl_mpos, u_int my,
 	struct window_mode_entry	*wme = TAILQ_FIRST(&wp->modes);
 
 	if (wme != NULL) {
-		window_redraw_active_switch(wp->window, wp);
 		window_set_active_pane(wp->window, wp, 0);
 		window_copy_scroll1(wme, wp, sl_mpos, my, tty_oy, scroll_exit);
 	}
@@ -2217,80 +2216,68 @@ window_copy_cmd_selection_mode(struct window_copy_cmd_state *cs)
 	else if (strcasecmp(s, "word") == 0 || strcasecmp(s, "w") == 0) {
 		data->separators = options_get_string(so, "word-separators");
 		data->selflag = SEL_WORD;
-	} else if (strcasecmp(s, "line") == 0 || strcasecmp(s, "l") == 0)
+	} else if (strcasecmp(s, "line") == 0 || strcasecmp(s, "l") == 0) {
 		data->selflag = SEL_LINE;
-	else
-		return (WINDOW_COPY_CMD_MOVE);
-	if (data->selflag == SEL_CHAR || data->screen.sel == NULL)
-		return (WINDOW_COPY_CMD_MOVE);
+		if (data->screen.sel == NULL)
+			return (WINDOW_COPY_CMD_MOVE);
 
-	/*
-	 * Set up the reset positions normally initialized by select-word or
-	 * select-line, including when changing the mode of an existing selection.
-	 */
-	if (data->cursordrag == CURSORDRAG_SEL) {
-		fx = data->endselx;
-		fy = data->endsely;
-	} else {
-		fx = data->selx;
-		fy = data->sely;
-	}
-
-	sx = data->selx;
-	sy = data->sely;
-	ex = data->endselx;
-	ey = data->endsely;
-	if (ey < sy || (ey == sy && ex < sx)) {
-		x = sx; sx = ex; ex = x;
-		y = sy; sy = ey; ey = y;
-	}
-	grid_reader_start(&gr, data->backing->grid, sx, sy);
-	if (data->selflag == SEL_WORD)
-		grid_reader_cursor_previous_word(&gr, data->separators, 0, 1);
-	else
-		grid_reader_cursor_start_of_line(&gr, 1);
-	grid_reader_get_cursor(&gr, &sx, &sy);
-	grid_reader_start(&gr, data->backing->grid, ex, ey);
-	if (data->selflag == SEL_WORD) {
-		grid_reader_cursor_next_word_end(&gr, data->separators);
-		if (options_get_number(wme->wp->window->options, "mode-keys") ==
-		    MODEKEY_VI)
-			grid_reader_cursor_left(&gr, 1);
-	} else
-		grid_reader_cursor_end_of_line(&gr, 1, 0);
-	grid_reader_get_cursor(&gr, &ex, &ey);
-
-	data->rectflag = 0;
-	data->selrx = data->selx = sx;
-	data->selry = data->sely = sy;
-	data->endselrx = data->endselx = ex;
-	data->endselry = data->endsely = ey;
-
-	x = data->cx;
-	y = screen_hsize(data->backing) + data->cy - data->oy;
-	data->dx = fx;
-	data->dy = fy;
-	if (data->cursordrag != CURSORDRAG_NONE &&
-	    (y < fy || (y == fy && x < fx))) {
-		data->lineflag = LINE_SEL_RIGHT_LEFT;
-		data->cursordrag = CURSORDRAG_SEL;
-		window_copy_scroll_to(wme, sx, sy, 1);
-	} else {
-		data->lineflag = LINE_SEL_LEFT_RIGHT;
-		if (data->cursordrag != CURSORDRAG_NONE) {
-			data->cursordrag = CURSORDRAG_ENDSEL;
-			if (data->selflag == SEL_LINE)
-				x = window_copy_cursor_limit(wme, ey, 0);
-			else
-				x = ex;
-			window_copy_scroll_to(wme, x, ey, 1);
+		/*
+		 * Line selection normally starts with select-line, which sets
+		 * up the reset positions used when the cursor changes
+		 * direction. Do the same when changing an existing selection
+		 * to line mode.
+		 */
+		if (data->cursordrag == CURSORDRAG_SEL) {
+			fx = data->endselx;
+			fy = data->endsely;
+		} else {
+			fx = data->selx;
+			fy = data->sely;
 		}
+
+		sx = data->selx;
+		sy = data->sely;
+		ex = data->endselx;
+		ey = data->endsely;
+		if (ey < sy || (ey == sy && ex < sx)) {
+			x = sx; sx = ex; ex = x;
+			y = sy; sy = ey; ey = y;
+		}
+		grid_reader_start(&gr, data->backing->grid, sx, sy);
+		grid_reader_cursor_start_of_line(&gr, 1);
+		grid_reader_get_cursor(&gr, &sx, &sy);
+		grid_reader_start(&gr, data->backing->grid, ex, ey);
+		grid_reader_cursor_end_of_line(&gr, 1, 0);
+		grid_reader_get_cursor(&gr, &ex, &ey);
+
+		data->rectflag = 0;
+		data->selrx = data->selx = sx;
+		data->selry = data->sely = sy;
+		data->endselrx = data->endselx = ex;
+		data->endselry = data->endsely = ey;
+
+		x = data->cx;
+		y = screen_hsize(data->backing) + data->cy - data->oy;
+		data->dx = fx;
+		data->dy = fy;
+		if (data->cursordrag != CURSORDRAG_NONE &&
+		    (y < fy || (y == fy && x < fx))) {
+			data->lineflag = LINE_SEL_RIGHT_LEFT;
+			data->cursordrag = CURSORDRAG_SEL;
+			window_copy_scroll_to(wme, sx, sy, 1);
+		} else {
+			data->lineflag = LINE_SEL_LEFT_RIGHT;
+			if (data->cursordrag != CURSORDRAG_NONE) {
+				data->cursordrag = CURSORDRAG_ENDSEL;
+				x = window_copy_cursor_limit(wme, ey, 0);
+				window_copy_scroll_to(wme, x, ey, 1);
+			}
+		}
+		if (data->cursordrag == CURSORDRAG_NONE)
+			window_copy_set_selection(wme, 0, 0);
+		return (WINDOW_COPY_CMD_REDRAW);
 	}
-	if (data->selflag == SEL_WORD)
-		window_copy_set_selection(wme, 0, 1);
-	else if (data->cursordrag == CURSORDRAG_NONE)
-		window_copy_set_selection(wme, 0, 0);
-	return (WINDOW_COPY_CMD_REDRAW);
+	return (WINDOW_COPY_CMD_MOVE);
 }
 
 static enum window_copy_cmd_action
@@ -5520,6 +5507,7 @@ static void
 window_copy_redraw_selection(struct window_mode_entry *wme, u_int old_y)
 {
 	struct window_copy_mode_data	*data = wme->data;
+	struct grid			*gd = data->backing->grid;
 	u_int				 new_y, start, end;
 
 	new_y = data->cy;
@@ -5531,6 +5519,15 @@ window_copy_redraw_selection(struct window_mode_entry *wme, u_int old_y)
 		end = old_y;
 	}
 
+	/*
+	 * In word selection mode the first word on the line below the cursor
+	 * might be selected, so add this line to the redraw area.
+	 */
+	if (data->selflag == SEL_WORD) {
+		/* Last grid line in data coordinates. */
+		if (end < gd->sy + data->oy - 1)
+			end++;
+	}
 	window_copy_redraw_lines(wme, start, end - start + 1);
 }
 
@@ -5867,14 +5864,10 @@ window_copy_update_selection(struct window_mode_entry *wme, int may_redraw,
 {
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*s = &data->screen;
-	int				 changed;
 
 	if (s->sel == NULL && data->lineflag == LINE_SEL_NONE)
 		return (0);
-	changed = window_copy_set_selection(wme, may_redraw, no_reset);
-	if (data->selflag == SEL_WORD && may_redraw)
-		window_copy_redraw_screen(wme);
-	return (changed);
+	return (window_copy_set_selection(wme, may_redraw, no_reset));
 }
 
 /*
@@ -6512,9 +6505,7 @@ window_copy_cursor_up(struct window_mode_entry *wme, int scroll_only)
 	if (data->lineflag == LINE_SEL_LEFT_RIGHT && oy == data->sely)
 		window_copy_other_end(wme);
 
-	/* In vi mode, keep cursor on the same line unless dragging. */
-	if (scroll_only && data->cursordrag == CURSORDRAG_NONE &&
-	    options_get_number(oo, "mode-keys") == MODEKEY_VI) {
+	if (scroll_only && options_get_number(oo, "mode-keys") == MODEKEY_VI) {
 		if (data->cy < screen_size_y(s) - 1)
 			window_copy_update_cursor(wme, data->cx, data->cy + 1);
 	}
@@ -6594,9 +6585,7 @@ window_copy_cursor_down(struct window_mode_entry *wme, int scroll_only)
 	if (data->lineflag == LINE_SEL_RIGHT_LEFT && oy == data->endsely)
 		window_copy_other_end(wme);
 
-	/* In vi mode, keep cursor on the same line unless dragging. */
-	if (scroll_only && data->cursordrag == CURSORDRAG_NONE &&
-	    options_get_number(oo, "mode-keys") == MODEKEY_VI) {
+	if (scroll_only && options_get_number(oo, "mode-keys") == MODEKEY_VI) {
 		if (data->cy > 0)
 			window_copy_update_cursor(wme, data->cx, data->cy - 1);
 	}
@@ -7260,16 +7249,13 @@ static void
 window_copy_acquire_cursor_up(struct window_mode_entry *wme, u_int hsize,
     u_int oy, u_int oldy, u_int px, u_int py)
 {
-	struct window_copy_mode_data	*data = wme->data;
 	u_int	cy, yy, ny, nd;
 
 	yy = hsize - oy;
 	if (py < yy) {
 		ny = yy - py;
 		cy = 0;
-		nd = oldy + ny + 1;
-		if (nd > screen_size_y(&data->screen))
-			nd = screen_size_y(&data->screen);
+		nd = 1;
 	} else {
 		ny = 0;
 		cy = py - yy;
@@ -7295,8 +7281,8 @@ window_copy_acquire_cursor_down(struct window_mode_entry *wme, u_int hsize,
 	yy = sy - 1;
 	if (cy > yy) {
 		ny = cy - yy;
-		oldy = oldy > ny ? oldy - ny : 0;
-		nd = sy - oldy;
+		oldy = yy;
+		nd = 1;
 	} else {
 		ny = 0;
 		nd = cy - oldy + 1;

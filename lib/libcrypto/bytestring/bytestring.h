@@ -1,4 +1,4 @@
-/*	$OpenBSD: bytestring.h,v 1.10 2026/10/04 09:23:40 tb Exp $	*/
+/*	$OpenBSD: bytestring.h,v 1.7 2026/09/25 08:08:57 tb Exp $	*/
 /*
  * Copyright (c) 2014, Google Inc.
  *
@@ -237,18 +237,14 @@ int CBS_peek_last_u8(CBS *cbs, uint8_t *out);
  * In DER, bitstring and octetstring are required to be primitive
  * (X.690 section 10.2).
  */
-#define CBS_ASN1_BOOLEAN         (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x1)
-#define CBS_ASN1_INTEGER         (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x2)
-#define CBS_ASN1_BITSTRING       (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x3)
-#define CBS_ASN1_OCTETSTRING     (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x4)
-#define CBS_ASN1_NULL            (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x5)
-#define CBS_ASN1_OBJECT          (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x6)
-#define CBS_ASN1_ENUMERATED      (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0xa)
-#define CBS_ASN1_SEQUENCE        (CBS_ASN1_UNIVERSAL | CBS_ASN1_CONSTRUCTED | 0x10)
-#define CBS_ASN1_SET             (CBS_ASN1_UNIVERSAL | CBS_ASN1_CONSTRUCTED | 0x11)
-#define CBS_ASN1_PRINTABLESTRING (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x13)
-#define CBS_ASN1_UTCTIME         (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x17)
-#define CBS_ASN1_GENERALIZEDTIME (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x18)
+#define CBS_ASN1_BOOLEAN     (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x1)
+#define CBS_ASN1_INTEGER     (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x2)
+#define CBS_ASN1_BITSTRING   (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x3)
+#define CBS_ASN1_OCTETSTRING (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x4)
+#define CBS_ASN1_OBJECT      (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0x6)
+#define CBS_ASN1_ENUMERATED  (CBS_ASN1_UNIVERSAL | CBS_ASN1_PRIMITIVE | 0xa)
+#define CBS_ASN1_SEQUENCE    (CBS_ASN1_UNIVERSAL | CBS_ASN1_CONSTRUCTED | 0x10)
+#define CBS_ASN1_SET         (CBS_ASN1_UNIVERSAL | CBS_ASN1_CONSTRUCTED | 0x11)
 
 /*
  * CBS_get_asn1 sets |*out| to the contents of DER-encoded, ASN.1 element (not
@@ -530,6 +526,7 @@ int CBB_add_u64(CBB *cbb, uint64_t value);
  */
 int CBB_add_asn1_uint64(CBB *cbb, uint64_t value);
 
+#ifdef LIBRESSL_INTERNAL
 /*
  * CBS_dup sets |out| to point to cbs's |data| and |len|.  It results in two
  * CBS that point to the same buffer.
@@ -567,6 +564,7 @@ int cbs_get_any_asn1_element_internal(CBS *cbs, CBS *out, unsigned int *out_tag,
  * It returns one on success and zero otherwise.
  */
 int CBS_asn1_indefinite_to_definite(CBS *in, uint8_t **out, size_t *out_len);
+#endif /* LIBRESSL_INTERNAL */
 
 __END_HIDDEN_DECLS
 

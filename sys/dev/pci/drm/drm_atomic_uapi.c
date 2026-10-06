@@ -1245,18 +1245,16 @@ static int prepare_signaling(struct drm_device *dev,
 			struct dma_fence *fence;
 			struct drm_out_fence_state *f;
 
-			ret = -ENOMEM;
-
 #ifdef __linux__
 			f = krealloc(*fence_state, sizeof(**fence_state) *
 				     (*num_fences + 1), GFP_KERNEL);
 			if (!f)
-				goto err_free_event;
+				return -ENOMEM;
 #else
 			f = kmalloc(sizeof(**fence_state) *
 				     (*num_fences + 1), GFP_KERNEL);
 			if (!f)
-				goto err_free_event;
+				return -ENOMEM;
 			memcpy(f, *fence_state,
 			    sizeof(**fence_state) * (*num_fences));
 			kfree(*fence_state);
@@ -1269,12 +1267,12 @@ static int prepare_signaling(struct drm_device *dev,
 
 			fence = drm_crtc_create_fence(crtc);
 			if (!fence)
-				goto err_free_event;
+				return -ENOMEM;
 
 			ret = setup_out_fence(&f[(*num_fences)++], fence);
 			if (ret) {
 				dma_fence_put(fence);
-				goto err_free_event;
+				return ret;
 			}
 
 			crtc_state->event->base.fence = fence;
@@ -1340,11 +1338,6 @@ static int prepare_signaling(struct drm_device *dev,
 	}
 
 	return 0;
-
-err_free_event:
-	drm_event_cancel_free(dev, &crtc_state->event->base);
-	crtc_state->event = NULL;
-	return ret;
 }
 
 static void complete_signaling(struct drm_device *dev,
