@@ -1,4 +1,4 @@
-#	$OpenBSD: rc.subr,v 1.179 2026/10/10 14:24:22 ajacoutot Exp $
+#	$OpenBSD: rc.subr,v 1.180 2026/10/10 14:46:29 ajacoutot Exp $
 #
 # Copyright (c) 2010, 2011, 2014-2022 Antoine Jacoutot <ajacoutot@openbsd.org>
 # Copyright (c) 2010, 2011 Ingo Schwarze <schwarze@openbsd.org>
@@ -214,8 +214,8 @@ rc_stop() {
 }
 
 rc_cmd() {
-	local _TIMERSUB _exit _ret _timer
-	# optim: don't sleep(1) in the first loop
+	local _TIMERSUB _exit _lastterm=false _ret _timer
+	# optim: don't sleep(1) in the first loop (stop case)
 	local _1stloop=true
 
 	[[ ${1} != *[[:blank:]]* && " ${_rc_actions} " == *" ${1} "* ]] ||
@@ -290,11 +290,14 @@ rc_cmd() {
 		while ((SECONDS < daemon_timeout)); do
 			# last chance: send a SIGTERM first in case the process
 			# used another signal to stop (e.g. SIGQUIT with nginx)
-			# or a non-default rc_stop() function; do it 2s before
-			# timeout to re-enter the loop one last time which will
-			# give 1s for SIGTERM to terminate the process
-			((SECONDS == daemon_timeout-2)) &&
+			# or a non-default rc_stop() function; do it once 2s
+			# before timeout to re-enter the loop one last time
+			# which gives 1s for SIGTERM to terminate the process
+			if ! ${_lastterm} &&
+				((SECONDS >= daemon_timeout-2)); then
+				_lastterm=true
 				_rc_do _rc_sendsig TERM && sleep .5
+			fi
 			pkill -0 -P "$$" 2>/dev/null || _rc_do rc_check ||
 				break
 			${_1stloop} && _1stloop=false || sleep .5
