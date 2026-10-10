@@ -1,4 +1,4 @@
-/*	$OpenBSD: loader.c,v 1.225 2026/09/17 23:10:43 deraadt Exp $ */
+/*	$OpenBSD: loader.c,v 1.226 2026/10/10 22:18:01 deraadt Exp $ */
 
 /*
  * Copyright (c) 1998 Per Fogelstrom, Opsycon AB
@@ -32,6 +32,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/exec.h>
+#include <sys/stat.h>
 #ifdef __i386__
 # include <machine/vmparam.h>
 #endif
@@ -68,6 +69,7 @@ char *_dl_execpath __relro = NULL;
 int _dl_bindnow __relro = 0;
 int _dl_debug __relro = 0;
 int _dl_trust __relro = 0;
+int _dl_unreadable __relro = 0;
 char **_dl_libpath __relro = NULL;
 const char **_dl_argv __relro = NULL;
 int _dl_argc __relro = 0;
@@ -276,7 +278,8 @@ _dl_setup_env(const char *argv0, char **envp)
 	 * Don't allow someone to change the search paths if he runs
 	 * a suid program without credentials high enough.
 	 */
-	_dl_trust = !_dl_issetugid();
+	if (_dl_issetugid() == 0 && _dl_unreadable == 0)
+		_dl_trust = 1;
 	if (!_dl_trust) {	/* Zap paths if s[ug]id... */
 		_dl_unsetenv("LD_DEBUG", envp);
 		_dl_unsetenv("LD_LIBRARY_PATH", envp);
@@ -293,11 +296,16 @@ _dl_setup_env(const char *argv0, char **envp)
 		_dl_bindnow = _dl_getenv("LD_BIND_NOW", envp) != NULL;
 	}
 
-	/* these are usable even in setugid processes */
-	_dl_traceld = _dl_getenv("LD_TRACE_LOADED_OBJECTS", envp) != NULL;
-	_dl_tracefmt1 = _dl_getenv("LD_TRACE_LOADED_OBJECTS_FMT1", envp);
-	_dl_tracefmt2 = _dl_getenv("LD_TRACE_LOADED_OBJECTS_FMT2", envp);
-	_dl_traceprog = _dl_getenv("LD_TRACE_LOADED_OBJECTS_PROGNAME", envp);
+	/*
+	 * these are usable even in setugid processes, however if the
+	 * binary is unreadable, we want to avoid address information leaks.
+	 */
+	if (_dl_unreadable == 0) {
+		_dl_traceld = _dl_getenv("LD_TRACE_LOADED_OBJECTS", envp) != NULL;
+		_dl_tracefmt1 = _dl_getenv("LD_TRACE_LOADED_OBJECTS_FMT1", envp);
+		_dl_tracefmt2 = _dl_getenv("LD_TRACE_LOADED_OBJECTS_FMT2", envp);
+		_dl_traceprog = _dl_getenv("LD_TRACE_LOADED_OBJECTS_PROGNAME", envp);
+	}
 
 	environ = envp;
 
@@ -547,6 +555,9 @@ _dl_boot(const char **argv, char **envp, const long dyn_loff, long *dl_data)
 			 * before later use.
 			 */
 			_dl_execpath = _dl_strdup((char *)auxstack->au_v);
+		} else if (auxstack->au_id == AUX_openbsd_execmode &&
+		    (auxstack->au_v & S_IRUSR) == 0) {
+			_dl_unreadable = 1;	/* executable not readable */
 		}
 	}
 
