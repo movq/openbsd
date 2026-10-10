@@ -1,4 +1,4 @@
-#	$OpenBSD: bsd.prog.mk,v 1.85 2026/05/27 13:48:56 deraadt Exp $
+#	$OpenBSD: bsd.prog.mk,v 1.86 2026/10/10 22:51:25 deraadt Exp $
 #	$NetBSD: bsd.prog.mk,v 1.55 1996/04/08 21:19:26 jtc Exp $
 #	@(#)bsd.prog.mk	5.26 (Berkeley) 6/25/91
 
@@ -76,6 +76,20 @@ LIBARCH?=
 .if defined(PROG)
 SRCS ?=	${PROG}.c
 MAN ?= ${PROG}.1
+.endif
+
+.if defined(BINMODE)
+_sugid!=echo ${BINMODE} | sed -ne 's/^\([246]\)...$$/\1000/p'
+.  if !empty(_sugid)
+_permit_setugid.c:
+	@echo BINMODE=${BINMODE}, creating _permit_setugid.c marker file
+	@echo "int _permit_setugid = 0${_sugid};" > ${.OBJDIR}/_psugid
+	@install -C -m 640 ${.OBJDIR}/_psugid ${.OBJDIR}/_permit_setugid.c
+	@rm -f ${.OBJDIR}/_psugid
+
+SRCS += _permit_setugid.c
+CLEANFILES += _psugid _permit_setugid.c
+.  endif
 .endif
 
 # if we have several progs, define appropriate vars instead
