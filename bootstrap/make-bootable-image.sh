@@ -23,14 +23,14 @@ set -e
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 
 MACHINE="${MACHINE:-amd64}"
-DESTDIR="${DESTDIR:-${SCRIPTDIR}/dest}"
+DESTDIR="${DESTDIR:-${SCRIPTDIR}/obj/dest-${MACHINE}}"
 IMAGE="${IMAGE:-${SCRIPTDIR}/openbsd-${MACHINE}-efi.img}"
 MAKEFS="${MAKEFS:-${SCRIPTDIR}/tools/bin/makefs}"
-KERNEL="${KERNEL:-${SCRIPTDIR}/obj-host/sys/arch/${MACHINE}/compile/GENERIC.MP/bsd}"
-EFIBOOT="${EFIBOOT:-${SCRIPTDIR}/obj-host/sys/arch/${MACHINE}/stand/efiboot/bootx64/BOOTX64.EFI}"
+KERNEL="${KERNEL:-${SCRIPTDIR}/obj/target-${MACHINE}/sys/arch/${MACHINE}/compile/GENERIC.MP/bsd}"
+EFIBOOT="${EFIBOOT:-${SCRIPTDIR}/obj/stand-${MACHINE}/BOOTX64.EFI}"
 
 ESP_SIZE_MIB="${ESP_SIZE_MIB:-260}"
-ROOT_HEADROOM_MIB="${ROOT_HEADROOM_MIB:-131072}"
+ROOT_HEADROOM_MIB="${ROOT_HEADROOM_MIB:-2048}"
 WORKDIR_PARENT="${WORKDIR_PARENT:-${SCRIPTDIR}/build}"
 
 LOOPDEV=

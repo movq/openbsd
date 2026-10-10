@@ -12,6 +12,7 @@ HOST_TOOL_CPPFLAGS="${HOST_FEATURE_CPPFLAGS} -idirafter ${SRCDIR}/include"
 LLVM_HOST_CPPFLAGS="-I/usr/include/bsd -DLIBBSD_OVERLAY"
 LLVM_HOST_LDADD=
 BMAKE_LDLIBS="-lrt -lbsd"
+HOST_TOOL_LDLIBS="-lbsd"
 BMAKE_USE_OPENBSD_GETOPT=yes
 BMAKE_COMPAT_SRCS="err.c reallocarray.c strtonum.c fgetln.c pledge.c sys_signame.c"
 

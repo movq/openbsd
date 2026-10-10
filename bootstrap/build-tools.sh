@@ -189,10 +189,11 @@ env ${MAKE_ENV} CPPFLAGS="${LLVM_HOST_CPPFLAGS}" \
 
 # Install clang's resource headers where bootstrap/tools/bin/clang looks
 # for them by default: bootstrap/tools/lib/clang/<major>/include.
+# ${LLVM_V} is left for bmake to expand from the intrin Makefile.
 env ${MAKE_ENV} ${BMAKE} ${MAKE_ARGS} \
 	-C "${SRCDIR}/gnu/usr.bin/clang/include/clang/intrin" \
 	DESTDIR="${TOOLDIR}" \
-	CLANG_INTR_INCDIR="/lib/clang/22/include" \
+	CLANG_INTR_INCDIR='/lib/clang/${LLVM_V}/include' \
 	includes
 
 # =====================================================================
@@ -285,7 +286,7 @@ env ${MAKE_ENV} LIBC= ${BMAKE} ${MAKE_ARGS} \
 	-C "${SRCDIR}/usr.bin/yacc" \
 	all \
 	CPPFLAGS="${HOST_TOOL_CPPFLAGS}" \
-	LDADD="${HOST_TOOL_LDADD_ALLOC}"
+	LDADD="${HOST_TOOL_LDADD_ALLOC} ${HOST_TOOL_LDLIBS}"
 
 YACCDIR="${OBJROOT}/usr.bin/yacc"
 cp "${YACCDIR}/yacc" "${TOOLDIR}/bin/"
@@ -360,7 +361,7 @@ for src in ${CONFIG_COMPAT_SRCS}; do
 	OBJS="${OBJS} ${obj}"
 done
 
-${HOST_CC} -o config ${OBJS}
+${HOST_CC} -o config ${OBJS} ${HOST_TOOL_LDLIBS}
 echo "    config"
 
 cp config "${TOOLDIR}/bin/"
@@ -394,7 +395,7 @@ MAKEFS_CPPFLAGS="${HOST_TOOL_CPPFLAGS} -include stdint.h -include time.h \
 	-I${SRCDIR}/usr.sbin/makefs -I${SRCDIR}/lib/libutil \
 	-idirafter ${SRCDIR}/sys \
 	-idirafter ${MAKEFS_INCDIR}"
-MAKEFS_LDADD="$(bootstrap_source_list "${HOST_COMPAT}" ${MAKEFS_COMPAT_SRCS})"
+MAKEFS_LDADD="$(bootstrap_source_list "${HOST_COMPAT}" ${MAKEFS_COMPAT_SRCS}) ${HOST_TOOL_LDLIBS}"
 
 env ${MAKE_ENV} LIBC= LIBUTIL= ${BMAKE} ${MAKE_ARGS} \
 	-C "${SRCDIR}/usr.sbin/makefs" \
