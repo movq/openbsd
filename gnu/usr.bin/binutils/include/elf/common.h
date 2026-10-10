@@ -766,5 +766,6 @@
 
 #define	AT_OPENBSD_TIMEKEEP 4000	/* pointer to page for clock_gettime. */
 #define	AT_OPENBSD_EXECPATH 4001	/* Canonicalized path given to execve. */
+#define	AT_OPENBSD_EXECMODE 4002	/* mode_t suid/sgid/u+r of the binary. */
 
 #endif /* _ELF_COMMON_H */

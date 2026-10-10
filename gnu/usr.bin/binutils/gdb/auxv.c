@@ -197,7 +197,7 @@ fprint_target_auxv (struct ui_file *file, struct target_ops *ops)
       extern int addressprint;
       const char *name = "???";
       const char *description = "";
-      enum { dec, hex, str } flavor = hex;
+      enum { dec, hex, oct, str } flavor = hex;
 
       switch (type)
 	{
@@ -249,6 +249,7 @@ fprint_target_auxv (struct ui_file *file, struct target_ops *ops)
 	  TAG (AT_SUN_LDDATA, "Dynamic linker's data segment address", hex);
 	  TAG (AT_OPENBSD_TIMEKEEP, "userland clock_gettime", hex);
 	  TAG (AT_OPENBSD_EXECPATH, "Canonicalized path of this binary", str);
+	  TAG (AT_OPENBSD_EXECMODE, "mode_t of this binary", oct);
 	}
 
       fprintf_filtered (file, "%-4s %-20s %-30s ",
@@ -260,6 +261,9 @@ fprint_target_auxv (struct ui_file *file, struct target_ops *ops)
 	  break;
 	case hex:
 	  fprintf_filtered (file, "0x%s\n", paddr_nz (val));
+	  break;
+	case oct:
+	  fprintf_filtered (file, "%o\n", paddr_nz (val));
 	  break;
 	case str:
 	  if (addressprint)
