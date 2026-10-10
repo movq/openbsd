@@ -1,4 +1,4 @@
-#	$OpenBSD: rc.subr,v 1.180 2026/10/10 14:46:29 ajacoutot Exp $
+#	$OpenBSD: rc.subr,v 1.181 2026/10/10 14:51:10 ajacoutot Exp $
 #
 # Copyright (c) 2010, 2011, 2014-2022 Antoine Jacoutot <ajacoutot@openbsd.org>
 # Copyright (c) 2010, 2011 Ingo Schwarze <schwarze@openbsd.org>
@@ -38,7 +38,7 @@ _rc_err() {
 
 _rc_parse_conf() {
 	typeset -l _key
-	local _l _rcfile _val
+	local _allowed_keys _l _rcfile _val
 	set -A _allowed_keys -- \
 		accounting amd_master check_quotas ipsec library_aslr \
 		multicast nfs_server pexp pf pkg_scripts shlib_dirs \
@@ -215,7 +215,7 @@ rc_stop() {
 
 rc_cmd() {
 	local _TIMERSUB _exit _lastterm=false _ret _timer
-	# optim: don't sleep(1) in the first loop (stop case)
+	# optim: don't sleep(1) in the first loop (stop and reload)
 	local _1stloop=true
 
 	[[ ${1} != *[[:blank:]]* && " ${_rc_actions} " == *" ${1} "* ]] ||
