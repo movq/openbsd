@@ -103,6 +103,7 @@ struct btrfs_write_operation {
 	struct btrfs_write_extent range;
 	struct btrfs_write_extent prefix;
 	uint8_t			*inline_data;
+	int			inlined;
 	int			mutated;
 };
 

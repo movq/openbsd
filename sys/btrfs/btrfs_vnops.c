@@ -1058,7 +1058,9 @@ btrfs_getattr(void *v)
 		vap->va_flags |= UF_APPEND;
 	vap->va_gen = inode->bi_generation;
 	vap->va_blocksize = letoh32(node->bn_mount->bm_super.nodesize);
-	vap->va_bytes = inode->bi_nbytes;
+	/* Like Linux, count inline bytes as a whole sector. */
+	vap->va_bytes = roundup(inode->bi_nbytes,
+	    letoh32(node->bn_mount->bm_super.sectorsize));
 	vap->va_type = vp->v_type;
 	vap->va_filerev = inode->bi_transid;
 	vap->va_vaflags = 0;

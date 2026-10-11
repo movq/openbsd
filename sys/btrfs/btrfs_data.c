@@ -1850,6 +1850,51 @@ btrfs_write_select(struct btrfs_node *node, uint64_t offset,
 	return (error);
 }
 
+/* Linux's default max_inline; any leaf holds this much item payload. */
+#define BTRFS_MAX_INLINE	2048
+
+/*
+ * Like Linux, keep a file that ends within the inline limit as one inline
+ * item at offset zero. Only an empty file or a sole inline item qualifies;
+ * other mappings take the regular path, which converts inline data.
+ */
+static int
+btrfs_write_inline_select(struct btrfs_node *node, uint64_t end,
+    struct btrfs_file_extent *old, int *inlined)
+{
+	struct btrfs_file_extent extent;
+	struct btrfs_path path = { 0 };
+	uint32_t sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	int error;
+
+	KASSERT(VOP_ISLOCKED(node->bn_vnode));
+	*inlined = 0;
+	end = MAX(end, node->bn_inode.bi_size);
+	if (end > BTRFS_MAX_INLINE || end >= sectorsize)
+		return (0);
+	error = btrfs_find_file_extent(node->bn_mount, node->bn_root, &path,
+	    node->bn_ino, 0, UINT64_MAX, old);
+	old->bfe_inline_data = NULL;
+	btrfs_release_path(&path);
+	if (error != 0)
+		return (error);
+	if (old->bfe_type == BTRFS_FILE_EXTENT_INLINE) {
+		error = btrfs_check_inline_conversion(node, old);
+		if (error == 0)
+			error = btrfs_find_file_extent(node->bn_mount,
+			    node->bn_root, &path, node->bn_ino,
+			    old->bfe_length, UINT64_MAX, &extent);
+		btrfs_release_path(&path);
+		if (error != 0)
+			return (error);
+	} else
+		extent = *old;
+	*inlined = !extent.bfe_item_present &&
+	    extent.bfe_type == BTRFS_FILE_EXTENT_HOLE &&
+	    extent.bfe_logical + extent.bfe_length == UINT64_MAX;
+	return (0);
+}
+
 static int
 btrfs_write_extent_cancel(struct btrfs_trans_handle *handle,
     struct btrfs_write_extent *extent)
@@ -2007,6 +2052,47 @@ fail:
 	return (error);
 }
 
+/* Store the whole staged file, replacing any old inline item. */
+static int
+btrfs_write_inline_apply(struct btrfs_write_operation *op, uint64_t size)
+{
+	struct btrfs_node *node = op->node;
+	struct btrfs_file_extent_item *item;
+	struct btrfs_key key = { 0 };
+	size_t header = offsetof(struct btrfs_file_extent_item, disk_bytenr);
+	int error;
+
+	KASSERT(size != 0 && size <= BTRFS_MAX_INLINE);
+	item = malloc(header + size, M_BTRFS, M_WAITOK | M_ZERO);
+	item->generation =
+	    htole64(op->handle->bth_transaction->bt_generation);
+	item->ram_bytes = htole64(size);
+	item->type = BTRFS_FILE_EXTENT_INLINE;
+	memcpy((uint8_t *)item + header, op->data, size);
+	key.objectid = htole64(node->bn_ino);
+	key.type = BTRFS_EXTENT_DATA_KEY;
+	op->mutated = 1;
+	if (op->range.old.bfe_item_present) {
+		error = btrfs_replace_item(op->handle, node->bn_root, &key,
+		    item, header + size);
+		/* Growth that overflows the leaf needs a splitting insert. */
+		if (error != ENOSPC)
+			goto out;
+		error = btrfs_delete_item(op->handle, node->bn_root, &key);
+		if (error != 0)
+			goto out;
+	}
+	error = btrfs_insert_item(op->handle, node->bn_root, &key, item,
+	    header + size);
+out:
+	free(item, M_BTRFS, header + size);
+	if (error == 0 && node->bn_inode.bi_nbytes != size) {
+		node->bn_inode.bi_nbytes = size;
+		node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_NBYTES;
+	}
+	return (error);
+}
+
 /* End every owned handle, restore unpublished attributes, and free staging. */
 static int
 btrfs_write_release(struct btrfs_write_operation *op, int error)
@@ -2088,12 +2174,24 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 	range->file_offset = position - op->offset;
 	range->allocated_length = roundup(MIN(MAXBSIZE,
 	    op->offset + size), sectorsize);
+	metadata = (uint64_t)letoh32(bmp->bm_super.nodesize) *
+	    BTRFS_WRITE_METADATA_BLOCKS;
+	error = btrfs_write_inline_select(node, position + size, &range->old,
+	    &op->inlined);
+	if (error != 0)
+		return (error);
+	if (op->inlined) {
+		op->length = size;
+		op->reservation.btr_metadata = metadata;
+		error = btrfs_trans_join(bmp, &op->reservation, &op->handle);
+		if (error != 0)
+			return (error);
+		goto stage;
+	}
 	error = btrfs_write_select(node, range->file_offset,
 	    &range->allocated_length, &prefix);
 	if (error != 0)
 		return (error);
-	metadata = (uint64_t)letoh32(bmp->bm_super.nodesize) *
-	    BTRFS_WRITE_METADATA_BLOCKS;
 	base_metadata = metadata * (1 + prefix);
 	if (prefix)
 		op->prefix.allocated_length = sectorsize;
@@ -2148,6 +2246,7 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 		if (error != 0)
 			goto fail;
 	}
+stage:
 	op->data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
 	memset(op->data, 0, range->allocated_length);
 	end = op->offset + op->length;
@@ -2178,23 +2277,26 @@ btrfs_write_finish(struct btrfs_write_operation *op, size_t copied)
 	end = op->offset + copied;
 	if (copied < op->length)
 		error = btrfs_write_preserve(op, end, roundup(end, sectorsize));
+	size = MAX(op->saved.bi_size,
+	    op->range.file_offset + op->offset + copied);
+	if (error == 0 && op->inlined)
+		error = btrfs_write_inline_apply(op, size);
 	if (error == 0 && op->inline_data != NULL)
 		error = btrfs_write_extent_apply(op, &op->prefix,
 		    op->inline_data, sectorsize);
-	if (error == 0)
+	if (error == 0 && !op->inlined)
 		error = btrfs_write_extent_apply(op, &op->range, op->data,
 		    roundup(op->offset + copied, sectorsize));
 	if (error == 0) {
-		size = MAX(op->saved.bi_size,
-		    op->range.file_offset + op->offset + copied);
 		if (node->bn_inode.bi_size != size) {
 			node->bn_inode.bi_size = size;
 			node->bn_inode.bi_dirty_fields |= BTRFS_INODE_DIRTY_SIZE;
 		}
 		node->bn_inode.bi_last_dirty_transid =
 		    op->handle->bth_transaction->bt_generation;
-		error = btrfs_fill_file_holes(op->handle, node,
-		    op->saved.bi_size, size);
+		if (!op->inlined)
+			error = btrfs_fill_file_holes(op->handle, node,
+			    op->saved.bi_size, size);
 		if (error == 0)
 			error = btrfs_write_inode(op->handle, node);
 	}
