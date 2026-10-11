@@ -1688,11 +1688,13 @@ btrfs_leaf_edit_packed(struct btrfs_header *header,
 /*
  * Choose leaf counts by used bytes, with a three-way split when the new
  * middle item cannot share a leaf with either the old prefix or suffix.
- * The caller has validated an insertion that does not fit one leaf.
+ * Appending past the tree's last key instead starts a new leaf, so ascending
+ * inserts (new inodes, extents) fill leaves. The caller has validated an
+ * insertion that does not fit one leaf.
  */
 static int
 btrfs_leaf_split_counts(const struct btrfs_leaf_edit *edit, uint32_t capacity,
-    uint32_t *counts, uint32_t *nleaves)
+    int append, uint32_t *counts, uint32_t *nleaves)
 {
 	const void *item_data;
 	const struct btrfs_key *item_key;
@@ -1709,6 +1711,12 @@ btrfs_leaf_split_counts(const struct btrfs_leaf_edit *edit, uint32_t capacity,
 		return (ENOSPC);
 
 	total = nritems + 1;
+	if (append) {
+		*nleaves = 2;
+		counts[0] = nritems;
+		counts[1] = 1;
+		return (0);
+	}
 	payload = 0;
 	for (i = 0; i < total; i++) {
 		error = btrfs_leaf_edit_entry(edit, i, &item_key, &item_data,
@@ -2162,7 +2170,7 @@ btrfs_leaf_split_insert(struct btrfs_path *path,
 	uint32_t counts[BTRFS_SPLIT_MAX_RIGHTS + 1], nleaves;
 	uint32_t capacity, carry_count, first, i, nodesize, parent_capacity;
 	uint32_t right_count, total;
-	int error, packed;
+	int append, error, packed;
 
 	leaf = path->bp_eb[0];
 	header = btrfs_extent_buffer_data_mutable(path->bp_handle, leaf);
@@ -2179,7 +2187,13 @@ btrfs_leaf_split_insert(struct btrfs_path *path,
 	error = btrfs_leaf_check_edit(&edit, capacity, &total, &packed);
 	if (error != ENOSPC)
 		return (error == 0 ? EINVAL : error);
-	error = btrfs_leaf_split_counts(&edit, capacity, counts, &nleaves);
+	append = edit.slot == letoh32(header->nritems);
+	for (i = 1; append && i <= path->bp_level; i++) {
+		check_header = btrfs_extent_buffer_data(path->bp_eb[i]);
+		append = path->bp_slot[i] + 1 == letoh32(check_header->nritems);
+	}
+	error = btrfs_leaf_split_counts(&edit, capacity, append, counts,
+	    &nleaves);
 	if (error != 0)
 		return (error);
 	right_count = nleaves - 1;

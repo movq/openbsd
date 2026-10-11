@@ -223,7 +223,7 @@ splits(uint32_t nodesize)
 		edit.size = capacity - sizeof(struct btrfs_item);
 		assert(btrfs_leaf_check_edit(&edit, capacity, &count,
 		    &packed) == ENOSPC);
-		assert(btrfs_leaf_split_counts(&edit, capacity, counts,
+		assert(btrfs_leaf_split_counts(&edit, capacity, 0, counts,
 		    &nleaves) == 0);
 		assert(nleaves == (slot == 1 ? 3 : 2));
 		first = 0;
@@ -236,7 +236,7 @@ splits(uint32_t nodesize)
 		}
 		assert(first == 3);
 		edit.size++;
-		assert(btrfs_leaf_split_counts(&edit, capacity, counts,
+		assert(btrfs_leaf_split_counts(&edit, capacity, 0, counts,
 		    &nleaves) == ENOSPC);
 	}
 	/* A tie in byte balance keeps the earlier two-way partition. */
@@ -245,8 +245,15 @@ splits(uint32_t nodesize)
 	edit.slot = 1;
 	edit.size = capacity / 3;
 	assert(btrfs_leaf_check_edit(&edit, capacity, &count, &packed) == ENOSPC);
-	assert(btrfs_leaf_split_counts(&edit, capacity, counts, &nleaves) == 0);
+	assert(btrfs_leaf_split_counts(&edit, capacity, 0, counts,
+	    &nleaves) == 0);
 	assert(nleaves == 2 && counts[0] == 1 && counts[1] == 2);
+	/* Appending past the last key keeps the old leaf whole. */
+	key = key_for(50);
+	edit.slot = 2;
+	assert(btrfs_leaf_split_counts(&edit, capacity, 1, counts,
+	    &nleaves) == 0);
+	assert(nleaves == 2 && counts[0] == 2 && counts[1] == 1);
 	assert(!btrfs_leaf_fits(capacity, UINT32_MAX, 0));
 	assert(!btrfs_leaf_fits(capacity, 1, SIZE_MAX));
 }
