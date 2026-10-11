@@ -908,30 +908,46 @@ btrfs_space_log_release(struct btrfs_fs *bmp)
 }
 
 /*
- * Report logical capacity of allocated groups, counting DUP once. Free blocks
+ * Report logical capacity of allocated groups, counting DUP once, plus
+ * unallocated member space at the data profile's mirror count. Free blocks
  * include reservations but exclude pending allocations, pins and superblock
- * stripes. Available blocks include only unreserved data-capable space.
- * Capacity changes as chunks are allocated or returned; metadata exhaustion
- * and fragmentation can still limit writes. Hold the mapping lock throughout
- * traversal so chunk publication cannot retire a group underneath us.
+ * stripes. Available blocks include unreserved data-capable space and
+ * unallocated space that data growth could claim. Metadata growth shares
+ * that space, and exhaustion or fragmentation can still limit writes. Hold
+ * the I/O lock so membership cannot change, and the mapping lock so chunk
+ * publication cannot retire a group or restage device usage underneath us.
  */
 int
 btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 {
 	struct btrfs_block_group *group;
-	uint64_t total = 0, free = 0, available = 0;
-	uint64_t length, group_free, group_available, sectorsize;
+	struct btrfs_device *device;
+	uint64_t total = 0, free = 0, available = 0, unallocated = 0;
+	uint64_t length, group_free, group_available, sectorsize, size, used;
 	unsigned int i, count;
 
 	/*
-	 * Only existing chunks can be allocated. Report logical capacity,
-	 * counting DUP space once, and retain superblock stripes as overhead.
-	 * Reservations are free storage but unavailable to new operations;
-	 * pinned extents remain used until durable publication.
+	 * Report logical capacity, counting DUP space once, and retain
+	 * superblock stripes as overhead. Reservations are free storage but
+	 * unavailable to new operations; pinned extents remain used until
+	 * durable publication.
 	 *
 	 * Keep removed group objects alive throughout this read-only traversal.
 	 */
+	rw_enter_read(&bmp->bm_io_lock);
 	rw_enter_read(&bmp->bm_mapping_lock);
+	for (i = 0; i < bmp->bm_ndevices; i++) {
+		device = bmp->bm_devices[i];
+		size = letoh64(device->bd_item.total_bytes);
+		used = letoh64(device->bd_item.bytes_used);
+		/* Chunk placement never uses the first megabyte. */
+		if (size < 1024 * 1024 || used > size - 1024 * 1024)
+			continue;
+		unallocated += size - 1024 * 1024 - used;
+	}
+	if (bmp->bm_chunk_profile[0] & BTRFS_BLOCK_GROUP_DUP)
+		unallocated /= 2;
+	total = free = available = unallocated;
 	count = bmp->bm_nblock_groups;
 	for (i = 0; i < count; i++) {
 		group = bmp->bm_block_groups[i];
@@ -946,6 +962,7 @@ btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 		    group_free > UINT64_MAX - free ||
 		    group_available > UINT64_MAX - available) {
 			rw_exit_read(&bmp->bm_mapping_lock);
+			rw_exit_read(&bmp->bm_io_lock);
 			return (EOVERFLOW);
 		}
 		total += length;
@@ -953,6 +970,7 @@ btrfs_space_statfs(struct btrfs_fs *bmp, struct statfs *sbp)
 		available += group_available;
 	}
 	rw_exit_read(&bmp->bm_mapping_lock);
+	rw_exit_read(&bmp->bm_io_lock);
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
 	sbp->f_blocks = total / sectorsize;
 	sbp->f_bfree = free / sectorsize;
