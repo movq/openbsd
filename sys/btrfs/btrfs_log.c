@@ -357,6 +357,8 @@ struct log_writer {
 	/* The committed subvolume tree, against which replay links names. */
 	struct btrfs_root commit;
 	struct btrfs_root_item subtree;
+	/* The published subtree, if any. */
+	struct btrfs_root log;
 	struct log_items items, csums;
 	/* Inodes to log after the target: stale or displaced names. */
 	uint64_t pending[LOG_PENDING_MAX];
@@ -550,6 +552,47 @@ log_commit_refs(struct log_writer *w, uint64_t ino, uint64_t parent)
 }
 
 /*
+ * Whether the published log holds an identical item. Keys arrive in order,
+ * so one path walks the old log alongside the subvolume tree; state is 0
+ * before the first lookup and -1 once the old log is exhausted.
+ */
+static int
+log_published(struct log_writer *w, struct btrfs_path *old, int *state,
+    const struct btrfs_key *key, const uint8_t *data, uint32_t size)
+{
+	const struct btrfs_key *found;
+	const uint8_t *found_data;
+	uint32_t found_size;
+	int cmp;
+
+	if (w->log.br_bytenr == 0 || *state < 0)
+		return (0);
+	if (*state == 0) {
+		*state = 1;
+		if (btrfs_search_lower_bound(&w->log, key, old) != 0) {
+			*state = -1;
+			return (0);
+		}
+	}
+	for (;;) {
+		if (btrfs_path_item(old, &found, &found_data,
+		    &found_size) != 0) {
+			*state = -1;
+			return (0);
+		}
+		cmp = btrfs_log_key_compare(found, key);
+		if (cmp >= 0)
+			break;
+		if (btrfs_next_item(old) != 0) {
+			*state = -1;
+			return (0);
+		}
+	}
+	return (cmp == 0 && found_size == size &&
+	    memcmp(found_data, data, size) == 0);
+}
+
+/*
  * New inodes carry their names, as do committed inodes whose names changed
  * or were already logged. Other committed inodes keep their committed names.
  */
@@ -559,7 +602,7 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 	struct btrfs_root *root = w->root;
 	struct log_items *items = &w->items, *csums = &w->csums;
 	struct btrfs_fs *bmp = root->br_mount;
-	struct btrfs_path path = { 0 };
+	struct btrfs_path path = { 0 }, old = { 0 };
 	struct btrfs_key target = { 0 };
 	const struct btrfs_key *key;
 	const uint8_t *data;
@@ -568,7 +611,7 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 	uint64_t cursor = 0, end;
 	uint64_t generation = bmp->bm_transaction->bt_generation;
 	uint32_t size, sector = letoh32(bmp->bm_super.sectorsize);
-	int committed, error, flags, inline_data = 0, names;
+	int committed, error, flags, inline_data = 0, names, state = 0;
 
 	error = btrfs_find_inode(root, ino, &inode);
 	if (error != 0)
@@ -624,9 +667,14 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 			error = log_hole(items, ino, cursor, extent.bfe_logical,
 			    generation);
 			cursor = extent.bfe_logical + extent.bfe_length;
+			/*
+			 * A published extent's sums remain in the log: its
+			 * data stays allocated until commit.
+			 */
 			if (error == 0 &&
 			    extent.bfe_type == BTRFS_FILE_EXTENT_REG &&
-			    !(inode.bi_flags & BTRFS_INODE_NODATASUM))
+			    !(inode.bi_flags & BTRFS_INODE_NODATASUM) &&
+			    !log_published(w, &old, &state, key, data, size))
 				error = log_collect_csums(bmp, csums, &extent);
 			if (error != 0)
 				break;
@@ -634,6 +682,7 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 		error = btrfs_next_item(&path);
 	}
 	btrfs_release_path(&path);
+	btrfs_release_path(&old);
 	if (error == ENOENT)
 		error = 0;
 	if (error == 0 && !inline_data && S_ISREG(inode.bi_mode))
@@ -1453,6 +1502,8 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		if (error != 0)
 			goto out;
 	}
+	if (subtree->bytenr != 0)
+		log_root(bmp, &w->log, subtree);
 	error = log_names(w, node->bn_ino);
 	RBT_FOREACH(item, log_items, &w->csums) {
 		if (error != 0)
