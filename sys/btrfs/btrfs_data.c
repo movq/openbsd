@@ -2038,6 +2038,29 @@ btrfs_write_release(struct btrfs_write_operation *op, int error)
 	return (error);
 }
 
+/*
+ * Stage the current file bytes, or zeros beyond EOF, around the copy. A copy
+ * replaces whole sectors in place, so only its partial edges need reading.
+ */
+static int
+btrfs_write_preserve(struct btrfs_write_operation *op, uint32_t start,
+    uint32_t end)
+{
+	uint64_t offset = op->range.file_offset + start;
+	uint64_t size = op->saved.bi_size;
+	uint32_t length = 0;
+
+	if (start >= end)
+		return (0);
+	if (offset < size)
+		length = MIN(end - start, size - offset);
+	memset(op->data + start + length, 0, end - start - length);
+	if (length == 0)
+		return (0);
+	return (btrfs_read_file_range(op->node, offset, length,
+	    op->data + start));
+}
+
 #define BTRFS_WRITE_METADATA_BLOCKS	64
 
 int
@@ -2047,7 +2070,7 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_write_extent *range = &op->range;
 	uint64_t holes, metadata, base_metadata, planned_size;
-	uint32_t sectorsize = letoh32(bmp->bm_super.sectorsize);
+	uint32_t end, sectorsize = letoh32(bmp->bm_super.sectorsize);
 	int error, end_error, prefix;
 
 	KASSERT(VOP_ISLOCKED(node->bn_vnode));
@@ -2122,13 +2145,12 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 	}
 	op->data = pool_get(&bmp->bm_scratch_pool, PR_WAITOK);
 	memset(op->data, 0, range->allocated_length);
-	if (range->file_offset < op->saved.bi_size) {
-		error = btrfs_read_file_range(node, range->file_offset,
-		    MIN(range->allocated_length,
-		    op->saved.bi_size - range->file_offset), op->data);
-		if (error != 0)
-			goto fail;
-	}
+	end = op->offset + op->length;
+	error = btrfs_write_preserve(op, 0, op->offset);
+	if (error == 0)
+		error = btrfs_write_preserve(op, end, roundup(end, sectorsize));
+	if (error != 0)
+		goto fail;
 	return (0);
 
 fail:
@@ -2139,7 +2161,7 @@ int
 btrfs_write_finish(struct btrfs_write_operation *op, size_t copied)
 {
 	struct btrfs_node *node = op->node;
-	uint32_t sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
+	uint32_t end, sectorsize = letoh32(node->bn_mount->bm_super.sectorsize);
 	uint64_t size;
 	int error = 0;
 
@@ -2147,7 +2169,11 @@ btrfs_write_finish(struct btrfs_write_operation *op, size_t copied)
 	KASSERT(op->handle != NULL && copied <= op->length);
 	if (copied == 0)
 		return (btrfs_write_release(op, 0));
-	if (op->inline_data != NULL)
+	/* A faulting copy can end mid-sector, past bytes it partly wrote. */
+	end = op->offset + copied;
+	if (copied < op->length)
+		error = btrfs_write_preserve(op, end, roundup(end, sectorsize));
+	if (error == 0 && op->inline_data != NULL)
 		error = btrfs_write_extent_apply(op, &op->prefix,
 		    op->inline_data, sectorsize);
 	if (error == 0)
