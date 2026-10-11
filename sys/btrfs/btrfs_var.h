@@ -862,7 +862,8 @@ int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,
 int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
-int	btrfs_commit_inode_data(struct btrfs_node *, struct proc *);
+int	btrfs_cancel_ordered_data(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t, const struct btrfs_file_extent *);
 int	btrfs_read_ordered_range(struct btrfs_node *, uint64_t, size_t, void *);
 int	btrfs_read_file_range(struct btrfs_node *, uint64_t, size_t, uint8_t *);
 int	btrfs_count_file_holes(struct btrfs_node *, uint64_t, uint64_t *);

@@ -2066,12 +2066,10 @@ btrfs_inactive(void *v)
 
 	if (deleted && !btrfs_node_readonly(node)) {
 		/*
-		 * Retire ordered writes before raw, restartable range deletion.
+		 * Reaping cancels ordered writes with their mappings.
 		 * The orphan remains durable if cleanup cannot reserve space.
 		 */
-		error = btrfs_commit_inode_data(node, ap->a_p);
-		if (error == 0)
-			error = btrfs_reap_inode(node->bn_root, node->bn_ino);
+		error = btrfs_reap_inode(node->bn_root, node->bn_ino);
 	}
 	VOP_UNLOCK(vp);
 	if (deleted)

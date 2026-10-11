@@ -1247,6 +1247,10 @@ btrfs_reap_batch(struct btrfs_trans_handle *handle, struct btrfs_root *root,
 			    extent.bfe_disk_bytenr, extent.bfe_disk_num_bytes,
 			    btrfs_ref_data(root->br_owner, ino,
 			    extent.bfe_logical - extent.bfe_disk_offset), -1);
+		/* Unwritten data dies with its mapping, without a commit. */
+		if (error == 0 && extent.bfe_disk_bytenr != 0)
+			error = btrfs_cancel_ordered_data(handle,
+			    root->br_owner, ino, &extent);
 		if (error != 0)
 			return (error);
 	}
@@ -1276,7 +1280,7 @@ out:
 /*
  * Final-link removal records a zero-link inode and orphan marker with the
  * namespace removal. Open descriptors and mappings survive until the last
- * vnode reference, whose cleanup commits any pending data before calling us.
+ * vnode reference, whose cleanup cancels pending data with its mappings.
  * Rmdir uses the same lifecycle. A fragmented shrink instead publishes its
  * target size and marker first, then commits ordered data before cleanup;
  * the locked vnode must remain locked through all batches.

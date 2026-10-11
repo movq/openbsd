@@ -93,29 +93,37 @@ btrfs_ordered_file_compare(const struct btrfs_ordered_extent *a,
 }
 
 static struct btrfs_ordered_extent *
-btrfs_find_ordered_sector(struct btrfs_transaction *trans,
-    const struct btrfs_node *node, uint64_t file_offset)
+btrfs_find_ordered(struct btrfs_transaction *trans, uint64_t treeid,
+    uint64_t ino, uint64_t file_offset)
 {
 	struct btrfs_ordered_extent key = { 0 }, *ordered;
 
 	MUTEX_ASSERT_LOCKED(&trans->bt_lock);
-	key.boe_treeid = node->bn_treeid;
-	key.boe_objectid = node->bn_ino;
+	key.boe_treeid = treeid;
+	key.boe_objectid = ino;
 	key.boe_file_offset = file_offset;
 	ordered = RBT_NFIND(btrfs_ordered_tree, &trans->bt_ordered_extents,
 	    &key);
 	if (ordered == NULL)
 		ordered = RBT_MAX(btrfs_ordered_tree, &trans->bt_ordered_extents);
 	else if (ordered->boe_file_offset != file_offset ||
-	    ordered->boe_treeid != node->bn_treeid ||
-	    ordered->boe_objectid != node->bn_ino)
+	    ordered->boe_treeid != treeid ||
+	    ordered->boe_objectid != ino)
 		ordered = RBT_PREV(btrfs_ordered_tree, ordered);
-	if (ordered == NULL || ordered->boe_treeid != node->bn_treeid ||
-	    ordered->boe_objectid != node->bn_ino ||
+	if (ordered == NULL || ordered->boe_treeid != treeid ||
+	    ordered->boe_objectid != ino ||
 	    file_offset < ordered->boe_file_offset ||
 	    file_offset - ordered->boe_file_offset >= ordered->boe_file_length)
 		return (NULL);
 	return (ordered);
+}
+
+static struct btrfs_ordered_extent *
+btrfs_find_ordered_sector(struct btrfs_transaction *trans,
+    const struct btrfs_node *node, uint64_t file_offset)
+{
+	return (btrfs_find_ordered(trans, node->bn_treeid, node->bn_ino,
+	    file_offset));
 }
 
 /*
@@ -960,49 +968,6 @@ btrfs_ordered_extents_finish(struct btrfs_transaction *trans, int committed)
 }
 
 /*
- * Raw inode cleanup must not race ordered extent coalescing or leave payloads
- * referring to deleted mappings. The locked vnode excludes new writes to this
- * inode; unrelated ordered data does not require a commit before cleanup.
- */
-int
-btrfs_commit_inode_data(struct btrfs_node *node, struct proc *p)
-{
-	struct btrfs_fs *bmp = node->bn_mount;
-	struct btrfs_transaction *trans;
-	struct btrfs_ordered_extent key = { 0 }, *ordered;
-	uint64_t generation = 0;
-
-	KASSERT(VOP_ISLOCKED(node->bn_vnode));
-	key.boe_treeid = node->bn_treeid;
-	key.boe_objectid = node->bn_ino;
-	mtx_enter(&bmp->bm_trans_mtx);
-	trans = bmp->bm_transaction;
-	if (trans != NULL) {
-		/*
-		 * A committer may already have retired the payloads, but its
-		 * metadata changes and publication must finish before cleanup.
-		 * Commit also reports an aborted transaction's error.
-		 */
-		if (trans->bt_state != BTRFS_TRANS_OPEN)
-			generation = trans->bt_generation;
-		else {
-			mtx_enter(&trans->bt_lock);
-			ordered = RBT_NFIND(btrfs_ordered_tree,
-			    &trans->bt_ordered_extents, &key);
-			if (ordered != NULL &&
-			    ordered->boe_treeid == key.boe_treeid &&
-			    ordered->boe_objectid == key.boe_objectid)
-				generation = trans->bt_generation;
-			mtx_leave(&trans->bt_lock);
-		}
-	}
-	mtx_leave(&bmp->bm_trans_mtx);
-	if (generation == 0)
-		return (0);
-	return (btrfs_trans_commit(bmp, generation, p));
-}
-
-/*
  * Reads and repeated writes find a containing live range under bt_lock.
  * Replacement changes its payload without splitting the private allocation.
  * A short truncate or copy fault may trim the live prefix: keep the complete
@@ -1428,17 +1393,18 @@ out:
  * An ordered sector has never been published and its delayed add cancels
  * the drop. Remove its payload before returning the allocation
  * to the reservation pool; a later write must not find the old payload.
+ * Inode cleanup uses this too, so unlinked data never reaches the disk.
  */
-static int
-btrfs_cancel_ordered_sector(struct btrfs_trans_handle *handle,
-    struct btrfs_node *node, const struct btrfs_file_extent *extent)
+int
+btrfs_cancel_ordered_data(struct btrfs_trans_handle *handle, uint64_t treeid,
+    uint64_t ino, const struct btrfs_file_extent *extent)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_ordered_extent *ordered;
 	int error;
 
 	mtx_enter(&trans->bt_lock);
-	ordered = btrfs_find_ordered_sector(trans, node, extent->bfe_logical);
+	ordered = btrfs_find_ordered(trans, treeid, ino, extent->bfe_logical);
 	if (ordered == NULL) {
 		mtx_leave(&trans->bt_lock);
 		return (0);
@@ -1575,7 +1541,8 @@ btrfs_file_shrink(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 				ordered->boe_file_length = left;
 			mtx_leave(&handle->bth_transaction->bt_lock);
 		} else if (extent.bfe_disk_bytenr != 0)
-			error = btrfs_cancel_ordered_sector(handle, node, &extent);
+			error = btrfs_cancel_ordered_data(handle,
+			    node->bn_treeid, node->bn_ino, &extent);
 		if (error != 0)
 			goto out;
 	}
