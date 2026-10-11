@@ -78,7 +78,8 @@ def create(base):
     assert os.pread(fd, 12, 0) == b"open orphan\n"
     assert os.pread(fd, 4096, 511 * 8192) == bytes([511 % 251]) * 4096
     # The removed name can identify a new inode while the old one is open.
-    name.write_bytes(b"new name\n")
+    # One full block, so the file is not stored inline.
+    name.write_bytes(b"new name\n".ljust(4096, b"\0"))
     assert name.stat().st_ino != old.st_ino
     os.close(fd)
     # Final cleanup can remain in the open transaction. Freed allocations
