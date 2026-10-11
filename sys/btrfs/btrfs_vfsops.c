@@ -914,6 +914,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 	pool_init(&bmp->bm_metadata_pool, letoh32(sb->nodesize), 0, IPL_NONE,
 	    PR_WAITOK, "btrmetadata", NULL);
 	pool_sethiwat(&bmp->bm_metadata_pool, 64);
+	btrfs_payload_init(bmp);
 	/*
 	 * Backup roots are retained for diagnostics only.  Recovery must
 	 * roll the tree and chunk roots back as one coordinated operation.
@@ -988,6 +989,7 @@ out:
 			btrfs_extent_buffers_purge(bmp);
 			pool_destroy(&bmp->bm_metadata_pool);
 			pool_destroy(&bmp->bm_scratch_pool);
+			btrfs_payload_destroy(bmp);
 			btrfs_free_roots(bmp);
 			free(bmp->bm_chunks, M_BTRFS,
 			    bmp->bm_nchunks * sizeof(*bmp->bm_chunks));
@@ -1349,6 +1351,7 @@ btrfs_unmount(struct mount *mp, int mntflags, struct proc *p)
 	btrfs_extent_buffers_purge(bmp);
 	pool_destroy(&bmp->bm_metadata_pool);
 	pool_destroy(&bmp->bm_scratch_pool);
+	btrfs_payload_destroy(bmp);
 	btrfs_space_destroy(bmp);
 	btrfs_free_roots(bmp);
 

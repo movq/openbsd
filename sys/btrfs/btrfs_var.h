@@ -608,6 +608,8 @@ struct btrfs_fs {
 	int				 bm_open_flags;
 	struct pool			 bm_scratch_pool;
 	struct pool			 bm_metadata_pool;
+	/* Pending payloads above MAXALLOCSAVE: 16, 32 and 64 KiB classes. */
+	struct pool			 bm_payload_pools[3];
 	struct btrfs_super_block	 bm_super;
 	uint8_t				 bm_backup_roots_valid;
 	uint8_t				 bm_seeding;
@@ -862,6 +864,8 @@ int	btrfs_lookup_directory(struct btrfs_root *, uint64_t, const char *,
 int	btrfs_find_file_extent(const struct btrfs_fs *,
 	    struct btrfs_root *, struct btrfs_path *, uint64_t, uint64_t,
 	    uint64_t, struct btrfs_file_extent *);
+void	btrfs_payload_init(struct btrfs_fs *);
+void	btrfs_payload_destroy(struct btrfs_fs *);
 int	btrfs_cancel_ordered_data(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t, const struct btrfs_file_extent *);
 int	btrfs_read_ordered_range(struct btrfs_node *, uint64_t, size_t, void *);

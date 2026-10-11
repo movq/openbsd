@@ -92,6 +92,71 @@ btrfs_ordered_file_compare(const struct btrfs_ordered_extent *a,
 	return (a->boe_file_offset > b->boe_file_offset);
 }
 
+/*
+ * Payloads live until their transaction drains or commits. Small ones use
+ * malloc buckets; larger ones come from pools retaining a full ordered-data
+ * watermark, so each drain does not unmap (and shoot down) kernel memory.
+ * The pool GC still returns idle pages.
+ */
+static struct pool *
+btrfs_payload_pool(struct btrfs_fs *bmp, uint32_t length)
+{
+	unsigned int i;
+
+	if (length <= MAXALLOCSAVE)
+		return (NULL);
+	for (i = 0; length > (MAXBSIZE >> (nitems(bmp->bm_payload_pools) -
+	    1 - i)); i++)
+		;
+	KASSERT(i < nitems(bmp->bm_payload_pools));
+	return (&bmp->bm_payload_pools[i]);
+}
+
+void
+btrfs_payload_init(struct btrfs_fs *bmp)
+{
+	uint32_t size;
+	unsigned int i;
+
+	for (i = 0; i < nitems(bmp->bm_payload_pools); i++) {
+		size = MAXBSIZE >> (nitems(bmp->bm_payload_pools) - 1 - i);
+		pool_init(&bmp->bm_payload_pools[i], size, 0, IPL_NONE,
+		    PR_WAITOK, "btrpayload", NULL);
+		pool_sethiwat(&bmp->bm_payload_pools[i],
+		    BTRFS_ORDERED_BYTES_MAX / size);
+	}
+}
+
+void
+btrfs_payload_destroy(struct btrfs_fs *bmp)
+{
+	unsigned int i;
+
+	for (i = 0; i < nitems(bmp->bm_payload_pools); i++)
+		pool_destroy(&bmp->bm_payload_pools[i]);
+}
+
+static void *
+btrfs_payload_alloc(struct btrfs_fs *bmp, uint32_t length)
+{
+	struct pool *pp = btrfs_payload_pool(bmp, length);
+
+	if (pp == NULL)
+		return (malloc(length, M_BTRFS, M_WAITOK));
+	return (pool_get(pp, PR_WAITOK));
+}
+
+static void
+btrfs_payload_free(struct btrfs_fs *bmp, void *data, uint32_t length)
+{
+	struct pool *pp = btrfs_payload_pool(bmp, length);
+
+	if (pp == NULL)
+		free(data, M_BTRFS, length);
+	else
+		pool_put(pp, data);
+}
+
 static struct btrfs_ordered_extent *
 btrfs_find_ordered(struct btrfs_transaction *trans, uint64_t treeid,
     uint64_t ino, uint64_t file_offset)
@@ -769,7 +834,8 @@ btrfs_write_inode_ordered(struct btrfs_trans_handle *handle,
 		KASSERT(trans->bt_ordered_bytes >= ordered->boe_length);
 		trans->bt_ordered_bytes -= ordered->boe_length;
 		mtx_leave(&trans->bt_lock);
-		free(ordered->boe_data, M_BTRFS, ordered->boe_length);
+		btrfs_payload_free(trans->bt_mount, ordered->boe_data,
+		    ordered->boe_length);
 		free(ordered, M_BTRFS, sizeof(*ordered));
 		ordered = next;
 	}
@@ -959,8 +1025,12 @@ btrfs_ordered_extents_finish(struct btrfs_transaction *trans, int committed)
 		    ordered);
 		KASSERT(trans->bt_ordered_bytes >= ordered->boe_length);
 		trans->bt_ordered_bytes -= ordered->boe_length;
-		free(ordered->boe_data, M_BTRFS, ordered->boe_length);
+		/* Releasing pool pages can sleep. */
+		mtx_leave(&trans->bt_lock);
+		btrfs_payload_free(trans->bt_mount, ordered->boe_data,
+		    ordered->boe_length);
 		free(ordered, M_BTRFS, sizeof(*ordered));
+		mtx_enter(&trans->bt_lock);
 	}
 	KASSERT(trans->bt_ordered_bytes == 0);
 	mtx_leave(&trans->bt_lock);
@@ -1423,7 +1493,8 @@ btrfs_cancel_ordered_data(struct btrfs_trans_handle *handle, uint64_t treeid,
 	/* Its checksums have not been inserted yet. */
 	error = btrfs_space_cancel_alloc(handle, ordered->boe_bytenr,
 	    ordered->boe_length);
-	free(ordered->boe_data, M_BTRFS, ordered->boe_length);
+	btrfs_payload_free(trans->bt_mount, ordered->boe_data,
+		    ordered->boe_length);
 	free(ordered, M_BTRFS, sizeof(*ordered));
 	return (error);
 }
@@ -1890,8 +1961,8 @@ btrfs_write_extent_apply(struct btrfs_write_operation *op,
 		return (error);
 	new_ordered = malloc(sizeof(*new_ordered), M_BTRFS,
 	    M_WAITOK | M_ZERO);
-	new_ordered->boe_data = malloc(extent->allocated_length, M_BTRFS,
-	    M_WAITOK);
+	new_ordered->boe_data = btrfs_payload_alloc(trans->bt_mount,
+	    extent->allocated_length);
 	memcpy(new_ordered->boe_data, data, extent->allocated_length);
 	new_ordered->boe_treeid = node->bn_treeid;
 	new_ordered->boe_objectid = node->bn_ino;
@@ -1925,7 +1996,8 @@ btrfs_write_extent_apply(struct btrfs_write_operation *op,
 	return (0);
 
 fail:
-	free(new_ordered->boe_data, M_BTRFS, extent->allocated_length);
+	btrfs_payload_free(trans->bt_mount, new_ordered->boe_data,
+	    extent->allocated_length);
 	free(new_ordered, M_BTRFS, sizeof(*new_ordered));
 	return (error);
 }
