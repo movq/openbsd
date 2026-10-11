@@ -804,6 +804,7 @@ const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
 void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
 	    struct btrfs_extent_buffer *);
 void	btrfs_extent_buffer_put(struct btrfs_extent_buffer *);
+void	btrfs_extent_buffer_cache(struct btrfs_fs *, const void *);
 void	btrfs_extent_buffers_init(struct btrfs_fs *);
 void	btrfs_extent_buffers_purge(struct btrfs_fs *);
 int	btrfs_write_dirty_metadata(struct btrfs_transaction *);

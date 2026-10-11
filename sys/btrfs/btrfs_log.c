@@ -647,6 +647,8 @@ log_write_block(struct btrfs_fs *bmp, void *buffer, uint8_t level,
 	    BTRFS_BLOCK_GROUP_METADATA, buffer, batch);
 	if (error != 0)
 		return (error);
+	/* The next publication edits this block. */
+	btrfs_extent_buffer_cache(bmp, buffer);
 	block = malloc(sizeof(*block), M_BTRFS, M_WAITOK | M_ZERO);
 	block->bytenr = bytenr;
 	block->first = *first;

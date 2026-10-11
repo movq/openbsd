@@ -161,6 +161,50 @@ btrfs_extent_buffer_publish(struct btrfs_extent_buffer *eb)
 	return (0);
 }
 
+/*
+ * Cache a validated block written outside any transaction, such as a log
+ * block, as if it had just been read. An active older copy stays uncached.
+ */
+void
+btrfs_extent_buffer_cache(struct btrfs_fs *bmp, const void *data)
+{
+	const struct btrfs_header *header = data;
+	struct btrfs_extent_buffer *eb, *old, *victim = NULL;
+	uint32_t nodesize = letoh32(bmp->bm_super.nodesize);
+
+	eb = malloc(sizeof(*eb), M_BTRFS, M_WAITOK | M_ZERO);
+	eb->eb_private = pool_get(&bmp->bm_metadata_pool, PR_WAITOK);
+	memcpy(eb->eb_private, data, nodesize);
+	rw_init_flags(&eb->eb_lock, "btreebuf", RWL_DUPOK);
+	eb->eb_mount = bmp;
+	eb->eb_bytenr = letoh64(header->bytenr);
+	eb->eb_generation = eb->eb_max_generation = letoh64(header->generation);
+	eb->eb_owner = letoh64(header->owner);
+	eb->eb_level = header->level;
+	eb->eb_loaded = 1;
+
+	mtx_enter(&bmp->bm_ebmtx);
+	old = btrfs_extent_buffer_lookup(bmp, eb->eb_bytenr);
+	if (old != NULL && old->eb_refs != 0) {
+		mtx_leave(&bmp->bm_ebmtx);
+		btrfs_extent_buffer_free(eb);
+		return;
+	}
+	if (old != NULL)
+		btrfs_extent_buffer_uncache(bmp, old);
+	LIST_INSERT_HEAD(btrfs_extent_buffer_bucket(bmp, eb->eb_bytenr), eb,
+	    eb_entry);
+	TAILQ_INSERT_TAIL(&bmp->bm_eb_lru, eb, eb_lru);
+	bmp->bm_eb_cached++;
+	if (bmp->bm_eb_cached > bmp->bm_eb_limit) {
+		victim = TAILQ_FIRST(&bmp->bm_eb_lru);
+		btrfs_extent_buffer_uncache(bmp, victim);
+	}
+	mtx_leave(&bmp->bm_ebmtx);
+	btrfs_extent_buffer_free(old);
+	btrfs_extent_buffer_free(victim);
+}
+
 void
 btrfs_extent_buffers_purge(struct btrfs_fs *bmp)
 {
