@@ -24,8 +24,9 @@
  * The superblock alone names the published forest, at the open generation.
  *
  * Submitted data leaves the ordered index with materialized references.
- * Subsequent writes COW it normally. Creation can log fresh ancestry; other
- * namespace mutations still force full commit.
+ * Subsequent writes COW it normally. New inodes log their names and fresh
+ * ancestry; committed inodes log names only once they change. Names which
+ * replay must reconcile across several parents still force full commit.
  */
 
 #include <sys/param.h>
@@ -39,6 +40,7 @@
 
 #include <btrfs/btrfs_var.h>
 #include <btrfs/btrfs_data.h>
+#include <btrfs/btrfs_dir.h>
 #include <btrfs/btrfs_log.h>
 
 struct log_block {
@@ -117,6 +119,107 @@ void
 btrfs_log_destroy(struct btrfs_fs *bmp)
 {
 	btrfs_space_log_release(bmp);
+}
+
+static int
+btrfs_log_name_compare(const struct btrfs_log_name *a,
+    const struct btrfs_log_name *b)
+{
+	if (a->bln_treeid != b->bln_treeid)
+		return (a->bln_treeid < b->bln_treeid ? -1 : 1);
+	if (a->bln_ino != b->bln_ino)
+		return (a->bln_ino < b->bln_ino ? -1 : 1);
+	return (0);
+}
+RBT_GENERATE(btrfs_log_names, btrfs_log_name, bln_entry,
+    btrfs_log_name_compare);
+
+static int
+log_name_flags(struct btrfs_transaction *trans, uint64_t treeid, uint64_t ino)
+{
+	struct btrfs_log_name match, *entry;
+	int flags = 0;
+
+	match.bln_treeid = treeid;
+	match.bln_ino = ino;
+	mtx_enter(&trans->bt_lock);
+	entry = RBT_FIND(btrfs_log_names, &trans->bt_log_names, &match);
+	if (entry != NULL)
+		flags = entry->bln_flags;
+	mtx_leave(&trans->bt_lock);
+	return (flags);
+}
+
+static void
+log_name_update(struct btrfs_transaction *trans, uint64_t treeid,
+    uint64_t ino, int set, int clear)
+{
+	struct btrfs_log_name *entry, *spare;
+
+	spare = malloc(sizeof(*spare), M_BTRFS, M_WAITOK | M_ZERO);
+	spare->bln_treeid = treeid;
+	spare->bln_ino = ino;
+	mtx_enter(&trans->bt_lock);
+	entry = RBT_INSERT(btrfs_log_names, &trans->bt_log_names, spare);
+	if (entry == NULL) {
+		entry = spare;
+		spare = NULL;
+	}
+	entry->bln_flags = (entry->bln_flags & ~clear) | set;
+	mtx_leave(&trans->bt_lock);
+	if (spare != NULL)
+		free(spare, M_BTRFS, sizeof(*spare));
+}
+
+/*
+ * Replay links each logged name over whatever the committed tree has there,
+ * and replaces an inode's committed names under its logged parent. Logged
+ * names which change are relogged by the next publication. A committed inode
+ * whose names changed logs them whenever it is logged.
+ */
+void
+btrfs_log_names_changed(struct btrfs_trans_handle *handle,
+    struct btrfs_node *node)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_log_name match, *entry, *spare = NULL;
+	int changed;
+
+	changed = node->bn_inode.bi_generation <=
+	    trans->bt_mount->bm_last_transid && node->bn_inode.bi_nlink != 0;
+	if (changed) {
+		spare = malloc(sizeof(*spare), M_BTRFS, M_WAITOK | M_ZERO);
+		spare->bln_treeid = node->bn_treeid;
+		spare->bln_ino = node->bn_ino;
+	}
+	match.bln_treeid = node->bn_treeid;
+	match.bln_ino = node->bn_ino;
+	mtx_enter(&trans->bt_lock);
+	entry = RBT_FIND(btrfs_log_names, &trans->bt_log_names, &match);
+	if (entry == NULL && spare != NULL) {
+		RBT_INSERT(btrfs_log_names, &trans->bt_log_names, spare);
+		entry = spare;
+		spare = NULL;
+	}
+	if (entry != NULL && (entry->bln_flags & BTRFS_LOG_NAME_LOGGED))
+		entry->bln_flags |= BTRFS_LOG_NAME_STALE;
+	if (changed)
+		entry->bln_flags |= BTRFS_LOG_NAME_CHANGED;
+	mtx_leave(&trans->bt_lock);
+	if (spare != NULL)
+		free(spare, M_BTRFS, sizeof(*spare));
+}
+
+void
+btrfs_log_names_free(struct btrfs_transaction *trans)
+{
+	struct btrfs_log_name *entry;
+
+	while ((entry = RBT_ROOT(btrfs_log_names, &trans->bt_log_names)) !=
+	    NULL) {
+		RBT_REMOVE(btrfs_log_names, &trans->bt_log_names, entry);
+		free(entry, M_BTRFS, sizeof(*entry));
+	}
 }
 
 /*
@@ -212,10 +315,171 @@ log_hole(struct log_items *items, uint64_t ino, uint64_t start,
 	return (btrfs_log_add(items, &key, &extent, sizeof(extent)));
 }
 
+#define LOG_PENDING_MAX	16
+
+/* One publication: the target, its ancestry, and other affected names. */
+struct log_writer {
+	struct btrfs_trans_handle *handle;
+	struct btrfs_root *root;
+	/* The committed subvolume tree, against which replay links names. */
+	struct btrfs_root commit;
+	struct btrfs_root_item subtree;
+	struct log_items items, csums;
+	/* Inodes to log after the target: stale or displaced names. */
+	uint64_t pending[LOG_PENDING_MAX];
+	unsigned int npending;
+};
+
+struct log_owner {
+	const uint8_t *name;
+	uint64_t ino;
+	uint16_t len;
+};
+
 static int
-log_collect_inode(struct btrfs_root *root, struct log_items *items,
-    struct log_items *csums, uint64_t ino, uint64_t *parent)
+log_commit_root(struct log_writer *w)
 {
+	struct btrfs_fs *bmp = w->root->br_mount;
+	struct btrfs_root tree;
+	struct btrfs_root_item item;
+	int error;
+
+	if (w->commit.br_mount != NULL)
+		return (0);
+	memset(&tree, 0, sizeof(tree));
+	tree.br_mount = bmp;
+	tree.br_super = &bmp->bm_super;
+	tree.br_owner = BTRFS_ROOT_TREE_OBJECTID;
+	tree.br_bytenr = letoh64(bmp->bm_super.root);
+	tree.br_generation = tree.br_view_generation =
+	    letoh64(bmp->bm_super.generation);
+	tree.br_level = bmp->bm_super.root_level;
+	error = btrfs_find_root_item(&tree, w->root->br_owner,
+	    BTRFS_FIRST_FREE_OBJECTID, &item, NULL);
+	/* Root changes force a commit; this is only a safety net. */
+	if (error == ENOENT)
+		error = EAGAIN;
+	if (error != 0)
+		return (error);
+	w->commit = tree;
+	w->commit.br_owner = w->root->br_owner;
+	w->commit.br_bytenr = letoh64(item.bytenr);
+	w->commit.br_generation = letoh64(item.generation);
+	w->commit.br_level = item.level;
+	return (0);
+}
+
+static int
+log_pending_add(struct log_writer *w, uint64_t ino)
+{
+	unsigned int i;
+
+	for (i = 0; i < w->npending; i++)
+		if (w->pending[i] == ino)
+			return (0);
+	if (w->npending == LOG_PENDING_MAX)
+		return (EAGAIN);
+	w->pending[w->npending++] = ino;
+	return (0);
+}
+
+static int
+log_owner_match(const struct btrfs_dir_entry *entry, void *arg)
+{
+	struct log_owner *owner = arg;
+
+	if (entry->bde_namelen == owner->len &&
+	    memcmp(entry->bde_name, owner->name, owner->len) == 0)
+		owner->ino = entry->bde_subvolume ? UINT64_MAX :
+		    entry->bde_objectid;
+	return (0);
+}
+
+/*
+ * A logged name replaces any committed entry. If that named a committed inode
+ * which has since moved, its new name must be logged too: otherwise replay
+ * unlinks it.
+ */
+static int
+log_displaced(struct log_writer *w, uint64_t ino, uint64_t parent)
+{
+	struct btrfs_inode_ref_record ref;
+	struct btrfs_inode inode;
+	struct log_owner owner;
+	struct log_item *item;
+	uint32_t pos;
+	int error;
+
+	item = btrfs_log_find(&w->items, ino, BTRFS_INODE_REF_KEY, parent);
+	if (item == NULL)
+		return (EINVAL);
+	error = log_commit_root(w);
+	for (pos = 0; error == 0 && pos < item->size; pos += ref.bytes) {
+		error = btrfs_decode_inode_ref(&item->key, item->data,
+		    item->size, pos, &ref);
+		if (error == 0)
+			error = btrfs_validate_inode_ref(&item->key, &ref);
+		if (error != 0)
+			break;
+		owner.name = ref.name;
+		owner.len = ref.len;
+		owner.ino = 0;
+		error = btrfs_lookup_directory(&w->commit, parent,
+		    (const char *)ref.name, ref.len, log_owner_match, &owner);
+		if (error == 0 && owner.ino == UINT64_MAX)
+			error = EAGAIN;
+		if (error != 0 || owner.ino == 0 || owner.ino == ino)
+			continue;
+		/* An unlinked owner is meant to lose the name. */
+		error = btrfs_find_inode(w->root, owner.ino, &inode);
+		if (error == 0 && inode.bi_nlink != 0)
+			error = log_pending_add(w, owner.ino);
+		else if (error == ENOENT)
+			error = 0;
+	}
+	return (error);
+}
+
+/* Replay replaces committed names only under the logged parent. */
+static int
+log_commit_refs(struct log_writer *w, uint64_t ino, uint64_t parent)
+{
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	int error;
+
+	error = log_commit_root(w);
+	if (error != 0)
+		return (error);
+	target.objectid = htole64(ino);
+	target.type = BTRFS_INODE_REF_KEY;
+	error = btrfs_search_lower_bound(&w->commit, &target, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &key, NULL, NULL);
+		if (error != 0 || key->objectid != target.objectid ||
+		    key->type > BTRFS_INODE_EXTREF_KEY)
+			break;
+		if (key->type != BTRFS_INODE_REF_KEY ||
+		    letoh64(key->offset) != parent) {
+			error = EAGAIN;
+			break;
+		}
+		error = btrfs_next_item(&path);
+	}
+	btrfs_release_path(&path);
+	return (error == ENOENT ? 0 : error);
+}
+
+/*
+ * New inodes carry their names, as do committed inodes whose names changed
+ * or were already logged. Other committed inodes keep their committed names.
+ */
+static int
+log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
+{
+	struct btrfs_root *root = w->root;
+	struct log_items *items = &w->items, *csums = &w->csums;
 	struct btrfs_fs *bmp = root->br_mount;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key target = { 0 };
@@ -226,7 +490,7 @@ log_collect_inode(struct btrfs_root *root, struct log_items *items,
 	uint64_t cursor = 0, end;
 	uint64_t generation = bmp->bm_transaction->bt_generation;
 	uint32_t size, sector = letoh32(bmp->bm_super.sectorsize);
-	int error, inline_data = 0;
+	int committed, error, inline_data = 0, names;
 
 	error = btrfs_find_inode(root, ino, &inode);
 	if (error != 0)
@@ -234,6 +498,10 @@ log_collect_inode(struct btrfs_root *root, struct log_items *items,
 	if ((!S_ISREG(inode.bi_mode) && !S_ISDIR(inode.bi_mode)) ||
 	    inode.bi_nlink == 0)
 		return (EAGAIN);
+	committed = inode.bi_generation <= bmp->bm_last_transid;
+	names = !committed || (log_name_flags(bmp->bm_transaction,
+	    root->br_owner, ino) &
+	    (BTRFS_LOG_NAME_LOGGED | BTRFS_LOG_NAME_CHANGED));
 	*parent = 0;
 	end = roundup(inode.bi_size, sector);
 	target.objectid = htole64(ino);
@@ -248,21 +516,19 @@ log_collect_inode(struct btrfs_root *root, struct log_items *items,
 		if (key->type == BTRFS_INODE_ITEM_KEY ||
 		    key->type == BTRFS_XATTR_ITEM_KEY ||
 		    key->type == BTRFS_EXTENT_DATA_KEY ||
-		    (inode.bi_generation > bmp->bm_last_transid &&
-		    key->type == BTRFS_INODE_REF_KEY)) {
+		    (names && key->type == BTRFS_INODE_REF_KEY)) {
 			error = btrfs_log_add(items, key, data, size);
 			if (error != 0)
 				break;
 		}
-		if (inode.bi_generation > bmp->bm_last_transid &&
-		    key->type == BTRFS_INODE_REF_KEY) {
-			/* Creation has one parent; link/rename force a commit. */
-			if (*parent != 0) {
-				error = EAGAIN;
-				break;
-			}
-			*parent = letoh64(key->offset);
+		/* Names under several parents force a commit. */
+		if (names && (key->type == BTRFS_INODE_EXTREF_KEY ||
+		    (key->type == BTRFS_INODE_REF_KEY && *parent != 0))) {
+			error = EAGAIN;
+			break;
 		}
+		if (names && key->type == BTRFS_INODE_REF_KEY)
+			*parent = letoh64(key->offset);
 		if (key->type == BTRFS_EXTENT_DATA_KEY) {
 			error = btrfs_decode_file_extent(bmp, generation, key,
 			    data, size, &extent);
@@ -291,9 +557,10 @@ log_collect_inode(struct btrfs_root *root, struct log_items *items,
 		error = 0;
 	if (error == 0 && !inline_data && S_ISREG(inode.bi_mode))
 		error = log_hole(items, ino, cursor, end, generation);
-	if (error == 0 && inode.bi_generation > bmp->bm_last_transid &&
-	    *parent == 0)
+	if (error == 0 && names && *parent == 0)
 		error = EAGAIN;
+	if (error == 0 && names && committed)
+		error = log_commit_refs(w, ino, *parent);
 	/*
 	 * Existing ancestry needs only an existence record. New directories
 	 * carry xattrs and their own parent reference, but no directory ranges:
@@ -304,8 +571,7 @@ log_collect_inode(struct btrfs_root *root, struct log_items *items,
 		    BTRFS_INODE_ITEM_KEY, 0);
 		struct btrfs_inode_item *disk = (void *)item->data;
 
-		if (S_ISDIR(inode.bi_mode) &&
-		    inode.bi_generation <= bmp->bm_last_transid)
+		if (S_ISDIR(inode.bi_mode) && committed)
 			disk->generation = 0;
 		else if (inode.bi_generation == 0) {
 			/*
@@ -650,27 +916,131 @@ log_update(struct btrfs_fs *bmp, struct btrfs_root_item *root,
 	return (error);
 }
 
+/* Log an inode and any new ancestry, marking which names are now logged. */
+static int
+log_inode_path(struct log_writer *w, uint64_t ino)
+{
+	struct btrfs_fs *bmp = w->root->br_mount;
+	struct btrfs_key low = { 0 }, high = { 0 };
+	uint64_t parent;
+	unsigned int depth = 0;
+	int error;
+
+	do {
+		error = log_collect_inode(w, ino, &parent);
+		if (error == 0 && parent != 0)
+			error = log_displaced(w, ino, parent);
+		if (error != 0)
+			return (error);
+		low.objectid = htole64(ino);
+		high.objectid = htole64(ino + 1);
+		error = log_update(bmp, &w->subtree, &w->items, &low, &high, 0);
+		if (error != 0)
+			return (error);
+		if (parent != 0)
+			log_name_update(bmp->bm_transaction, w->root->br_owner,
+			    ino, BTRFS_LOG_NAME_LOGGED, BTRFS_LOG_NAME_STALE);
+		ino = parent;
+		/* Corrupt ancestry must not loop or exhaust the kernel stack. */
+		if (++depth > MAXPATHLEN)
+			return (EAGAIN);
+	} while (ino != 0);
+	return (0);
+}
+
+/*
+ * Queue inodes whose logged names changed since publication. Drop those which
+ * lost their last name; replay must not resurrect them.
+ */
+static int
+log_stale_names(struct log_writer *w)
+{
+	struct btrfs_transaction *trans = w->handle->bth_transaction;
+	struct btrfs_log_name *entry;
+	struct btrfs_inode inode;
+	struct btrfs_key low = { 0 }, high = { 0 };
+	uint64_t treeid, ino;
+	int error;
+
+	for (;;) {
+		mtx_enter(&trans->bt_lock);
+		RBT_FOREACH(entry, btrfs_log_names, &trans->bt_log_names)
+			if (entry->bln_flags & BTRFS_LOG_NAME_STALE)
+				break;
+		if (entry != NULL) {
+			treeid = entry->bln_treeid;
+			ino = entry->bln_ino;
+			entry->bln_flags &= ~BTRFS_LOG_NAME_STALE;
+		}
+		mtx_leave(&trans->bt_lock);
+		if (entry == NULL)
+			return (0);
+		if (treeid != w->root->br_owner)
+			return (EAGAIN);
+		error = btrfs_find_inode(w->root, ino, &inode);
+		if (error == 0 && inode.bi_nlink != 0)
+			error = log_pending_add(w, ino);
+		else if (error == 0 || error == ENOENT) {
+			low.objectid = htole64(ino);
+			high.objectid = htole64(ino + 1);
+			error = log_update(trans->bt_mount, &w->subtree,
+			    &w->items, &low, &high, 0);
+			log_name_update(trans, treeid, ino, 0,
+			    BTRFS_LOG_NAME_LOGGED);
+		}
+		if (error != 0)
+			return (error);
+	}
+}
+
+/* The target goes first, so a drop cannot empty the subtree. */
+static int
+log_names(struct log_writer *w, uint64_t target)
+{
+	struct btrfs_transaction *trans = w->handle->bth_transaction;
+	uint64_t ino;
+	unsigned int i;
+	int error;
+
+	error = log_inode_path(w, target);
+	if (error == 0)
+		error = log_stale_names(w);
+	for (i = 0; error == 0 && i < w->npending; i++) {
+		ino = w->pending[i];
+		log_name_update(trans, w->root->br_owner, ino,
+		    BTRFS_LOG_NAME_LOGGED, 0);
+		error = btrfs_write_inode_ordered(w->handle,
+		    w->root->br_owner, ino);
+		if (error == 0)
+			error = log_inode_path(w, ino);
+	}
+	return (error);
+}
+
 int
 btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
     struct proc *p)
 {
 	struct btrfs_fs *bmp = node->bn_mount;
-	struct log_items items, csums;
+	struct log_writer w;
+	struct log_items *items = &w.items;
 	struct log_item *item;
 	struct btrfs_root log;
-	struct btrfs_root_item forest = { 0 }, subtree = { 0 };
+	struct btrfs_root_item forest = { 0 }, *subtree = &w.subtree;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key key = { 0 }, low = { 0 }, high = { 0 };
 	struct btrfs_super_block *super;
 	const uint8_t *data;
-	uint64_t ino = node->bn_ino, parent;
 	uint32_t size;
-	unsigned int depth = 0;
 	int error, end_error;
 
-	RBT_INIT(log_items, &items);
-	RBT_INIT(log_items, &csums);
-	error = btrfs_write_inode_ordered(handle, node);
+	memset(&w, 0, sizeof(w));
+	w.handle = handle;
+	w.root = node->bn_root;
+	RBT_INIT(log_items, &w.items);
+	RBT_INIT(log_items, &w.csums);
+	error = btrfs_write_inode_ordered(handle, node->bn_treeid,
+	    node->bn_ino);
 	if (error != 0)
 		goto out;
 	forest.bytenr = bmp->bm_super.log_root;
@@ -683,49 +1053,35 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		error = btrfs_search_slot(&log, &key, &path);
 		if (error == 0) {
 			error = btrfs_path_item(&path, NULL, &data, &size);
-			if (error == 0 && size != sizeof(subtree))
+			if (error == 0 && size != sizeof(*subtree))
 				error = EINVAL;
 			if (error == 0)
-				memcpy(&subtree, data, size);
+				memcpy(subtree, data, size);
 		} else if (error == ENOENT)
 			error = 0;
 		btrfs_release_path(&path);
 		if (error != 0)
 			goto out;
 	}
-	do {
-		error = log_collect_inode(node->bn_root, &items, &csums,
-		    ino, &parent);
-		if (error != 0)
-			goto out;
-		low.objectid = htole64(ino);
-		high.objectid = htole64(ino + 1);
-		error = log_update(bmp, &subtree, &items, &low, &high, 0);
-		if (error != 0)
-			goto out;
-		ino = parent;
-		/* Corrupt ancestry must not loop or exhaust the kernel stack. */
-		if (++depth > MAXPATHLEN) {
-			error = EAGAIN;
-			goto out;
-		}
-	} while (ino != 0);
-	while ((item = RBT_MIN(log_items, &csums)) != NULL) {
-		RBT_REMOVE(log_items, &csums, item);
-		RBT_INSERT(log_items, &items, item);
+	error = log_names(&w, node->bn_ino);
+	if (error != 0)
+		goto out;
+	while ((item = RBT_MIN(log_items, &w.csums)) != NULL) {
+		RBT_REMOVE(log_items, &w.csums, item);
+		RBT_INSERT(log_items, items, item);
 		low = high = item->key;
 		high.offset = htole64(letoh64(low.offset) +
 		    item->size / btrfs_csum_size(&bmp->bm_super) *
 		    letoh32(bmp->bm_super.sectorsize));
-		error = log_update(bmp, &subtree, &items, &low, &high, 1);
+		error = log_update(bmp, subtree, items, &low, &high, 1);
 		if (error != 0)
 			goto out;
 	}
-	error = btrfs_log_add(&items, &key, &subtree, sizeof(subtree));
+	error = btrfs_log_add(items, &key, subtree, sizeof(*subtree));
 	low = high = key;
 	high.offset = htole64(node->bn_treeid + 1);
 	if (error == 0)
-		error = log_update(bmp, &forest, &items, &low, &high, 0);
+		error = log_update(bmp, &forest, items, &low, &high, 0);
 	if (error != 0)
 		goto out;
 	error = btrfs_sync_device(bmp, p);
@@ -744,8 +1100,8 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		memcpy(&bmp->bm_super, super, sizeof(*super));
 	free(super, M_BTRFS, sizeof(*super));
 out:
-	btrfs_log_free_items(&items);
-	btrfs_log_free_items(&csums);
+	btrfs_log_free_items(&w.items);
+	btrfs_log_free_items(&w.csums);
 	/* Unpublished log blocks remain excluded until the fallback commits. */
 	return (error);
 }

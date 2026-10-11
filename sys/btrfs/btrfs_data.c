@@ -665,9 +665,10 @@ btrfs_extent_plan_apply(struct btrfs_trans_handle *handle,
 	return (0);
 }
 
+/* A zero tree submits every inode's data. */
 static int
-btrfs_submit_ordered(struct btrfs_trans_handle *handle,
-    struct btrfs_node *node)
+btrfs_submit_ordered(struct btrfs_trans_handle *handle, uint64_t treeid,
+    uint64_t ino)
 {
 	struct btrfs_transaction *trans;
 	struct btrfs_ordered_extent match = { 0 }, *ordered, *next, *first;
@@ -700,17 +701,17 @@ btrfs_submit_ordered(struct btrfs_trans_handle *handle,
 	mtx_leave(&bmp->bm_trans_mtx);
 
 	sectorsize = letoh32(bmp->bm_super.sectorsize);
-	if (node != NULL) {
-		match.boe_treeid = node->bn_treeid;
-		match.boe_objectid = node->bn_ino;
+	if (treeid != 0) {
+		match.boe_treeid = treeid;
+		match.boe_objectid = ino;
 		ordered = RBT_NFIND(btrfs_ordered_tree,
 		    &trans->bt_ordered_extents, &match);
 	} else
 		ordered = RBT_MIN(btrfs_ordered_tree, &trans->bt_ordered_extents);
 	for (; ordered != NULL;
 	    ordered = RBT_NEXT(btrfs_ordered_tree, ordered)) {
-		if (node != NULL && (ordered->boe_treeid != node->bn_treeid ||
-		    ordered->boe_objectid != node->bn_ino))
+		if (treeid != 0 && (ordered->boe_treeid != treeid ||
+		    ordered->boe_objectid != ino))
 			break;
 		if (ordered->boe_written)
 			continue;
@@ -803,26 +804,26 @@ out:
 int
 btrfs_write_ordered_extents(struct btrfs_trans_handle *handle)
 {
-	return (btrfs_submit_ordered(handle, NULL));
+	return (btrfs_submit_ordered(handle, 0, 0));
 }
 
 int
 btrfs_write_inode_ordered(struct btrfs_trans_handle *handle,
-    struct btrfs_node *node)
+    uint64_t treeid, uint64_t ino)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_ordered_extent match = { 0 }, *ordered, *next;
 	int error;
 
-	error = btrfs_submit_ordered(handle, node);
+	error = btrfs_submit_ordered(handle, treeid, ino);
 	if (error != 0)
 		return (error);
-	match.boe_treeid = node->bn_treeid;
-	match.boe_objectid = node->bn_ino;
+	match.boe_treeid = treeid;
+	match.boe_objectid = ino;
 	ordered = RBT_NFIND(btrfs_ordered_tree, &trans->bt_ordered_extents,
 	    &match);
-	while (ordered != NULL && ordered->boe_treeid == node->bn_treeid &&
-	    ordered->boe_objectid == node->bn_ino) {
+	while (ordered != NULL && ordered->boe_treeid == treeid &&
+	    ordered->boe_objectid == ino) {
 		next = RBT_NEXT(btrfs_ordered_tree, ordered);
 		KASSERT(ordered->boe_written);
 		error = btrfs_materialize_ordered_ref(handle, ordered);

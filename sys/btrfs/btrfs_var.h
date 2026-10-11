@@ -344,6 +344,24 @@ enum btrfs_trans_state {
 	BTRFS_TRANS_ABORTED
 };
 
+/*
+ * Per-transaction name state for the log: new inodes whose references are
+ * logged, and committed inodes and directories whose names have changed.
+ */
+struct btrfs_log_name {
+	RBT_ENTRY(btrfs_log_name)	 bln_entry;
+	uint64_t			 bln_treeid;
+	uint64_t			 bln_ino;
+	int				 bln_flags;
+};
+RBT_HEAD(btrfs_log_names, btrfs_log_name);
+RBT_PROTOTYPE(btrfs_log_names, btrfs_log_name, bln_entry,
+    btrfs_log_name_compare);
+
+#define BTRFS_LOG_NAME_LOGGED	0x01	/* references are in the log */
+#define BTRFS_LOG_NAME_STALE	0x02	/* logged references have changed */
+#define BTRFS_LOG_NAME_CHANGED	0x04	/* committed inode's names changed */
+
 struct btrfs_transaction {
 	struct btrfs_fs			*bt_mount;
 	struct mutex			 bt_lock;
@@ -365,6 +383,8 @@ struct btrfs_transaction {
 	/* Indexed by (tree, inode, range start), protected by bt_lock. */
 	struct btrfs_ordered_tree	 bt_ordered_extents;
 	struct btrfs_dirty_root_list	 bt_dirty_roots;
+	/* Protected by bt_lock. */
+	struct btrfs_log_names		 bt_log_names;
 	uint64_t			 bt_generation;
 	uint64_t			 bt_commit_reserve_target;
 	uint64_t			 bt_commit_reserved_bytes;
@@ -379,7 +399,7 @@ struct btrfs_transaction {
 	int				 bt_error;
 	enum btrfs_trans_state		 bt_state;
 	uint8_t				 bt_commit_handle;
-	/* Namespace edits other than creation, and root changes, require commit. */
+	/* Root changes require commit. */
 	uint8_t				 bt_log_full_commit;
 };
 
@@ -388,8 +408,6 @@ struct btrfs_trans_handle {
 	struct btrfs_reserved_space_list bth_reservations;
 	uint8_t				 bth_commit;
 	uint8_t				 bth_delayed;
-	/* Creation adds a fresh name; other namespace edits invalidate logging. */
-	uint8_t				 bth_log_create;
 	uint64_t			 bth_failed_type;
 };
 
@@ -798,8 +816,8 @@ int	btrfs_prepare_metadata_commit(struct btrfs_trans_handle *);
 int	btrfs_delayed_refs_finish(struct btrfs_transaction *, int);
 int	btrfs_ordered_extents_finish(struct btrfs_transaction *, int);
 int	btrfs_write_ordered_extents(struct btrfs_trans_handle *);
-int	btrfs_write_inode_ordered(struct btrfs_trans_handle *,
-	    struct btrfs_node *);
+int	btrfs_write_inode_ordered(struct btrfs_trans_handle *, uint64_t,
+	    uint64_t);
 int	btrfs_materialize_ordered_ref(struct btrfs_trans_handle *,
 	    const struct btrfs_ordered_extent *);
 int	btrfs_coalesce_ordered_extents(struct btrfs_trans_handle *);
@@ -978,6 +996,9 @@ int	btrfs_log_write(struct btrfs_trans_handle *, struct btrfs_node *,
 	    struct proc *);
 int	btrfs_log_recover(struct btrfs_fs *, struct proc *);
 void	btrfs_log_destroy(struct btrfs_fs *);
+void	btrfs_log_names_changed(struct btrfs_trans_handle *,
+	    struct btrfs_node *);
+void	btrfs_log_names_free(struct btrfs_transaction *);
 int	btrfs_insert_data_csums(struct btrfs_trans_handle *, uint64_t,
 	    const uint8_t *, uint32_t);
 int	btrfs_decode_file_extent(const struct btrfs_fs *,

@@ -86,6 +86,7 @@ btrfs_trans_alloc(struct btrfs_fs *bmp, uint64_t generation)
 	RBT_INIT(btrfs_data_ref_tree, &trans->bt_data_ref_index);
 	RBT_INIT(btrfs_ordered_tree, &trans->bt_ordered_extents);
 	TAILQ_INIT(&trans->bt_dirty_roots);
+	RBT_INIT(btrfs_log_names, &trans->bt_log_names);
 	TAILQ_INIT(&trans->bt_pending_chunks);
 	return (trans);
 }
@@ -154,6 +155,7 @@ btrfs_trans_destroy(struct btrfs_fs *bmp)
 	KASSERT(TAILQ_EMPTY(&trans->bt_commit_reservations));
 	KASSERT(TAILQ_EMPTY(&trans->bt_allocated_extents));
 	KASSERT(TAILQ_EMPTY(&trans->bt_pinned_extents));
+	btrfs_log_names_free(trans);
 	free(trans, M_BTRFS, sizeof(*trans));
 	bmp->bm_transaction = NULL;
 }
@@ -865,8 +867,10 @@ btrfs_trans_finish(struct btrfs_fs *bmp,
 	wakeup(&bmp->bm_transaction);
 	mtx_leave(&bmp->bm_trans_mtx);
 
-	if (error == 0)
+	if (error == 0) {
+		btrfs_log_names_free(trans);
 		free(trans, M_BTRFS, sizeof(*trans));
+	}
 	return (error);
 }
 
