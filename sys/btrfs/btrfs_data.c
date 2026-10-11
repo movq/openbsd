@@ -1187,7 +1187,7 @@ btrfs_fill_file_holes(struct btrfs_trans_handle *handle,
 static int
 btrfs_read_regular_extent(struct btrfs_node *node,
     const struct btrfs_file_extent *extent, uint64_t file_offset, size_t size,
-    uint8_t *destination)
+    uint8_t *destination, int cluster)
 {
 	struct btrfs_fs *bmp = node->bn_mount;
 	struct buf *bp = NULL;
@@ -1239,7 +1239,7 @@ btrfs_read_regular_extent(struct btrfs_node *node,
 			expectedp = csums +
 			    (block - csum_start) / sectorsize * csum_size;
 		error = btrfs_read_data_window(bmp, extent, block, &length,
-		    expectedp, &bp, &buffer_offset);
+		    expectedp, cluster, &bp, &buffer_offset);
 		if (error != 0)
 			break;
 		chunk = MIN(size, length - offset);
@@ -1260,9 +1260,13 @@ out:
 	return (error);
 }
 
+/*
+ * Clustered reads fetch whole allocation windows for later sequential reads;
+ * others read only the sectors they cover.
+ */
 int
 btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
-    uint8_t *destination)
+    uint8_t *destination, int cluster)
 {
 	struct btrfs_fs *bmp = node->bn_mount;
 	struct btrfs_file_extent extent;
@@ -1335,7 +1339,7 @@ btrfs_read_file_range(struct btrfs_node *node, uint64_t offset, size_t length,
 		case BTRFS_FILE_EXTENT_REG:
 			if (extent.bfe_compression == BTRFS_COMPRESS_NONE)
 				error = btrfs_read_regular_extent(node, &extent,
-				    offset, size, destination);
+				    offset, size, destination, cluster);
 			else
 				error = btrfs_read_compressed_extent(node, &extent,
 				    offset, size, destination);
@@ -1678,7 +1682,7 @@ btrfs_resize_prepare(struct btrfs_resize_plan *plan, struct btrfs_node *node,
 	if (plan->tail_offset != UINT64_MAX) {
 		plan->tail = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
 		error = btrfs_read_file_range(node, plan->tail_offset,
-		    MIN(plan->oldsize, size) - plan->tail_offset, plan->tail);
+		    MIN(plan->oldsize, size) - plan->tail_offset, plan->tail, 0);
 		if (error != 0) {
 			btrfs_resize_release(plan);
 			return (error);
@@ -2058,7 +2062,7 @@ btrfs_write_preserve(struct btrfs_write_operation *op, uint32_t start,
 	if (length == 0)
 		return (0);
 	return (btrfs_read_file_range(op->node, offset, length,
-	    op->data + start));
+	    op->data + start, 0));
 }
 
 #define BTRFS_WRITE_METADATA_BLOCKS	64
@@ -2139,7 +2143,7 @@ btrfs_write_prepare(struct btrfs_write_operation *op, struct btrfs_node *node,
 			goto fail;
 		op->inline_data = malloc(sectorsize, M_BTRFS, M_WAITOK | M_ZERO);
 		error = btrfs_read_file_range(node, 0, op->saved.bi_size,
-		    op->inline_data);
+		    op->inline_data, 0);
 		if (error != 0)
 			goto fail;
 	}

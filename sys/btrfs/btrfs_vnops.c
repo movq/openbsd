@@ -1336,7 +1336,7 @@ btrfs_strategy(void *v)
 			length = MIN((uint64_t)bp->b_bcount,
 			    file_size - file_offset);
 			error = btrfs_read_file_range(node, file_offset,
-			    length, bp->b_data);
+			    length, bp->b_data, 1);
 		}
 	}
 	if (error != 0) {
@@ -1360,7 +1360,7 @@ btrfs_read(void *v)
 	uint8_t *data;
 	uint64_t file_size;
 	size_t capacity, size;
-	int error = 0;
+	int cluster, error = 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
 	if (vp->v_type != VREG)
@@ -1375,6 +1375,7 @@ btrfs_read(void *v)
 		return (0);
 	capacity = MIN((uint64_t)MIN(uio->uio_resid, MAXBSIZE),
 	    file_size - (uint64_t)uio->uio_offset);
+	cluster = (uint64_t)uio->uio_offset == node->bn_read_next;
 	data = pool_get(&node->bn_mount->bm_scratch_pool, PR_WAITOK);
 	while (uio->uio_resid != 0 &&
 	    (uint64_t)uio->uio_offset < file_size) {
@@ -1382,13 +1383,15 @@ btrfs_read(void *v)
 		if (size > file_size - (uint64_t)uio->uio_offset)
 			size = file_size - (uint64_t)uio->uio_offset;
 
-		error = btrfs_read_file_range(node, uio->uio_offset, size, data);
+		error = btrfs_read_file_range(node, uio->uio_offset, size, data,
+		    cluster);
 		if (error != 0)
 			break;
 		error = uiomove(data, size, uio);
 		if (error != 0)
 			break;
 	}
+	node->bn_read_next = uio->uio_offset;
 	pool_put(&node->bn_mount->bm_scratch_pool, data);
 	return (error);
 }
@@ -1671,7 +1674,8 @@ retry:
 			 */
 			count = MIN(length, sector);
 			data = malloc(sector, M_BTRFS, M_WAITOK);
-			error = btrfs_read_file_range(src, from, count, data);
+			error = btrfs_read_file_range(src, from, count, data,
+			    0);
 			if (error != 0)
 				break;
 			iov.iov_base = data;

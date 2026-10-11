@@ -622,9 +622,10 @@ btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 }
 
 /*
- * Read a sector-aligned prefix of *lengthp within one allocation window.
- * Validate only the requested sectors, acquiring the mapping and buffer once
- * on the healthy path. Return the validated length and its buffer offset.
+ * Read a sector-aligned prefix of *lengthp, within one allocation window if
+ * clustering or exactly otherwise. Validate only the requested sectors,
+ * acquiring the mapping and buffer once on the healthy path. Return the
+ * validated length and its buffer offset.
  *
  * If no mirror supplies the whole prefix, retry just its first sector.
  * Callers advance by the returned length, allowing subsequent sectors to
@@ -634,8 +635,8 @@ btrfs_validate_data_csum(const void *data, size_t length, void *arg)
 int
 btrfs_read_data_window(struct btrfs_fs *bmp,
     const struct btrfs_file_extent *extent, uint64_t logical,
-    uint32_t *lengthp, const uint8_t *expected_csum, struct buf **bpp,
-    uint32_t *offsetp)
+    uint32_t *lengthp, const uint8_t *expected_csum, int cluster,
+    struct buf **bpp, uint32_t *offsetp)
 {
 	btrfs_io_validate_fn validate = NULL;
 	struct btrfs_data_csum csum;
@@ -658,11 +659,17 @@ btrfs_read_data_window(struct btrfs_fs *bmp,
 		return (EINVAL);
 	/*
 	 * Windows belong to the allocation, so split mappings and different
-	 * inode references use the same physical cache keys and sizes.
+	 * inode references use the same physical cache keys and sizes. Exact
+	 * reads may overlap them; live allocations are never overwritten.
 	 */
 	relative = logical - start;
-	window = relative & ~((uint64_t)MAXBSIZE - 1);
-	length = MIN((uint64_t)MAXBSIZE, bytes - window);
+	if (cluster) {
+		window = relative & ~((uint64_t)MAXBSIZE - 1);
+		length = MIN((uint64_t)MAXBSIZE, bytes - window);
+	} else {
+		window = relative;
+		length = MIN(*lengthp, MAXBSIZE);
+	}
 	start += window;
 	csum.offset = logical - start;
 	csum.super = &bmp->bm_super;
@@ -703,5 +710,5 @@ btrfs_read_data_sector(struct btrfs_fs *bmp,
 	uint32_t length = letoh32(bmp->bm_super.sectorsize);
 
 	return (btrfs_read_data_window(bmp, extent, logical, &length,
-	    expected_csum, bpp, offsetp));
+	    expected_csum, 1, bpp, offsetp));
 }

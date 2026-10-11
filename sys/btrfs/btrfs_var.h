@@ -673,6 +673,8 @@ struct btrfs_node {
 	/* Snapshot boundary directories have inode 2 and no on-disk inode. */
 	uint64_t			 bn_stub_parent;
 	uint64_t			 bn_stub_id;
+	/* Reads continuing at the previous end fetch whole windows. */
+	uint64_t			 bn_read_next;
 	int				 bn_hashed;
 	struct btrfs_inode		 bn_inode;
 };
@@ -871,7 +873,8 @@ void	btrfs_payload_destroy(struct btrfs_fs *);
 int	btrfs_cancel_ordered_data(struct btrfs_trans_handle *, uint64_t,
 	    uint64_t, const struct btrfs_file_extent *);
 int	btrfs_read_ordered_range(struct btrfs_node *, uint64_t, size_t, void *);
-int	btrfs_read_file_range(struct btrfs_node *, uint64_t, size_t, uint8_t *);
+int	btrfs_read_file_range(struct btrfs_node *, uint64_t, size_t, uint8_t *,
+	    int);
 int	btrfs_count_file_holes(struct btrfs_node *, uint64_t, uint64_t *);
 int	btrfs_fill_file_holes(struct btrfs_trans_handle *,
 	    struct btrfs_node *, uint64_t, uint64_t);
@@ -990,7 +993,7 @@ int	btrfs_read_data_sector(struct btrfs_fs *,
 	    struct buf **, uint32_t *);
 int	btrfs_read_data_window(struct btrfs_fs *,
 	    const struct btrfs_file_extent *, uint64_t, uint32_t *,
-	    const uint8_t *, struct buf **, uint32_t *);
+	    const uint8_t *, int, struct buf **, uint32_t *);
 int	btrfs_read_compressed_extent(struct btrfs_node *,
 	    const struct btrfs_file_extent *, uint64_t, size_t, void *);
 int	btrfs_vget(struct mount *, ino_t, struct vnode **);

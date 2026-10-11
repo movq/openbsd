@@ -83,7 +83,7 @@ btrfs_read_compressed_regular(struct btrfs_node *node,
 		if (csums != NULL)
 			expectedp = csums + offset / sectorsize * csum_size;
 		error = btrfs_read_data_window(bmp, extent, logical, &length,
-		    expectedp, &bp, &buffer_offset);
+		    expectedp, 1, &bp, &buffer_offset);
 		if (error != 0)
 			break;
 		memcpy(compressed + offset, (uint8_t *)bp->b_data +
