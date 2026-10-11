@@ -86,18 +86,19 @@ def exercise(base):
         os.fsync(fd)
         committed = snapshot(base)
         assert committed[2] == pending[2]
-        # A COW overwrite consumes a second sector until its old extent drops.
+        # A COW overwrite consumes a second sector until its old extent
+        # drops at commit; a logged fsync keeps it pinned.
         os.pwrite(fd, b"T" * sector, 0)
         assert snapshot(base)[2] <= committed[2]
-        os.fsync(fd)
+        os.sync()
         assert snapshot(base)[2] == committed[2]
         os.ftruncate(fd, 0)
-        os.fsync(fd)
+        os.sync()
         assert snapshot(base)[2] == before[2]
         # Cancelling unpublished sectors returns allocations and reservations.
         os.pwrite(fd, b"U" * sector, 0)
         os.ftruncate(fd, 0)
-        os.fsync(fd)
+        os.sync()
         assert snapshot(base)[2] == before[2]
         os.pwrite(fd, b"R" * sector, 0)
         os.fsync(fd)
