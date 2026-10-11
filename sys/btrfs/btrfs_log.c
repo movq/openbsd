@@ -17,10 +17,11 @@
  */
 
 /*
- * Publication owns the transaction close/drain gate. Replace the target
- * inode's key range by copying affected paths in the previous immutable log.
- * Unaffected subtrees retain their disk addresses; no previous inode needs
- * recollection. All old log blocks remain excluded until full commit.
+ * Publication owns the transaction close/drain gate. Replace the key ranges
+ * of every affected inode, and their checksums, in one pass which copies the
+ * changed paths of the previous immutable log. Unchanged blocks retain their
+ * disk addresses; no previous inode needs recollection. All old log blocks
+ * remain excluded until full commit.
  * The superblock alone names the published forest, at the open generation.
  *
  * Submitted data leaves the ordered index with materialized references.
@@ -344,6 +345,11 @@ log_hole(struct log_items *items, uint64_t ino, uint64_t start,
 
 #define LOG_PENDING_MAX	16
 
+/* Old items in a replaced key range are dropped by the publication. */
+struct log_range {
+	struct btrfs_key low, high;
+};
+
 /* One publication: the target, its ancestry, and other affected names. */
 struct log_writer {
 	struct btrfs_trans_handle *handle;
@@ -357,6 +363,9 @@ struct log_writer {
 	unsigned int npending;
 	/* A synced directory, whose inode is logged in full. */
 	uint64_t dir;
+	/* Key ranges replaced by the collected items. */
+	struct log_range *ranges;
+	unsigned int nranges, maxranges;
 };
 
 struct log_owner {
@@ -410,6 +419,46 @@ log_pending_add(struct log_writer *w, uint64_t ino)
 		return (EAGAIN);
 	w->pending[w->npending++] = ino;
 	return (0);
+}
+
+/* Replace a key range of one inode, dropping anything collected there. */
+static void
+log_range_add(struct log_writer *w, uint64_t ino, uint8_t low_type,
+    uint8_t high_type)
+{
+	struct log_range range, *ranges;
+	struct log_item match, *item, *next;
+	unsigned int i, max;
+
+	memset(&range, 0, sizeof(range));
+	range.low.objectid = htole64(ino);
+	range.low.type = low_type;
+	range.high.objectid = htole64(high_type != 0 ? ino : ino + 1);
+	range.high.type = high_type;
+	match.key = range.low;
+	for (item = RBT_NFIND(log_items, &w->items, &match); item != NULL &&
+	    btrfs_log_key_compare(&item->key, &range.high) < 0; item = next) {
+		next = RBT_NEXT(log_items, item);
+		RBT_REMOVE(log_items, &w->items, item);
+		free(item, M_BTRFS, sizeof(*item) + item->size);
+	}
+	for (i = 0; i < w->nranges; i++) {
+		if (btrfs_log_key_compare(&w->ranges[i].low, &range.low) != 0)
+			continue;
+		if (btrfs_log_key_compare(&w->ranges[i].high, &range.high) < 0)
+			w->ranges[i].high = range.high;
+		return;
+	}
+	if (w->nranges == w->maxranges) {
+		max = MAX(w->maxranges * 2, 16);
+		ranges = mallocarray(max, sizeof(*ranges), M_BTRFS, M_WAITOK);
+		if (w->nranges != 0)
+			memcpy(ranges, w->ranges, w->nranges * sizeof(*ranges));
+		free(w->ranges, M_BTRFS, w->maxranges * sizeof(*ranges));
+		w->ranges = ranges;
+		w->maxranges = max;
+	}
+	w->ranges[w->nranges++] = range;
 }
 
 static int
@@ -527,6 +576,9 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 	if ((!S_ISREG(inode.bi_mode) && !S_ISDIR(inode.bi_mode)) ||
 	    inode.bi_nlink == 0)
 		return (EAGAIN);
+	/* A directory's logged index records survive ancestry updates. */
+	log_range_add(w, ino, 0,
+	    S_ISDIR(inode.bi_mode) ? BTRFS_DIR_LOG_ITEM_KEY : 0);
 	committed = inode.bi_generation <= bmp->bm_last_transid;
 	flags = log_name_flags(bmp->bm_transaction, root->br_owner, ino);
 	names = !committed ||
@@ -756,10 +808,12 @@ log_pack_nodes(struct btrfs_fs *bmp, struct log_blocks *children,
 
 struct log_edit {
 	struct btrfs_root root;
-	struct btrfs_key low, high;
+	/* New items, consumed in key order as leaves are rebuilt. */
 	struct log_items *items;
-	/* Checksum replacement preserves prefix/suffix of intersecting items. */
-	uint64_t csum_start, csum_end;
+	/* New checksum items, which replace only the old sums they overlap. */
+	struct log_items *csums;
+	const struct log_range *ranges;
+	unsigned int nranges;
 	struct btrfs_write_batch batch;
 };
 
@@ -778,41 +832,178 @@ log_root(struct btrfs_fs *bmp, struct btrfs_root *root,
 }
 
 static int
+log_is_csum(const struct btrfs_key *key)
+{
+	return (key->objectid == htole64(BTRFS_EXTENT_CSUM_OBJECTID) &&
+	    key->type == BTRFS_EXTENT_CSUM_KEY);
+}
+
+static uint64_t
+log_csum_end(struct btrfs_fs *bmp, const struct log_item *item)
+{
+	return (letoh64(item->key.offset) +
+	    item->size / btrfs_csum_size(&bmp->bm_super) *
+	    letoh32(bmp->bm_super.sectorsize));
+}
+
+/* The last new checksum item starting at or before key. */
+static struct log_item *
+log_csum_before(struct log_edit *edit, const struct btrfs_key *key)
+{
+	struct log_item match, *item;
+
+	match.key = *key;
+	item = RBT_NFIND(log_items, edit->csums, &match);
+	if (item != NULL && btrfs_log_key_compare(&item->key, key) == 0)
+		return (item);
+	return (item == NULL ? RBT_MAX(log_items, edit->csums) :
+	    RBT_PREV(log_items, item));
+}
+
+/* Whether a block with keys in [low, high) changes. NULL bounds are open. */
+static int
+log_edit_hits(struct log_edit *edit, const struct btrfs_key *low,
+    const struct btrfs_key *high)
+{
+	struct log_item match, *item;
+	unsigned int i;
+
+	for (i = 0; i < edit->nranges; i++)
+		if ((high == NULL || btrfs_log_key_compare(
+		    &edit->ranges[i].low, high) < 0) &&
+		    (low == NULL || btrfs_log_key_compare(
+		    &edit->ranges[i].high, low) > 0))
+			return (1);
+	if (low == NULL)
+		item = RBT_MIN(log_items, edit->items);
+	else {
+		match.key = *low;
+		item = RBT_NFIND(log_items, edit->items, &match);
+	}
+	if (item != NULL &&
+	    (high == NULL || btrfs_log_key_compare(&item->key, high) < 0))
+		return (1);
+	/* A new checksum item may straddle the lower bound. */
+	if (low == NULL || !log_is_csum(low) || edit->csums == NULL)
+		return (0);
+	item = log_csum_before(edit, low);
+	return (item != NULL && log_is_csum(&item->key) &&
+	    log_csum_end(edit->root.br_mount, item) > letoh64(low->offset));
+}
+
+static int
+log_keep_csums(struct log_edit *edit, struct log_items *items,
+    const struct btrfs_key *key, const uint8_t *data, uint64_t start,
+    uint64_t end)
+{
+	struct btrfs_fs *bmp = edit->root.br_mount;
+	struct btrfs_key piece = *key;
+	uint32_t sector = letoh32(bmp->bm_super.sectorsize);
+	size_t csum = btrfs_csum_size(&bmp->bm_super);
+
+	piece.offset = htole64(start);
+	return (btrfs_log_add(items, &piece,
+	    data + (start - letoh64(key->offset)) / sector * csum,
+	    (end - start) / sector * csum));
+}
+
+static int
 log_keep_item(struct log_edit *edit, struct log_items *items,
     const struct btrfs_key *key, const uint8_t *data, uint32_t size)
 {
 	struct btrfs_fs *bmp = edit->root.br_mount;
-	struct btrfs_key suffix = *key;
-	uint64_t start, end;
-	uint32_t bytes, sector = letoh32(bmp->bm_super.sectorsize);
-	size_t csum = btrfs_csum_size(&bmp->bm_super);
+	struct log_item *item;
+	uint64_t start, end, item_start, item_end;
+	unsigned int i;
 	int error = 0;
 
-	if (btrfs_log_key_compare(key, &edit->low) < 0 ||
-	    btrfs_log_key_compare(key, &edit->high) >= 0)
+	if (!log_is_csum(key) || edit->csums == NULL) {
+		for (i = 0; i < edit->nranges; i++)
+			if (btrfs_log_key_compare(key,
+			    &edit->ranges[i].low) >= 0 &&
+			    btrfs_log_key_compare(key,
+			    &edit->ranges[i].high) < 0)
+				return (0);
 		return (btrfs_log_add(items, key, data, size));
-	if (edit->csum_end == 0)
-		return (0);
+	}
+	/* Keep the parts of an old checksum item which no new item covers. */
 	start = letoh64(key->offset);
-	end = start + size / csum * sector;
-	if (end <= edit->csum_start)
-		return (btrfs_log_add(items, key, data, size));
-	if (start < edit->csum_start) {
-		bytes = (edit->csum_start - start) / sector * csum;
-		error = btrfs_log_add(items, key, data, bytes);
+	end = start + size / btrfs_csum_size(&bmp->bm_super) *
+	    letoh32(bmp->bm_super.sectorsize);
+	item = log_csum_before(edit, key);
+	if (item == NULL)
+		item = RBT_MIN(log_items, edit->csums);
+	for (; error == 0 && item != NULL && start < end;
+	    item = RBT_NEXT(log_items, item)) {
+		item_start = letoh64(item->key.offset);
+		item_end = log_csum_end(bmp, item);
+		if (item_start >= end)
+			break;
+		if (item_end <= start)
+			continue;
+		if (item_start > start)
+			error = log_keep_csums(edit, items, key, data, start,
+			    item_start);
+		start = item_end;
 	}
-	if (error == 0 && end > edit->csum_end) {
-		bytes = (edit->csum_end - start) / sector * csum;
-		suffix.offset = htole64(edit->csum_end);
-		error = btrfs_log_add(items, &suffix, data + bytes, size - bytes);
-	}
+	if (error == 0 && start < end)
+		error = log_keep_csums(edit, items, key, data, start, end);
 	return (error);
 }
 
+static int
+log_leaf_same(const struct btrfs_header *header, struct log_items *items)
+{
+	const struct btrfs_item *disk = (const struct btrfs_item *)(header + 1);
+	struct log_item *item;
+	uint32_t i = 0, count = letoh32(header->nritems);
+
+	RBT_FOREACH(item, log_items, items) {
+		if (i == count ||
+		    btrfs_log_key_compare(&disk[i].key, &item->key) != 0 ||
+		    letoh32(disk[i].size) != item->size ||
+		    memcmp((const uint8_t *)(header + 1) +
+		    letoh32(disk[i].offset), item->data, item->size) != 0)
+			return (0);
+		i++;
+	}
+	return (i == count);
+}
+
+static int
+log_node_same(const struct btrfs_header *header, struct log_blocks *children)
+{
+	const struct btrfs_key_ptr *ptr =
+	    (const struct btrfs_key_ptr *)(header + 1);
+	struct log_block *block;
+	uint32_t i = 0, count = letoh32(header->nritems);
+
+	TAILQ_FOREACH(block, children, entry) {
+		if (i == count || letoh64(ptr[i].blockptr) != block->bytenr)
+			return (0);
+		i++;
+	}
+	return (i == count);
+}
+
+static void
+log_keep_block(struct log_blocks *result, uint64_t bytenr, uint8_t level,
+    const struct btrfs_key *first)
+{
+	struct log_block *block;
+
+	block = malloc(sizeof(*block), M_BTRFS, M_WAITOK | M_ZERO);
+	block->bytenr = bytenr;
+	block->level = level;
+	block->first = *first;
+	TAILQ_INSERT_TAIL(result, block, entry);
+}
+
 /*
- * Return replacement blocks at this level. Only intersecting paths are read
- * or copied. The first child's lower bound can be -infinity, allowing inserts
- * before the old minimum. Empty children disappear; splits propagate upwards.
+ * Return replacement blocks at this level. Only changing paths are read and
+ * rewritten; a rebuilt block identical to the old one keeps its address. The
+ * first child's lower bound can be -infinity, allowing inserts before the old
+ * minimum. Empty children disappear; splits propagate upwards.
  */
 static int
 log_edit_block(struct log_edit *edit, uint64_t bytenr, uint8_t level,
@@ -821,24 +1012,17 @@ log_edit_block(struct log_edit *edit, uint64_t bytenr, uint8_t level,
 {
 	struct btrfs_fs *bmp = edit->root.br_mount;
 	struct btrfs_extent_buffer *eb = NULL;
-	const struct btrfs_header *header;
+	const struct btrfs_header *header = NULL;
 	const struct btrfs_key_ptr *ptr;
 	const struct btrfs_item *disk;
 	struct log_items items;
 	struct log_blocks children;
 	struct log_item *item;
-	struct log_block *block;
 	uint32_t i, count;
 	int error = 0;
 
-	if (bytenr != 0 &&
-	    ((low != NULL && btrfs_log_key_compare(low, &edit->high) >= 0) ||
-	    (high != NULL && btrfs_log_key_compare(high, &edit->low) <= 0))) {
-		block = malloc(sizeof(*block), M_BTRFS, M_WAITOK | M_ZERO);
-		block->bytenr = bytenr;
-		block->level = level;
-		block->first = *first;
-		TAILQ_INSERT_TAIL(result, block, entry);
+	if (bytenr != 0 && first != NULL && !log_edit_hits(edit, low, high)) {
+		log_keep_block(result, bytenr, level, first);
 		return (0);
 	}
 	RBT_INIT(log_items, &items);
@@ -869,9 +1053,14 @@ log_edit_block(struct log_edit *edit, uint64_t bytenr, uint8_t level,
 		if (error != 0)
 			goto out;
 	}
-	if (level != 0)
-		error = log_pack_nodes(bmp, &children, result, level, &edit->batch);
-	else {
+	if (level != 0) {
+		if (header != NULL && first != NULL &&
+		    log_node_same(header, &children))
+			log_keep_block(result, bytenr, level, first);
+		else
+			error = log_pack_nodes(bmp, &children, result, level,
+			    &edit->batch);
+	} else {
 		while ((item = RBT_MIN(log_items, edit->items)) != NULL &&
 		    (high == NULL ||
 		    btrfs_log_key_compare(&item->key, high) < 0)) {
@@ -882,7 +1071,12 @@ log_edit_block(struct log_edit *edit, uint64_t bytenr, uint8_t level,
 				goto out;
 			}
 		}
-		error = log_pack_leaves(bmp, &items, result, &edit->batch);
+		if (header != NULL && first != NULL &&
+		    log_leaf_same(header, &items))
+			log_keep_block(result, bytenr, level, first);
+		else
+			error = log_pack_leaves(bmp, &items, result,
+			    &edit->batch);
 	}
 out:
 	if (eb != NULL)
@@ -892,33 +1086,24 @@ out:
 	return (error);
 }
 
+/* Replace the ranges and checksums in one copy-on-write pass. */
 static int
 log_update(struct btrfs_fs *bmp, struct btrfs_root_item *root,
-    struct log_items *items, const struct btrfs_key *low,
-    const struct btrfs_key *high, int csums)
+    struct log_items *items, struct log_items *csums,
+    const struct log_range *ranges, unsigned int nranges)
 {
 	struct log_edit edit = { 0 };
 	struct log_blocks blocks, parents;
 	struct log_block *block;
-	uint64_t span;
 	int error, end_error;
 
 	TAILQ_INIT(&blocks);
 	TAILQ_INIT(&parents);
 	log_root(bmp, &edit.root, root);
 	edit.items = items;
-	edit.low = *low;
-	edit.high = *high;
-	if (csums) {
-		edit.csum_start = letoh64(low->offset);
-		edit.csum_end = letoh64(high->offset);
-		/* Include the predecessor which may straddle the new range. */
-		span = letoh32(bmp->bm_super.nodesize) / 4 /
-		    btrfs_csum_size(&bmp->bm_super) *
-		    letoh32(bmp->bm_super.sectorsize);
-		edit.low.offset = htole64(edit.csum_start -
-		    MIN(edit.csum_start, span));
-	}
+	edit.csums = csums;
+	edit.ranges = ranges;
+	edit.nranges = nranges;
 	btrfs_write_batch_init(&edit.batch);
 	error = log_edit_block(&edit, edit.root.br_bytenr, root->level,
 	    NULL, NULL, NULL, &blocks);
@@ -953,8 +1138,6 @@ static int
 log_inode_path(struct log_writer *w, uint64_t ino)
 {
 	struct btrfs_fs *bmp = w->root->br_mount;
-	struct btrfs_key low = { 0 }, high = { 0 };
-	struct log_item *item;
 	uint64_t parent;
 	unsigned int depth = 0;
 	int error;
@@ -963,17 +1146,6 @@ log_inode_path(struct log_writer *w, uint64_t ino)
 		error = log_collect_inode(w, ino, &parent);
 		if (error == 0 && parent != 0)
 			error = log_displaced(w, ino, parent);
-		if (error != 0)
-			return (error);
-		item = btrfs_log_find(&w->items, ino, BTRFS_INODE_ITEM_KEY, 0);
-		low.objectid = high.objectid = htole64(ino);
-		high.type = BTRFS_DIR_LOG_ITEM_KEY;
-		if (!S_ISDIR(letoh32(
-		    ((struct btrfs_inode_item *)item->data)->mode))) {
-			high.objectid = htole64(ino + 1);
-			high.type = 0;
-		}
-		error = log_update(bmp, &w->subtree, &w->items, &low, &high, 0);
 		if (error != 0)
 			return (error);
 		if (parent != 0)
@@ -1064,10 +1236,11 @@ log_directory(struct log_writer *w, uint64_t dir)
 {
 	struct btrfs_fs *bmp = w->root->br_mount;
 	struct btrfs_dir_log_item range;
-	struct btrfs_key key = { 0 }, high = { 0 };
+	struct btrfs_key key = { 0 };
 	struct btrfs_inode inode;
 	int error;
 
+	log_range_add(w, dir, BTRFS_DIR_LOG_ITEM_KEY, 0);
 	error = btrfs_find_inode(w->root, dir, &inode);
 	if (error == 0)
 		error = log_directory_entries(w, w->root, dir, 0);
@@ -1081,11 +1254,6 @@ log_directory(struct log_writer *w, uint64_t dir)
 	range.end = htole64(UINT64_MAX);
 	if (error == 0)
 		error = btrfs_log_add(&w->items, &key, &range, sizeof(range));
-	if (error != 0)
-		return (error);
-	key.type = BTRFS_DIR_LOG_ITEM_KEY;
-	high.objectid = htole64(dir + 1);
-	error = log_update(bmp, &w->subtree, &w->items, &key, &high, 0);
 	if (error == 0)
 		log_name_update(bmp->bm_transaction, w->root->br_owner, dir,
 		    BTRFS_LOG_NAME_SYNCED,
@@ -1166,7 +1334,6 @@ log_stale_names(struct log_writer *w)
 	struct btrfs_transaction *trans = w->handle->bth_transaction;
 	struct btrfs_log_name *entry;
 	struct btrfs_inode inode;
-	struct btrfs_key low = { 0 }, high = { 0 };
 	uint64_t treeid, ino;
 	int error;
 
@@ -1189,10 +1356,8 @@ log_stale_names(struct log_writer *w)
 		if (error == 0 && inode.bi_nlink != 0)
 			error = log_pending_add(w, ino);
 		else if (error == 0 || error == ENOENT) {
-			low.objectid = htole64(ino);
-			high.objectid = htole64(ino + 1);
-			error = log_update(trans->bt_mount, &w->subtree,
-			    &w->items, &low, &high, 0);
+			error = 0;
+			log_range_add(w, ino, 0, 0);
 			log_name_update(trans, treeid, ino, 0,
 			    BTRFS_LOG_NAME_LOGGED);
 		}
@@ -1243,7 +1408,8 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 	struct btrfs_root log;
 	struct btrfs_root_item forest = { 0 }, *subtree;
 	struct btrfs_path path = { 0 };
-	struct btrfs_key key = { 0 }, low = { 0 }, high = { 0 };
+	struct btrfs_key key = { 0 };
+	struct log_range range;
 	struct btrfs_super_block *super;
 	const uint8_t *data;
 	uint32_t size;
@@ -1288,24 +1454,21 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 			goto out;
 	}
 	error = log_names(w, node->bn_ino);
-	if (error != 0)
-		goto out;
-	while ((item = RBT_MIN(log_items, &w->csums)) != NULL) {
-		RBT_REMOVE(log_items, &w->csums, item);
-		RBT_INSERT(log_items, items, item);
-		low = high = item->key;
-		high.offset = htole64(letoh64(low.offset) +
-		    item->size / btrfs_csum_size(&bmp->bm_super) *
-		    letoh32(bmp->bm_super.sectorsize));
-		error = log_update(bmp, subtree, items, &low, &high, 1);
+	RBT_FOREACH(item, log_items, &w->csums) {
 		if (error != 0)
-			goto out;
+			break;
+		error = btrfs_log_add(items, &item->key, item->data,
+		    item->size);
 	}
-	error = btrfs_log_add(items, &key, subtree, sizeof(*subtree));
-	low = high = key;
-	high.offset = htole64(node->bn_treeid + 1);
 	if (error == 0)
-		error = log_update(bmp, &forest, items, &low, &high, 0);
+		error = log_update(bmp, subtree, items, &w->csums, w->ranges,
+		    w->nranges);
+	if (error == 0)
+		error = btrfs_log_add(items, &key, subtree, sizeof(*subtree));
+	range.low = range.high = key;
+	range.high.offset = htole64(node->bn_treeid + 1);
+	if (error == 0)
+		error = log_update(bmp, &forest, items, NULL, &range, 1);
 	if (error != 0)
 		goto out;
 	error = btrfs_sync_device(bmp, p);
@@ -1326,6 +1489,7 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 out:
 	btrfs_log_free_items(&w->items);
 	btrfs_log_free_items(&w->csums);
+	free(w->ranges, M_BTRFS, w->maxranges * sizeof(*w->ranges));
 	free(w, M_BTRFS, sizeof(*w));
 	/* Unpublished log blocks remain excluded until the fallback commits. */
 	return (error);
