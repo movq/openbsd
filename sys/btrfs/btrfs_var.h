@@ -763,7 +763,7 @@ int	btrfs_build_super(struct btrfs_transaction *,
 void	btrfs_fs_set_readonly(struct btrfs_fs *);
 int	btrfs_super_mirror_writable(const struct btrfs_device *, unsigned int);
 int	btrfs_write_super_mirrors(struct btrfs_fs *,
-	    const struct btrfs_super_block *);
+	    const struct btrfs_super_block *, unsigned int);
 void	btrfs_init_roots(struct btrfs_fs *, const struct btrfs_bootstrap *);
 void	btrfs_free_roots(struct btrfs_fs *);
 int	btrfs_get_root(struct btrfs_fs *, uint64_t, struct btrfs_root **);

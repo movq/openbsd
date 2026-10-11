@@ -613,7 +613,8 @@ btrfs_trans_commit_closed(struct btrfs_transaction *trans, struct proc *p)
 		error = btrfs_build_super(trans, super);
 	}
 	if (error == 0) {
-		write_error = btrfs_write_super_mirrors(bmp, super);
+		write_error = btrfs_write_super_mirrors(bmp, super,
+		    BTRFS_SUPER_MIRROR_MAX);
 		end_error = btrfs_sync_device(bmp, p);
 		error = write_error != 0 ? write_error : end_error;
 	}

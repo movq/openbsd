@@ -753,9 +753,13 @@ btrfs_super_mirror_writable(const struct btrfs_device *device,
 	    sizeof(struct btrfs_super_block) <= size - mirror->bsm_bytenr);
 }
 
+/*
+ * Commits write every copy. A log publication, like Linux's, writes only the
+ * primaries: mount prefers them, and their committed fields match the others.
+ */
 int
 btrfs_write_super_mirrors(struct btrfs_fs *bmp,
-    const struct btrfs_super_block *template)
+    const struct btrfs_super_block *template, unsigned int nmirrors)
 {
 	struct btrfs_super_block *sb;
 	struct btrfs_device *device;
@@ -764,12 +768,13 @@ btrfs_write_super_mirrors(struct btrfs_fs *bmp,
 	unsigned int d, i, nwritten;
 	int error, first_error = 0;
 
-	if (bmp == NULL || template == NULL)
+	if (bmp == NULL || template == NULL ||
+	    nmirrors == 0 || nmirrors > BTRFS_SUPER_MIRROR_MAX)
 		return (EINVAL);
 	sb = malloc(sizeof(*sb), M_BTRFS, M_WAITOK);
 	for (d = 0; (device = btrfs_commit_device(bmp, d)) != NULL; d++) {
 		nwritten = 0;
-		for (i = 0; i < BTRFS_SUPER_MIRROR_MAX; i++) {
+		for (i = 0; i < nmirrors; i++) {
 			mirror = &device->bd_mirrors[i];
 			if (!btrfs_super_mirror_writable(device, i))
 				continue;

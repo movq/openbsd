@@ -1530,7 +1530,7 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 	super->log_root = forest.bytenr;
 	super->log_root_level = forest.level;
 	super->__unused_log_root_transid = 0;
-	error = btrfs_write_super_mirrors(bmp, super);
+	error = btrfs_write_super_mirrors(bmp, super, 1);
 	end_error = btrfs_sync_device(bmp, p);
 	if (error == 0)
 		error = end_error;
