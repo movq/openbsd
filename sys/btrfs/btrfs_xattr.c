@@ -218,6 +218,8 @@ btrfs_control_xattr(struct vnode *select, u_long cmd,
 		    BTRFS_INODE_DIRTY_SEQUENCE;
 		error = btrfs_write_inode(handle, node);
 	}
+	if (error == 0 && vp->v_type == VDIR)
+		btrfs_log_dir_changed(handle, node);
 	if (error != 0)
 		btrfs_trans_abort(handle, error);
 	enderror = btrfs_trans_end(handle);

@@ -887,7 +887,8 @@ btrfs_log_fsync(struct btrfs_node *node, uint64_t generation, struct proc *p)
 	struct btrfs_trans_handle *handle = NULL;
 	int error, end_error;
 
-	if (IFTOVT(node->bn_inode.bi_mode) != VREG)
+	if (IFTOVT(node->bn_inode.bi_mode) != VREG &&
+	    IFTOVT(node->bn_inode.bi_mode) != VDIR)
 		return (btrfs_trans_commit(bmp, generation, p));
 	error = btrfs_trans_close(bmp, generation, &trans);
 	if (error != 0 || trans == NULL)

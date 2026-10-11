@@ -559,7 +559,7 @@ btrfs_link_inode(struct btrfs_node *dir, struct btrfs_node *node,
 		node->bn_inode = saved_node;
 		goto abort;
 	}
-	btrfs_log_names_changed(handle, node);
+	btrfs_log_names_changed(handle, NULL, node);
 	goto out;
 abort:
 	btrfs_trans_abort(handle, error);
@@ -731,7 +731,7 @@ btrfs_unlink_inode(struct btrfs_node *dir, struct btrfs_node *node,
 		node->bn_inode = saved_node;
 		goto abort;
 	}
-	btrfs_log_names_changed(handle, node);
+	btrfs_log_names_changed(handle, dir, node);
 	goto out;
 abort:
 	btrfs_trans_abort(handle, error);
@@ -957,9 +957,9 @@ btrfs_rename_inode(struct btrfs_node *fdir, struct btrfs_node *node,
 			goto abort;
 		}
 	}
-	btrfs_log_names_changed(handle, node);
+	btrfs_log_names_changed(handle, fdir, node);
 	if (target != NULL)
-		btrfs_log_names_changed(handle, target);
+		btrfs_log_names_changed(handle, tdir, target);
 	goto out;
 abort:
 	btrfs_trans_abort(handle, error);

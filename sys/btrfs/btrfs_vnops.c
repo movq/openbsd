@@ -1269,6 +1269,8 @@ btrfs_setattr(void *v)
 		error = btrfs_write_inode(handle, node);
 		if (error != 0)
 			btrfs_trans_abort(handle, error);
+		else if (vp->v_type == VDIR)
+			btrfs_log_dir_changed(handle, node);
 	}
 	end_error = btrfs_trans_end(handle);
 	if (error == 0)

@@ -27,6 +27,7 @@
  * Subsequent writes COW it normally. New inodes log their names and fresh
  * ancestry; committed inodes log names only once they change. Names which
  * replay must reconcile across several parents still force full commit.
+ * A directory fsync logs the directory's index and its new entries' inodes.
  */
 
 #include <sys/param.h>
@@ -175,11 +176,12 @@ log_name_update(struct btrfs_transaction *trans, uint64_t treeid,
  * Replay links each logged name over whatever the committed tree has there,
  * and replaces an inode's committed names under its logged parent. Logged
  * names which change are relogged by the next publication. A committed inode
- * whose names changed logs them whenever it is logged.
+ * whose names changed logs them whenever it is logged. The directory dir,
+ * if not NULL, lost a name.
  */
 void
 btrfs_log_names_changed(struct btrfs_trans_handle *handle,
-    struct btrfs_node *node)
+    struct btrfs_node *dir, struct btrfs_node *node)
 {
 	struct btrfs_transaction *trans = handle->bth_transaction;
 	struct btrfs_log_name match, *entry, *spare = NULL;
@@ -208,6 +210,31 @@ btrfs_log_names_changed(struct btrfs_trans_handle *handle,
 	mtx_leave(&trans->bt_lock);
 	if (spare != NULL)
 		free(spare, M_BTRFS, sizeof(*spare));
+	if (dir != NULL)
+		btrfs_log_dir_changed(handle, dir);
+}
+
+/*
+ * A directory lost a name or its inode changed. A synced directory's logged
+ * index is relogged by the next publication.
+ */
+void
+btrfs_log_dir_changed(struct btrfs_trans_handle *handle,
+    struct btrfs_node *dir)
+{
+	struct btrfs_transaction *trans = handle->bth_transaction;
+	struct btrfs_log_name match, *entry;
+
+	match.bln_treeid = dir->bn_treeid;
+	match.bln_ino = dir->bn_ino;
+	mtx_enter(&trans->bt_lock);
+	entry = RBT_FIND(btrfs_log_names, &trans->bt_log_names, &match);
+	if (entry != NULL) {
+		entry->bln_flags |= BTRFS_LOG_NAME_DIRTY;
+		if (entry->bln_flags & BTRFS_LOG_NAME_SYNCED)
+			entry->bln_flags |= BTRFS_LOG_NAME_STALE;
+	}
+	mtx_leave(&trans->bt_lock);
 }
 
 void
@@ -328,6 +355,8 @@ struct log_writer {
 	/* Inodes to log after the target: stale or displaced names. */
 	uint64_t pending[LOG_PENDING_MAX];
 	unsigned int npending;
+	/* A synced directory, whose inode is logged in full. */
+	uint64_t dir;
 };
 
 struct log_owner {
@@ -490,7 +519,7 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 	uint64_t cursor = 0, end;
 	uint64_t generation = bmp->bm_transaction->bt_generation;
 	uint32_t size, sector = letoh32(bmp->bm_super.sectorsize);
-	int committed, error, inline_data = 0, names;
+	int committed, error, flags, inline_data = 0, names;
 
 	error = btrfs_find_inode(root, ino, &inode);
 	if (error != 0)
@@ -499,9 +528,9 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 	    inode.bi_nlink == 0)
 		return (EAGAIN);
 	committed = inode.bi_generation <= bmp->bm_last_transid;
-	names = !committed || (log_name_flags(bmp->bm_transaction,
-	    root->br_owner, ino) &
-	    (BTRFS_LOG_NAME_LOGGED | BTRFS_LOG_NAME_CHANGED));
+	flags = log_name_flags(bmp->bm_transaction, root->br_owner, ino);
+	names = !committed ||
+	    (flags & (BTRFS_LOG_NAME_LOGGED | BTRFS_LOG_NAME_CHANGED));
 	*parent = 0;
 	end = roundup(inode.bi_size, sector);
 	target.objectid = htole64(ino);
@@ -571,7 +600,8 @@ log_collect_inode(struct log_writer *w, uint64_t ino, uint64_t *parent)
 		    BTRFS_INODE_ITEM_KEY, 0);
 		struct btrfs_inode_item *disk = (void *)item->data;
 
-		if (S_ISDIR(inode.bi_mode) && committed)
+		if (S_ISDIR(inode.bi_mode) && committed && ino != w->dir &&
+		    !(flags & BTRFS_LOG_NAME_SYNCED))
 			disk->generation = 0;
 		else if (inode.bi_generation == 0) {
 			/*
@@ -922,6 +952,7 @@ log_inode_path(struct log_writer *w, uint64_t ino)
 {
 	struct btrfs_fs *bmp = w->root->br_mount;
 	struct btrfs_key low = { 0 }, high = { 0 };
+	struct log_item *item;
 	uint64_t parent;
 	unsigned int depth = 0;
 	int error;
@@ -932,8 +963,14 @@ log_inode_path(struct log_writer *w, uint64_t ino)
 			error = log_displaced(w, ino, parent);
 		if (error != 0)
 			return (error);
-		low.objectid = htole64(ino);
-		high.objectid = htole64(ino + 1);
+		item = btrfs_log_find(&w->items, ino, BTRFS_INODE_ITEM_KEY, 0);
+		low.objectid = high.objectid = htole64(ino);
+		high.type = BTRFS_DIR_LOG_ITEM_KEY;
+		if (!S_ISDIR(letoh32(
+		    ((struct btrfs_inode_item *)item->data)->mode))) {
+			high.objectid = htole64(ino + 1);
+			high.type = 0;
+		}
 		error = log_update(bmp, &w->subtree, &w->items, &low, &high, 0);
 		if (error != 0)
 			return (error);
@@ -946,6 +983,175 @@ log_inode_path(struct log_writer *w, uint64_t ino)
 			return (EAGAIN);
 	} while (ino != 0);
 	return (0);
+}
+
+#define LOG_DIRECTORY_MAX	256
+
+/*
+ * Queue the owners of a directory's entries added in this generation, and the
+ * owners of removed committed entries which are still linked: replay deletes
+ * committed entries missing from the logged range.
+ */
+static int
+log_directory_entries(struct log_writer *w, struct btrfs_root *root,
+    uint64_t dir, int committed)
+{
+	struct btrfs_fs *bmp = w->root->br_mount;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	const uint8_t *data;
+	struct btrfs_dir_record record;
+	struct btrfs_inode inode;
+	struct log_item *item;
+	uint64_t ino;
+	uint32_t size;
+	unsigned int count = 0;
+	int error;
+
+	target.objectid = htole64(dir);
+	target.type = BTRFS_DIR_INDEX_KEY;
+	error = btrfs_search_lower_bound(root, &target, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &key, &data, &size);
+		if (error != 0 || key->objectid != target.objectid ||
+		    key->type != BTRFS_DIR_INDEX_KEY)
+			break;
+		error = btrfs_decode_dir_record(data, size, &record);
+		if (error == 0)
+			error = btrfs_validate_dir_record(key,
+			    bmp->bm_transaction->bt_generation, size, &record);
+		if (error == 0 &&
+		    (record.item->location.type != BTRFS_INODE_ITEM_KEY ||
+		    ++count > LOG_DIRECTORY_MAX))
+			error = EAGAIN;
+		if (error != 0)
+			break;
+		ino = letoh64(record.item->location.objectid);
+		if (!committed) {
+			if (letoh64(record.item->transid) > bmp->bm_last_transid)
+				error = log_pending_add(w, ino);
+			if (error == 0)
+				error = btrfs_log_add(&w->items, key, data, size);
+		} else {
+			item = btrfs_log_find(&w->items, dir,
+			    BTRFS_DIR_INDEX_KEY, letoh64(key->offset));
+			if (item == NULL || item->size != size ||
+			    memcmp(item->data, data, size) != 0) {
+				error = btrfs_find_inode(w->root, ino, &inode);
+				if (error == 0 && inode.bi_nlink != 0)
+					error = log_pending_add(w, ino);
+				else if (error == ENOENT)
+					error = 0;
+			}
+		}
+		if (error != 0)
+			break;
+		error = btrfs_next_item(&path);
+	}
+	btrfs_release_path(&path);
+	return (error == ENOENT ? 0 : error);
+}
+
+/*
+ * A directory logs its whole index under one range, so replay reproduces
+ * exactly its current entries. Ancestry updates keep these records.
+ */
+static int
+log_directory(struct log_writer *w, uint64_t dir)
+{
+	struct btrfs_fs *bmp = w->root->br_mount;
+	struct btrfs_dir_log_item range;
+	struct btrfs_key key = { 0 }, high = { 0 };
+	struct btrfs_inode inode;
+	int error;
+
+	error = btrfs_find_inode(w->root, dir, &inode);
+	if (error == 0)
+		error = log_directory_entries(w, w->root, dir, 0);
+	if (error == 0 && inode.bi_generation <= bmp->bm_last_transid) {
+		error = log_commit_root(w);
+		if (error == 0)
+			error = log_directory_entries(w, &w->commit, dir, 1);
+	}
+	key.objectid = htole64(dir);
+	key.type = BTRFS_DIR_LOG_INDEX_KEY;
+	range.end = htole64(UINT64_MAX);
+	if (error == 0)
+		error = btrfs_log_add(&w->items, &key, &range, sizeof(range));
+	if (error != 0)
+		return (error);
+	key.type = BTRFS_DIR_LOG_ITEM_KEY;
+	high.objectid = htole64(dir + 1);
+	error = log_update(bmp, &w->subtree, &w->items, &key, &high, 0);
+	if (error == 0)
+		log_name_update(bmp->bm_transaction, w->root->br_owner, dir,
+		    BTRFS_LOG_NAME_SYNCED,
+		    BTRFS_LOG_NAME_DIRTY | BTRFS_LOG_NAME_STALE);
+	return (error);
+}
+
+/*
+ * A synced directory remains durable if the log holds its own name, every
+ * entry added since is logged through its owner's names, and it has not lost
+ * a name which the log does not drop or changed its inode.
+ */
+static int
+log_directory_logged(struct log_writer *w, uint64_t dir)
+{
+	struct btrfs_transaction *trans = w->handle->bth_transaction;
+	struct btrfs_fs *bmp = trans->bt_mount;
+	struct btrfs_log_name *entry;
+	struct btrfs_path path = { 0 };
+	struct btrfs_key target = { 0 };
+	const struct btrfs_key *key;
+	const uint8_t *data;
+	struct btrfs_dir_record record;
+	struct btrfs_inode inode;
+	uint32_t size;
+	unsigned int count = 0;
+	int error, flags;
+
+	flags = log_name_flags(trans, w->root->br_owner, dir);
+	if ((flags & BTRFS_LOG_NAME_DIRTY) || !(flags & BTRFS_LOG_NAME_SYNCED))
+		return (0);
+	if (btrfs_find_inode(w->root, dir, &inode) != 0)
+		return (0);
+	if ((inode.bi_generation > bmp->bm_last_transid ||
+	    (flags & BTRFS_LOG_NAME_CHANGED)) &&
+	    !(flags & BTRFS_LOG_NAME_LOGGED))
+		return (0);
+	mtx_enter(&trans->bt_lock);
+	RBT_FOREACH(entry, btrfs_log_names, &trans->bt_log_names)
+		if (entry->bln_flags & BTRFS_LOG_NAME_STALE)
+			break;
+	mtx_leave(&trans->bt_lock);
+	if (entry != NULL)
+		return (0);
+	target.objectid = htole64(dir);
+	target.type = BTRFS_DIR_INDEX_KEY;
+	error = btrfs_search_lower_bound(w->root, &target, &path);
+	while (error == 0) {
+		error = btrfs_path_item(&path, &key, &data, &size);
+		if (error != 0 || key->objectid != target.objectid ||
+		    key->type != BTRFS_DIR_INDEX_KEY)
+			break;
+		error = btrfs_decode_dir_record(data, size, &record);
+		if (error == 0 && ++count > LOG_DIRECTORY_MAX)
+			error = EAGAIN;
+		if (error == 0 &&
+		    letoh64(record.item->transid) > bmp->bm_last_transid &&
+		    (record.item->location.type != BTRFS_INODE_ITEM_KEY ||
+		    !(log_name_flags(trans, w->root->br_owner,
+		    letoh64(record.item->location.objectid)) &
+		    BTRFS_LOG_NAME_LOGGED)))
+			error = EAGAIN;
+		if (error != 0)
+			break;
+		error = btrfs_next_item(&path);
+	}
+	btrfs_release_path(&path);
+	return (error == 0 || error == ENOENT);
 }
 
 /*
@@ -1000,19 +1206,26 @@ log_names(struct log_writer *w, uint64_t target)
 	struct btrfs_transaction *trans = w->handle->bth_transaction;
 	uint64_t ino;
 	unsigned int i;
-	int error;
+	int error, flags;
 
 	error = log_inode_path(w, target);
+	if (error == 0 && w->dir != 0)
+		error = log_directory(w, target);
 	if (error == 0)
 		error = log_stale_names(w);
 	for (i = 0; error == 0 && i < w->npending; i++) {
 		ino = w->pending[i];
-		log_name_update(trans, w->root->br_owner, ino,
-		    BTRFS_LOG_NAME_LOGGED, 0);
+		/* Synced directories relog their index, not their names. */
+		flags = log_name_flags(trans, w->root->br_owner, ino);
+		if (!(flags & BTRFS_LOG_NAME_SYNCED))
+			log_name_update(trans, w->root->br_owner, ino,
+			    BTRFS_LOG_NAME_LOGGED, 0);
 		error = btrfs_write_inode_ordered(w->handle,
 		    w->root->br_owner, ino);
 		if (error == 0)
 			error = log_inode_path(w, ino);
+		if (error == 0 && (flags & BTRFS_LOG_NAME_SYNCED))
+			error = log_directory(w, ino);
 	}
 	return (error);
 }
@@ -1022,11 +1235,11 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
     struct proc *p)
 {
 	struct btrfs_fs *bmp = node->bn_mount;
-	struct log_writer w;
-	struct log_items *items = &w.items;
+	struct log_writer *w;
+	struct log_items *items;
 	struct log_item *item;
 	struct btrfs_root log;
-	struct btrfs_root_item forest = { 0 }, *subtree = &w.subtree;
+	struct btrfs_root_item forest = { 0 }, *subtree;
 	struct btrfs_path path = { 0 };
 	struct btrfs_key key = { 0 }, low = { 0 }, high = { 0 };
 	struct btrfs_super_block *super;
@@ -1034,11 +1247,20 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 	uint32_t size;
 	int error, end_error;
 
-	memset(&w, 0, sizeof(w));
-	w.handle = handle;
-	w.root = node->bn_root;
-	RBT_INIT(log_items, &w.items);
-	RBT_INIT(log_items, &w.csums);
+	/* The writer is too large for the kernel stack. */
+	w = malloc(sizeof(*w), M_BTRFS, M_WAITOK | M_ZERO);
+	w->handle = handle;
+	w->root = node->bn_root;
+	RBT_INIT(log_items, &w->items);
+	RBT_INIT(log_items, &w->csums);
+	items = &w->items;
+	subtree = &w->subtree;
+	if (S_ISDIR(node->bn_inode.bi_mode)) {
+		error = 0;
+		if (log_directory_logged(w, node->bn_ino))
+			goto out;
+		w->dir = node->bn_ino;
+	}
 	error = btrfs_write_inode_ordered(handle, node->bn_treeid,
 	    node->bn_ino);
 	if (error != 0)
@@ -1063,11 +1285,11 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		if (error != 0)
 			goto out;
 	}
-	error = log_names(&w, node->bn_ino);
+	error = log_names(w, node->bn_ino);
 	if (error != 0)
 		goto out;
-	while ((item = RBT_MIN(log_items, &w.csums)) != NULL) {
-		RBT_REMOVE(log_items, &w.csums, item);
+	while ((item = RBT_MIN(log_items, &w->csums)) != NULL) {
+		RBT_REMOVE(log_items, &w->csums, item);
 		RBT_INSERT(log_items, items, item);
 		low = high = item->key;
 		high.offset = htole64(letoh64(low.offset) +
@@ -1100,8 +1322,9 @@ btrfs_log_write(struct btrfs_trans_handle *handle, struct btrfs_node *node,
 		memcpy(&bmp->bm_super, super, sizeof(*super));
 	free(super, M_BTRFS, sizeof(*super));
 out:
-	btrfs_log_free_items(&w.items);
-	btrfs_log_free_items(&w.csums);
+	btrfs_log_free_items(&w->items);
+	btrfs_log_free_items(&w->csums);
+	free(w, M_BTRFS, sizeof(*w));
 	/* Unpublished log blocks remain excluded until the fallback commits. */
 	return (error);
 }

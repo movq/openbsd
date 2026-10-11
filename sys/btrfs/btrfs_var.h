@@ -346,7 +346,8 @@ enum btrfs_trans_state {
 
 /*
  * Per-transaction name state for the log: new inodes whose references are
- * logged, and committed inodes and directories whose names have changed.
+ * logged, committed inodes and directories whose names have changed, and
+ * synced directories.
  */
 struct btrfs_log_name {
 	RBT_ENTRY(btrfs_log_name)	 bln_entry;
@@ -361,6 +362,8 @@ RBT_PROTOTYPE(btrfs_log_names, btrfs_log_name, bln_entry,
 #define BTRFS_LOG_NAME_LOGGED	0x01	/* references are in the log */
 #define BTRFS_LOG_NAME_STALE	0x02	/* logged references have changed */
 #define BTRFS_LOG_NAME_CHANGED	0x04	/* committed inode's names changed */
+#define BTRFS_LOG_NAME_DIRTY	0x08	/* directory changed beyond the log */
+#define BTRFS_LOG_NAME_SYNCED	0x10	/* directory inode is logged in full */
 
 struct btrfs_transaction {
 	struct btrfs_fs			*bt_mount;
@@ -997,6 +1000,8 @@ int	btrfs_log_write(struct btrfs_trans_handle *, struct btrfs_node *,
 int	btrfs_log_recover(struct btrfs_fs *, struct proc *);
 void	btrfs_log_destroy(struct btrfs_fs *);
 void	btrfs_log_names_changed(struct btrfs_trans_handle *,
+	    struct btrfs_node *, struct btrfs_node *);
+void	btrfs_log_dir_changed(struct btrfs_trans_handle *,
 	    struct btrfs_node *);
 void	btrfs_log_names_free(struct btrfs_transaction *);
 int	btrfs_insert_data_csums(struct btrfs_trans_handle *, uint64_t,
