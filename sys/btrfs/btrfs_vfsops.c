@@ -931,9 +931,7 @@ btrfs_mountfs(struct vnode *devvp, struct mount *mp, struct btrfs_args *args,
 	memcpy(bmp->bm_chunk_tree_uuid, bootstrap.bb_chunk_tree_uuid,
 	    sizeof(bmp->bm_chunk_tree_uuid));
 	btrfs_init_roots(bmp, &bootstrap);
-	RBT_INIT(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers);
-	TAILQ_INIT(&bmp->bm_eb_lru);
-	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
+	btrfs_extent_buffers_init(bmp);
 	LIST_INIT(&bmp->bm_nodes);
 	RBT_INIT(btrfs_node_tree, &bmp->bm_node_tree);
 	mtx_init(&bmp->bm_nodemtx, IPL_NONE);

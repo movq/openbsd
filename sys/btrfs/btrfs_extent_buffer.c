@@ -25,7 +25,8 @@
  * Device buffers supply physical reads; extent buffers supply logical metadata
  * identity, validation, locking and transaction ownership. Loading releases
  * device buffers and retains private bytes. An address index covers active
- * and cached blocks, with idle validated blocks kept in a bounded 8 MiB LRU.
+ * and cached blocks, with idle validated blocks kept in an LRU bounded to
+ * 1/128 of physical memory, between 8 and 256 MiB.
  * Hits must match generation, level and permitted owner, and validated child
  * generations must fit the caller's view. File-tree blocks may retain another
  * subvolume's on-disk owner; sharing is permitted only between file trees.
@@ -50,7 +51,8 @@
 #include <btrfs/btrfs_var.h>
 
 /* Bound idle metadata independently of transaction-owned and active blocks. */
-#define BTRFS_METADATA_CACHE_BYTES	(8 * 1024 * 1024)
+#define BTRFS_METADATA_CACHE_MIN	(8 * 1024 * 1024)
+#define BTRFS_METADATA_CACHE_MAX	(256 * 1024 * 1024)
 
 static int	btrfs_extent_buffer_load(const struct btrfs_root *,
 		    struct btrfs_extent_buffer *, uint64_t);
@@ -71,19 +73,41 @@ struct btrfs_extent_buffer_validation {
 	uint8_t				 ebv_level;
 };
 
-static inline int
-btrfs_extent_buffer_compare(const struct btrfs_extent_buffer *a,
-    const struct btrfs_extent_buffer *b)
+static inline struct btrfs_extent_buffer_bucket *
+btrfs_extent_buffer_bucket(struct btrfs_fs *bmp, uint64_t bytenr)
 {
-	if (a->eb_bytenr < b->eb_bytenr)
-		return (-1);
-	if (a->eb_bytenr > b->eb_bytenr)
-		return (1);
-	return (0);
+	uint64_t hash = (bytenr >> 12) * 0x9e3779b97f4a7c15ULL;
+
+	return (&bmp->bm_extent_buffers[(hash >> 32) & bmp->bm_eb_hashmask]);
 }
 
-RBT_GENERATE(btrfs_extent_buffer_tree, btrfs_extent_buffer, eb_entry,
-    btrfs_extent_buffer_compare);
+static struct btrfs_extent_buffer *
+btrfs_extent_buffer_lookup(struct btrfs_fs *bmp, uint64_t bytenr)
+{
+	struct btrfs_extent_buffer *eb;
+
+	MUTEX_ASSERT_LOCKED(&bmp->bm_ebmtx);
+	LIST_FOREACH(eb, btrfs_extent_buffer_bucket(bmp, bytenr), eb_entry)
+		if (eb->eb_bytenr == bytenr)
+			return (eb);
+	return (NULL);
+}
+
+void
+btrfs_extent_buffers_init(struct btrfs_fs *bmp)
+{
+	uint64_t bytes;
+
+	bytes = ptoa((psize_t)physmem) / 128;
+	bytes = MIN(MAX(bytes, BTRFS_METADATA_CACHE_MIN),
+	    BTRFS_METADATA_CACHE_MAX);
+	bmp->bm_eb_limit = bytes / letoh32(bmp->bm_super.nodesize);
+	bmp->bm_extent_buffers = hashinit(bmp->bm_eb_limit, M_BTRFS, M_WAITOK,
+	    &bmp->bm_eb_hashmask);
+	TAILQ_INIT(&bmp->bm_eb_lru);
+	bmp->bm_eb_cached = 0;
+	mtx_init(&bmp->bm_ebmtx, IPL_NONE);
+}
 
 static void
 btrfs_extent_buffer_free(struct btrfs_extent_buffer *eb)
@@ -108,7 +132,7 @@ btrfs_extent_buffer_uncache(struct btrfs_fs *bmp,
 	KASSERT(eb->eb_transaction == NULL);
 	TAILQ_REMOVE(&bmp->bm_eb_lru, eb, eb_lru);
 	bmp->bm_eb_cached--;
-	RBT_REMOVE(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers, eb);
+	LIST_REMOVE(eb, eb_entry);
 }
 
 /*
@@ -119,10 +143,10 @@ static int
 btrfs_extent_buffer_publish(struct btrfs_extent_buffer *eb)
 {
 	struct btrfs_fs *bmp = eb->eb_mount;
-	struct btrfs_extent_buffer *old, *collision;
+	struct btrfs_extent_buffer *old;
 
 	mtx_enter(&bmp->bm_ebmtx);
-	old = RBT_FIND(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers, eb);
+	old = btrfs_extent_buffer_lookup(bmp, eb->eb_bytenr);
 	if (old != NULL) {
 		if (old->eb_refs != 0) {
 			mtx_leave(&bmp->bm_ebmtx);
@@ -130,9 +154,8 @@ btrfs_extent_buffer_publish(struct btrfs_extent_buffer *eb)
 		}
 		btrfs_extent_buffer_uncache(bmp, old);
 	}
-	collision = RBT_INSERT(btrfs_extent_buffer_tree,
-	    &bmp->bm_extent_buffers, eb);
-	KASSERT(collision == NULL);
+	LIST_INSERT_HEAD(btrfs_extent_buffer_bucket(bmp, eb->eb_bytenr), eb,
+	    eb_entry);
 	mtx_leave(&bmp->bm_ebmtx);
 	btrfs_extent_buffer_free(old);
 	return (0);
@@ -150,8 +173,17 @@ btrfs_extent_buffers_purge(struct btrfs_fs *bmp)
 		mtx_leave(&bmp->bm_ebmtx);
 		btrfs_extent_buffer_free(eb);
 	}
-	KASSERT(RBT_EMPTY(btrfs_extent_buffer_tree, &bmp->bm_extent_buffers));
 	KASSERT(bmp->bm_eb_cached == 0);
+#ifdef DIAGNOSTIC
+	{
+		u_long i;
+
+		for (i = 0; i <= bmp->bm_eb_hashmask; i++)
+			KASSERT(LIST_EMPTY(&bmp->bm_extent_buffers[i]));
+	}
+#endif
+	hashfree(bmp->bm_extent_buffers, bmp->bm_eb_limit, M_BTRFS);
+	bmp->bm_extent_buffers = NULL;
 }
 
 static int
@@ -178,7 +210,7 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
     uint64_t generation, uint64_t view_generation, uint8_t level,
     struct btrfs_extent_buffer **ebp)
 {
-	struct btrfs_extent_buffer *eb, *new = NULL, key = { 0 }, *collision;
+	struct btrfs_extent_buffer *eb, *new = NULL;
 	struct btrfs_fs *bmp = root->br_mount;
 	uint32_t sectorsize;
 	int error;
@@ -199,12 +231,10 @@ btrfs_extent_buffer_read(const struct btrfs_root *root, uint64_t logical,
 	}
 #endif
 
-	key.eb_bytenr = logical;
 again:
 	if (bmp != NULL) {
 		mtx_enter(&bmp->bm_ebmtx);
-		eb = RBT_FIND(btrfs_extent_buffer_tree,
-		    &bmp->bm_extent_buffers, &key);
+		eb = btrfs_extent_buffer_lookup(bmp, logical);
 		if (eb != NULL) {
 			if (!btrfs_extent_buffer_matches(eb, generation,
 			    root->br_owner, level)) {
@@ -245,11 +275,9 @@ again:
 			*ebp = eb;
 			return (0);
 		}
-		if (new != NULL) {
-			collision = RBT_INSERT(btrfs_extent_buffer_tree,
-			    &bmp->bm_extent_buffers, new);
-			KASSERT(collision == NULL);
-		}
+		if (new != NULL)
+			LIST_INSERT_HEAD(btrfs_extent_buffer_bucket(bmp,
+			    logical), new, eb_entry);
 		mtx_leave(&bmp->bm_ebmtx);
 	}
 	if (new == NULL) {
@@ -549,7 +577,6 @@ btrfs_extent_buffer_put(struct btrfs_extent_buffer *eb)
 {
 	struct btrfs_fs *bmp = eb->eb_mount;
 	struct btrfs_extent_buffer *victim = NULL;
-	unsigned int limit;
 
 	KASSERT(eb->eb_refs > 0);
 	rw_assert_anylock(&eb->eb_lock);
@@ -561,17 +588,14 @@ btrfs_extent_buffer_put(struct btrfs_extent_buffer *eb)
 		if (--eb->eb_refs == 0) {
 			KASSERT(eb->eb_transaction == NULL);
 			if (eb->eb_error != 0 || eb->eb_stale) {
-				RBT_REMOVE(btrfs_extent_buffer_tree,
-				    &bmp->bm_extent_buffers, eb);
+				LIST_REMOVE(eb, eb_entry);
 				victim = eb;
 			} else {
 				KASSERT(eb->eb_loaded && !eb->eb_dirty);
 				KASSERT(eb->eb_buf == NULL);
 				TAILQ_INSERT_TAIL(&bmp->bm_eb_lru, eb, eb_lru);
 				bmp->bm_eb_cached++;
-				limit = BTRFS_METADATA_CACHE_BYTES /
-				    letoh32(bmp->bm_super.nodesize);
-				if (bmp->bm_eb_cached > limit) {
+				if (bmp->bm_eb_cached > bmp->bm_eb_limit) {
 					victim = TAILQ_FIRST(&bmp->bm_eb_lru);
 					btrfs_extent_buffer_uncache(bmp, victim);
 				}

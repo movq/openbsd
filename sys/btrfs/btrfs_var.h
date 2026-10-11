@@ -457,7 +457,7 @@ struct btrfs_root_entry;
 struct proc;
 struct statfs;
 struct vnode;
-RBT_HEAD(btrfs_extent_buffer_tree, btrfs_extent_buffer);
+LIST_HEAD(btrfs_extent_buffer_bucket, btrfs_extent_buffer);
 TAILQ_HEAD(btrfs_extent_buffer_lru, btrfs_extent_buffer);
 LIST_HEAD(btrfs_node_list, btrfs_node);
 RBT_HEAD(btrfs_node_tree, btrfs_node);
@@ -498,7 +498,7 @@ struct btrfs_root_entry {
 };
 
 struct btrfs_extent_buffer {
-	RBT_ENTRY(btrfs_extent_buffer)	 eb_entry;
+	LIST_ENTRY(btrfs_extent_buffer)	 eb_entry;
 	TAILQ_ENTRY(btrfs_extent_buffer)	 eb_lru;
 	TAILQ_ENTRY(btrfs_extent_buffer) eb_dirty_entry;
 	struct btrfs_fs			*eb_mount;
@@ -520,8 +520,6 @@ struct btrfs_extent_buffer {
 	uint8_t				 eb_written;
 	uint8_t				 eb_stale;
 };
-RBT_PROTOTYPE(btrfs_extent_buffer_tree, btrfs_extent_buffer, eb_entry,
-    btrfs_extent_buffer_compare);
 
 struct btrfs_path {
 	struct btrfs_root	*bp_root;
@@ -645,10 +643,13 @@ struct btrfs_fs {
 	uint8_t				 bm_chunk_tree_uuid[BTRFS_UUID_SIZE];
 	struct btrfs_root_list		 bm_roots;
 	struct mutex			 bm_rootmtx;
-	struct btrfs_extent_buffer_tree	 bm_extent_buffers;
+	/* Address hash of active and cached blocks, under bm_ebmtx. */
+	struct btrfs_extent_buffer_bucket *bm_extent_buffers;
+	u_long				 bm_eb_hashmask;
 	/* Idle, validated metadata owns private bytes, never busy device buffers. */
 	struct btrfs_extent_buffer_lru	 bm_eb_lru;
 	unsigned int			 bm_eb_cached;
+	unsigned int			 bm_eb_limit;
 	struct mutex			 bm_ebmtx;
 	struct btrfs_node_list		 bm_nodes;
 	struct btrfs_node_tree		 bm_node_tree;
@@ -780,6 +781,7 @@ const void *btrfs_extent_buffer_data(const struct btrfs_extent_buffer *);
 void	*btrfs_extent_buffer_data_mutable(struct btrfs_trans_handle *,
 	    struct btrfs_extent_buffer *);
 void	btrfs_extent_buffer_put(struct btrfs_extent_buffer *);
+void	btrfs_extent_buffers_init(struct btrfs_fs *);
 void	btrfs_extent_buffers_purge(struct btrfs_fs *);
 int	btrfs_write_dirty_metadata(struct btrfs_transaction *);
 int	btrfs_extent_buffers_finish(struct btrfs_transaction *, int);
