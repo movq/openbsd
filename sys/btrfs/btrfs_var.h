@@ -671,6 +671,8 @@ struct btrfs_fs {
 	struct btrfs_extent_buffer_lru	 bm_eb_lru;
 	unsigned int			 bm_eb_cached;
 	unsigned int			 bm_eb_limit;
+	/* Retained transaction memory that forces a commit. */
+	uint64_t			 bm_eb_dirty_limit;
 	struct mutex			 bm_ebmtx;
 	struct btrfs_node_list		 bm_nodes;
 	struct btrfs_node_tree		 bm_node_tree;

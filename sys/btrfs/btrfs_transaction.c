@@ -459,7 +459,7 @@ btrfs_trans_drain_reservations(struct btrfs_fs *bmp, uint64_t generation,
 		memory += sizeof(*extent);
 	TAILQ_FOREACH(extent, &bmp->bm_log_extents, bte_entry)
 		memory += sizeof(*extent);
-	if (trans->bt_chunk_op != NULL || memory >= 32U * 1024 * 1024)
+	if (trans->bt_chunk_op != NULL || memory >= bmp->bm_eb_dirty_limit)
 		return (btrfs_trans_commit_closed(trans, curproc));
 
 	error = btrfs_trans_commit_handle(trans, &handle);

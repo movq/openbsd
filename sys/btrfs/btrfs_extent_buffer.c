@@ -53,6 +53,8 @@
 /* Bound idle metadata independently of transaction-owned and active blocks. */
 #define BTRFS_METADATA_CACHE_MIN	(8 * 1024 * 1024)
 #define BTRFS_METADATA_CACHE_MAX	(256 * 1024 * 1024)
+#define BTRFS_METADATA_DIRTY_MIN	(32 * 1024 * 1024)
+#define BTRFS_METADATA_DIRTY_MAX	(256 * 1024 * 1024)
 
 static int	btrfs_extent_buffer_load(const struct btrfs_root *,
 		    struct btrfs_extent_buffer *, uint64_t);
@@ -102,6 +104,9 @@ btrfs_extent_buffers_init(struct btrfs_fs *bmp)
 	bytes = MIN(MAX(bytes, BTRFS_METADATA_CACHE_MIN),
 	    BTRFS_METADATA_CACHE_MAX);
 	bmp->bm_eb_limit = bytes / letoh32(bmp->bm_super.nodesize);
+	bytes = ptoa((psize_t)physmem) / 64;
+	bmp->bm_eb_dirty_limit = MIN(MAX(bytes, BTRFS_METADATA_DIRTY_MIN),
+	    BTRFS_METADATA_DIRTY_MAX);
 	bmp->bm_extent_buffers = hashinit(bmp->bm_eb_limit, M_BTRFS, M_WAITOK,
 	    &bmp->bm_eb_hashmask);
 	TAILQ_INIT(&bmp->bm_eb_lru);
